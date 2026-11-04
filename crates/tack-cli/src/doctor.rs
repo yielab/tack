@@ -404,7 +404,7 @@ fn docket_lines(capability: &HarnessCapability, daemon: &Result<String, String>)
     ];
     for team in capability.teams.iter().flatten() {
         let fixes: Vec<&str> = team.violations.iter().map(|v| v.fix.as_str()).collect();
-        let state = if team.profile == "lights-out" && fixes.is_empty() {
+        let state = if team.profile.as_deref() == Some("lights-out") && fixes.is_empty() {
             "lights-out".to_owned()
         } else if fixes.is_empty() {
             "attended".to_owned()

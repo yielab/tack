@@ -99,6 +99,35 @@ pub(super) struct PodReport {
     /// The folder a team that works in one writes in (`podWorkDir`). Absent for a team in a
     /// repository and from a docket before the key.
     pub work_dir: Option<String>,
+    /// What the team hands back (`podContract`): `branch`, `report` or `records`. Absent from a
+    /// docket before that key.
+    pub delivers: Option<String>,
+    /// Every method a task may name (`podContract`). Each is kept as it came and read on its own,
+    /// so a method Tack cannot read costs the list and never the team.
+    pub methods: Option<Vec<Value>>,
+    /// What the team's work still needs (`podContract`), kept as `methods` is.
+    pub needs: Option<Vec<Value>>,
+}
+
+/// One entry of `methods`: its name, where the team has it from, whether a task that names none
+/// goes through it, and the roles its steps need that the team has no member for.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PodMethod {
+    pub name: String,
+    pub source: String,
+    pub default: bool,
+    #[serde(default)]
+    pub missing_roles: Vec<String>,
+}
+
+/// One entry of `needs`.
+#[derive(Debug, Deserialize)]
+pub(super) struct PodNeed {
+    pub kind: String,
+    pub name: String,
+    pub fix: String,
+    pub satisfied: bool,
 }
 
 #[derive(Debug, Deserialize)]

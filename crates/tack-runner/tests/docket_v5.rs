@@ -12,7 +12,7 @@ use std::{
 use serde_json::{Value, json};
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, CapabilitySupport, ExecutionRequestSnapshot,
-    HarnessKind, RunnerId as DomainRunnerId, TaskDocument,
+    HarnessKind, RunnerId as DomainRunnerId, TaskDocument, TeamDelivers,
 };
 use tack_protocol::prepare::PrepareSetting;
 use tack_runner::{
@@ -408,7 +408,7 @@ async fn probe_reports_each_team_and_the_ceiling() {
     let teams = capability.teams.expect("teams");
     assert_eq!(teams.len(), 2);
     let content = teams.iter().find(|t| t.name == "saas-content").unwrap();
-    assert_eq!(content.profile, "attended");
+    assert_eq!(content.profile.as_deref(), Some("attended"));
     assert_eq!(content.violations[0].requirement, "network");
     assert_eq!(content.violations[0].fix, "docket pod set network none");
     assert!(
@@ -1430,6 +1430,219 @@ async fn a_team_that_cannot_do_what_the_run_needs_gets_no_task_and_the_run_says_
         ),
         "{description}"
     );
+}
+
+/// A request of `kind` for a card of type `feature`, whose profile names `method` for it.
+fn naming_method(scene: &Scene, kind: &str, method: &str) -> ExecutionSpec {
+    let mut spec = spec(scene, "attempt-1", 1);
+    let request = &mut spec.work.request;
+    request
+        .resolved_agent_profile
+        .additional
+        .insert("kind".into(), json!(kind));
+    request.resolved_agent_profile.tool_policy["docket"]["pipeline_by_type"] =
+        json!({"feature": method});
+    spec
+}
+
+fn refused_with(outcome: Result<impl Sized, HarnessError>) -> String {
+    match outcome {
+        Err(HarnessError::Rejected { reason }) => reason,
+        Err(other) => panic!("refused for another reason: {other:?}"),
+        Ok(_) => panic!("the run started"),
+    }
+}
+
+#[tokio::test]
+async fn probe_reads_what_a_team_delivers_offers_and_needs_only_when_docket_lists_podcontract() {
+    let scene = scene();
+    // The case without the feature: the captured reports carry none of the three keys.
+    let without = pods_fake().await;
+    let team = adapter(&without, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    assert!(team.delivers.is_none() && team.methods.is_none() && team.needs.is_none());
+    // The keys on the wire but not announced are not read.
+    let unlisted = pods_fake().await;
+    unlisted.with_unlisted_pod_contract();
+    let team = adapter(&unlisted, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    assert!(team.delivers.is_none() && team.methods.is_none() && team.needs.is_none());
+
+    let listed = pods_fake().await;
+    listed.with_pod_contract();
+    listed.add_folder_pod("saas-notes");
+    let teams = adapter(&listed, &scene).probe().await.teams.expect("teams");
+    let find = |name: &str| teams.iter().find(|team| team.name == name).expect(name);
+    let dev = find(POD);
+    assert_eq!(dev.delivers, Some(TeamDelivers::Branch));
+    let methods = dev.methods.as_deref().expect("methods");
+    assert_eq!(
+        methods.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+        ["pipeline", "tdd", "secure-build"]
+    );
+    assert!(methods[0].default && methods[0].source == "pod");
+    assert_eq!(methods[2].missing_roles, ["security-vetter"]);
+    let needs = dev.needs.as_deref().expect("needs");
+    assert_eq!(needs.len(), 1);
+    assert!(needs[0].satisfied && needs[0].kind == "service");
+    assert_eq!(find("saas-notes").delivers, Some(TeamDelivers::Report));
+}
+
+#[tokio::test]
+async fn the_fake_serves_a_contract_with_the_keys_of_pod_contract() {
+    let fake = pods_fake().await;
+    fake.with_pod_contract();
+    let (status, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
+    assert_eq!(status, 200);
+    if let Err(why) = same_shape(
+        &report,
+        &fake_docket::fixture("pod-contract"),
+        "pod-contract",
+    ) {
+        panic!("{why}");
+    }
+    let (_, health) = ask(&fake, "GET", "/health", None).await;
+    assert!(
+        health["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("podContract"))
+    );
+    let unlisted = pods_fake().await;
+    unlisted.with_unlisted_pod_contract();
+    let (_, health) = ask(&unlisted, "GET", "/health", None).await;
+    assert!(
+        !health["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("podContract"))
+    );
+}
+
+/// A run that changes the repository does not go to a team that delivers a report or records, and
+/// nothing is posted; a Researcher goes there, and so does any run when docket says nothing.
+#[tokio::test]
+async fn a_run_that_changes_the_repository_is_refused_by_a_team_that_delivers_a_report() {
+    let scene = scene();
+    let fake = FakeDocket::start().await;
+    fake.add_folder_pod(POD);
+    fake.with_pod_contract();
+    let reason = refused_with(
+        adapter(&fake, &scene)
+            .start(&naming_method(&scene, "implementer", "pipeline"))
+            .await,
+    );
+    assert!(
+        reason.contains(&format!(
+            "The team {POD} delivers a report and this run changes the repository"
+        )),
+        "{reason}"
+    );
+    fake.set_contract(POD, json!({"delivers": "records"}));
+    let reason = refused_with(
+        adapter(&fake, &scene)
+            .start(&naming_method(&scene, "implementer", "pipeline"))
+            .await,
+    );
+    assert!(reason.contains("delivers records"), "{reason}");
+    assert!(
+        fake.requests_to("POST", "/tasks").is_empty(),
+        "nothing is posted"
+    );
+    // A Researcher changes nothing in the repository.
+    adapter(&fake, &scene)
+        .start(&naming_method(&scene, "researcher", "pipeline"))
+        .await
+        .expect("a Researcher is taken by a team that delivers records");
+    // And a docket that does not announce the contract refuses nothing it did not say.
+    let older = FakeDocket::start().await;
+    older.add_folder_pod(POD);
+    adapter(&older, &scene)
+        .start(&naming_method(&scene, "implementer", "pipeline"))
+        .await
+        .expect("an unannounced contract is no misfit");
+}
+
+#[tokio::test]
+async fn a_method_the_team_lacks_or_cannot_run_in_full_is_refused_before_the_task_is_posted() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_pod_contract();
+    let unknown = refused_with(
+        adapter(&fake, &scene)
+            .start(&naming_method(&scene, "implementer", "review"))
+            .await,
+    );
+    assert!(
+        unknown.contains(&format!("The team {POD} has no method named review"))
+            && unknown.contains("it offers pipeline, tdd, secure-build"),
+        "{unknown}"
+    );
+    let skipped = refused_with(
+        adapter(&fake, &scene)
+            .start(&naming_method(&scene, "implementer", "secure-build"))
+            .await,
+    );
+    assert!(
+        skipped.contains("The method secure-build would skip steps")
+            && skipped.contains("no member plays security-vetter"),
+        "{skipped}"
+    );
+    assert!(fake.requests_to("POST", "/tasks").is_empty());
+    adapter(&fake, &scene)
+        .start(&naming_method(&scene, "implementer", "tdd"))
+        .await
+        .expect("a method the team offers in full runs");
+    assert_eq!(fake.requests_to("POST", "/tasks").len(), 1);
+    assert_eq!(
+        fake.requests_to("POST", "/tasks")[0].body["pipeline"],
+        "tdd"
+    );
+
+    // Without the feature Tack cannot tell, and sends the name as it always has.
+    let (older, scene) = (pods_fake().await, self::scene());
+    adapter(&older, &scene)
+        .start(&naming_method(&scene, "implementer", "secure-build"))
+        .await
+        .expect("no catalogue is reported, so no method is refused");
+    assert_eq!(
+        older.requests_to("POST", "/tasks")[0].body["pipeline"],
+        "secure-build"
+    );
+}
+
+#[tokio::test]
+async fn a_need_the_team_says_is_unmet_ends_the_run_with_its_fix() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_pod_contract();
+    fake.set_contract(
+        POD,
+        json!({"needs": [
+            {"kind": "service", "name": "mail", "fix": "docket pod service add mail --pod saas-dev", "satisfied": false},
+            {"kind": "secret", "name": "api key", "fix": "docket secret set API_KEY", "satisfied": true},
+        ]}),
+    );
+    let reason = refused_with(
+        adapter(&fake, &scene)
+            .start(&naming_method(&scene, "implementer", "pipeline"))
+            .await,
+    );
+    assert!(
+        reason.contains(&format!(
+            "The team {POD} still needs mail: docket pod service add mail --pod saas-dev"
+        )) && !reason.contains("api key"),
+        "{reason}"
+    );
+    assert!(fake.requests_to("POST", "/tasks").is_empty());
 }
 
 /// A slow docket answering for one team holds up that team's run and no other: the fast team's

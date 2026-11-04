@@ -167,6 +167,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("103_drop_status_moves", &MIGRATION_103[..]),
         ordinary("104_triggers", &MIGRATION_104[..]),
         ordinary("105_notifications", &MIGRATION_105[..]),
+        ordinary("106_template_teams", &MIGRATION_106[..]),
     ]
 }
 
@@ -2139,3 +2140,7 @@ const MIGRATION_105: [&str; 4] = [
         PRIMARY KEY (notification_id, channel)
     )"##,
 ];
+
+// 106: a project template carries the teams its profiles are expected to name, described and never created.
+const MIGRATION_106: [&str; 1] =
+    ["ALTER TABLE project_templates ADD COLUMN teams TEXT NOT NULL DEFAULT '[]'"];

@@ -324,6 +324,9 @@ struct Pod {
     network: Option<Value>,
     /// Every member holds `fetch`, as docket lists it while FETCH_ALLOWED_DOMAINS names a host.
     fetch: bool,
+    /// What the report says of `delivers`, `methods` and `needs` instead of `pod-contract`'s,
+    /// as an object holding any of the three.
+    contract: Option<Value>,
 }
 
 struct World {
@@ -382,6 +385,10 @@ struct World {
     /// A docket before `podPause`: the features do not list it and neither the list nor a report
     /// carries `paused` or `pausedReason`. A paused team still holds its tasks `pending`.
     without_pod_pause: bool,
+    /// A docket that sends `delivers`, `methods` and `needs` on a team's report (`Some(true)`
+    /// also lists `podContract` in the features; `Some(false)` sends the keys without listing
+    /// it, which a reader that waits for the feature must not read).
+    pod_contract: Option<bool>,
     /// A docket before `budgetOutcome`: the features do not list it, and a hop's `budget` the
     /// script carries is left off the record, as a docket before the feature never wrote one.
     without_budget_outcome: bool,
@@ -440,6 +447,7 @@ impl FakeDocket {
             without_settled_cursor: false,
             without_hop_times: false,
             without_pod_pause: false,
+            pod_contract: None,
             without_budget_outcome: false,
             without_retry_continues: false,
             pod_fetch: false,
@@ -490,6 +498,7 @@ impl FakeDocket {
                 paused: None,
                 network: None,
                 fetch: false,
+                contract: None,
             },
         );
     }
@@ -539,6 +548,29 @@ impl FakeDocket {
     /// reports, and a paused team holding its tasks `pending`.
     pub fn without_pod_pause(&self) {
         self.shared.lock().unwrap().without_pod_pause = true;
+    }
+
+    /// A docket that lists `podContract`: a team's report says what it delivers, which methods
+    /// a task may name and what its work still needs, as `pod-contract` does.
+    pub fn with_pod_contract(&self) {
+        self.shared.lock().unwrap().pod_contract = Some(true);
+    }
+
+    /// A docket that sends the three keys of `podContract` without listing the feature.
+    pub fn with_unlisted_pod_contract(&self) {
+        self.shared.lock().unwrap().pod_contract = Some(false);
+    }
+
+    /// What the team's report says of its contract instead of `pod-contract`'s: an object with
+    /// any of `delivers`, `methods` and `needs`; a key left out stays `pod-contract`'s.
+    pub fn set_contract(&self, name: &str, contract: Value) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .contract = Some(contract);
     }
 
     /// A docket before `budgetOutcome`: no hop ever carries `budget`, whatever a script gives it,
@@ -1049,6 +1081,9 @@ fn features(state: &World) -> Value {
     if state.pod_fetch {
         listed.push("podFetch");
     }
+    if state.pod_contract == Some(true) {
+        listed.push("podContract");
+    }
     json!(listed)
 }
 
@@ -1287,6 +1322,18 @@ fn pod_report(state: &World, name: &str) -> Response {
     if pod.folder {
         report["workDir"] = json!(format!("/home/docket/state/workspaces/pods/{name}/workdir"));
     }
+    if state.pod_contract.is_some() {
+        // The captured team in a folder delivers a report; the one in a repository, a branch.
+        let shipped = fixture("pod-contract");
+        report["delivers"] = json!(if pod.folder { "report" } else { "branch" });
+        report["methods"] = shipped["methods"].clone();
+        report["needs"] = shipped["needs"].clone();
+        for key in ["delivers", "methods", "needs"] {
+            if let Some(said) = pod.contract.as_ref().and_then(|contract| contract.get(key)) {
+                report[key] = said.clone();
+            }
+        }
+    }
     reply(200, report)
 }
 
@@ -1474,6 +1521,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             paused: None,
             network: None,
             fetch: false,
+            contract: None,
         },
     );
     reply(

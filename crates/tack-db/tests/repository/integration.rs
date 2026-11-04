@@ -59,6 +59,7 @@ fn template_input(
         roles: Vec::new(),
         profiles: Vec::new(),
         automation: None,
+        teams: Vec::new(),
     }
 }
 
@@ -604,6 +605,7 @@ async fn create_and_get_template() {
         roles: Vec::new(),
         profiles: Vec::new(),
         automation: None,
+        teams: Vec::new(),
     };
 
     let template = templates::create_template(&repo, template_data)
@@ -663,6 +665,7 @@ async fn delete_template_not_builtin() {
             roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
+            teams: Vec::new(),
         },
     )
     .await

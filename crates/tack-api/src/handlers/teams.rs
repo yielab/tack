@@ -10,10 +10,12 @@ use serde_json::Value;
 use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
+use tack_core::outline::{BundleTeam, TEAM_SHAPES};
 use tack_core::principal::{Capability, Principal, may};
 use tack_db::queries;
 use tack_protocol::execution::{
-    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, TeamMisfit, TeamNeeds, TeamReport,
+    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, HarnessCapability, TeamMisfit,
+    TeamNeeds, TeamReport,
 };
 
 use crate::error::{ApiError, ApiResult};
@@ -56,15 +58,100 @@ pub struct TeamList {
     pub teams: Vec<TeamEntry>,
 }
 
-/// A profile's team and agent, as its tool policy text stores them.
-fn named_team(tool_policy: &str) -> Option<(String, Option<String>)> {
-    tack_core::run_defaults::named_team(&serde_json::from_str(tool_policy).ok()?)
+/// One agent an active runner reports, with the runner that reports it.
+pub(crate) struct ReportedHarness {
+    pub runner: String,
+    pub kind: String,
+    pub capability: HarnessCapability,
 }
 
-/// Whether a profile's role reaches the network, as its tool policy stores it.
-fn profile_network(tool_policy: &str) -> bool {
-    serde_json::from_str::<Value>(tool_policy)
-        .is_ok_and(|policy| tack_core::run_defaults::profile_network(&policy))
+/// Every agent every active runner reports.
+pub(crate) async fn reported_harnesses(state: &AppState) -> ApiResult<Vec<ReportedHarness>> {
+    reported_harnesses_in(&state.repo).await
+}
+
+/// [`reported_harnesses`], for a caller that holds the repository and not the whole state.
+pub(crate) async fn reported_harnesses_in(
+    repo: &tack_db::Repository,
+) -> ApiResult<Vec<ReportedHarness>> {
+    let mut found = Vec::new();
+    for runner in repo.list_runners().await? {
+        if runner.state != "active" || runner.revoked_at.is_some() {
+            continue;
+        }
+        for capability in tack_app::autonomy::harnesses_of(&runner.capability_snapshot) {
+            let Some(kind) = serde_json::to_value(&capability.harness_kind)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+            else {
+                continue;
+            };
+            found.push(ReportedHarness {
+                runner: runner.name.clone(),
+                kind,
+                capability,
+            });
+        }
+    }
+    Ok(found)
+}
+
+/// What the runners report of the teams a project file may name, in the file's words: the pods of
+/// an agent that has them, never the team of one a local agent is. A shape the file has no word for
+/// is left out.
+pub(crate) async fn reported_bundle_teams(state: &AppState) -> ApiResult<Vec<BundleTeam>> {
+    let mut teams: Vec<BundleTeam> = Vec::new();
+    for harness in reported_harnesses(state).await? {
+        for team in harness.capability.teams.unwrap_or_default() {
+            if team.is_of_agent(&harness.kind) || teams.iter().any(|seen| seen.name == team.name) {
+                continue;
+            }
+            teams.push(BundleTeam {
+                name: team.name,
+                shape: team
+                    .shape
+                    .filter(|shape| TEAM_SHAPES.contains(&shape.as_str())),
+                delivers: team.delivers.map(|delivers| delivers.word().to_owned()),
+                methods: team
+                    .methods
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|method| method.name)
+                    .collect(),
+            });
+        }
+    }
+    Ok(teams)
+}
+
+/// The methods a profile names for its kinds of card (`docket.pipeline_by_type`), once each.
+fn methods_named(policy: &Value) -> Vec<String> {
+    let mut methods: Vec<String> = policy
+        .get("docket")
+        .and_then(|docket| docket.get("pipeline_by_type"))
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|by_type| by_type.values())
+        .filter_map(|method| method.as_str().map(str::to_owned))
+        .collect();
+    methods.sort();
+    methods.dedup();
+    methods
+}
+
+/// What a profile of `kind` with this policy needs that `team` says it cannot do: the profile's
+/// own needs, then those of each method it names.
+fn profile_misfits(team: &TeamReport, kind: &str, policy: &Value) -> Vec<TeamMisfit> {
+    let web = tack_core::run_defaults::profile_network(policy);
+    let mut misfits = team.misfits(&TeamNeeds::of(kind, web, None));
+    for method in methods_named(policy) {
+        for misfit in team.misfits(&TeamNeeds::of(kind, web, Some(&method))) {
+            if !misfits.contains(&misfit) {
+                misfits.push(misfit);
+            }
+        }
+    }
+    misfits
 }
 
 /// GET /api/teams
@@ -80,61 +167,60 @@ fn profile_network(tool_policy: &str) -> bool {
 pub async fn list_teams(State(state): State<AppState>) -> ApiResult<Json<TeamList>> {
     // The newest report of each team, by agent and name.
     let mut reported: BTreeMap<(String, String), TeamEntry> = BTreeMap::new();
-    for runner in state.repo.list_runners().await? {
-        if runner.state != "active" || runner.revoked_at.is_some() {
-            continue;
-        }
-        for harness in tack_app::autonomy::harnesses_of(&runner.capability_snapshot) {
-            let Some(kind) = serde_json::to_value(&harness.harness_kind)
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_owned))
-            else {
+    for harness in reported_harnesses(&state).await? {
+        let probed_at = harness.capability.probed_at;
+        for team in harness.capability.teams.unwrap_or_default() {
+            let key = (harness.kind.clone(), team.name.clone());
+            if reported
+                .get(&key)
+                .and_then(|seen| seen.reported_at)
+                .is_some_and(|seen| seen > probed_at)
+            {
                 continue;
-            };
-            for team in harness.teams.unwrap_or_default() {
-                let key = (kind.clone(), team.name.clone());
-                if reported
-                    .get(&key)
-                    .and_then(|seen| seen.reported_at)
-                    .is_some_and(|seen| seen > harness.probed_at)
-                {
-                    continue;
-                }
-                reported.insert(
-                    key,
-                    TeamEntry {
-                        name: team.name.clone(),
-                        harness: Some(kind.clone()),
-                        reported: true,
-                        runner: Some(runner.name.clone()),
-                        reported_at: Some(harness.probed_at),
-                        report: Some(team),
-                        profiles: Vec::new(),
-                    },
-                );
             }
+            reported.insert(
+                key,
+                TeamEntry {
+                    name: team.name.clone(),
+                    harness: Some(harness.kind.clone()),
+                    reported: true,
+                    runner: Some(harness.runner.clone()),
+                    reported_at: Some(probed_at),
+                    report: Some(team),
+                    profiles: Vec::new(),
+                },
+            );
         }
     }
     // A profile names a team under its agent, or under every agent that reports the name when it
-    // names none; a name nobody reports stays a team of its own, marked as not reported.
+    // names none; a name nobody reports stays a team of its own, marked as not reported. A profile
+    // that names no team belongs to the team of one its agent reports, and to nothing when that
+    // agent reports none.
     let mut unreported: BTreeMap<(Option<String>, String), TeamEntry> = BTreeMap::new();
     for profile in queries::agent_profiles::profiles_by_name(&state.repo).await? {
-        let Some((team, agent)) = named_team(&profile.tool_policy) else {
-            continue;
-        };
+        let policy: Value = serde_json::from_str(&profile.tool_policy).unwrap_or_default();
         let line = TeamProfile {
             id: profile.id,
             name: profile.name,
             misfits: Vec::new(),
         };
-        let needs = TeamNeeds::of(&profile.kind, profile_network(&profile.tool_policy));
+        let Some((team, agent)) = tack_core::run_defaults::named_team(&policy) else {
+            let agent = tack_core::run_defaults::profile_agent(&policy).to_owned();
+            if let Some(entry) = reported.get_mut(&(agent.clone(), agent.clone()))
+                && let Some(report) = entry.report.as_ref().filter(|r| r.is_of_agent(&agent))
+            {
+                let misfits = profile_misfits(report, &profile.kind, &policy);
+                entry.profiles.push(TeamProfile { misfits, ..line });
+            }
+            continue;
+        };
         let mut found = false;
         for ((kind, name), entry) in &mut reported {
             if *name == team && agent.as_ref().is_none_or(|agent| agent == kind) {
                 let misfits = entry
                     .report
                     .as_ref()
-                    .map(|report| report.misfits(needs))
+                    .map(|report| profile_misfits(report, &profile.kind, &policy))
                     .unwrap_or_default();
                 entry.profiles.push(TeamProfile {
                     misfits,

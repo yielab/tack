@@ -29,8 +29,8 @@ use chrono::{DateTime, Utc};
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, CapabilityValue, DocsLinks, FeatureCapabilities,
     HarnessCapability, HarnessKind as DomainHarnessKind, Measurement, MeasurementSource,
-    ModelListSource, ModelsReport, SignInReport, SignInState, Usage,
-    WorkspaceId as DomainWorkspaceId,
+    ModelListSource, ModelsReport, NEED_SIGN_IN, SignInReport, SignInState, TeamMisfit, TeamNeeds,
+    TeamReport, Usage, WorkspaceId as DomainWorkspaceId,
 };
 use tokio::sync::mpsc;
 
@@ -526,6 +526,9 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     /// The last successfully probed version, stamped on a run whose own
     /// output reports none.
     probed_version: std::sync::Mutex<Option<String>>,
+    /// The agent as the last probe found it, a team of one: a run is refused when it says a need
+    /// is not met. `None` until the first probe, and so no refusal from what was not asked.
+    probed_team: std::sync::Mutex<Option<TeamReport>>,
     next_handle: AtomicU64,
     pub(crate) running: tokio::sync::Mutex<BTreeMap<String, RunningProcess>>,
     /// Runs a `wait` currently owns: a `cancel` that finds its handle here
@@ -591,6 +594,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             probe_env: BTreeMap::new(),
             host_env: crate::config::ProcessEnv::default(),
             probed_version: std::sync::Mutex::new(None),
+            probed_team: std::sync::Mutex::new(None),
             next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
             waiting: std::sync::Mutex::new(BTreeMap::new()),
@@ -764,7 +768,50 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         {
             return Err(self.reject(reason.to_owned()));
         }
-        Ok(())
+        self.check_team_of_one(request)
+    }
+
+    /// A need the agent says is not met (it is not signed in) ends the run here, with the fix,
+    /// instead of an agent that starts and stops on it. Only what the last probe said counts.
+    fn check_team_of_one(
+        &self,
+        request: &tack_protocol::execution::ExecutionRequestSnapshot,
+    ) -> Result<(), HarnessError> {
+        let Some(team) = self.probed_team.lock().unwrap().clone() else {
+            return Ok(());
+        };
+        let needs = TeamNeeds::of(
+            super::profile_kind(request),
+            request.permission_policy.network,
+            None,
+        );
+        let unmet: Vec<String> = team
+            .misfits(&needs)
+            .into_iter()
+            .filter_map(|misfit| match misfit {
+                TeamMisfit::NeedsUnmet { name } => team
+                    .needs
+                    .iter()
+                    .flatten()
+                    .find(|need| need.name == name)
+                    .map(|need| {
+                        if need.kind == NEED_SIGN_IN {
+                            format!(
+                                "{} is not signed in on the runner. {}",
+                                self.kind(),
+                                need.fix
+                            )
+                        } else {
+                            format!("{} still needs {}. {}", self.kind(), need.name, need.fix)
+                        }
+                    }),
+                _ => None,
+            })
+            .collect();
+        if unmet.is_empty() {
+            return Ok(());
+        }
+        Err(self.reject(format!("Not started: {}", unmet.join(" "))))
     }
 
     fn inherited_env(&self) -> BTreeMap<String, String> {
@@ -1409,6 +1456,13 @@ where
         };
         // The same call, once more: the board reads each agent's features from its own report.
         report.set_features(&self.grammar.capabilities());
+        // An agent that runs here is a team of one; one that does not run says nothing of it.
+        let team = report
+            .probe_error
+            .is_none()
+            .then(|| TeamReport::of_agent(descriptor.kind, &report));
+        *self.probed_team.lock().unwrap() = team.clone();
+        report.teams = team.map(|team| vec![team]);
         report
     }
 

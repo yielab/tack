@@ -102,6 +102,19 @@ fn item(request: &ExecutionRequestSnapshot) -> Option<&Value> {
     request.metadata.get("item").filter(|item| item.is_object())
 }
 
+/// The method the profile names for this kind of card (`docket.pipeline_by_type[item.type]`), when
+/// it names one: the pipeline the task asks for.
+pub(super) fn method(request: &ExecutionRequestSnapshot) -> Option<&str> {
+    let kind = text(item(request)?, "type")?;
+    request
+        .resolved_agent_profile
+        .tool_policy
+        .get("docket")?
+        .get("pipeline_by_type")?
+        .get(kind)?
+        .as_str()
+}
+
 /// Tack's item priority in docket's three.
 fn priority(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
     Some(match text(item(request)?, "priority")? {
@@ -280,10 +293,7 @@ pub(super) fn body(
     {
         body.insert("gate".into(), gate);
     }
-    if let Some(pipeline) = item(request)
-        .and_then(|item| text(item, "type"))
-        .and_then(|kind| docket?.get("pipeline_by_type")?.get(kind)?.as_str())
-    {
+    if let Some(pipeline) = method(request) {
         body.insert("pipeline".into(), json!(pipeline));
     }
     if let Some(tokens) = request

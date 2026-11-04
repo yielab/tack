@@ -203,6 +203,15 @@ pub fn check_delivers(delivers: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The agent a profile runs (`tool_policy.agent`), `claude-code` when it names none: the one agent
+/// whose tool names Tack knows.
+pub fn profile_agent(tool_policy: &serde_json::Value) -> &str {
+    tool_policy
+        .get("agent")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("claude-code")
+}
+
 /// What a profile lets its agent do, read from its tools and never typed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ProfileCapabilities {
@@ -218,10 +227,7 @@ pub struct ProfileCapabilities {
 /// profile is all three: its pipeline decides and the profile does not record it. The profile's
 /// `network` flag also counts as the network.
 pub fn profile_capabilities(tool_policy: &serde_json::Value) -> ProfileCapabilities {
-    let agent = tool_policy
-        .get("agent")
-        .and_then(|a| a.as_str())
-        .unwrap_or("claude-code");
+    let agent = profile_agent(tool_policy);
     let every = ProfileCapabilities {
         changes_files: true,
         runs_commands: true,
@@ -270,6 +276,14 @@ mod tests {
         ] {
             assert_eq!(named_team(&none), None, "{none}");
         }
+    }
+
+    #[test]
+    fn a_profile_that_names_no_agent_runs_claude_code() {
+        use serde_json::json;
+        assert_eq!(profile_agent(&json!({"agent": "codex"})), "codex");
+        assert_eq!(profile_agent(&json!({})), "claude-code");
+        assert_eq!(profile_agent(&json!({"agent": 3})), "claude-code");
     }
 
     #[test]

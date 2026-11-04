@@ -144,6 +144,7 @@ The preview lists each section the file carries, then the items:
 - **Section lines** read like "Roles: 2 new, 5 updated, 3 not mentioned". "New" were created, "updated" matched a name Tack already had, and "not mentioned" are names the project has that the file does not carry. Those are left alone.
 - **Warnings** appear under the section they belong to. The web preview repeats them under "Read differently than written".
 - **Items** are listed with the status each will start in, and the number of dependencies.
+- **Missing** lists what the file expects and no computer reports, each with what closes the gap. A team the file's `teams` section or a profile names, and that no agent reports, comes with docket's command that makes it, for example `docket init fab-research --blueprint respond --recipe research-review`. An agent a profile runs, and that no computer has, comes with the sentence that installs it. Nothing in this list is created by the import: run the command or install the agent, and the next preview no longer lists it.
 
 For the example above, `tack import --dry-run` prints one line per section, in the order fields, profiles, roles, sprints, automation, items, and a warning that auto-start was asked on but applied as off.
 
@@ -205,11 +206,11 @@ The export writes the same file back: items in written order, only the profiles 
 
 ### Templates
 
-A **template** is a project file without items. It gives every new project the same workflow, vocabulary, roles, profiles and automation.
+A **template** is a project file without items. It gives every new project the same workflow, vocabulary, roles, profiles, automation and the teams it expects.
 
 - **Use one:** on the **Templates** page choose **Use Template**, or run `tack init "My site" --template web-product-with-content`. The name is matched without regard to case and `-` reads as a space, or give the template's id.
 - **Save one:** `tack template save <project> --name "My template"` stores a project's roles, profiles, automation, workflow and vocabulary.
-- **Built-in templates:** **Web product with content**, **Library or CLI** and **Static content site** each bring their roles and profiles, with merging at L3.
+- **Built-in templates:** **Web product with content**, **Library or CLI** and **Static content site** each bring their roles and profiles, with merging at L3. **Digital business** brings six departments (Software, Operations, Support, Growth, Finance and Insight) as roles, each with a profile that names no agent, so each runs on whichever agent the project uses and puts its work in the repository (a report is a file). It also lists the teams docket would run them with: one that builds, one that answers for Support and Growth together, one that operates and one that keeps records for Finance and Insight. A department gets a team of its own only when its work has a different shape or a different gate. The teams are described and never created: point a department's profile at docket and create the team with the command the preview prints.
 - **What the Templates page shows:** each card carries chips for what the template holds, such as "5 statuses", "3 roles", "3 profiles" and "Merges at L3". Hover a card to see its workflow columns and each role with its profile.
 
 ---

@@ -161,7 +161,10 @@ impl HarnessCapability {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TeamReport {
     pub name: String,
-    pub profile: String,
+    /// How closely a person supervises the team, as the harness names it (`attended`,
+    /// `lights-out`). Absent for a team of one, which has no such setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     #[serde(default)]
     pub violations: Vec<TeamViolation>,
     /// The folders the team's sandbox may read besides its own work, as docket resolved them
@@ -218,31 +221,201 @@ pub struct TeamReport {
     /// harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<String>,
+    /// What the team hands back when a task ends. Absent means the harness did not say, which is
+    /// not the same as a branch; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivers: Option<TeamDelivers>,
+    /// Every method a task may name, each with the roles the team lacks. Absent means the harness
+    /// did not say (an empty list is not a team without methods); no field may carry a harness's
+    /// own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub methods: Option<Vec<TeamMethod>>,
+    /// What the team's work still needs, each satisfied or not. Absent means the harness did not
+    /// say, which is not the same as needing nothing; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<Vec<TeamNeed>>,
 }
 
+/// The kind of a [`TeamNeed`] that a signed-in agent meets.
+pub const NEED_SIGN_IN: &str = "sign_in";
+
+/// The kind of a [`TeamNeed`] that a run meets by naming a model. It is checked per run (the
+/// scheduler and the harness refuse a run that names none), so [`team_misfits`] never counts it.
+pub const NEED_MODEL: &str = "model";
+
+/// The one method of a team of one: the agent's own loop.
+const AGENT_METHOD: &str = "agent";
+
 impl TeamReport {
+    /// The team a profile with no team is: one agent, filled from what the runner knows of the
+    /// harness it runs. It delivers a branch, has one method (the agent's own loop) and needs what
+    /// the runner's doctor says: a sign-in, and a model where the harness will not choose one.
+    /// A fact the runner did not report (a sign-in it could not read) adds nothing.
+    pub fn of_agent(harness: &str, capability: &HarnessCapability) -> TeamReport {
+        let mut needs = Vec::new();
+        if let Some(sign_in) = capability
+            .sign_in
+            .as_ref()
+            .filter(|sign_in| sign_in.state != SignInState::Unknown)
+        {
+            let fix = match (&sign_in.command, &capability.docs) {
+                (Some(command), _) => format!("Run `{command}` on the runner's computer."),
+                (None, Some(docs)) => format!("See {}.", docs.sign_in),
+                (None, None) => "Sign the agent in on the runner's computer.".to_owned(),
+            };
+            needs.push(TeamNeed {
+                kind: NEED_SIGN_IN.to_owned(),
+                name: "signed in".to_owned(),
+                fix,
+                satisfied: sign_in.state == SignInState::SignedIn,
+            });
+        }
+        if capability.requires_model && capability.default_model.is_none() {
+            needs.push(TeamNeed {
+                kind: NEED_MODEL.to_owned(),
+                name: "a model".to_owned(),
+                fix: capability
+                    .requires_model_reason
+                    .clone()
+                    .unwrap_or_else(|| "Name a model in the profile.".to_owned()),
+                satisfied: false,
+            });
+        }
+        TeamReport {
+            name: harness.to_owned(),
+            profile: None,
+            violations: Vec::new(),
+            read_only: None,
+            works_in: None,
+            records: None,
+            members: Some(vec![TeamMember {
+                role: "agent".to_owned(),
+                model: capability.default_model.clone(),
+                can_propose: None,
+                writes_project: None,
+                reads_web: None,
+                web_hosts: None,
+            }]),
+            decides: None,
+            network: None,
+            queue: None,
+            shape: None,
+            steps: None,
+            proposals_shared_across_tasks: None,
+            paused: None,
+            folder: None,
+            delivers: Some(TeamDelivers::Branch),
+            methods: Some(vec![TeamMethod {
+                name: AGENT_METHOD.to_owned(),
+                source: "harness".to_owned(),
+                default: true,
+                missing_roles: Vec::new(),
+            }]),
+            needs: (!needs.is_empty()).then_some(needs),
+        }
+    }
+
+    /// Whether this is [`Self::of_agent`]'s team for `harness`: named after it, with no
+    /// supervision setting.
+    pub fn is_of_agent(&self, harness: &str) -> bool {
+        self.name == harness && self.profile.is_none()
+    }
+
+    /// What the team said that decides whether a run fits it.
+    pub fn facts(&self) -> TeamFacts<'_> {
+        TeamFacts {
+            network: self.network,
+            members: self.members.as_deref(),
+            delivers: self.delivers,
+            methods: self.methods.as_deref(),
+            needs: self.needs.as_deref(),
+        }
+    }
+
     /// What a profile needs that this team says it cannot do; see [`team_misfits`].
-    pub fn misfits(&self, needs: TeamNeeds) -> Vec<TeamMisfit> {
-        team_misfits(self.network, self.members.as_deref(), needs)
+    pub fn misfits(&self, needs: &TeamNeeds) -> Vec<TeamMisfit> {
+        team_misfits(self.facts(), needs)
     }
 }
 
+/// What a team hands back when a task ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamDelivers {
+    /// A branch of the project's repository, to review and merge.
+    Branch,
+    /// A report: the team's last step says what it did and there is nothing to merge.
+    Report,
+    /// Rows in record sets the team keeps.
+    Records,
+}
+
+impl TeamDelivers {
+    /// The word a project file and a sentence use for it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Branch => "branch",
+            Self::Report => "report",
+            Self::Records => "records",
+        }
+    }
+}
+
+/// One way of working a task that a team offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamMethod {
+    /// The name a task gives to choose it.
+    pub name: String,
+    /// Where the team has it from, in the harness's own word, shown as data.
+    pub source: String,
+    /// Whether a task that names no method goes through this one.
+    pub default: bool,
+    /// The roles the method has a step for and the team has no member for: those steps would be
+    /// skipped. Empty when the team can run every step.
+    #[serde(default)]
+    pub missing_roles: Vec<String>,
+}
+
+/// One thing a team's work still needs, and how to give it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamNeed {
+    /// What sort of need it is, in the harness's own word, shown as data; [`NEED_SIGN_IN`] and
+    /// [`NEED_MODEL`] are the two Tack's runner reports.
+    pub kind: String,
+    /// What is needed, as the team names it.
+    pub name: String,
+    /// What the operator does to meet it.
+    pub fix: String,
+    /// Whether it is met now.
+    pub satisfied: bool,
+}
+
 /// What a profile needs from the team it names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TeamNeeds {
     /// The run reaches the web: the profile's network, or the run's own when it says.
     pub web: bool,
     /// The run's whole delivery is items proposed for a person to accept (a Planner).
     pub proposals: bool,
+    /// The run changes the project's repository, so it needs a team that delivers a branch.
+    pub repository: bool,
+    /// The method the task names, when it names one.
+    pub method: Option<String>,
 }
 
 impl TeamNeeds {
-    /// What a profile of `kind` needs, given whether its run reaches the web. A Planner delivers
-    /// only proposals; a Researcher may propose and delivers its findings either way.
-    pub fn of(kind: &str, web: bool) -> Self {
+    /// What a profile of `kind` needs, given whether its run reaches the web and the method its
+    /// task names. A Planner delivers only proposals; a Researcher may propose and delivers its
+    /// findings either way; any other kind changes the repository.
+    pub fn of(kind: &str, web: bool, method: Option<&str>) -> Self {
         Self {
             web,
             proposals: kind == "planner",
+            repository: !matches!(kind, "planner" | "researcher"),
+            method: method.map(str::to_owned),
         }
     }
 }
@@ -250,7 +423,7 @@ impl TeamNeeds {
 /// A need of a profile that the team it names says it cannot meet. A run that has one ends before
 /// the team gets the task, because the team would stop and ask a person for what only its own
 /// setup can give.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TeamMisfit {
@@ -258,26 +431,77 @@ pub enum TeamMisfit {
     NoWeb,
     /// The run proposes items, and no member of the team can.
     NoProposals,
+    /// The run changes the repository, and the team delivers a report or records.
+    NoRepository,
+    /// The task names a method the team does not offer.
+    UnknownMethod { name: String },
+    /// The task names a method the team offers but lacks the members for: those steps would be
+    /// skipped.
+    StepsSkipped { method: String, roles: Vec<String> },
+    /// The team says one of its needs is not met.
+    NeedsUnmet { name: String },
 }
 
-/// What a profile needs that a team with this network and these members says it cannot do. Only
-/// what the harness said counts: an absent network or member list, or a member that did not say,
-/// is never a misfit.
-pub fn team_misfits(
-    network: Option<TeamNetwork>,
-    members: Option<&[TeamMember]>,
-    needs: TeamNeeds,
-) -> Vec<TeamMisfit> {
-    let members = members.filter(|members| !members.is_empty());
+/// What a team said of itself that decides whether a run fits it; every part is absent when the
+/// harness did not say.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TeamFacts<'a> {
+    pub network: Option<TeamNetwork>,
+    pub members: Option<&'a [TeamMember]>,
+    pub delivers: Option<TeamDelivers>,
+    pub methods: Option<&'a [TeamMethod]>,
+    pub needs: Option<&'a [TeamNeed]>,
+}
+
+/// What a profile needs that a team with these facts says it cannot do. Only what the harness
+/// said counts: an absent network, member list, contract or method list, or a member that did not
+/// say, is never a misfit.
+pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> {
+    let members = facts.members.filter(|members| !members.is_empty());
     let none_can = |can: fn(&TeamMember) -> Option<bool>| {
         members.is_some_and(|members| members.iter().all(|member| can(member) == Some(false)))
     };
     let mut misfits = Vec::new();
-    if needs.web && network == Some(TeamNetwork::Closed) && none_can(|member| member.reads_web) {
+    if needs.web
+        && facts.network == Some(TeamNetwork::Closed)
+        && none_can(|member| member.reads_web)
+    {
         misfits.push(TeamMisfit::NoWeb);
     }
     if needs.proposals && none_can(|member| member.can_propose) {
         misfits.push(TeamMisfit::NoProposals);
+    }
+    if needs.repository
+        && matches!(
+            facts.delivers,
+            Some(TeamDelivers::Report | TeamDelivers::Records)
+        )
+    {
+        misfits.push(TeamMisfit::NoRepository);
+    }
+    if let (Some(method), Some(offered)) = (
+        needs.method.as_deref(),
+        facts.methods.filter(|methods| !methods.is_empty()),
+    ) {
+        match offered.iter().find(|offered| offered.name == method) {
+            None => misfits.push(TeamMisfit::UnknownMethod {
+                name: method.to_owned(),
+            }),
+            Some(found) if !found.missing_roles.is_empty() => {
+                misfits.push(TeamMisfit::StepsSkipped {
+                    method: method.to_owned(),
+                    roles: found.missing_roles.clone(),
+                });
+            }
+            Some(_) => {}
+        }
+    }
+    for need in facts.needs.unwrap_or_default() {
+        if !need.satisfied && need.kind != NEED_MODEL {
+            misfits.push(TeamMisfit::NeedsUnmet {
+                name: need.name.clone(),
+            });
+        }
     }
     misfits
 }

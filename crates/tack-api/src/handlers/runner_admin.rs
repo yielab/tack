@@ -210,6 +210,10 @@ pub struct CreateProfileResponse {
     pub protocol_version: u32,
     pub agent_profile_id: String,
     pub name: String,
+    /// What the profile was saved with that deserves a second look, such as a method the team
+    /// names no member for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -238,6 +242,10 @@ pub struct AgentProfileSummary {
     /// request does not say (`tack_core::run_defaults::profile_network_for`).
     #[schema(read_only)]
     pub default_network: std::collections::BTreeMap<String, bool>,
+    /// Only on the answer to a save: what was saved that deserves a second look, such as a
+    /// method the team names no member for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// Keeps a present `null` apart from an absent key: `Some(None)` clears, `None` leaves alone.
@@ -949,7 +957,7 @@ pub async fn create_profile(
     State(state): State<OperatorExecutionState>,
     Json(input): Json<CreateProfile>,
 ) -> Result<Json<CreateProfileResponse>, (StatusCode, Json<Value>)> {
-    check_profile_fields(
+    let warnings = check_profile_fields(
         &state.repo,
         Some(&input.tool_policy),
         input.fleet_id.as_deref(),
@@ -1001,6 +1009,7 @@ pub async fn create_profile(
             protocol_version: 1,
             agent_profile_id: id,
             name: input.name,
+            warnings,
         })),
         Err(StoreError::Conflict(_)) => Err(error(
             StatusCode::CONFLICT,
@@ -1092,6 +1101,7 @@ fn profile_from_row(
         runs_commands: caps.runs_commands,
         uses_network: caps.uses_network,
         default_network,
+        warnings: Vec::new(),
     })
 }
 
@@ -1110,13 +1120,13 @@ fn check_limits(limits: &Value) -> Result<(), (StatusCode, Json<Value>)> {
     })
 }
 
-/// 400 when `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
+/// 400 when `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, `tool_policy.docket.pipeline_by_type` names a method the profile's agent or team does not have, or `fleet_id` names no fleet. Answers with what deserves a second look (a method the team names no member for).
 async fn check_profile_fields(
     repo: &Repository,
     tool_policy: Option<&Value>,
     fleet_id: Option<&str>,
     delivers: Option<&str>,
-) -> Result<(), (StatusCode, Json<Value>)> {
+) -> Result<Vec<String>, (StatusCode, Json<Value>)> {
     if let Some(Err(message)) = delivers.map(tack_core::run_defaults::check_delivers) {
         return Err(error(
             StatusCode::BAD_REQUEST,
@@ -1164,6 +1174,10 @@ async fn check_profile_fields(
             ));
         }
     }
+    let warnings = match tool_policy {
+        Some(policy) => check_methods(repo, policy).await?,
+        None => Vec::new(),
+    };
     if let Some(fleet_id) = fleet_id {
         let exists = agent_fleets::fleet_exists(repo, fleet_id)
             .await
@@ -1180,7 +1194,100 @@ async fn check_profile_fields(
             ));
         }
     }
-    Ok(())
+    Ok(warnings)
+}
+
+/// A profile's `docket.pipeline_by_type` against what runs it. A local agent has one method, its
+/// own loop, so a profile that runs one cannot name another. A team that reports its methods
+/// refuses a name outside them; a method whose roles the team lacks is saved with a warning,
+/// because the team may gain the role before the first run. A team that reports no methods, or
+/// that no computer reports, is not second-guessed.
+async fn check_methods(
+    repo: &Repository,
+    policy: &Value,
+) -> Result<Vec<String>, (StatusCode, Json<Value>)> {
+    let bad = |message: String| {
+        error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "tool_policy.docket.pipeline_by_type"}),
+        )
+    };
+    let Some(by_type) = policy
+        .get("docket")
+        .and_then(|docket| docket.get("pipeline_by_type"))
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(by_type) = by_type.as_object() else {
+        return Err(bad(
+            "tool_policy.docket.pipeline_by_type must map a kind of card to a method name"
+                .to_owned(),
+        ));
+    };
+    let mut methods = Vec::new();
+    for (kind, method) in by_type {
+        let Some(method) = method.as_str() else {
+            return Err(bad(format!(
+                "tool_policy.docket.pipeline_by_type: the method for {kind} must be a name"
+            )));
+        };
+        methods.push(method);
+    }
+    if methods.is_empty() {
+        return Ok(Vec::new());
+    }
+    let agent = tack_core::run_defaults::profile_agent(policy);
+    if policy.get("agent").is_some() && agent != "docket" {
+        return Err(bad(format!(
+            "tool_policy.docket.pipeline_by_type names a method, and {agent} has one: its own \
+             loop. Remove it, or run the profile on docket."
+        )));
+    }
+    let Some((team, _)) = tack_core::run_defaults::named_team(policy) else {
+        return Ok(Vec::new());
+    };
+    let reported = crate::handlers::teams::reported_harnesses_in(repo)
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read the reported teams");
+            profile_db_error("Could not read the reported teams")
+        })?;
+    let Some(catalogue) = reported
+        .into_iter()
+        .filter(|harness| harness.kind == "docket")
+        .flat_map(|harness| harness.capability.teams.unwrap_or_default())
+        .find(|reported| reported.name == team)
+        .and_then(|reported| reported.methods)
+        .filter(|offered| !offered.is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    let mut warnings = Vec::new();
+    for method in methods {
+        match catalogue.iter().find(|offered| offered.name == method) {
+            None => {
+                return Err(bad(format!(
+                    "The team {team} has no method named {method}; it offers {}.",
+                    catalogue
+                        .iter()
+                        .map(|offered| offered.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+            Some(offered) if !offered.missing_roles.is_empty() => warnings.push(format!(
+                "The method {method} on the team {team} has no member for {}: its steps would be \
+                 skipped, so a run is refused until the team has the role.",
+                offered.missing_roles.join(", ")
+            )),
+            Some(_) => {}
+        }
+    }
+    warnings.sort();
+    warnings.dedup();
+    Ok(warnings)
 }
 
 fn profile_not_found() -> (StatusCode, Json<Value>) {
@@ -1218,7 +1325,7 @@ pub async fn update_profile(
     Path(id): Path<String>,
     Json(input): Json<UpdateProfile>,
 ) -> Result<Json<AgentProfileSummary>, (StatusCode, Json<Value>)> {
-    check_profile_fields(
+    let warnings = check_profile_fields(
         &state.repo,
         input.tool_policy.as_ref(),
         input.fleet_id.as_ref().and_then(|f| f.as_deref()),
@@ -1264,7 +1371,10 @@ pub async fn update_profile(
         .ok()
         .flatten()
         .ok_or_else(|| profile_db_error("Could not read agent profile"))?;
-    Ok(Json(profile_from_row(row)?))
+    Ok(Json(AgentProfileSummary {
+        warnings,
+        ..profile_from_row(row)?
+    }))
 }
 
 /// What a profile's last successful runs counted, and the limit proposed from them.

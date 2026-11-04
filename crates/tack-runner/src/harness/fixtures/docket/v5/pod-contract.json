@@ -1,0 +1,239 @@
+{
+  "pod": "saas-dev",
+  "blueprint": "build",
+  "members": [
+    {
+      "id": "saas-dev-lead",
+      "role": "lead",
+      "model": {
+        "value": "anthropic/claude-haiku-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-lead",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "skill"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-dev-implementer",
+      "role": "implementer",
+      "model": {
+        "value": "anthropic/claude-sonnet-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    }
+  ],
+  "settings": {
+    "budgetTokens": {
+      "value": null,
+      "source": "default"
+    },
+    "maxReworkCycles": {
+      "value": 1,
+      "source": "default"
+    },
+    "turnTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "verifyTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "approvalMode": {
+      "value": "wait",
+      "source": "default"
+    },
+    "approvalExpiryHours": {
+      "value": 24,
+      "source": "default"
+    },
+    "inputExpiryHours": {
+      "value": 72,
+      "source": "default"
+    },
+    "allowCommands": {
+      "value": "",
+      "source": "default"
+    },
+    "pipeline": {
+      "value": null,
+      "source": "default"
+    },
+    "schedule": {
+      "value": null,
+      "source": "default"
+    },
+    "projectInstructions": {
+      "value": "",
+      "source": "default"
+    },
+    "mcpServers": {
+      "value": null,
+      "source": "default"
+    },
+    "deniedTools": {
+      "value": "",
+      "source": "default"
+    },
+    "requireVerify": {
+      "value": false,
+      "source": "default"
+    },
+    "maxConsultationsPerTask": {
+      "value": 3,
+      "source": "default"
+    },
+    "consultMode": {
+      "value": "park",
+      "source": "default"
+    },
+    "network": {
+      "value": "open",
+      "source": "default"
+    },
+    "profile": {
+      "value": "attended",
+      "source": "default"
+    },
+    "readOnly": {
+      "value": "",
+      "source": "default"
+    },
+    "prepare": {
+      "value": "",
+      "source": "default"
+    },
+    "protects": {
+      "value": "",
+      "source": "default"
+    },
+    "fetchDomains": {
+      "value": "",
+      "source": "default"
+    }
+  },
+  "approvalMode": {
+    "effective": "park",
+    "source": "unset"
+  },
+  "pipeline": {
+    "source": "blueprint 'build'",
+    "steps": [
+      {
+        "id": "lead",
+        "kind": "agent",
+        "role": "lead",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "implementer",
+        "kind": "agent",
+        "role": "implementer",
+        "modelClass": "strong",
+        "gate": "mechanical",
+        "rework": []
+      }
+    ]
+  },
+  "network": {
+    "mode": "none",
+    "scope": "default",
+    "enforced": false
+  },
+  "fetchDomains": [],
+  "configSource": "",
+  "configDigest": "",
+  "drift": "",
+  "profile": {
+    "name": "attended",
+    "violations": []
+  },
+  "pipelineSource": "blueprint 'build'",
+  "workspaceKind": "codebase",
+  "repoConfigDir": "/scratch/repo/.docket",
+  "readOnly": [
+    "/scratch/toolchain/node"
+  ],
+  "paused": false,
+  "delivers": "branch",
+  "methods": [
+    {
+      "name": "pipeline",
+      "source": "pod",
+      "default": true,
+      "missingRoles": []
+    },
+    {
+      "name": "tdd",
+      "source": "recipe",
+      "default": false,
+      "missingRoles": []
+    },
+    {
+      "name": "secure-build",
+      "source": "recipe",
+      "default": false,
+      "missingRoles": [
+        "security-vetter"
+      ]
+    }
+  ],
+  "needs": [
+    {
+      "kind": "service",
+      "name": "mail",
+      "fix": "docket pod service add mail --pod saas-dev",
+      "satisfied": true
+    }
+  ]
+}

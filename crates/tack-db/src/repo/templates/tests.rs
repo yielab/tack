@@ -161,3 +161,84 @@ async fn the_three_bundle_templates_are_listed_once_with_roles_profiles_and_leve
         }
     }
 }
+
+#[tokio::test]
+async fn digital_business_has_six_departments_that_name_no_agent_and_the_teams_it_expects() {
+    let repo = test_repo().await;
+    seed_builtin_templates(&repo).await.expect("seed");
+    seed_builtin_templates(&repo).await.expect("re-seed");
+    let all = list_templates(&repo, None).await.expect("list");
+    assert_eq!(
+        all.iter().filter(|t| t.name == "Digital business").count(),
+        1
+    );
+    let t = find_template(&all, "Digital business");
+    assert_eq!(t.roles.len(), 6);
+    assert_eq!(t.profiles.len(), 6);
+    for role in &t.roles {
+        let profile = role.profile.as_deref().expect("a role names its profile");
+        assert!(t.profiles.iter().any(|p| p.name == profile), "{profile}");
+    }
+    // None names an agent or a team, so the template works on whichever agent the runner has.
+    for profile in &t.profiles {
+        assert!(
+            profile.tool_policy.get("agent").is_none(),
+            "{}",
+            profile.name
+        );
+        assert!(
+            profile.tool_policy.get("docket").is_none(),
+            "{}",
+            profile.name
+        );
+    }
+    let network: Vec<&str> = t
+        .profiles
+        .iter()
+        .filter(|p| p.tool_policy["network"] == true)
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(
+        network,
+        ["Support analyst", "Growth analyst", "Insight analyst"]
+    );
+    let shapes: Vec<&str> = t
+        .teams
+        .iter()
+        .filter_map(|team| team.shape.as_deref())
+        .collect();
+    assert_eq!(shapes, ["build", "respond", "operate", "routine"]);
+    // The other built-ins expect no team.
+    assert!(find_template(&all, "Library or CLI").teams.is_empty());
+}
+
+#[tokio::test]
+async fn a_saved_template_keeps_its_teams() {
+    let repo = test_repo().await;
+    let made = create_template(
+        &repo,
+        CreateProjectTemplate {
+            name: "Mine".to_owned(),
+            description: None,
+            project_type: ProjectType::Custom,
+            vocabulary: None,
+            workflow: None,
+            custom_fields: None,
+            default_boards: None,
+            roles: Vec::new(),
+            profiles: Vec::new(),
+            automation: None,
+            teams: vec![BundleTeam {
+                name: "fab-research".to_owned(),
+                shape: Some("respond".to_owned()),
+                delivers: None,
+                methods: vec!["research-review".to_owned()],
+            }],
+        },
+    )
+    .await
+    .expect("create");
+    let read = get_template(&repo, made.id).await.expect("read back");
+    assert_eq!(read.teams, made.teams);
+    assert_eq!(read.teams[0].methods, ["research-review"]);
+}

@@ -6,7 +6,7 @@ People use the file through [Import, Export & Project Files](../user-guide/impor
 
 ## What the file is
 
-The project file is the type `tack_core::outline::Outline`, read from JSON or YAML. It is the outline of items plus six optional sections.
+The project file is the type `tack_core::outline::Outline`, read from JSON or YAML. It is the outline of items plus seven optional sections.
 
 | Section | Holds | Defined in |
 |---|---|---|
@@ -16,6 +16,7 @@ The project file is the type `tack_core::outline::Outline`, read from JSON or YA
 | `roles` | Project roles and the profile each one uses | `BundleRole` |
 | `sprints` | Sprints | `BundleSprint` |
 | `automation` | Where the code is, the default agent, autonomy and auto-start | `BundleAutomation`, `BundleAutonomy`, `BundleDomain`, `BundleBudgets`, `BundleAutoStart` |
+| `teams` | The teams the file expects its profiles to name; described, never created | `BundleTeam` |
 | `items` | The items | `OutlineItem` |
 
 All types derive `deny_unknown_fields`, so a misspelt key is an error and never data that vanishes. Every reference between sections is a name, never an id. The file is pure data: `tack_core::outline::bundle::check` reads it with a description of the board and returns a plan or every problem at once, and `to_bundle` writes a project back as the same file. Neither does any I/O.
@@ -63,6 +64,19 @@ On an existing project the whole `project` block is ignored with a warning: the 
 | `fleet` | text | A fleet's name. Absent means any computer |
 | `summary` | text | One line beside the profile's name |
 | `delivers` | text | What the profile delivers, in one line of at most 160 characters. Absent keeps the board's line, or none for a new profile |
+
+### `teams`
+
+Descriptive: an import creates nothing from it, and a section line is not written for it. The preview compares it with what the runners report (see `missing`, below).
+
+| Key | Type | Notes |
+|---|---|---|
+| `name` | text | docket's project id, `^[a-z0-9][a-z0-9-]{0,63}$`; unique in the section |
+| `shape` | text | `build`, `respond`, `operate` or `routine` |
+| `delivers` | text | `branch`, `report` or `records` |
+| `methods` | list of text | The methods a task may name on the team, named like the team |
+
+An export writes the teams the exported profiles name through `docket.team`, with the shape, delivery and methods the runners report of each; a team no runner reports is written by name alone.
 
 ### `roles`
 
@@ -202,7 +216,7 @@ The levels are lowered to the project's own level, which is L3 for a new project
 - **New project** (`create_new`): the board is empty (`Board` with no fields, roles or sprints, level L3, auto-start off). On `dry_run` the plan is returned and nothing is created. Otherwise the project row is created first, then `write` runs. Any failure deletes the project again (`delete_project`), so nothing remains.
 - **Existing project** (`into_existing_project`): the `project` block is removed first, with the warning. The board is the project's fields, roles, sprints, the board's profiles and fleets, and the project's own level and auto-start flag. After a successful write the new items are announced on the board's WebSocket.
 - **Failure of a section.** Each configuration section is a handful of rows written one by one. A database error in one becomes `ApiError::SectionFailed { section, kept, source }`, a `500` whose message names the section: "The roles section could not be written. What the file wrote before it stays, so importing it again finishes the job." On a new project `kept` is `false` and the message ends "so nothing was created". The cause is logged on the server and never sent to the client. Every section matches by name, so running the file again finishes the job.
-- **The result** is an `OutlineResult`: `dry_run`, `project`, `created`, `skipped`, `dependencies`, `items` (an `OutlineResultItem` per item: `ref`, `id`, `title`, `status`, `parent_id`), `sections` and `warnings`.
+- **The result** is an `OutlineResult`: `dry_run`, `project`, `created`, `skipped`, `dependencies`, `items` (an `OutlineResultItem` per item: `ref`, `id`, `title`, `status`, `parent_id`), `sections`, `missing` and `warnings`. `missing` (`tack_core::outline::missing`) lists, per entry, `kind` (`team` or `harness`), `name`, `shape` for a team and `fix`: a team the file's `teams` or a profile's `docket.team` names that no active runner reports, with `docket init <name> --blueprint <shape>` and `--recipe <method>` for each method that is a shipped docket recipe; and an agent a profile or `automation.default_harness` runs that no runner reports, with how to install it. It is empty for a CSV and for a file that names none.
 
 ### Routes
 
@@ -231,11 +245,11 @@ The levels are lowered to the project's own level, which is L3 for a new project
 
 ## Templates
 
-A template is a project file without items. Migration `091_template_bundle` adds `roles`, `profiles` and `automation` (all text, JSON) to `project_templates`, beside the existing workflow, vocabulary, custom fields and default boards.
+A template is a project file without items. Migration `091_template_bundle` adds `roles`, `profiles` and `automation` (all text, JSON) to `project_templates`, beside the existing workflow, vocabulary, custom fields and default boards; migration `106_template_teams` adds `teams` (a JSON list of the file's `teams` entries).
 
 - **Create a project from a template** (`build_project_from_template` in `handlers/templates.rs`): the template is turned back into an `Outline` and `create_from_bundle` runs the same code as an import. Afterwards the template's own workflow is applied again, because statuses in a file can only say `custom`.
 - **Save a project as a template** (`save_project_as_template`): `to_bundle` supplies the roles, profiles and automation that are stored.
-- **Built-ins** (`seed_builtin_templates` in `tack-db/src/repo/templates.rs`): "Web product with content" (6 roles, 6 profiles), "Library or CLI" (4, 4) and "Static content site" (4, 4). They set the project at L3 with `merge_on_done` off and carry no repository. Legal, Security and Ops are read-only reviewer profiles. The counts are asserted in `tack-db/src/repo/templates/tests.rs`.
+- **Built-ins** (`seed_builtin_templates` in `tack-db/src/repo/templates.rs`): "Web product with content" (6 roles, 6 profiles), "Library or CLI" (4, 4) and "Static content site" (4, 4), and "Digital business" (6, 6: Software, Operations, Support, Growth, Finance, Insight; no profile names an agent or a team, and `teams` lists the four folder teams docket would run them with). They set the project at L3 with `merge_on_done` off and carry no repository. Legal, Security and Ops are read-only reviewer profiles. The counts are asserted in `tack-db/src/repo/templates/tests.rs`.
 - `tack template create-from` keeps its meaning (a project from a template); `tack template save` stores one.
 
 ## The worked example

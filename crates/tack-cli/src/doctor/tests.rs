@@ -280,7 +280,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
     docket.teams = Some(vec![
         TeamReport {
             name: "saas-content".to_owned(),
-            profile: "lights-out".to_owned(),
+            profile: Some("lights-out".to_owned()),
             violations: Vec::new(),
             read_only: Some(vec![
                 "/home/x/.nvm/versions/node/v22.17.1".to_owned(),
@@ -297,10 +297,13 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             proposals_shared_across_tasks: None,
             paused: None,
             folder: None,
+            delivers: None,
+            methods: None,
+            needs: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
-            profile: "attended".to_owned(),
+            profile: Some("attended".to_owned()),
             violations: vec![TeamViolation {
                 requirement: "network none".to_owned(),
                 fix: "docket pod set network none".to_owned(),
@@ -317,10 +320,13 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             proposals_shared_across_tasks: None,
             paused: None,
             folder: None,
+            delivers: None,
+            methods: None,
+            needs: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
-            profile: "attended".to_owned(),
+            profile: Some("attended".to_owned()),
             violations: Vec::new(),
             read_only: None,
             works_in: None,
@@ -334,6 +340,9 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             proposals_shared_across_tasks: None,
             paused: None,
             folder: None,
+            delivers: None,
+            methods: None,
+            needs: None,
         },
     ]);
     assert_eq!(

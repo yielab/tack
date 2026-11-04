@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use super::{
     BundleAutoStart, BundleAutomation, BundleAutonomy, BundleField, BundleProfile, BundleRole,
-    BundleSprint, BundleStatus, BundleWorkflow, Outline, OutlineError, OutlineItem, OutlineProject,
-    ResolvedOutline, label, parse_due_date, resolve, topological, trimmed,
+    BundleSprint, BundleStatus, BundleTeam, BundleWorkflow, Outline, OutlineError, OutlineItem,
+    OutlineProject, ResolvedOutline, TEAM_DELIVERS, TEAM_SHAPES, label, parse_due_date, resolve,
+    topological, trimmed,
 };
 use crate::autonomy::Level;
 use crate::models::{
@@ -108,6 +109,9 @@ pub struct Parts<'a> {
     pub dependencies: &'a [Dependency],
     /// `(id, name)`
     pub fleets: &'a [(String, String)],
+    /// What the computers report of teams, by name, for the ones the exported profiles name; a
+    /// team no computer reports is written with its name alone.
+    pub reported_teams: &'a [BundleTeam],
 }
 
 // ─── Workflow ────────────────────────────────────────────────
@@ -264,12 +268,81 @@ fn field_definition(field: &BundleField, field_type: CustomFieldType) -> CustomF
 }
 
 fn team_is_valid(team: &Value) -> bool {
-    team.as_str().is_some_and(|t| {
-        t.len() <= 64
-            && t.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
-            && t.chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    })
+    team.as_str().is_some_and(is_team_name)
+}
+
+/// docket's project id: `^[a-z0-9][a-z0-9-]{0,63}$`. A method is named the same way.
+fn is_team_name(name: &str) -> bool {
+    name.len() <= 64
+        && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// The `teams` section: names in docket's form, once each, a shape and a delivery from the words
+/// the file knows, methods named like teams.
+fn check_teams(teams: &[BundleTeam], problems: &mut Vec<String>) {
+    let mut seen: HashSet<&str> = HashSet::new();
+    for team in teams {
+        let name = name_of(&team.name);
+        let at = format!("teams: \"{name}\"");
+        if !is_team_name(name) {
+            problems.push(format!(
+                "{at}: the name must match ^[a-z0-9][a-z0-9-]{{0,63}}$"
+            ));
+        } else if !seen.insert(name) {
+            problems.push(format!("{at} appears more than once"));
+        }
+        if let Some(shape) = team.shape.as_deref().map(str::trim)
+            && !TEAM_SHAPES.contains(&shape)
+        {
+            problems.push(format!(
+                "{at} has shape \"{shape}\", which is not one of {}",
+                TEAM_SHAPES.join(", ")
+            ));
+        }
+        if let Some(delivers) = team.delivers.as_deref().map(str::trim)
+            && !TEAM_DELIVERS.contains(&delivers)
+        {
+            problems.push(format!(
+                "{at} delivers \"{delivers}\", which is not one of {}",
+                TEAM_DELIVERS.join(", ")
+            ));
+        }
+        for method in &team.methods {
+            if !is_team_name(method.trim()) {
+                problems.push(format!(
+                    "{at}: method \"{}\" must match ^[a-z0-9][a-z0-9-]{{0,63}}$",
+                    method.trim()
+                ));
+            }
+        }
+    }
+}
+
+/// The teams a project's profiles name, in name order: what the computers report of each, else
+/// the name alone.
+fn teams_of(profiles: &[BundleProfile], reported: &[BundleTeam]) -> Vec<BundleTeam> {
+    let named: std::collections::BTreeSet<&str> = profiles
+        .iter()
+        .filter_map(|p| p.tool_policy.get("docket")?.get("team")?.as_str())
+        .collect();
+    named
+        .into_iter()
+        .map(|name| {
+            reported
+                .iter()
+                .find(|team| team.name == name)
+                .cloned()
+                .unwrap_or_else(|| BundleTeam {
+                    name: name.to_owned(),
+                    shape: None,
+                    delivers: None,
+                    methods: Vec::new(),
+                })
+        })
+        .collect()
 }
 
 fn is_date(text: &str) -> bool {
@@ -479,6 +552,8 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
         });
     }
     warnings.extend(profile_warnings);
+
+    check_teams(&outline.teams, &mut problems);
 
     let profile_known = |name: &str| {
         let name = name.trim();
@@ -952,6 +1027,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         auto_start: Some(parts.auto_start.clone()),
     };
 
+    let teams = teams_of(&profiles, parts.reported_teams);
     Outline {
         project: Some(outline_project),
         fields,
@@ -959,6 +1035,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         roles,
         sprints,
         automation: Some(automation),
+        teams,
         items: items_of(parts),
     }
 }

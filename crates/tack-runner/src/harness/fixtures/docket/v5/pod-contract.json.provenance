@@ -1,0 +1,8 @@
+constructed
+route: GET /pods/<pod>
+status: 200
+tack-sends: yes
+built-from: pod-attended.json with the three keys a docket that lists `podContract` adds to a team's report: `delivers` (branch, report or records), `methods` (name, source, default, missingRoles) and `needs` (kind, name, fix, satisfied)
+docket: not shipped; the keys Tack asked of docket's session on 2026-11-03 (ADR 0036 "What is asked of docket"), API 6, additive, announced in `features` as `podContract`
+date: 2026-11-04
+note: not captured, because no docket sends these keys yet; the keys are the ones Tack asked for and nothing else, and the values are made up. Tack reads them only when `GET /health` lists `podContract`. It replaces this file with a capture the day docket ships the feature.

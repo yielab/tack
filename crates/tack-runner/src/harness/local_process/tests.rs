@@ -8,6 +8,7 @@ use crate::harness::test_support::{
     FixedClock, fake_harness, harness_for, scratch, script, secret_store, set_env,
     set_secret_reference, spec,
 };
+use tack_protocol::execution::TeamDelivers;
 
 const KIND: &str = "test-harness";
 
@@ -700,6 +701,121 @@ async fn probe_reports_whether_a_model_is_required() {
         .await;
     assert!(!optional.requires_model);
     assert_eq!(optional.requires_model_reason, None);
+}
+
+// ---- the agent as a team of one ---------------------------------------------
+
+fn found_signed(state: SignInState) -> Readiness {
+    Readiness {
+        sign_in: SignInReport {
+            state,
+            detail: "checked".to_owned(),
+            command: Some("test-harness login".to_owned()),
+        },
+        models: ModelsReport {
+            source: ModelListSource::None,
+            ids: Vec::new(),
+            reason: None,
+        },
+        default_model: None,
+        requires_model: None,
+    }
+}
+
+fn signed_out(
+    _: &ReadinessShell,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Readiness> + Send + '_>> {
+    Box::pin(async { found_signed(SignInState::SignedOut) })
+}
+
+fn signed_in(
+    _: &ReadinessShell,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Readiness> + Send + '_>> {
+    Box::pin(async { found_signed(SignInState::SignedIn) })
+}
+
+static SIGNED_OUT: HarnessDescriptor = HarnessDescriptor {
+    readiness: Some(signed_out),
+    ..BASE
+};
+
+static SIGNED_IN: HarnessDescriptor = HarnessDescriptor {
+    readiness: Some(signed_in),
+    ..BASE
+};
+
+fn probing(descriptor: &'static HarnessDescriptor, state: &Path) -> Harness {
+    let grammar = TestGrammar {
+        descriptor,
+        observed_model: None,
+        ask: false,
+    };
+    let env = [("TACK_FAKE_HARNESS_MODE", "version")]
+        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        .into();
+    harness_with(grammar, fake_harness(), state).with_probe(Duration::from_millis(500), env)
+}
+
+#[tokio::test]
+async fn an_installed_agent_reports_itself_as_a_team_of_one_and_one_that_is_not_says_nothing() {
+    let state = scratch("team-of-one");
+    let probe = probing(&SIGNED_IN, state.path()).probe().await;
+    let teams = probe.teams.expect("an installed agent is a team of one");
+    assert_eq!(teams.len(), 1);
+    assert!(teams[0].is_of_agent(KIND));
+    assert_eq!(teams[0].delivers, Some(TeamDelivers::Branch));
+    let needs = teams[0].needs.as_deref().expect("its sign-in");
+    assert!(needs[0].satisfied);
+
+    let grammar = TestGrammar {
+        descriptor: &PLAIN,
+        observed_model: None,
+        ask: false,
+    };
+    let absent = harness_with(grammar, absent_binary(), state.path())
+        .probe()
+        .await;
+    assert!(absent.teams.is_none());
+}
+
+#[tokio::test]
+async fn an_agent_that_says_it_is_signed_out_is_refused_before_it_is_spawned_with_the_fix() {
+    let state = scratch("signed-out");
+    let workspace = scratch("signed-out-workspace");
+    let harness = probing(&SIGNED_OUT, state.path());
+    let mut request = spec(KIND, workspace.path());
+    set_env(&mut request, &[("TACK_FAKE_HARNESS_MODE", "hang")]);
+
+    // Before any probe nothing is known, so nothing is refused for what was not asked.
+    harness
+        .validate(&request)
+        .await
+        .expect("an agent not yet probed is not refused");
+
+    harness.probe().await;
+    let started = tokio::time::timeout(Duration::from_secs(5), harness.start(&request)).await;
+    let Ok(Err(HarnessError::Rejected { reason })) = started else {
+        panic!("a signed-out agent starts nothing: {started:?}");
+    };
+    assert!(
+        reason.contains(&format!("{KIND} is not signed in on the runner"))
+            && reason.contains("test-harness login"),
+        "{reason}"
+    );
+    assert!(harness.running.lock().await.is_empty());
+    assert!(matches!(
+        harness.validate(&request).await,
+        Err(HarnessError::Rejected { .. })
+    ));
+
+    // Signed in, the same request is taken.
+    let state = scratch("signed-in");
+    let harness = probing(&SIGNED_IN, state.path());
+    harness.probe().await;
+    harness
+        .validate(&request)
+        .await
+        .expect("a signed-in agent takes the run");
 }
 
 // ---- cancel and reconcile ---------------------------------------------------
