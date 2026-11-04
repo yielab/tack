@@ -4,6 +4,7 @@ import TeamsPanel from './TeamsPanel';
 import { profileEditRequest, requestProfileEdit } from './profileEditRequest';
 import type { RunnerSummary } from '../../shared/execution/api';
 import { flush } from '../../test/flush';
+import { useToasts } from '../../shared/ui/toast';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -358,7 +359,10 @@ describe('TeamsPanel', () => {
   });
 
   describe('Resume team', () => {
-    const BUDGET = { tokens: 1000, used: 1000, window: 'day' };
+    // A new day: the window restarted and counts nothing yet, but docket keeps the team paused until it is resumed.
+    const BUDGET = { tokens: 1000, used: 0, window: 'day', window_start: '2026-11-04T00:00:00Z' };
+    // The captured team over its day budget: 2500 counted of 1000.
+    const SPENT = { tokens: 1000, used: 2500, window: 'day', window_start: '2026-11-04T00:00:00Z' };
     const paused = (budget?: unknown) => ({ ...FULL_TEAM, report: { ...FULL_TEAM.report, paused: 'budget', budget } });
     const resumeButton = (c: HTMLElement) => card(c, 'saas-code').querySelector<HTMLButtonElement>('button[aria-label="Resume team saas-code"]')!;
 
@@ -390,6 +394,28 @@ describe('TeamsPanel', () => {
       expect(calls).toEqual(['POST']);
       expect(card(c, 'saas-code').querySelector('[data-testid="team-paused"]')).toBeNull();
       expect(card(c, 'saas-code').querySelector('button[aria-label="Resume team saas-code"]')).toBeNull();
+    });
+
+    it('says a team whose budget is still spent pauses again, before and after it is resumed', async () => {
+      mockApi([paused(SPENT)], PROFILES, undefined, (url) =>
+        url.endsWith('/api/teams/docket/saas-code/resume')
+          ? new Response(JSON.stringify({ team: 'saas-code', harness: 'docket', runner: 'This computer', report: { ...FULL_TEAM.report, budget: SPENT } }), { status: 200 })
+          : undefined,
+      );
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      const note = card(c, 'saas-code').querySelector('[data-testid="team-paused"]')!.textContent!;
+      expect(note).toContain('Its budget is still spent, so resuming now pauses it again');
+      expect(note).toContain('docket pod set budgetTokens <tokens> --pod saas-code');
+      expect(note).not.toContain('Press Resume team');
+      resumeButton(c).click();
+      await flush();
+      await flush();
+      expect(useToasts()().map((t) => [t.type, t.message])).toContainEqual([
+        'warning',
+        expect.stringContaining('saas-code was resumed. Its budget is still spent'),
+      ]);
     });
 
     it('is busy while the call is out and shows the sentence the agent refused with', async () => {
@@ -592,6 +618,23 @@ describe('TeamsPanel sheet', () => {
     expect(c.querySelector('[data-testid="no-team-claude-code"]')).toBeNull();
   });
 
+  it('lists the methods a task can name first, and says why the others cannot run', async () => {
+    const broken = { name: 'capture-broken', source: 'pod:capture-broken', default: false, missing_roles: [], error: 'YAML parse error: while parsing a flow sequence\n  in "<unicode string>"' };
+    const team = { ...FULL_TEAM, report: { ...FULL_TEAM.report, methods: [broken, ...FULL_TEAM.report.methods] } };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const method = card(c, 'saas-code').querySelector('[data-testid="team-q-method"]')!;
+    const names = Array.from(method.querySelectorAll('[data-testid^="team-method-"]'))
+      .map((li) => li.getAttribute('data-testid'))
+      .filter((id) => id !== 'team-method-missing' && id !== 'team-method-broken');
+    expect(names).toEqual(['team-method-tdd', 'team-method-secure-build', 'team-method-capture-broken']);
+    expect(method.querySelector('[data-testid="team-method-capture-broken"]')!.textContent).toContain('Does not load: YAML parse error: while parsing a flow sequence');
+    expect(method.querySelector('[data-testid="team-method-capture-broken"]')!.textContent).not.toContain('<unicode string>');
+    expect(method.querySelector('[data-testid="team-method-secure-build"]')!.textContent).toContain('Cannot run: no member plays security-vetter');
+  });
+
   it('says in a person\'s words why each new kind of misfit refuses a profile', async () => {
     const team = {
       ...FULL_TEAM,
@@ -608,8 +651,8 @@ describe('TeamsPanel sheet', () => {
     const lines = Array.from(card(c, 'saas-code').querySelectorAll('[data-testid="team-misfit"]')).map((l) => l.textContent);
     expect(lines).toHaveLength(4);
     expect(lines[0]).toContain("changes the project's repository, and saas-code hands back a report, not a branch");
-    expect(lines[1]).toContain('names the method lint, which saas-code does not have. It has tdd, secure-build');
-    expect(lines[2]).toContain('which would skip steps on saas-code: no member plays security-vetter');
+    expect(lines[1]).toContain('names the method lint, which saas-code does not have. It can run tdd');
+    expect(lines[2]).toContain('which saas-code cannot run: no member plays security-vetter');
     expect(lines[3]).toContain('not signed in on the runner. Run `docket login`.');
     expect(lines.join(' ')).not.toContain('delivers only proposed items');
   });

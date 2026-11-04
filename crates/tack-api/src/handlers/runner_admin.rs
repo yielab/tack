@@ -1277,9 +1277,13 @@ async fn check_methods(
                         .join(", ")
                 )));
             }
+            Some(offered) if offered.error.is_some() => warnings.push(format!(
+                "The method {method} of the team {team} does not load, so a run that names it is \
+                 refused until its file is fixed."
+            )),
             Some(offered) if !offered.missing_roles.is_empty() => warnings.push(format!(
-                "The method {method} on the team {team} has no member for {}: its steps would be \
-                 skipped, so a run is refused until the team has the role.",
+                "The method {method} on the team {team} has no member for {}, so a run that names \
+                 it is refused until the team has the role.",
                 offered.missing_roles.join(", ")
             )),
             Some(_) => {}

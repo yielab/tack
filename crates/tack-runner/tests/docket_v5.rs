@@ -12,7 +12,8 @@ use std::{
 use serde_json::{Value, json};
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, CapabilitySupport, ExecutionRequestSnapshot,
-    HarnessKind, RunnerId as DomainRunnerId, TaskDocument, TeamDelivers, TeamPause,
+    HarnessKind, RunnerId as DomainRunnerId, TaskDocument, TeamDecides, TeamDelivers, TeamPause,
+    WorksIn,
 };
 use tack_protocol::prepare::PrepareSetting;
 use tack_runner::{
@@ -1452,10 +1453,16 @@ fn refused_with(outcome: Result<impl Sized, HarnessError>) -> String {
     }
 }
 
+/// The contract of a captured report, as a team's override: what `set_contract` takes.
+fn contract_of(capture: &str) -> Value {
+    let report = fake_docket::fixture(capture);
+    json!({"delivers": report["delivers"], "methods": report["methods"], "needs": report["needs"]})
+}
+
 #[tokio::test]
 async fn probe_reads_what_a_team_delivers_offers_and_needs_only_when_docket_lists_podcontract() {
     let scene = scene();
-    // The case without the feature: the captured reports carry none of the three keys.
+    // The case without the feature: a docket before it sends none of the three keys.
     let without = pods_fake().await;
     let team = adapter(&without, &scene)
         .probe()
@@ -1475,6 +1482,8 @@ async fn probe_reads_what_a_team_delivers_offers_and_needs_only_when_docket_list
         .remove(0);
     assert!(team.delivers.is_none() && team.methods.is_none() && team.needs.is_none());
 
+    // The captured team in a repository: it delivers a branch, lists every method a task may name
+    // (none is the bound one) and records no need.
     let listed = pods_fake().await;
     listed.with_pod_contract();
     listed.add_folder_pod("saas-notes");
@@ -1483,30 +1492,91 @@ async fn probe_reads_what_a_team_delivers_offers_and_needs_only_when_docket_list
     let dev = find(POD);
     assert_eq!(dev.delivers, Some(TeamDelivers::Branch));
     let methods = dev.methods.as_deref().expect("methods");
+    let method = |name: &str| methods.iter().find(|m| m.name == name).expect(name);
+    assert_eq!(methods.len(), 15, "every recipe a task may name");
+    assert!(methods.iter().all(|m| !m.default && m.error.is_none()));
+    assert!(method("tdd").missing_roles.is_empty() && method("tdd").source == "recipe:tdd");
+    assert_eq!(method("secure-build").missing_roles, ["security-vetter"]);
     assert_eq!(
-        methods.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
-        ["pipeline", "tdd", "secure-build"]
+        method("research-review").missing_roles,
+        ["researcher", "analyst", "writer", "reviewer"]
     );
-    assert!(methods[0].default && methods[0].source == "pod");
-    assert_eq!(methods[2].missing_roles, ["security-vetter"]);
-    let needs = dev.needs.as_deref().expect("needs");
-    assert_eq!(needs.len(), 1);
-    assert!(needs[0].satisfied && needs[0].kind == "service");
+    assert_eq!(dev.needs.as_deref(), Some(&[][..]), "said, and none");
+    // A team in a folder hands back a report (and, with record sets, rows, which `records` says).
     assert_eq!(find("saas-notes").delivers, Some(TeamDelivers::Report));
 }
 
+/// The captured team with a bound pipeline, a method whose file does not load and three needs.
 #[tokio::test]
-async fn the_fake_serves_a_contract_with_the_keys_of_pod_contract() {
+async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_team() {
+    let scene = scene();
     let fake = pods_fake().await;
     fake.with_pod_contract();
-    let (status, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
-    assert_eq!(status, 200);
-    if let Err(why) = same_shape(
-        &report,
-        &fake_docket::fixture("pod-contract"),
-        "pod-contract",
-    ) {
-        panic!("{why}");
+    fake.add_folder_pod("saas-contract");
+    fake.set_contract("saas-contract", contract_of("pod-contract"));
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    let team = teams
+        .iter()
+        .find(|team| team.name == "saas-contract")
+        .expect("the team");
+    assert_eq!(team.delivers, Some(TeamDelivers::Report));
+    let methods = team.methods.as_deref().expect("methods");
+    let bound: Vec<_> = methods.iter().filter(|m| m.default).collect();
+    assert_eq!(bound.len(), 1);
+    assert_eq!(
+        (bound[0].name.as_str(), bound[0].source.as_str()),
+        ("web-research", "recipe:web-research")
+    );
+    let broken = methods
+        .iter()
+        .find(|m| m.name == "capture-broken")
+        .expect("the broken method");
+    assert!(
+        broken
+            .error
+            .as_deref()
+            .is_some_and(|why| why.starts_with("YAML parse error")),
+        "{broken:?}"
+    );
+    assert!(
+        broken.missing_roles.is_empty(),
+        "an unloadable file says no roles"
+    );
+    let needs = team.needs.as_deref().expect("needs");
+    assert_eq!(
+        needs
+            .iter()
+            .map(|need| (need.kind.as_str(), need.satisfied, need.fix.is_empty()))
+            .collect::<Vec<_>>(),
+        [
+            ("fetch-hosts", false, false),
+            ("search-host", false, false),
+            ("isolation", true, true)
+        ],
+        "a met need has no fix"
+    );
+}
+
+#[tokio::test]
+async fn the_fake_serves_a_contract_with_the_keys_of_the_captured_reports() {
+    let fake = pods_fake().await;
+    fake.with_pod_contract();
+    fake.with_pod_resume();
+    fake.add_folder_pod("saas-contract");
+    // The first method of the capture is the one whose file does not load.
+    fake.set_contract("saas-contract", contract_of("pod-contract"));
+    for (name, pod) in [("pod-attended", POD), ("pod-contract", "saas-contract")] {
+        let (status, mut report) = ask(&fake, "GET", &format!("/pods/{pod}"), None).await;
+        assert_eq!(status, 200);
+        // A pipeline bound to the team adds the rework bound of its steps to `settings`, which is
+        // a number in one capture and a sentence in the other; Tack reads neither.
+        let mut captured = fake_docket::fixture(name);
+        for answer in [&mut report, &mut captured] {
+            answer.as_object_mut().unwrap().remove("settings");
+        }
+        if let Err(why) = same_shape(&report, &captured, name) {
+            panic!("{why}");
+        }
     }
     let (_, health) = ask(&fake, "GET", "/health", None).await;
     assert!(
@@ -1543,9 +1613,9 @@ async fn probe_reads_a_teams_budget_only_when_docket_lists_podresume() {
         "a docket before podResume says nothing"
     );
 
+    // A team with no cap says so with `tokens` null and the window `none`.
     let listed = pods_fake().await;
     listed.with_pod_resume();
-    listed.pause_pod(POD, "budget");
     let team = adapter(&listed, &scene)
         .probe()
         .await
@@ -1555,20 +1625,28 @@ async fn probe_reads_a_teams_budget_only_when_docket_lists_podresume() {
     let budget = team.budget.expect("budget");
     assert_eq!(
         (budget.tokens, budget.used, budget.window.as_str()),
-        (Some(2_000_000), 2_000_000, "day")
+        (None, 0, "none")
     );
-    assert_eq!(budget.window_start.as_deref(), Some("2026-01-01T00:00:00Z"));
-    assert_eq!(team.paused, Some(TeamPause::Budget));
+    assert_eq!(budget.window_start, None);
 
-    // A team with no limit says so by leaving `tokens` out; a budget Tack cannot read is absent.
-    listed.set_budget(POD, json!({"tokens": null}));
+    // The captured team over its day budget: paused, 2500 counted of 1000.
+    listed.pause_pod(POD, "budget");
+    listed.set_budget(POD, fake_docket::fixture("pod-budget")["budget"].clone());
     let team = adapter(&listed, &scene)
         .probe()
         .await
         .teams
         .expect("teams")
         .remove(0);
-    assert_eq!(team.budget.expect("budget").tokens, None);
+    let budget = team.budget.expect("budget");
+    assert_eq!(
+        (budget.tokens, budget.used, budget.window.as_str()),
+        (Some(1000), 2500, "day")
+    );
+    assert_eq!(budget.window_start.as_deref(), Some("2026-01-01T00:00:00Z"));
+    assert_eq!(team.paused, Some(TeamPause::Budget));
+
+    // A budget Tack cannot read is absent.
     listed.set_budget(POD, json!({"window": 7}));
     let team = adapter(&listed, &scene)
         .probe()
@@ -1580,16 +1658,31 @@ async fn probe_reads_a_teams_budget_only_when_docket_lists_podresume() {
 }
 
 #[tokio::test]
-async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_pod_budget() {
+async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_the_captures() {
     let fake = pods_fake().await;
     fake.with_pod_resume();
+    fake.with_pod_contract();
     fake.pause_pod(POD, "budget");
     let (_, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
     if let Err(why) = same_shape(&report, &fake_docket::fixture("pod-budget"), "pod-budget") {
         panic!("{why}");
     }
+    // A row of a paused team in the list is the capture's paused row (the last of five).
+    let (_, list) = ask(&fake, "GET", "/pods", None).await;
+    let paused_row = fake_docket::fixture("pods-paused")["pods"][4].clone();
+    if let Err(why) = same_shape(&list["pods"][0], &paused_row, "pods-paused.pods[4]") {
+        panic!("{why}");
+    }
+    let spent = fake_docket::fixture("pod-budget-spent");
+    assert_eq!(spent["paused"], json!(false));
+    assert!(
+        spent["budget"]["used"].as_u64() > spent["budget"]["tokens"].as_u64(),
+        "over its budget before the gate paused it"
+    );
     let (status, resumed) = ask(&fake, "POST", &format!("/pods/{POD}/resume"), None).await;
     assert_eq!(status, 200);
+    assert_eq!(resumed["resumed"], json!(true));
+    assert!(resumed.get("pausedReason").is_none() && resumed["paused"] == json!(false));
     if let Err(why) = same_shape(
         &resumed,
         &fake_docket::fixture("pod-resumed"),
@@ -1597,6 +1690,20 @@ async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_pod_budget() {
     ) {
         panic!("{why}");
     }
+    // A team that is not paused: the same report and `resumed` false, nothing written.
+    let (status, again) = ask(&fake, "POST", &format!("/pods/{POD}/resume"), None).await;
+    assert_eq!(status, 200);
+    assert_eq!(again["resumed"], json!(false));
+    if let Err(why) = same_shape(
+        &again,
+        &fake_docket::fixture("pod-resume-not-paused"),
+        "pod-resume-not-paused",
+    ) {
+        panic!("{why}");
+    }
+    let (status, unknown) = ask(&fake, "POST", "/pods/no-such-team/resume", None).await;
+    assert_eq!(status, 404);
+    assert_eq!(unknown, fake_docket::fixture("pod-resume-unknown"));
     let (_, health) = ask(&fake, "GET", "/health", None).await;
     assert!(
         health["features"]
@@ -1607,6 +1714,127 @@ async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_pod_budget() {
     let older = pods_fake().await;
     let (status, _) = ask(&older, "POST", &format!("/pods/{POD}/resume"), None).await;
     assert_eq!(status, 404, "a docket without the route");
+}
+
+/// The probe reads the captured answers as docket sent them, with nothing of the fake between:
+/// the list with a paused team, and the report of every kind of team the script made.
+#[tokio::test]
+async fn probe_reads_the_captured_reports_of_every_kind_of_team_as_docket_sent_them() {
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
+    let docket = MockServer::start().await;
+    let serve = |route: String, name: &'static str, status: u16| {
+        let mock = Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(status).set_body_json(fixture(name)));
+        (mock, name)
+    };
+    let mut mocks = vec![
+        serve("/health".into(), "health", 200),
+        serve("/status.json".into(), "status", 200),
+        serve("/escalations".into(), "escalations-empty", 200),
+        serve("/pods".into(), "pods-paused", 200),
+    ];
+    for (team, capture) in [
+        ("saas-dev", "pod-attended"),
+        ("saas-lights", "pod-lights-out"),
+        ("saas-notes", "pod-folder"),
+        ("saas-contract", "pod-contract"),
+        ("saas-budget", "pod-budget"),
+    ] {
+        mocks.push(serve(format!("/pods/{team}"), capture, 200));
+    }
+    for (mock, _) in mocks {
+        mock.mount(&docket).await;
+    }
+    let fake = FakeDocket::start().await;
+    let scene = scene();
+    let probed = DocketAdapter::new(
+        DocketConfig {
+            base_url: Some(docket.uri()),
+            token_file: Some(fake.token_file()),
+            ..DocketConfig::default()
+        },
+        scene.state.clone(),
+    )
+    .probe()
+    .await;
+    assert_eq!(probed.probe_error, None, "every report is read");
+    assert!(probed.lists_api_feature("podShape"));
+    let teams = probed.teams.expect("teams");
+    let team = |name: &str| teams.iter().find(|team| team.name == name).expect(name);
+    assert_eq!(teams.len(), 5);
+
+    let dev = team("saas-dev");
+    assert_eq!(dev.delivers, Some(TeamDelivers::Branch));
+    assert_eq!(dev.shape.as_deref(), Some("build"));
+    assert_eq!(dev.methods.as_ref().map(Vec::len), Some(15));
+    assert_eq!(dev.needs, Some(Vec::new()));
+    assert_eq!(dev.paused, None);
+    let budget = dev.budget.as_ref().expect("budget");
+    assert_eq!(
+        (
+            budget.tokens,
+            budget.used,
+            budget.window.as_str(),
+            budget.window_start.as_deref()
+        ),
+        (None, 0, "none", None)
+    );
+
+    let notes = team("saas-notes");
+    assert_eq!(
+        notes.delivers,
+        Some(TeamDelivers::Report),
+        "report, then records"
+    );
+    assert_eq!(notes.works_in, Some(WorksIn::Folder));
+    assert!(notes.folder.is_some());
+
+    let contract = team("saas-contract");
+    assert_eq!(contract.shape.as_deref(), Some("respond"));
+    assert_eq!(
+        contract
+            .methods
+            .as_deref()
+            .unwrap()
+            .iter()
+            .filter(|method| method.default)
+            .map(|method| method.name.as_str())
+            .collect::<Vec<_>>(),
+        ["web-research"]
+    );
+    assert_eq!(
+        contract
+            .needs
+            .as_deref()
+            .unwrap()
+            .iter()
+            .map(|need| (need.name.as_str(), need.satisfied))
+            .collect::<Vec<_>>(),
+        [
+            ("fetch-hosts", false),
+            ("search-host", false),
+            ("isolation", true)
+        ]
+    );
+    // A bound pipeline and the researchers' needs do not make the team lights-out.
+    assert_eq!(contract.decides, Some(TeamDecides::AsksAPerson));
+
+    let spent = team("saas-budget");
+    assert_eq!(spent.paused, Some(TeamPause::Budget));
+    let budget = spent.budget.as_ref().expect("budget");
+    assert_eq!(
+        (
+            budget.tokens,
+            budget.used,
+            budget.window.as_str(),
+            budget.window_start.as_deref()
+        ),
+        (Some(1000), 2500, "day", Some("2026-01-01T00:00:00Z"))
+    );
 }
 
 /// Resuming a paused team sends the route once and returns the team's report after it.
@@ -1695,7 +1923,7 @@ async fn the_resume_operation_goes_to_the_harness_it_names() {
     );
 }
 
-/// A run that changes the repository does not go to a team that delivers a report or records, and
+/// A run that changes the repository does not go to a team that delivers a report, and
 /// nothing is posted; a Researcher goes there, and so does any run when docket says nothing.
 #[tokio::test]
 async fn a_run_that_changes_the_repository_is_refused_by_a_team_that_delivers_a_report() {
@@ -1703,9 +1931,10 @@ async fn a_run_that_changes_the_repository_is_refused_by_a_team_that_delivers_a_
     let fake = FakeDocket::start().await;
     fake.add_folder_pod(POD);
     fake.with_pod_contract();
+    // The captured team in a folder delivers a report, and rows in its record sets besides.
     let reason = refused_with(
         adapter(&fake, &scene)
-            .start(&naming_method(&scene, "implementer", "pipeline"))
+            .start(&naming_method(&scene, "implementer", "capture"))
             .await,
     );
     assert!(
@@ -1714,27 +1943,27 @@ async fn a_run_that_changes_the_repository_is_refused_by_a_team_that_delivers_a_
         )),
         "{reason}"
     );
-    fake.set_contract(POD, json!({"delivers": "records"}));
+    fake.set_contract(POD, json!({"delivers": ["report", "records"]}));
     let reason = refused_with(
         adapter(&fake, &scene)
-            .start(&naming_method(&scene, "implementer", "pipeline"))
+            .start(&naming_method(&scene, "implementer", "capture"))
             .await,
     );
-    assert!(reason.contains("delivers records"), "{reason}");
+    assert!(reason.contains("delivers a report"), "{reason}");
     assert!(
         fake.requests_to("POST", "/tasks").is_empty(),
         "nothing is posted"
     );
     // A Researcher changes nothing in the repository.
     adapter(&fake, &scene)
-        .start(&naming_method(&scene, "researcher", "pipeline"))
+        .start(&naming_method(&scene, "researcher", "capture"))
         .await
-        .expect("a Researcher is taken by a team that delivers records");
+        .expect("a Researcher is taken by a team that delivers a report");
     // And a docket that does not announce the contract refuses nothing it did not say.
     let older = FakeDocket::start().await;
     older.add_folder_pod(POD);
     adapter(&older, &scene)
-        .start(&naming_method(&scene, "implementer", "pipeline"))
+        .start(&naming_method(&scene, "implementer", "capture"))
         .await
         .expect("an unannounced contract is no misfit");
 }
@@ -1751,7 +1980,9 @@ async fn a_method_the_team_lacks_or_cannot_run_in_full_is_refused_before_the_tas
     );
     assert!(
         unknown.contains(&format!("The team {POD} has no method named review"))
-            && unknown.contains("it offers pipeline, tdd, secure-build"),
+            && unknown.contains(
+                "it can run anti-tautology, mutation, spec-writer, strong-plan-cheap-edit, tdd. "
+            ),
         "{unknown}"
     );
     let skipped = refused_with(
@@ -1760,11 +1991,30 @@ async fn a_method_the_team_lacks_or_cannot_run_in_full_is_refused_before_the_tas
             .await,
     );
     assert!(
-        skipped.contains("The method secure-build would skip steps")
-            && skipped.contains("no member plays security-vetter"),
+        skipped.contains("The method secure-build cannot run on the team")
+            && skipped.contains(
+                "no member plays security-vetter, and docket refuses a task that names it"
+            ),
         "{skipped}"
     );
     assert!(fake.requests_to("POST", "/tasks").is_empty());
+    // A method whose file does not load is listed, and refused with docket's first line.
+    fake.set_contract(POD, contract_of("pod-contract"));
+    let broken = refused_with(
+        adapter(&fake, &scene)
+            .start(&naming_method(&scene, "implementer", "capture-broken"))
+            .await,
+    );
+    assert!(
+        broken.contains("The method capture-broken of the team")
+            && broken.contains(
+                "does not load, and docket refuses a task that names it: YAML parse error"
+            )
+            && !broken.contains("not: [valid"),
+        "{broken}"
+    );
+    assert!(fake.requests_to("POST", "/tasks").is_empty());
+    fake.set_contract(POD, json!({}));
     adapter(&fake, &scene)
         .start(&naming_method(&scene, "implementer", "tdd"))
         .await
@@ -1801,7 +2051,7 @@ async fn a_need_the_team_says_is_unmet_ends_the_run_with_its_fix() {
     );
     let reason = refused_with(
         adapter(&fake, &scene)
-            .start(&naming_method(&scene, "implementer", "pipeline"))
+            .start(&naming_method(&scene, "implementer", "tdd"))
             .await,
     );
     assert!(
@@ -3111,11 +3361,7 @@ async fn a_rework_request_posts_its_base_branch_as_the_base_ref() {
 
 #[tokio::test]
 async fn failures_carry_docket_kind_and_text() {
-    for (kind, status) in [
-        ("base_ref", "failed"),
-        ("pipeline", "failed"),
-        ("budget", "failed"),
-    ] {
+    for (kind, status) in [("base_ref", "failed"), ("budget", "failed")] {
         let fake = pods_fake().await;
         fake.script(Script {
             status: status.to_owned(),
@@ -5929,13 +6175,7 @@ const NOT_IN_CLIENT: [&str; 0] = [];
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
 /// that stays running, and `current` and `updatedSince` need one. `retry` was captured against a
 /// live docket for Card L (`docs/closed-cycles/plans/phase-87.md`) and moved out of this list.
-/// `resume` waits for a docket that serves it (`podResume`). `apply` answers from docket's source:
-/// the capture script has no team folder to apply.
-const CONSTRUCTED_ONLY: [&str; 3] = [
-    "GET /tasks/<pod>",
-    "POST /pods/<pod>/resume",
-    "POST /pods/<pod>/apply",
-];
+const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {
@@ -6132,9 +6372,17 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
     }
 }
 
+/// A fake with the features of the docket the captures come from: the contract and the budget.
+async fn captured_docket() -> FakeDocket {
+    let fake = FakeDocket::start().await;
+    fake.with_pod_contract();
+    fake.with_pod_resume();
+    fake
+}
+
 #[tokio::test]
 async fn the_fake_answers_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = captured_docket().await;
     let mut seen: Vec<(&str, Value)> = Vec::new();
     let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
 
@@ -6462,9 +6710,100 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// A team made from a shape and a folder applied to it, answered with the captured keys and
+/// sentences: the code to read, a code that no longer matches, the applied items, the same folder
+/// again, and the four refusals.
+#[tokio::test]
+async fn the_fake_makes_a_team_from_a_shape_and_applies_a_folder_as_docket_does() {
+    let fake = FakeDocket::start().await;
+    fake.with_pod_shape();
+    fake.require_apply_review(
+        "0000000000000000",
+        &[("fetch-domains", "fetchDomains", "docs.python.org")],
+    );
+    let made = ask(
+        &fake,
+        "POST",
+        "/pods",
+        Some(request_file("post-pods-shape")),
+    )
+    .await;
+    assert_eq!(made.0, 201, "{made:?}");
+    if let Err(why) = same_shape(
+        &made.1,
+        &fake_docket::fixture("post-pods-shape"),
+        "post-pods-shape",
+    ) {
+        panic!("{why}");
+    }
+    let folder = common::temp_dir("docket-team-folder");
+    std::fs::write(folder.path().join("pod.yaml"), "shape: respond\n").unwrap();
+    let directory = folder.path().display().to_string();
+    let apply = |extra: Value| {
+        let mut body = json!({"directory": directory});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        ask(&fake, "POST", "/pods/saas-team/apply", Some(body))
+    };
+    for (name, status, answer) in [
+        ("pod-apply-needs-code", 409, apply(json!({})).await),
+        (
+            "pod-apply-code-changed",
+            409,
+            apply(json!({"accept": "0123456789abcdef"})).await,
+        ),
+        (
+            "pod-apply-applied",
+            200,
+            apply(json!({"accept": "0000000000000000"})).await,
+        ),
+        ("pod-apply-again", 200, apply(json!({})).await),
+    ] {
+        assert_eq!(answer.0, status, "{name}: {answer:?}");
+        if let Err(why) = same_shape(&answer.1, &fake_docket::fixture(name), name) {
+            panic!("{why}");
+        }
+    }
+    // The refusals say what docket said.
+    let other = common::temp_dir("docket-team-other");
+    std::fs::write(other.path().join("pod.yaml"), "shape: build\n").unwrap();
+    let mismatch = ask(
+        &fake,
+        "POST",
+        "/pods/saas-team/apply",
+        Some(json!({"directory": other.path().display().to_string()})),
+    )
+    .await;
+    assert_eq!(
+        (mismatch.0, mismatch.1),
+        (400, fake_docket::fixture("pod-apply-shape-mismatch"))
+    );
+    // Tack always sends the directory; the capture shows why: a team in a folder has no
+    // repository for docket to read `.docket/` from.
+    let none = fake_docket::fixture("pod-apply-no-directory");
+    assert!(
+        none["error"]
+            .as_str()
+            .is_some_and(|why| why.contains("works in a folder") && why.contains("saas-team")),
+        "{none}"
+    );
+    let unknown = ask(
+        &fake,
+        "POST",
+        "/pods/no-such-team/apply",
+        Some(json!({"directory": directory})),
+    )
+    .await;
+    assert_eq!(
+        (unknown.0, unknown.1),
+        (404, fake_docket::fixture("pod-apply-unknown"))
+    );
+}
+
 #[tokio::test]
 async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = captured_docket().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set(
         "saas-notes",
@@ -6507,7 +6846,7 @@ async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_cap
 
 #[tokio::test]
 async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = captured_docket().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set_scoped("saas-notes", "entries", "Things", &["ref", "title"], "pod");
     fake.add_record_set_scoped(
@@ -6681,15 +7020,12 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
         &fake,
         "POST",
         "/pods",
-        Some(json!({"name": "saas-dev", "ensure": true})),
+        Some(json!({"name": "saas-dev", "location": "/x"})),
     )
     .await;
     assert_eq!(missing.0, 400);
     assert!(
-        missing.1["error"]
-            .as_str()
-            .unwrap()
-            .contains("\"location\""),
+        missing.1["error"].as_str().unwrap().contains("\"ensure\""),
         "{missing:?}"
     );
     let mut task = request_file("post-task-created");
@@ -6730,7 +7066,54 @@ async fn a_failed_tasks_sentence_reaches_the_attempts_message() {
     assert_eq!(outcome.terminal_reason["code"], json!("pipeline"));
     assert_eq!(
         outcome.terminal_reason["message"],
-        json!(format!("docket said: {sentence}"))
+        json!(format!(
+            "The team {POD} refused the method before any step ran: {sentence}"
+        ))
+    );
+}
+
+/// `pipelineChecked`: a task that names a method whose roles the team lacks is accepted by
+/// `POST /tasks` and refused at claim, before any hop. The run ends without having started, with
+/// docket's sentence, which names the pipeline, where it comes from and each missing role.
+#[tokio::test]
+async fn a_method_docket_refuses_at_claim_ends_the_run_without_starting() {
+    let captured = fixture("task-failed-pipeline-roles");
+    let sentence = captured["reason"].as_str().expect("a sentence").to_owned();
+    assert_eq!(captured["failureKind"], json!("pipeline"));
+    assert_eq!(captured["hops"], json!([]), "no hop ran");
+    assert!(
+        sentence.contains("names roles this pod does not have: reviewer (step review)"),
+        "{sentence}"
+    );
+    assert_eq!(
+        fixture("post-task-pipeline-roles")["status"],
+        json!("pending")
+    );
+
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("pipeline".to_owned()),
+        reason: sentence.clone(),
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("pipeline"));
+    assert!(
+        outcome.terminal_reason["message"]
+            .as_str()
+            .is_some_and(|message| message.ends_with(&sentence)),
+        "{}",
+        outcome.terminal_reason
+    );
+    assert!(
+        tack_core::run_outcome::never_started(
+            tack_protocol::execution::ExecutionState::Failed,
+            Some(&outcome.terminal_reason)
+        ),
+        "the run reads Not started"
     );
 }
 

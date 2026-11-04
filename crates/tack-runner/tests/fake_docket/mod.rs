@@ -310,6 +310,9 @@ struct RecordSet {
 
 struct Pod {
     codebase: String,
+    /// The shape the team was made from (`blueprint`), when a request named one; otherwise its
+    /// kind says it, `routine` for a team in a folder and `build` for one in a repository.
+    shape: Option<String>,
     /// The team has no repository: `repoConfigDir` is `""` on its report and `codebase` on its row of the list.
     folder: bool,
     profile: String,
@@ -324,10 +327,11 @@ struct Pod {
     network: Option<Value>,
     /// Every member holds `fetch`, as docket lists it while FETCH_ALLOWED_DOMAINS names a host.
     fetch: bool,
-    /// What the report says of `delivers`, `methods` and `needs` instead of `pod-contract`'s,
-    /// as an object holding any of the three.
+    /// What the report says of `delivers`, `methods` and `needs` instead of the capture's, as an
+    /// object holding any of the three.
     contract: Option<Value>,
-    /// What the report says of `budget` instead of `pod-budget`'s.
+    /// What the report says of `budget` instead of the capture's: an object holding any of its
+    /// four keys.
     budget: Option<Value>,
 }
 
@@ -421,6 +425,8 @@ struct World {
     /// folder shape has no `codebase`), and `POST /pods/<pod>/apply` reaches a pod that has none.
     /// Without it a pod with no `codebase` is refused an apply, as docket did.
     pod_shape: bool,
+    /// The teams a folder was applied to, so that the same folder applied again runs nothing new.
+    applied_pods: BTreeSet<String>,
     /// What an apply asks a person to read first: the code, and what the directory would run
     /// (kind, name, text). An apply that carries no `accept` is answered `409` with the code, one
     /// that carries another code `409` without it, and one that carries this code is applied.
@@ -474,6 +480,7 @@ impl FakeDocket {
             next_channel: None,
             pod_shape: false,
             apply_review: None,
+            applied_pods: BTreeSet::new(),
         }));
         let app = Router::new()
             .fallback(handle)
@@ -508,6 +515,7 @@ impl FakeDocket {
             name.to_owned(),
             Pod {
                 codebase: String::new(),
+                shape: None,
                 folder: false,
                 profile: profile.to_owned(),
                 violations: violations
@@ -572,7 +580,7 @@ impl FakeDocket {
     }
 
     /// A docket that lists `podContract`: a team's report says what it delivers, which methods
-    /// a task may name and what its work still needs, as `pod-contract` does.
+    /// a task may name and what its work still needs, as the captured reports do.
     pub fn with_pod_contract(&self) {
         self.shared.lock().unwrap().pod_contract = Some(true);
     }
@@ -599,8 +607,8 @@ impl FakeDocket {
         self.shared.lock().unwrap().pod_contract = Some(false);
     }
 
-    /// What the team's report says of its contract instead of `pod-contract`'s: an object with
-    /// any of `delivers`, `methods` and `needs`; a key left out stays `pod-contract`'s.
+    /// What the team's report says of its contract instead of the capture's: an object with any
+    /// of `delivers`, `methods` and `needs`; a key left out stays the capture's.
     pub fn set_contract(&self, name: &str, contract: Value) {
         self.shared
             .lock()
@@ -611,13 +619,13 @@ impl FakeDocket {
             .contract = Some(contract);
     }
 
-    /// A docket that lists `podResume`: a team's report says what it may spend and has spent
-    /// (`budget`, as `pod-budget` does) and a paused team can be resumed over HTTP.
+    /// A docket that lists `podResume`: a team's report and its row of the list say what it may
+    /// spend and has spent (`budget`) and a paused team can be resumed over HTTP.
     pub fn with_pod_resume(&self) {
         self.shared.lock().unwrap().pod_resume = true;
     }
 
-    /// What the team's `budget` says instead of `pod-budget`'s: an object with any of `tokens`,
+    /// What the team's `budget` says instead of the capture's: an object with any of `tokens`,
     /// `used`, `window` and `windowStart`.
     pub fn set_budget(&self, name: &str, budget: Value) {
         self.shared
@@ -1090,7 +1098,7 @@ async fn handle(
         ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
         ("POST", ["pods", pod, "resume"]) => resume_pod_route(&mut state, pod),
-        ("POST", ["pods", pod, "apply"]) => apply_pod(&state, pod, &parsed),
+        ("POST", ["pods", pod, "apply"]) => apply_pod(&mut state, pod, &parsed),
         ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["tasks", pod]) => post_task(&mut state, pod, &parsed),
         ("GET", ["tasks", pod]) => list_tasks(&state, pod, &query),
@@ -1235,12 +1243,14 @@ fn pods(state: &World) -> Response {
             entry["name"] = json!(name);
             entry["codebase"] = json!(pod.codebase);
             entry["profile"] = json!(pod.profile);
+            entry["blueprint"] = json!(blueprint(pod));
             if state.without_workspace_kind {
                 entry.as_object_mut().unwrap().remove("workspaceKind");
             } else {
                 entry["workspaceKind"] = json!(workspace_kind(pod));
             }
             put_paused(state, pod, &mut entry);
+            put_budget(state, pod, &mut entry);
             entry["queue"] = json!({
                 "pending": count("pending"), "running": count("running"),
                 "waitingApproval": count("waiting_approval"),
@@ -1264,6 +1274,27 @@ fn put_paused(state: &World, pod: &Pod, object: &mut Value) {
     if let Some(reason) = &pod.paused {
         object["pausedReason"] = json!(reason);
     }
+}
+
+/// `budget` of a row or a report, from a docket that lists `podResume`: the capture's, with what
+/// the test said of this team laid over it.
+fn put_budget(state: &World, pod: &Pod, object: &mut Value) {
+    if !state.pod_resume {
+        object.as_object_mut().unwrap().remove("budget");
+        return;
+    }
+    if let Some(said) = pod.budget.as_ref().and_then(Value::as_object) {
+        for (key, value) in said {
+            object["budget"][key] = value.clone();
+        }
+    }
+}
+
+/// The shape a team was made from, as `blueprint` says it on a row and on a report.
+fn blueprint(pod: &Pod) -> String {
+    pod.shape
+        .clone()
+        .unwrap_or_else(|| (if pod.folder { "routine" } else { "build" }).to_owned())
 }
 
 /// `workspaceKind` as docket sends it on a row of the list and on a report.
@@ -1295,10 +1326,8 @@ fn pipeline_steps() -> Value {
     ])
 }
 
-fn pod_report(state: &World, name: &str) -> Response {
-    let Some(pod) = state.pods.get(name) else {
-        return refusal("pod-unknown", &[("no-such-team", name)]);
-    };
+fn pod_report_value(state: &World, name: &str) -> Option<Value> {
+    let pod = state.pods.get(name)?;
     let mut report = if pod.folder {
         fixture_with("pod-folder", &[("saas-notes", name)])
     } else {
@@ -1322,7 +1351,7 @@ fn pod_report(state: &World, name: &str) -> Response {
         report.as_object_mut().unwrap().remove("blueprint");
         report["pipeline"].as_object_mut().unwrap().remove("steps");
     } else {
-        report["blueprint"] = json!(if pod.folder { "routine" } else { "build" });
+        report["blueprint"] = json!(blueprint(pod));
         report["pipeline"]["steps"] = pipeline_steps();
     }
     put_paused(state, pod, &mut report);
@@ -1387,28 +1416,29 @@ fn pod_report(state: &World, name: &str) -> Response {
     if pod.folder {
         report["workDir"] = json!(format!("/home/docket/state/workspaces/pods/{name}/workdir"));
     }
-    if state.pod_contract.is_some() {
-        // The captured team in a folder delivers a report; the one in a repository, a branch.
-        let shipped = fixture("pod-contract");
-        report["delivers"] = json!(if pod.folder { "report" } else { "branch" });
-        report["methods"] = shipped["methods"].clone();
-        report["needs"] = shipped["needs"].clone();
+    // The captured reports carry the contract and the budget; a docket before the feature sends
+    // neither, and one that sends the contract without listing it is `Some(false)`.
+    if state.pod_contract.is_none() {
+        for key in ["delivers", "methods", "needs"] {
+            report.as_object_mut().unwrap().remove(key);
+        }
+    } else {
         for key in ["delivers", "methods", "needs"] {
             if let Some(said) = pod.contract.as_ref().and_then(|contract| contract.get(key)) {
                 report[key] = said.clone();
             }
         }
     }
-    if state.pod_resume {
-        let mut budget = fixture("pod-budget")["budget"].clone();
-        if let Some(said) = pod.budget.as_ref().and_then(Value::as_object) {
-            for (key, value) in said {
-                budget[key] = value.clone();
-            }
-        }
-        report["budget"] = budget;
+    put_budget(state, pod, &mut report);
+    Some(report)
+}
+
+/// `GET /pods/<pod>`: the report of one team.
+fn pod_report(state: &World, name: &str) -> Response {
+    match pod_report_value(state, name) {
+        Some(report) => reply(200, report),
+        None => refusal("pod-unknown", &[("no-such-team", name)]),
     }
-    reply(200, report)
 }
 
 /// `POST /pods/<pod>/resume` (`podResume`): the team claims again and starts the tasks it held.
@@ -1417,15 +1447,24 @@ fn resume_pod_route(state: &mut World, name: &str) -> Response {
         return error(404, "not found");
     }
     if !state.pods.contains_key(name) {
-        return refusal("pod-unknown", &[("no-such-team", name)]);
+        return refusal("pod-resume-unknown", &[("no-such-team", name)]);
     }
-    state.pods.get_mut(name).expect("checked").paused = None;
+    let resumed = state
+        .pods
+        .get_mut(name)
+        .expect("checked")
+        .paused
+        .take()
+        .is_some();
     for index in 0..state.tasks.len() {
         if state.tasks[index].pod == name && state.tasks[index].status == "pending" {
             start_task(state, index);
         }
     }
-    reply(200, fixture_with("pod-resumed", &[("saas-dev", name)]))
+    // docket answers with the team's report as it is now, and says whether it was paused.
+    let mut report = pod_report_value(state, name).expect("checked");
+    report["resumed"] = json!(resumed);
+    reply(200, report)
 }
 
 /// A row of a set as docket stores it: the columns the team declared, and the system columns it
@@ -1616,6 +1655,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             } else {
                 body["location"].as_str().unwrap_or_default().to_owned()
             },
+            shape: shape.clone(),
             folder,
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
@@ -1629,7 +1669,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
     );
     let created = match shape {
         Some(shape) => {
-            let mut created = fixture_with("post-pods-shape", &[("saas-dev", name)]);
+            let mut created = fixture_with("post-pods-shape", &[("saas-team", name)]);
             created["blueprint"] = json!(shape);
             created
         }
@@ -1639,11 +1679,13 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
 }
 
 /// `POST /pods/<pod>/apply`: applies a directory on this machine to the pod. A pod with no
-/// `codebase` is refused unless the docket lists `podShape`; a directory that runs commands is
-/// refused until the call carries the code of what it runs.
-fn apply_pod(state: &World, pod: &str, body: &Value) -> Response {
+/// `codebase` is refused unless the docket lists `podShape`, which also makes the `directory` of
+/// a pod in a folder required; a `pod.yaml` naming another shape than the pod's is refused; a
+/// directory that runs commands is refused until the call carries the code of what it runs, and
+/// is not asked again once applied.
+fn apply_pod(state: &mut World, pod: &str, body: &Value) -> Response {
     let Some(found) = state.pods.get(pod) else {
-        return error(404, &format!("Unknown pod: {pod}"));
+        return refusal("pod-apply-unknown", &[("no-such-team", pod)]);
     };
     if found.codebase.is_empty() && !state.pod_shape {
         return error(
@@ -1655,7 +1697,7 @@ fn apply_pod(state: &World, pod: &str, body: &Value) -> Response {
         );
     }
     let Some(directory) = body["directory"].as_str() else {
-        return error(400, "directory is required");
+        return error(400, "directory must be a string");
     };
     if !Path::new(directory).is_absolute() {
         return error(400, "directory must be an absolute path");
@@ -1663,7 +1705,25 @@ fn apply_pod(state: &World, pod: &str, body: &Value) -> Response {
     if !Path::new(directory).is_dir() {
         return error(400, &format!("directory not found: {directory}"));
     }
-    if let Some((code, runs)) = &state.apply_review {
+    // The shape `pod.yaml` names, when it names one, must be the one the team was made from.
+    if let Ok(manifest) = std::fs::read_to_string(Path::new(directory).join("pod.yaml"))
+        && let Some(named) = manifest
+            .lines()
+            .find_map(|line| line.strip_prefix("shape:").map(str::trim))
+        && named != blueprint(found)
+    {
+        let mut refused = fixture("pod-apply-shape-mismatch");
+        refused["error"] = json!(format!(
+            "pod.yaml: shape '{named}' but pod '{pod}' was provisioned '{}'",
+            blueprint(found)
+        ));
+        return reply(fixture_status("pod-apply-shape-mismatch"), refused);
+    }
+    if let Some((code, runs)) = state
+        .apply_review
+        .as_ref()
+        .filter(|_| !state.applied_pods.contains(pod))
+    {
         let runs_json: Vec<Value> = runs
             .iter()
             .map(|(kind, name, text)| json!({"kind": kind, "name": name, "runs": text}))
@@ -1683,7 +1743,19 @@ fn apply_pod(state: &World, pod: &str, body: &Value) -> Response {
             Some(_) => {}
         }
     }
-    reply(200, fixture_with("pod-apply-applied", &[("saas-dev", pod)]))
+    // The first apply adds what the folder declares; the same folder again finds it all there.
+    let again = !state.applied_pods.insert(pod.to_owned());
+    reply(
+        200,
+        fixture_with(
+            if again {
+                "pod-apply-again"
+            } else {
+                "pod-apply-applied"
+            },
+            &[("saas-team", pod)],
+        ),
+    )
 }
 
 /// docket's `TaskRequest` (`extra="forbid"`): strings, lists of strings and a list of objects, each

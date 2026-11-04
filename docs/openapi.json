@@ -17887,7 +17887,7 @@
           },
           "window": {
             "type": "string",
-            "description": "How long the span lasts, in the harness's word for it (`lifetime`, `day`)."
+            "description": "How long the span lasts, in the harness's word for it (`none` for a span that never\nrestarts, `day`, `week`)."
           },
           "window_start": {
             "type": [
@@ -17911,8 +17911,7 @@
         "description": "What a team hands back when a task ends.",
         "enum": [
           "branch",
-          "report",
-          "records"
+          "report"
         ]
       },
       "TeamDigest": {
@@ -18154,12 +18153,19 @@
             "type": "boolean",
             "description": "Whether a task that names no method goes through this one."
           },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the method cannot run at all: its file does not load. Absent for a method that loads."
+          },
           "missing_roles": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "The roles the method has a step for and the team has no member for: those steps would be\nskipped. Empty when the team can run every step."
+            "description": "The roles the method has a step for and the team has no member for: a task that names it is\nrefused. Empty when the team can run every step."
           },
           "name": {
             "type": "string",
@@ -18217,14 +18223,14 @@
           },
           {
             "type": "object",
-            "description": "The task names a method the team offers but lacks the members for: those steps would be\nskipped.",
+            "description": "The task names a method the team offers but lacks the members for: it would be refused.",
             "required": [
               "steps_skipped"
             ],
             "properties": {
               "steps_skipped": {
                 "type": "object",
-                "description": "The task names a method the team offers but lacks the members for: those steps would be\nskipped.",
+                "description": "The task names a method the team offers but lacks the members for: it would be refused.",
                 "required": [
                   "method",
                   "roles"
@@ -18238,6 +18244,31 @@
                     "items": {
                       "type": "string"
                     }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The task names a method the team lists but whose file does not load.",
+            "required": [
+              "method_broken"
+            ],
+            "properties": {
+              "method_broken": {
+                "type": "object",
+                "description": "The task names a method the team lists but whose file does not load.",
+                "required": [
+                  "method",
+                  "error"
+                ],
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "type": "string"
                   }
                 }
               }
@@ -18438,7 +18469,7 @@
               },
               {
                 "$ref": "#/components/schemas/TeamDelivers",
-                "description": "What the team hands back when a task ends. Absent means the harness did not say, which is\nnot the same as a branch; no field may carry a harness's own key name."
+                "description": "What the team hands back when a task ends, apart from the rows in its record sets, which\n`records` says. Absent means the harness did not say, which is not the same as a branch; no\nfield may carry a harness's own key name."
               }
             ]
           },

@@ -99,9 +99,11 @@ pub(super) struct PodReport {
     /// The folder a team that works in one writes in (`podWorkDir`). Absent for a team in a
     /// repository and from a docket before the key.
     pub work_dir: Option<String>,
-    /// What the team hands back (`podContract`): `branch`, `report` or `records`. Absent from a
+    /// What a task on the team hands back (`podContract`): a list, `branch` or `report` first and
+    /// `records` after it when the team keeps record sets. Kept as it came and read on its own, so
+    /// a shape Tack cannot read costs the contract's `delivers` and never the team. Absent from a
     /// docket before that key.
-    pub delivers: Option<String>,
+    pub delivers: Option<Value>,
     /// Every method a task may name (`podContract`). Each is kept as it came and read on its own,
     /// so a method Tack cannot read costs the list and never the team.
     pub methods: Option<Vec<Value>>,
@@ -120,14 +122,15 @@ pub(super) struct PodBudget {
     pub tokens: Option<u64>,
     #[serde(default)]
     pub used: u64,
-    /// How long a window lasts (`lifetime`, `day`).
+    /// How long a window lasts: `none` (it never restarts), `day` or `week`.
     pub window: String,
     /// When the current window began; absent for one that never restarts.
     pub window_start: Option<String>,
 }
 
 /// One entry of `methods`: its name, where the team has it from, whether a task that names none
-/// goes through it, and the roles its steps need that the team has no member for.
+/// goes through it, the roles its steps need that the team has no member for, and why its file
+/// does not load when it does not.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct PodMethod {
@@ -136,6 +139,7 @@ pub(super) struct PodMethod {
     pub default: bool,
     #[serde(default)]
     pub missing_roles: Vec<String>,
+    pub error: Option<String>,
 }
 
 /// One entry of `needs`.

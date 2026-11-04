@@ -27,6 +27,18 @@ fn a_team_no_computer_reports_comes_with_the_command_that_makes_it() {
 }
 
 #[test]
+fn only_one_recipe_is_named_because_docket_init_applies_one() {
+    let outline = file(
+        "teams:\n  - { name: biz-build, shape: build, methods: [house-style, tdd, cross-family-review] }\n",
+    );
+    let gaps = missing(&outline, &names(&[]), &names(&[]));
+    assert_eq!(
+        gaps[0].fix,
+        "docket init biz-build --blueprint build --recipe tdd"
+    );
+}
+
+#[test]
 fn a_team_a_profile_names_is_missing_too_with_no_shape() {
     let outline = file(
         "profiles:\n  - { name: Support, tool_policy: { agent: docket, docket: { team: fab-support } } }\n",

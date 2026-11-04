@@ -262,6 +262,7 @@ fn method(name: &str, missing_roles: &[&str]) -> TeamMethod {
             .iter()
             .map(|role| (*role).to_owned())
             .collect(),
+        error: None,
     }
 }
 
@@ -275,19 +276,17 @@ fn need(kind: &str, name: &str, satisfied: bool) -> TeamNeed {
 }
 
 #[test]
-fn a_run_that_changes_the_repository_does_not_fit_a_team_that_delivers_a_report_or_records() {
+fn a_run_that_changes_the_repository_does_not_fit_a_team_that_delivers_a_report() {
     let code = TeamNeeds::of("implementer", false, None);
     assert!(code.repository);
-    for delivers in [TeamDelivers::Report, TeamDelivers::Records] {
-        let team = TeamFacts {
-            delivers: Some(delivers),
-            ..TeamFacts::default()
-        };
-        assert_eq!(team_misfits(team, &code), [TeamMisfit::NoRepository]);
-        // A Planner and a Researcher change nothing in the repository.
-        for kind in ["planner", "researcher"] {
-            assert!(team_misfits(team, &TeamNeeds::of(kind, false, None)).is_empty());
-        }
+    let team = TeamFacts {
+        delivers: Some(TeamDelivers::Report),
+        ..TeamFacts::default()
+    };
+    assert_eq!(team_misfits(team, &code), [TeamMisfit::NoRepository]);
+    // A Planner and a Researcher change nothing in the repository.
+    for kind in ["planner", "researcher"] {
+        assert!(team_misfits(team, &TeamNeeds::of(kind, false, None)).is_empty());
     }
     let branch = TeamFacts {
         delivers: Some(TeamDelivers::Branch),
@@ -321,6 +320,22 @@ fn a_method_the_team_lacks_or_cannot_run_in_full_is_a_misfit_with_its_reason() {
         }]
     );
     assert!(team_misfits(team, &naming("tdd")).is_empty());
+    // A method whose file does not load is listed with no missing role and is still refused.
+    let broken = [TeamMethod {
+        error: Some("YAML parse error".to_owned()),
+        ..method("capture-broken", &[])
+    }];
+    let team = TeamFacts {
+        methods: Some(&broken),
+        ..TeamFacts::default()
+    };
+    assert_eq!(
+        team_misfits(team, &naming("capture-broken")),
+        [TeamMisfit::MethodBroken {
+            method: "capture-broken".to_owned(),
+            error: "YAML parse error".to_owned(),
+        }]
+    );
     assert_eq!(
         serde_json::to_value(TeamMisfit::UnknownMethod {
             name: "review".to_owned()

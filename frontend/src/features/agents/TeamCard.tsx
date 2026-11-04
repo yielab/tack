@@ -5,6 +5,7 @@ import type { components } from '../../shared/api/schema.gen';
 import {
   agentName,
   deliversText,
+  firstLine,
   isTeamOfOne,
   memberReachText,
   methodsByType,
@@ -14,6 +15,7 @@ import {
   pausedText,
   plainName,
   queueText,
+  runnableFirst,
   teamProposes,
   SHARED_PROPOSALS_TEXT,
   stepText,
@@ -367,7 +369,7 @@ const TeamCard: Component<TeamCardProps> = (props) => {
           <Part id="methods" agent={agent()} value={report()?.methods}>
             {(methods) => (
               <ul class="flex flex-col gap-1">
-                <For each={methods} fallback={<DisabledLine>No methods reported</DisabledLine>}>
+                <For each={runnableFirst(methods)} fallback={<DisabledLine>No methods reported</DisabledLine>}>
                   {(method) => (
                     <li data-testid={`team-method-${method.name}`} class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-small" style={{ 'overflow-wrap': 'anywhere' }}>
                       <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
@@ -376,9 +378,14 @@ const TeamCard: Component<TeamCardProps> = (props) => {
                       <Show when={method.default}>
                         <Badge tone="primary">{solo() ? "The agent's own loop" : 'Default'}</Badge>
                       </Show>
-                      <Show when={method.missing_roles && method.missing_roles.length > 0}>
+                      <Show when={method.error}>
+                        <span data-testid="team-method-broken" style={{ color: 'var(--color-warning-700)' }}>
+                          Does not load: {firstLine(method.error!)}
+                        </span>
+                      </Show>
+                      <Show when={!method.error && method.missing_roles && method.missing_roles.length > 0}>
                         <span data-testid="team-method-missing" style={{ color: 'var(--color-warning-700)' }}>
-                          Would skip steps: no member plays {method.missing_roles!.join(', ')}
+                          Cannot run: no member plays {method.missing_roles!.join(', ')}
                         </span>
                       </Show>
                     </li>

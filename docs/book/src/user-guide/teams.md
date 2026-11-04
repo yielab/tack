@@ -40,8 +40,11 @@ belongs to, a member's job says who inside the team does a step.
 
 ## What happens to a card?
 
-The sheet lists the **methods** the team offers, marks the one a card goes through when it names none, and warns
-of a method with no member for one of its steps. The **steps** of that method are drawn in order, each with who
+The sheet lists the **methods** the team offers, the ones a task can name first. It marks the one a card goes
+through when it names none, which is the team's own pipeline once a recipe has been applied to it; a team made
+from a shape and given none has no method marked. A method with no member for one of its steps reads "Cannot
+run: no member plays reviewer", and so does a method whose file does not load ("Does not load"), because docket
+refuses a task that names either one. The **steps** of the team's pipeline are drawn in order, each with who
 does it and what checks it. A step that waits for a set
 time is a dashed box of its own. Where a failed check sends the work back, and how many times, is on the step:
 "sent back to write up to 2 times". So you can read from the card what a task goes through before anyone calls it
@@ -86,7 +89,10 @@ Three limits apply at three levels, and each says who applies it:
   the span they are counted over. When it is spent the team is **Paused: budget spent**: it starts nothing, and a
   task sent to it waits. **Resume team** on the team's sheet lets it start again, and the waiting tasks go on. It works when your
   docket can resume a team from the board; with an older one the button is disabled and says so, and the sheet
-  shows docket's own command instead. If docket refuses, the sheet shows its sentence.
+  shows docket's own command instead. Resuming does not change the budget: while it is still spent in the span
+  it counts over (all time, each day or each week), the team is paused again at its next step. The sheet
+  says so, and gives docket's command that raises the limit, which also resumes the team. When a day or a week
+  has begun again nothing is counted yet, and **Resume team** is all it takes. If docket refuses, the sheet shows its sentence.
 
 A task's **Limits** section lists the levels that apply to that run, each with who applies it: the run's tokens
 ("applied by Tack's runner" for a single agent, "applied by docket" for a team), the step's own bounds when a
@@ -113,8 +119,8 @@ profile to edit it. A card goes to a team through a profile, and a profile throu
 If the team cannot do what the run needs, Tack says so before sending anything, with the reason and the change
 that fixes it: for example, "The team fab-research cannot reach the web and this run needs it", "The team
 fab-plan cannot propose items and a Planner delivers nothing else", "The team fab-research delivers a report
-and this run changes the repository", "The method secure-build would skip steps on the team fab-build: no member
-plays security-vetter", or "codex is not signed in on the runner". The run reads **Not started**, not
+and this run changes the repository", "The method secure-build cannot run on the team fab-build: no member plays
+security-vetter, and docket refuses a task that names it", or "codex is not signed in on the runner". The run reads **Not started**, not
 **Failed**: nothing was sent and nothing was used. Tack checks only what the team reported. A fact it did not
 report is never a reason to refuse.
 

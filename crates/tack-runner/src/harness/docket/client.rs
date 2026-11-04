@@ -173,13 +173,18 @@ impl Client {
     /// `POST /pods` with `ensure`: `200` when the pod exists, `201` when made. Without a `shape`
     /// none is named and docket defaults it to the code team, whatever it calls it; with one, the
     /// pod is made from that blueprint, which only a docket that lists `podShape` guarantees.
+    /// `location` is the repository of a team that works in one; a team in a folder is given none,
+    /// since docket makes it a working folder of its own and takes `location` as that folder.
     pub async fn ensure_pod(
         &self,
         pod: &str,
-        location: &str,
+        location: Option<&str>,
         shape: Option<&str>,
     ) -> Result<Reply, String> {
-        let mut body = json!({"name": pod, "location": location, "ensure": true});
+        let mut body = json!({"name": pod, "ensure": true});
+        if let Some(location) = location {
+            body["location"] = json!(location);
+        }
         if let Some(shape) = shape {
             body["blueprint"] = json!(shape);
         }
