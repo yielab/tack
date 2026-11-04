@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tack_protocol::execution::{
     CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability, ModelListSource,
-    SignInState,
+    SignInState, TeamWebMode, TeamWebRead,
 };
 use tack_runner::{ConfigOverrides, RunnerConfig, bootstrap, harness::process::ProcessLimits};
 
@@ -412,12 +412,30 @@ fn docket_lines(capability: &HarnessCapability, daemon: &Result<String, String>)
             format!("attended (fix: {})", fixes.join("; "))
         };
         lines.push(format!(
-            "  team {}: {state} · {}",
+            "  team {}: {state} · {}{}",
             team.name,
-            reads_line(team.read_only.as_deref())
+            reads_line(team.read_only.as_deref()),
+            web_line(team.web_read.as_ref())
         ));
     }
     lines
+}
+
+/// How a team reads the web, in docket's own words, when this docket says it; nothing for one that
+/// does not, so an older docket's lines read as before. A team that reads none carries the fix.
+fn web_line(web: Option<&TeamWebRead>) -> String {
+    let Some(web) = web else {
+        return String::new();
+    };
+    let mode = match web.mode {
+        TeamWebMode::Open => "web: any public host",
+        TeamWebMode::Listed => "web: only the hosts it lists",
+        TeamWebMode::Closed => "web: none",
+    };
+    match (web.mode, web.fix.as_str()) {
+        (TeamWebMode::Closed, fix) if !fix.is_empty() => format!(" · {mode} (fix: {fix})"),
+        _ => format!(" · {mode}"),
+    }
 }
 
 /// What a team's sandbox reads besides its own work: the folders docket granted, nothing, or

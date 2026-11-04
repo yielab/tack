@@ -7380,6 +7380,7 @@ export interface components {
              */
             steps?: components["schemas"]["TeamStep"][] | null;
             violations?: components["schemas"]["TeamViolation"][];
+            web_read?: null | components["schemas"]["TeamWebRead"];
             works_in?: null | components["schemas"]["WorksIn"];
         };
         /** @description What a runner's harness said after it was asked to resume a team. */
@@ -7449,6 +7450,19 @@ export interface components {
         TeamViolation: {
             fix: string;
             requirement: string;
+        };
+        /**
+         * @description How far a team's `fetch` reaches.
+         * @enum {string}
+         */
+        TeamWebMode: "open" | "listed" | "closed";
+        /** @description How a team reads the web and why. */
+        TeamWebRead: {
+            /** @description What the operator changes to give the team the web; empty unless the team reads none. */
+            fix?: string;
+            mode: components["schemas"]["TeamWebMode"];
+            /** @description Why the team reads as it does, a sentence the harness wrote. */
+            reason: string;
         };
         /**
          * @description Terminal reason from a runner attempt: `code`, `message`, and optional

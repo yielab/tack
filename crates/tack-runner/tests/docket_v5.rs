@@ -619,6 +619,60 @@ async fn probe_reads_what_each_member_reaches_and_leaves_it_unsaid_for_an_older_
     );
 }
 
+/// `webRead` is read only from a docket that lists it, and what it says agrees with what the
+/// members' tools say: a team that reads the web (open or listed) has members holding `fetch`, and
+/// one that reads none has none.
+#[tokio::test]
+async fn probe_reads_how_a_team_reads_the_web_only_when_docket_lists_it_and_it_agrees_with_the_members()
+ {
+    use tack_protocol::execution::TeamWebMode;
+    let scene = scene();
+    let read = |teams: Vec<tack_protocol::execution::TeamReport>| {
+        let team = &teams[0];
+        let fetching = team
+            .members
+            .as_ref()
+            .expect("members")
+            .iter()
+            .any(|member| member.reads_web == Some(true));
+        (team.web_read.clone(), fetching)
+    };
+
+    let fake = pods_fake().await;
+    fake.with_web_read();
+    // The captured team has no member with `fetch`, and docket says it reads none.
+    fake.set_web_read(
+        POD,
+        json!({"mode": "none", "reason": "a team in a repository names no host", "fix": "docket pod set fetchDomains <host> --pod saas-dev"}),
+    );
+    let (web, fetching) = read(adapter(&fake, &scene).probe().await.teams.expect("teams"));
+    let web = web.expect("webRead");
+    assert_eq!(web.mode, TeamWebMode::Closed);
+    assert_eq!(web.fix, "docket pod set fetchDomains <host> --pod saas-dev");
+    assert!(!fetching);
+
+    // Every member holds `fetch` on the hosts the team lists: it reads the web.
+    fake.give_fetch(POD);
+    fake.set_web_read(
+        POD,
+        json!({"mode": "listed", "reason": "reads docs.python.org", "fix": ""}),
+    );
+    let (web, fetching) = read(adapter(&fake, &scene).probe().await.teams.expect("teams"));
+    assert_eq!(web.expect("webRead").mode, TeamWebMode::Listed);
+    assert!(fetching);
+
+    // A mode Tack has no word for costs the sentence and never the team.
+    fake.set_web_read(POD, json!({"mode": "everywhere", "reason": "", "fix": ""}));
+    let (web, _) = read(adapter(&fake, &scene).probe().await.teams.expect("teams"));
+    assert!(web.is_none());
+
+    // A docket that does not list the feature is not asked, whatever its report holds.
+    let older = pods_fake().await;
+    older.set_web_read(POD, json!({"mode": "open", "reason": "", "fix": ""}));
+    let (web, _) = read(adapter(&older, &scene).probe().await.teams.expect("teams"));
+    assert!(web.is_none());
+}
+
 #[tokio::test]
 async fn probe_says_whether_the_proposals_are_shared_across_tasks_only_when_the_listing_has_a_scope()
  {
@@ -902,6 +956,97 @@ async fn the_task_body_is_the_specs_example_key_by_key() {
             "trusted": true,
         })
     );
+}
+
+/// `network: none` only cuts the jail and `fetch` runs outside it, so a profile that turns the
+/// network off also denies `fetch`; one that keeps the network leaves `fetch` as it is.
+#[tokio::test]
+async fn a_profile_with_the_network_off_also_denies_fetch() {
+    let restrictions_of = |network: bool, denied: Value| async move {
+        let fake = pods_fake().await;
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+        let mut request = spec(&scene, "attempt-1", 1);
+        request.work.request.permission_policy.network = network;
+        request.work.request.resolved_agent_profile.tool_policy =
+            json!({"docket": {"team": POD, "denied_tools": denied}});
+        adapter.start(&request).await.expect("starts");
+        fake.requests_to("POST", "/tasks/saas-dev")[0].body["restrictions"].clone()
+    };
+    assert_eq!(
+        restrictions_of(false, json!([])).await,
+        json!({"deniedTools": ["fetch"], "network": "none"})
+    );
+    assert_eq!(
+        restrictions_of(false, json!(["bash"])).await,
+        json!({"deniedTools": ["bash", "fetch"], "network": "none"})
+    );
+    assert_eq!(
+        restrictions_of(false, json!(["fetch"])).await,
+        json!({"deniedTools": ["fetch"], "network": "none"}),
+        "a tool the profile already denies is not named twice"
+    );
+    assert_eq!(
+        restrictions_of(true, json!([])).await,
+        Value::Null,
+        "with the network on nothing is denied"
+    );
+}
+
+/// `webRead`: a docket that lists it says how the team reads the web, and Tack quotes that sentence
+/// instead of working it out from the network and the members' tools.
+#[tokio::test]
+async fn a_team_that_reads_no_web_is_refused_with_dockets_own_sentence() {
+    let closed = || json!({"mode": "none", "scope": "default", "enforced": true});
+    let needing = |scene: &Scene| {
+        let mut request = spec(scene, "attempt-1", 1);
+        request.work.request.permission_policy.network = true;
+        request
+            .work
+            .request
+            .resolved_agent_profile
+            .additional
+            .insert("kind".to_owned(), json!("researcher"));
+        request
+    };
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.set_network(POD, closed());
+    fake.with_web_read();
+    fake.set_web_read(
+        POD,
+        json!({
+            "mode": "none",
+            "reason": "a folder team reads no web without the jail",
+            "fix": "docket setup sandbox on",
+        }),
+    );
+    let reason = refused_with(adapter(&fake, &scene).start(&needing(&scene)).await);
+    assert!(
+        reason.contains(&format!(
+            "The team {POD} cannot reach the web and this run needs it: a folder team reads no web without the jail docket setup sandbox on"
+        )) && !reason.contains("FETCH_ALLOWED_DOMAINS"),
+        "{reason}"
+    );
+    assert!(fake.requests_to("POST", "/tasks").is_empty());
+
+    // The same team, its web open: nothing is refused though no member is seen holding `fetch`,
+    // because docket's answer is the one that counts.
+    fake.set_web_read(
+        POD,
+        json!({"mode": "open", "reason": "a folder team under the jail reads any public host", "fix": ""}),
+    );
+    adapter(&fake, &scene)
+        .start(&needing(&scene))
+        .await
+        .expect("a team that reads the web takes the run");
+
+    // A docket that does not list the feature is read as before, from the network and the members.
+    let older = pods_fake().await;
+    older.set_network(POD, closed());
+    older.set_web_read(POD, json!({"mode": "open", "reason": "", "fix": ""}));
+    let reason = refused_with(adapter(&older, &scene).start(&needing(&scene)).await);
+    assert!(reason.contains("cannot reach the web"), "{reason}");
 }
 
 #[tokio::test]

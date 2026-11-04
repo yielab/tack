@@ -18441,7 +18441,7 @@
         "oneOf": [
           {
             "type": "string",
-            "description": "The run reaches the web, and the team has no network and no member that reads the web.",
+            "description": "The run reaches the web, and the team reads none: the harness says so, or it has no\nnetwork and no member that reads the web.",
             "enum": [
               "no_web"
             ]
@@ -18881,6 +18881,17 @@
               "$ref": "#/components/schemas/TeamViolation"
             }
           },
+          "web_read": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamWebRead",
+                "description": "How the team reads the web, in the harness's own sentence: whether it does, why, and what\nto change when it does not. Absent means the harness did not say, which is not the same as\nno web; no field may carry a harness's own key name."
+              }
+            ]
+          },
           "works_in": {
             "oneOf": [
               {
@@ -19097,6 +19108,36 @@
           },
           "requirement": {
             "type": "string"
+          }
+        }
+      },
+      "TeamWebMode": {
+        "type": "string",
+        "description": "How far a team's `fetch` reaches.",
+        "enum": [
+          "open",
+          "listed",
+          "closed"
+        ]
+      },
+      "TeamWebRead": {
+        "type": "object",
+        "description": "How a team reads the web and why.",
+        "required": [
+          "mode",
+          "reason"
+        ],
+        "properties": {
+          "fix": {
+            "type": "string",
+            "description": "What the operator changes to give the team the web; empty unless the team reads none."
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TeamWebMode"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the team reads as it does, a sentence the harness wrote."
           }
         }
       },

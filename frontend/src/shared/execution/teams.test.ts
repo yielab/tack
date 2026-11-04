@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, degradedNeeds, degradedText, type TeamEntry, type TeamReport } from './teams';
+import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, degradedNeeds, degradedText, webReadText, type TeamEntry, type TeamReport } from './teams';
 
 const pod = (name: string, report: Partial<TeamReport> = {}): TeamEntry =>
   ({ name, harness: 'docket', reported: true, profiles: [], report: { name, profile: 'attended', ...report } }) as TeamEntry;
@@ -98,6 +98,16 @@ describe('what a report says about the work', () => {
     expect(degradedNeeds(report).map((n) => n.name)).toEqual(['pdfs']);
     expect(degradedText('saas-research', degradedNeeds(report))).toBe('saas-research: pdfs is not met, and the run goes on without it. docket setup sandbox on');
     expect(degradedNeeds(undefined)).toEqual([]);
+  });
+
+  it('says_how_a_team_reads_the_web_in_the_harnesses_own_words', () => {
+    expect(webReadText({ mode: 'open', reason: 'a folder team under the jail reads any public host', fix: '' })).toBe('Any public host: a folder team under the jail reads any public host');
+    expect(webReadText({ mode: 'listed', reason: 'reads docs.python.org', fix: '' })).toBe('Only the hosts it lists: reads docs.python.org');
+    expect(webReadText({ mode: 'closed', reason: '', fix: 'docket setup sandbox on' })).toBe('None');
+    const closed = { name: 'saas-research', web_read: { mode: 'closed', reason: 'a folder team reads no web without the jail.', fix: 'docket setup sandbox on' } } as TeamReport;
+    expect(misfitText('saas-research', 'no_web', closed)).toBe('needs the web, and saas-research reads none: a folder team reads no web without the jail. docket setup sandbox on');
+    // A team that says nothing of it keeps the sentence worked out from its network and members.
+    expect(misfitText('saas-research', 'no_web', { name: 'saas-research' } as TeamReport)).toContain('no network and no member that reads the web');
   });
 
   it('reads_the_method_a_profile_gives_to_each_kind_of_card', () => {

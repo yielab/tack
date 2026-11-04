@@ -106,6 +106,18 @@ export function networkText(network: NonNullable<TeamReport['network']>): string
   return NETWORK_TEXT[network];
 }
 
+const WEB_READ_TEXT: Record<NonNullable<TeamReport['web_read']>['mode'], string> = {
+  open: 'Any public host',
+  listed: 'Only the hosts it lists',
+  closed: 'None',
+};
+
+/** How a team reads the web, with the harness's own reason: "Any public host: a folder team under
+ *  the jail reads any public host". Reading says nothing of searching, which a team may still lack. */
+export function webReadText(web: NonNullable<TeamReport['web_read']>): string {
+  return web.reason ? `${WEB_READ_TEXT[web.mode]}: ${web.reason}` : WEB_READ_TEXT[web.mode];
+}
+
 export function queueText(queue: { waiting: number; running: number }): string {
   return `${queue.waiting} waiting, ${queue.running} running`;
 }
@@ -137,6 +149,9 @@ export function webText(member: TeamMember): string | null {
  *  `report` is the team's own report, for the fix a need carries. */
 export function misfitText(team: string, misfit: TeamMisfit, report?: TeamReport | null): string {
   if (misfit === 'no_web') {
+    // The team's own sentence, when it says one: why it reads none and what changes that.
+    const web = report?.web_read;
+    if (web) return `needs the web, and ${team} reads none: ${web.reason}${web.fix ? ` ${web.fix}` : ''}`.trim();
     return `needs the web, and this team has no network and no member that reads the web. Give it the hosts it reads with \`docket pod set fetchDomains <host> --pod ${team}\`, open its whole network with \`docket pod set network open --widen --pod ${team}\`, or turn the network off in the profile.`;
   }
   if (misfit === 'no_proposals') {

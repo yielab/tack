@@ -270,6 +270,33 @@ fn readiness_lines_say_who_is_signed_in_and_which_models_exist() {
     }
 }
 
+/// A team that says how it reads the web has it in its line, with the fix when it reads none; one
+/// that says nothing keeps the line it had.
+#[test]
+fn a_teams_line_says_how_it_reads_the_web_when_docket_says() {
+    use tack_protocol::execution::{TeamWebMode, TeamWebRead};
+    let web = |mode, fix: &str| {
+        Some(TeamWebRead {
+            mode,
+            reason: "why".to_owned(),
+            fix: fix.to_owned(),
+        })
+    };
+    assert_eq!(web_line(None), "");
+    assert_eq!(
+        web_line(web(TeamWebMode::Open, "").as_ref()),
+        " · web: any public host"
+    );
+    assert_eq!(
+        web_line(web(TeamWebMode::Listed, "").as_ref()),
+        " · web: only the hosts it lists"
+    );
+    assert_eq!(
+        web_line(web(TeamWebMode::Closed, "docket setup sandbox on").as_ref()),
+        " · web: none (fix: docket setup sandbox on)"
+    );
+}
+
 /// Under docket the report states the API, whether the daemon answers, and
 /// one line per team with what keeps it from running lights-out.
 #[test]
@@ -302,6 +329,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             needs: None,
             budget: None,
             memory: None,
+            web_read: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
@@ -327,6 +355,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             needs: None,
             budget: None,
             memory: None,
+            web_read: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
@@ -349,6 +378,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             needs: None,
             budget: None,
             memory: None,
+            web_read: None,
         },
     ]);
     assert_eq!(

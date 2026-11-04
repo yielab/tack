@@ -363,7 +363,9 @@ own setup can give. Nothing was sent and no token was spent.
 
 **What to do.** Make the change the reason names, with docket's own commands, on the runner's machine:
 
-- The web: give the team the hosts its `fetch` reads with `docket pod set fetchDomains <host> --pod <team>`
+- The web: with a docket that lists `webRead`, the reason is docket's own sentence and carries the fix (for a
+  team in a folder, `docket setup sandbox on` opens the web to any public host, and no host list is needed).
+  Otherwise give the team the hosts its `fetch` reads with `docket pod set fetchDomains <host> --pod <team>`
   (`'*' --widen` for any host); a docket without that setting reads them from `FETCH_ALLOWED_DOMAINS`, for
   every team. `docket pod set network open --widen --pod <team>` also works, but it opens the team's
   commands, steps and MCP servers to every host, which is more than reading the web needs. If the run does

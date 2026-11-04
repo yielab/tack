@@ -264,6 +264,36 @@ pub struct TeamReport {
     /// no field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<TeamMemory>,
+    /// How the team reads the web, in the harness's own sentence: whether it does, why, and what
+    /// to change when it does not. Absent means the harness did not say, which is not the same as
+    /// no web; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_read: Option<TeamWebRead>,
+}
+
+/// How a team reads the web and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamWebRead {
+    pub mode: TeamWebMode,
+    /// Why the team reads as it does, a sentence the harness wrote.
+    pub reason: String,
+    /// What the operator changes to give the team the web; empty unless the team reads none.
+    #[serde(default)]
+    pub fix: String,
+}
+
+/// How far a team's `fetch` reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamWebMode {
+    /// Any public host, with no list to keep.
+    Open,
+    /// The hosts the team names, or the hosts the operator granted.
+    Listed,
+    /// No web: no member reads it.
+    Closed,
 }
 
 /// The kind of a [`TeamNeed`] that a signed-in agent meets.
@@ -347,6 +377,7 @@ impl TeamReport {
             needs: (!needs.is_empty()).then_some(needs),
             budget: None,
             memory: None,
+            web_read: None,
         }
     }
 
@@ -364,6 +395,7 @@ impl TeamReport {
             delivers: self.delivers,
             methods: self.methods.as_deref(),
             needs: self.needs.as_deref(),
+            web_read: self.web_read.as_ref(),
         }
     }
 
@@ -467,7 +499,8 @@ impl TeamNeeds {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TeamMisfit {
-    /// The run reaches the web, and the team has no network and no member that reads the web.
+    /// The run reaches the web, and the team reads none: the harness says so, or it has no
+    /// network and no member that reads the web.
     NoWeb,
     /// The run proposes items, and no member of the team can.
     NoProposals,
@@ -493,6 +526,7 @@ pub struct TeamFacts<'a> {
     pub delivers: Option<TeamDelivers>,
     pub methods: Option<&'a [TeamMethod]>,
     pub needs: Option<&'a [TeamNeed]>,
+    pub web_read: Option<&'a TeamWebRead>,
 }
 
 /// What a profile needs that a team with these facts says it cannot do. Only what the harness
@@ -504,10 +538,13 @@ pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> 
         members.is_some_and(|members| members.iter().all(|member| can(member) == Some(false)))
     };
     let mut misfits = Vec::new();
-    if needs.web
-        && facts.network == Some(TeamNetwork::Closed)
-        && none_can(|member| member.reads_web)
-    {
+    // What the harness says of the web is the answer when it says it; otherwise the network and
+    // the members' tools are read, which is what an older docket gives.
+    let no_web = match facts.web_read {
+        Some(web) => web.mode == TeamWebMode::Closed,
+        None => facts.network == Some(TeamNetwork::Closed) && none_can(|member| member.reads_web),
+    };
+    if needs.web && no_web {
         misfits.push(TeamMisfit::NoWeb);
     }
     if needs.proposals && none_can(|member| member.can_propose) {

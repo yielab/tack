@@ -21,8 +21,8 @@ pub use capabilities::{
     MemoryEvidence, ModelListSource, ModelsReport, NEED_MODEL, NEED_SIGN_IN, RunnerCapabilities,
     SignInReport, SignInState, TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember,
     TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamNeeds, TeamNetwork, TeamPause, TeamQueue,
-    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
-    team_misfits,
+    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, TeamWebMode,
+    TeamWebRead, WorksIn, team_misfits,
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,

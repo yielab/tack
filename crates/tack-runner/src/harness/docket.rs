@@ -84,6 +84,10 @@ const POD_PAUSE: &str = "podPause";
 /// `needs`.
 const POD_CONTRACT: &str = "podContract";
 
+/// The feature of `GET /health` under which a team's report carries `webRead` (how the team reads
+/// the web, and why) and each of its needs says whether it `blocking`.
+const WEB_READ: &str = "webRead";
+
 /// The feature of `GET /health` under which a paused team can be resumed over HTTP and its report
 /// carries `budget`.
 const POD_RESUME: &str = "podResume";
@@ -211,20 +215,29 @@ fn misfit_sentence(
     let lines: Vec<String> = misfits
         .iter()
         .map(|misfit| match misfit {
-            TeamMisfit::NoWeb if pod_fetch => format!(
-                "The team {pod} cannot reach the web and this run needs it: docket reports its \
-                 network as none and no member holds `fetch`. Give it the hosts it reads with \
-                 `docket pod set fetchDomains <host> --pod {pod}` (`'*' --widen` for any host), \
-                 open its whole network with `docket pod set network open --widen --pod {pod}`, \
-                 or turn the network off in the profile."
-            ),
-            TeamMisfit::NoWeb => format!(
-                "The team {pod} cannot reach the web and this run needs it: docket reports its \
-                 network as none and no member holds `fetch`. Name the hosts `fetch` reads in \
-                 docket's FETCH_ALLOWED_DOMAINS (every team's), open the team's network with \
-                 `docket pod set network open --widen --pod {pod}`, or turn the network off in \
-                 the profile."
-            ),
+            TeamMisfit::NoWeb => match facts.web_read {
+                // docket's own sentence: why the team reads none and what changes that.
+                Some(web) => format!(
+                    "The team {pod} cannot reach the web and this run needs it: {} {}",
+                    web.reason, web.fix
+                )
+                .trim_end()
+                .to_owned(),
+                None if pod_fetch => format!(
+                    "The team {pod} cannot reach the web and this run needs it: docket reports its \
+                     network as none and no member holds `fetch`. Give it the hosts it reads with \
+                     `docket pod set fetchDomains <host> --pod {pod}` (`'*' --widen` for any host), \
+                     open its whole network with `docket pod set network open --widen --pod {pod}`, \
+                     or turn the network off in the profile."
+                ),
+                None => format!(
+                    "The team {pod} cannot reach the web and this run needs it: docket reports its \
+                     network as none and no member holds `fetch`. Name the hosts `fetch` reads in \
+                     docket's FETCH_ALLOWED_DOMAINS (every team's), open the team's network with \
+                     `docket pod set network open --widen --pod {pod}`, or turn the network off in \
+                     the profile."
+                ),
+            },
             TeamMisfit::NoProposals => format!(
                 "The team {pod} cannot propose items and a Planner delivers nothing else: no \
                  member can write the record set `tack_proposals`. Declare it in the team's \
@@ -1822,19 +1835,22 @@ impl HarnessAdapter for DocketAdapter {
         let in_repository = in_repository(team.as_ref());
         // What the team says it can do, read now and not from the last probe: a need it cannot
         // meet ends the run here, before the team spends a token to ask a person for it.
-        let (network, members, contract) = match team {
+        let (network, members, contract, web_read) = match team {
             Some(mut report) => {
                 let listed = self.client.has_feature(POD_CONTRACT).await;
                 let contract = probe::contract(&mut report, listed);
+                let web_read =
+                    probe::web_read(&mut report, self.client.has_feature(WEB_READ).await);
                 (
                     probe::network(report.network.as_ref()),
                     report
                         .members
                         .map(|members| members.into_iter().map(probe::member).collect::<Vec<_>>()),
                     contract,
+                    web_read,
                 )
             }
-            None => (None, None, probe::Contract::default()),
+            None => (None, None, probe::Contract::default(), None),
         };
         let facts = TeamFacts {
             network,
@@ -1842,6 +1858,7 @@ impl HarnessAdapter for DocketAdapter {
             delivers: contract.delivers,
             methods: contract.methods.as_deref(),
             needs: contract.needs.as_deref(),
+            web_read: web_read.as_ref(),
         };
         let misfits = team_misfits(
             facts,

@@ -340,6 +340,8 @@ struct Pod {
     /// What the report says of `delivers`, `methods` and `needs` instead of the capture's, as an
     /// object holding any of the three.
     contract: Option<Value>,
+    /// What the report says of `webRead` when the docket lists the feature.
+    web_read: Option<Value>,
     /// What the report says of `budget` instead of the capture's: an object holding any of its
     /// four keys.
     budget: Option<Value>,
@@ -410,6 +412,8 @@ struct World {
     /// also lists `podContract` in the features; `Some(false)` sends the keys without listing
     /// it, which a reader that waits for the feature must not read).
     pod_contract: Option<bool>,
+    /// `/health` lists `webRead`, and a team with a `webRead` says it.
+    web_read_listed: bool,
     /// A docket that lists `podResume`: a team's report carries `budget` and `POST
     /// /pods/<pod>/resume` clears a pause. Without it the route answers `404`, as a docket without
     /// the route would, and the report carries no `budget`.
@@ -497,6 +501,7 @@ impl FakeDocket {
             without_hop_times: false,
             without_pod_pause: false,
             pod_contract: None,
+            web_read_listed: false,
             pod_resume: false,
             without_budget_outcome: false,
             without_retry_continues: false,
@@ -558,6 +563,7 @@ impl FakeDocket {
                 network: None,
                 fetch: false,
                 contract: None,
+                web_read: None,
                 budget: None,
                 memory: Vec::new(),
             },
@@ -683,6 +689,23 @@ impl FakeDocket {
             .get_mut(name)
             .unwrap_or_else(|| panic!("no team {name}"))
             .contract = Some(contract);
+    }
+
+    /// A docket that lists `webRead`: a team's report says how it reads the web, once a team is
+    /// given its answer with [`Self::set_web_read`].
+    pub fn with_web_read(&self) {
+        self.shared.lock().unwrap().web_read_listed = true;
+    }
+
+    /// What the team's `webRead` says: an object with `mode`, `reason` and `fix`.
+    pub fn set_web_read(&self, name: &str, web_read: Value) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .web_read = Some(web_read);
     }
 
     /// A docket that lists `podResume`: a team's report and its row of the list say what it may
@@ -1301,6 +1324,9 @@ fn features(state: &World) -> Value {
     if state.pod_contract == Some(true) {
         listed.push("podContract");
     }
+    if state.web_read_listed {
+        listed.push("webRead");
+    }
     if state.pod_resume {
         listed.push("podResume");
     }
@@ -1587,6 +1613,11 @@ fn pod_report_value(state: &World, name: &str) -> Option<Value> {
                 report[key] = said.clone();
             }
         }
+    }
+    if state.web_read_listed
+        && let Some(web_read) = &pod.web_read
+    {
+        report["webRead"] = web_read.clone();
     }
     put_budget(state, pod, &mut report);
     Some(report)
@@ -1903,6 +1934,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             network: None,
             fetch: false,
             contract: None,
+            web_read: None,
             budget: None,
             memory: Vec::new(),
         },
