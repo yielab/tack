@@ -124,10 +124,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   no team is a team of one filled from its runner's report; docket adds members, methods, step and team limits
   and folder teams, reported and probed, never required. Four additive asks to docket
   (`podShape`, `podContract`, `pipelineChecked`, `podResume`), each probed. Cards A ∥ C; D; E; F; G.
-- **Opened 2026-11-04:** Phase 91 (the roadmap's own section, no plan file, no ADR; amends ADR 0034's `conversation`
-  note and ADR 0035 d1) — the docket features Tack did not use: `conversation` (a docket thread continues),
-  `memoryStatus` (pending memory needs you), `pipelineChecked` read as a refusal, `readScope` not used (why), a
-  two-part consult proved in the fake, and Tack names docket 0.3.0-beta.1. Cards D; A ∥ B ∥ C.
+- **Built 2026-11-04, in `develop`:** Phase 91 (the roadmap's own section, no plan file, no ADR; amends ADR 0034's `conversation`
+  note and ADR 0035 d1) — the docket features Tack did not use: a docket thread continues one task (`conversation`), a
+  team's pending memory needs you in each project that uses it and is approved or refused from the sheet
+  (`memoryStatus`, `memoryDecide`), `pipelineChecked` read as a refusal, `readScope` not used (why); a profile's
+  `kind` is settable; Tack names docket 0.3.0-beta.1. Verified against a real docket with `onboarding-lab/e2e/docket-prill-e2e.sh --check`.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
