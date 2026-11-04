@@ -36,7 +36,7 @@ const SOURCE_WORDS: Record<string, string> = {
   default: "docket's default",
 };
 
-const WINDOW_WORDS: Record<string, string> = { lifetime: 'in all', day: 'each day' };
+const WINDOW_WORDS: Record<string, string> = { none: 'in all', day: 'each day', week: 'each week' };
 
 /** One step bound that ran out: "Rounds: 30 of 30", where it was set and where to raise it. */
 function stepLines(budget: RunStepBudget): string[] | null {

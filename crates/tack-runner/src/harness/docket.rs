@@ -26,7 +26,7 @@ use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, OperationOutcome,
-    TeamActivity, TeamDelivers, TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
+    TeamActivity, TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
     WorkspaceId as DomainWorkspaceId, team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
@@ -210,30 +210,34 @@ fn misfit_sentence(
                  `records/tack_proposals.yaml`, let a role write it and apply the team."
             ),
             TeamMisfit::NoRepository => format!(
-                "The team {pod} delivers {} and this run changes the repository. Point the \
+                "The team {pod} delivers a report and this run changes the repository. Point the \
                  profile at a team that works in the repository, or give the run a Planner or \
-                 Researcher profile.",
-                match facts.delivers {
-                    Some(TeamDelivers::Records) => "records",
-                    _ => "a report",
-                }
+                 Researcher profile."
             ),
             TeamMisfit::UnknownMethod { name } => format!(
-                "The team {pod} has no method named {name}; it offers {}. Name one of those in \
+                "The team {pod} has no method named {name}; it can run {}. Name one of those in \
                  the profile's `pipeline_by_type`, or add the recipe with \
-                 `docket init --recipe {name}`.",
+                 `docket pod update {name} --pod {pod}`.",
                 facts
                     .methods
                     .unwrap_or_default()
                     .iter()
+                    .filter(|method| method.missing_roles.is_empty() && method.error.is_none())
                     .map(|method| method.name.as_str())
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
             TeamMisfit::StepsSkipped { method, roles } => format!(
-                "The method {method} would skip steps on the team {pod}: no member plays {}. Add \
-                 the role to the team and apply it, or name another method.",
+                "The method {method} cannot run on the team {pod}: no member plays {}, and docket \
+                 refuses a task that names it. Add the role to the team and apply it, or name \
+                 another method.",
                 roles.join(", ")
+            ),
+            TeamMisfit::MethodBroken { method, error } => format!(
+                "The method {method} of the team {pod} does not load, and docket refuses a task \
+                 that names it: {} Fix its file in the team's pipelines folder and check it \
+                 with `docket pod validate`.",
+                error.lines().next().unwrap_or_default()
             ),
             TeamMisfit::NeedsUnmet { name } => format!(
                 "The team {pod} still needs {name}: {}",
@@ -1464,6 +1468,17 @@ impl DocketAdapter {
                        "message": if why.is_empty() { NEEDS_A_PERSON } else { why },
                        "task": info.task}),
             ),
+            // `pipelineChecked`: the claim refused the method the task names before any step ran,
+            // because the team lacks a role of it or its file does not load. docket's reason names
+            // the pipeline, where it comes from and each missing role.
+            _ if failure_kind == Some("pipeline") => (
+                AttemptState::Failed,
+                json!({"code": "pipeline",
+                       "message": format!(
+                           "The team {} refused the method before any step ran: {why}",
+                           info.pod),
+                       "task": info.task}),
+            ),
             // The install failed before any hop; docket's reason names the command and its output.
             _ if failure_kind == Some("prepare") => (
                 AttemptState::Failed,
@@ -1717,7 +1732,7 @@ impl HarnessAdapter for DocketAdapter {
         // the call, so a slow docket delays only the run that waits on it.
         let known = self.ensured.lock().await.contains(&pod);
         if !known {
-            match self.client.ensure_pod(&pod, &location, None).await {
+            match self.client.ensure_pod(&pod, Some(&location), None).await {
                 Ok(reply) if reply.status == 200 || reply.status == 201 => {
                     self.ensured.lock().await.insert(pod.clone());
                 }

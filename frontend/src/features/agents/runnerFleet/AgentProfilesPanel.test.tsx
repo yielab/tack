@@ -353,7 +353,7 @@ describe('AgentProfilesPanel', () => {
 
     it('shows what a save deserves a second look at, and keeps the form on it', async () => {
       api([pod([{ name: 'tdd', source: 'shipped', default: true, missing_roles: ['reviewer'] }])], () =>
-        new Response(JSON.stringify({ agent_profile_id: 'ap_a', warnings: ['The method tdd on the team saas-code has no member for reviewer: its steps would be skipped.'] }), { status: 200 }),
+        new Response(JSON.stringify({ agent_profile_id: 'ap_a', warnings: ['The method tdd on the team saas-code has no member for reviewer, so a run that names it is refused until the team has the role.'] }), { status: 200 }),
       );
       const { container } = mount();
       await edit(container);

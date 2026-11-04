@@ -593,6 +593,8 @@ async fn a_profile_save_checks_its_methods_against_the_team_that_runs_it() {
                         {"name": "tdd", "source": "recipe", "default": true},
                         {"name": "secure-build", "source": "recipe", "default": false,
                          "missing_roles": ["security-vetter"]},
+                        {"name": "capture-broken", "source": "pod:capture-broken", "default": false,
+                         "missing_roles": [], "error": "YAML parse error: while parsing a flow sequence"},
                     ]},
                     {"name": "plain", "profile": "attended", "violations": []},
                 ]))
@@ -614,11 +616,23 @@ async fn a_profile_save_checks_its_methods_against_the_team_that_runs_it() {
         "{warned}"
     );
 
+    // A method whose file does not load has no missing role and still cannot run.
+    let (status, broken) = save_profile(&b, on("saas", "capture-broken")).await;
+    assert_eq!(status, 200, "{broken}");
+    assert!(
+        broken["warnings"][0]
+            .as_str()
+            .unwrap_or_default()
+            .contains("capture-broken of the team saas does not load"),
+        "{broken}"
+    );
+
     let (status, refused) = save_profile(&b, on("saas", "review")).await;
     assert_eq!(status, 400, "{refused}");
     let message = refused["error"]["message"].as_str().unwrap_or_default();
     assert!(
-        message.contains("no method named review") && message.contains("offers tdd, secure-build"),
+        message.contains("no method named review")
+            && message.contains("offers tdd, secure-build, capture-broken"),
         "{refused}"
     );
 

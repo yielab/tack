@@ -133,16 +133,18 @@ export function misfitText(team: string, misfit: TeamMisfit, report?: TeamReport
     return `delivers only proposed items, and no member of this team can propose. Declare the team's \`tack_proposals\` record set and let a role write it.`;
   }
   if (misfit === 'no_repository') {
-    const hands = report?.delivers === 'records' ? 'rows in its record sets' : 'a report';
-    return `changes the project's repository, and ${team} hands back ${hands}, not a branch. Point the profile at a team that delivers a branch, or make it a Researcher.`;
+    return `changes the project's repository, and ${team} hands back a report, not a branch. Point the profile at a team that delivers a branch, or make it a Researcher.`;
   }
   if ('unknown_method' in misfit) {
-    const offered = (report?.methods ?? []).map((m) => m.name);
-    return `names the method ${misfit.unknown_method.name}, which ${team} does not have${offered.length > 0 ? `. It has ${offered.join(', ')}` : ''}. Choose one it has, or leave the method out.`;
+    const offered = (report?.methods ?? []).filter((m) => !m.error && (m.missing_roles?.length ?? 0) === 0).map((m) => m.name);
+    return `names the method ${misfit.unknown_method.name}, which ${team} does not have${offered.length > 0 ? `. It can run ${offered.join(', ')}` : ''}. Choose one it can run, or leave the method out.`;
   }
   if ('steps_skipped' in misfit) {
     const { method, roles } = misfit.steps_skipped;
-    return `names the method ${method}, which would skip steps on ${team}: no member plays ${roles.join(', ')}. Add ${roles.length === 1 ? 'that member' : 'those members'} to the team, or choose another method.`;
+    return `names the method ${method}, which ${team} cannot run: no member plays ${roles.join(', ')}. Add ${roles.length === 1 ? 'that member' : 'those members'} to the team, or choose another method.`;
+  }
+  if ('method_broken' in misfit) {
+    return `names the method ${misfit.method_broken.method}, whose file in ${team} does not load: ${firstLine(misfit.method_broken.error)}. Fix the file, or choose another method.`;
   }
   const need = (report?.needs ?? []).find((n) => n.name === misfit.needs_unmet.name);
   const fix = need?.fix ? ` ${need.fix}` : '';
@@ -166,9 +168,18 @@ export function unmetNeeds(report: TeamReport | null | undefined): TeamNeed[] {
 export function deliversText(delivers: NonNullable<TeamReport['delivers']>): string {
   return delivers === 'branch'
     ? 'Hands back a branch of the repository to review and merge'
-    : delivers === 'report'
-      ? 'Hands back a report: there is nothing to merge'
-      : 'Keeps rows in its record sets: there is nothing to merge';
+    : 'Hands back a report: there is nothing to merge';
+}
+
+/** The first line of a sentence docket sent over several, which is the part that says what is wrong. */
+export function firstLine(text: string): string {
+  return text.split('\n', 1)[0].trim();
+}
+
+/** A team's methods with the ones a task can name first, in the order the agent listed them within each group. */
+export function runnableFirst(methods: TeamMethod[]): TeamMethod[] {
+  const rank = (m: TeamMethod) => (m.error ? 2 : (m.missing_roles?.length ?? 0) > 0 ? 1 : 0);
+  return [...methods].sort((a, b) => rank(a) - rank(b));
 }
 
 /** The method names a profile gives to kinds of card (`docket.pipeline_by_type`), in the order written. */
@@ -192,14 +203,36 @@ export function resumeGate(entry: TeamEntry): { enabled: boolean; reason: string
   return { enabled: true, reason: null };
 }
 
+/** Whether the team has used its whole budget in the window it counts over. A team that says nothing
+ *  of a budget, or has no limit, is never spent. */
+export function budgetSpent(report: TeamReport | null | undefined): boolean {
+  const budget = report?.budget;
+  return !!budget && budget.tokens != null && budget.used >= budget.tokens;
+}
+
+/** The way out of a spent budget: resuming does not change it, so the team pauses again at its next step. */
+function spentText(name: string): string {
+  return `Its budget is still spent, so resuming now pauses it again at its next step. Raise the limit with \`docket pod set budgetTokens <tokens> --pod ${name}\`, which also resumes the team.`;
+}
+
 /** What a paused team is owed: the fact in a few words and the one way to end it. */
 export function pausedText(entry: TeamEntry, paused: NonNullable<TeamReport['paused']>): { headline: string; resume: string } {
+  const spent = budgetSpent(entry.report);
   return {
     headline: paused === 'budget' ? 'Paused: budget spent' : 'Paused',
-    resume: resumeGate(entry).enabled
-      ? 'Press Resume team to let it claim tasks again; its queued tasks wait until then.'
-      : `Resume it with \`docket run --pod ${entry.name} --resume\`; its queued tasks wait until then.`,
+    resume: spent
+      ? spentText(entry.name)
+      : resumeGate(entry).enabled
+        ? 'Press Resume team to let it claim tasks again; its queued tasks wait until then.'
+        : `Resume it with \`docket run --pod ${entry.name} --resume\`; its queued tasks wait until then.`,
   };
+}
+
+/** What the board says once a team was resumed: it claims again, unless its budget is still spent. */
+export function resumedText(name: string, report: TeamReport | null | undefined): { text: string; spent: boolean } {
+  return budgetSpent(report)
+    ? { text: `${name} was resumed. ${spentText(name)}`, spent: true }
+    : { text: `${name} can claim tasks again`, spent: false };
 }
 
 /** What the team's report says of proposing, read from the one field both the card and Compare use:

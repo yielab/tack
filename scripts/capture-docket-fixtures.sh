@@ -141,9 +141,10 @@ redact() {
     -e 's#task-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#task-00000000-0000-0000-0000-000000000000#g' \
     -e 's#esc-[0-9a-f]{12}#esc-000000000000#g' \
     -e 's#(apr|run)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#\1-00000000-0000-0000-0000-000000000000#g' \
-    -e 's#("claimPid": ?)[0-9]+#\10#g'
+    -e 's#("claimPid": ?)[0-9]+#\10#g' \
+    -e 's#("(reviewCode|accept)": ?")[0-9a-f]{16}"#\10000000000000000"#g'
 }
-REDACTED="the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid"
+REDACTED="the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid, review codes (as zeros)"
 
 LAST_STATUS=
 LAST_BODY=
@@ -193,6 +194,8 @@ rec() {
   case "$route" in
     /pods/*/records/*) route=/pods/'<pod>'/records/'<set>' ;;
     /pods/*/records) route=/pods/'<pod>'/records ;;
+    /pods/*/apply) route=/pods/'<pod>'/apply ;;
+    /pods/*/resume) route=/pods/'<pod>'/resume ;;
     /pods/*) route=/pods/'<pod>' ;;
     /tasks/*/*/cancel) route=/tasks/'<pod>'/'<id>'/cancel ;;
     /tasks/*/*/retry) route=/tasks/'<pod>'/'<id>'/retry ;;
@@ -612,6 +615,100 @@ rec records-rows-sql-columns GET '/pods/saas-notes/records/tack_proposals?limit=
 rec pod-capabilities GET /pods/saas-dev yes "a team with a codebase that declares tack_proposals: every member lists kinds, tools and records {write, query}; the lead writes no project file and proposes, the implementer writes files and has no record tool"; expect 200 pod-capabilities
 rec pod-capabilities-denied GET /pods/saas-lights yes "a team that declares tack_proposals and denies the record kind: no member lists a record tool and records.write is empty, though the set exists"; expect 200 pod-capabilities-denied
 rec pod-capabilities-folder GET /pods/saas-notes yes "a team in a folder that declares tack_proposals: the lead, reviewer, analyst and writer, each with what it reaches"; expect 200 pod-capabilities-folder
+
+# ── What a team says of its contract, its budget, its shape: no model ───────────────────────────
+# A team in a folder with the web-research recipe applied: its pipeline is bound (`default` on one
+# method), a method's file that does not load carries `error`, and the researchers' three needs are
+# unmet. Applying a recipe is `docket pod update`, which runs no model.
+guard
+rec_contract=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' \
+  -d '{"name": "saas-contract", "blueprint": "respond", "ensure": true}' "$BASE/pods")
+[ "$(jq -r '.created' <<<"$rec_contract")" = true ] || die "docket would not make the contract team: $rec_contract"
+mkdir -p "$SCRATCH/contract"
+(cd "$SCRATCH/contract" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod update web-research --pod saas-contract </dev/null >"$SCRATCH/pod-update-web.log" 2>&1) \
+  || die "docket pod update web-research failed; see $SCRATCH/pod-update-web.log"
+mkdir -p "$DOCKET_HOME/config/pods/saas-contract/pipelines"
+printf 'not: [valid\n' >"$DOCKET_HOME/config/pods/saas-contract/pipelines/capture-broken.yaml"
+rec pod-contract GET /pods/saas-contract yes "a team in a folder with a bound pipeline: delivers is a list (report), methods lists every pipeline a task may name (default on the bound one, missingRoles for a step the roster cannot fill, error for a file that does not load) and needs holds the three unmet needs the web-research recipe records"; expect 200 pod-contract
+
+# A team over its budget: a day window, a cap of 1000 and 2500 tokens spent today. docket counts a
+# pod's tokens from its sessions' per-day usage, which only a model writes, so one session record is
+# written the way docket's own tests do. The first task's first hop meets the gate and pauses the
+# team, which is the state a spent budget leaves; no model is asked.
+guard
+rec_budget=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' \
+  -d "$(jq -cn --arg location "$SCRATCH/repo" '{name: "saas-budget", location: $location, ensure: true}')" "$BASE/pods")
+[ "$(jq -r '.created' <<<"$rec_budget")" = true ] || die "docket would not make the budget team: $rec_budget"
+for setting in "budgetTokens 1000" "budgetWindow day"; do
+  (cd "$SCRATCH/repo" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set $setting --pod saas-budget </dev/null >"$SCRATCH/pod-set-budget.log" 2>&1) \
+    || die "docket pod set $setting failed; see $SCRATCH/pod-set-budget.log"
+done
+cat >"$SCRATCH/spend.py" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from urllib.parse import quote
+from docket.kernel.home import current_home
+
+agent, tokens = sys.argv[1], int(sys.argv[2])
+day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+key = f"agent:{agent}:default"
+folder = current_home().sessions_dir / quote(key, safe="")
+folder.mkdir(parents=True, exist_ok=True)
+usage = {"inputTokens": 0, "outputTokens": tokens, "cachedTokens": 0, "turns": 1}
+(folder / "session.json").write_text(json.dumps({
+    "sessionKey": key, "created": f"{day}T00:00:00Z", "updated": f"{day}T00:00:00Z",
+    "messages": [], "usage": usage, "usageByDay": {day: usage},
+}))
+PY
+guard
+"${DOCKET_ENV[@]}" "$DOCKET_PY" -I "$SCRATCH/spend.py" saas-budget-implementer 2500 || die "could not record the tokens spent"
+rec pod-budget-spent GET /pods/saas-budget yes "a team whose day budget is spent but that has not met the gate yet: budget.used is above budget.tokens and paused is false" ; expect 200 pod-budget-spent
+curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' -d '{"description":"meets the budget gate"}' "$BASE/tasks/saas-budget" >/dev/null
+for _ in $(seq 1 90); do
+  [ "$(curl -s -m 5 -K "$CURL_AUTH" "$BASE/pods/saas-budget" | jq -r '.paused')" = true ] && break
+  sleep 0.5
+done
+rec pod-budget GET /pods/saas-budget yes "a team paused on its budget: paused true and pausedReason budget beside budget {tokens, used, window day, windowStart}, used above tokens"; expect 200 pod-budget
+[ "$(jq -r '.paused' <<<"$LAST_BODY")" = true ] || die "the budget team was not paused; see $SCRATCH/daemon.log"
+rec pods-paused GET /pods yes "a row of a paused team carries paused, pausedReason and budget, as the team's report does"; expect 200 pods-paused
+rec pod-resumed POST /pods/saas-budget/resume yes "a paused team resumed: the whole report of the team plus resumed true; the budget is still spent, so docket pauses it again at the next hop"; expect 200 pod-resumed
+rec pod-resume-not-paused POST /pods/saas-budget/resume yes "a team that is not paused: 200 with the same report and resumed false, nothing is written" ; expect 200 pod-resume-not-paused
+rec pod-resume-unknown POST /pods/no-such-team/resume yes "a team docket does not know"; expect 404 pod-resume-unknown
+
+# A team made from a shape, and a folder of the repository applied to it. A folder shape takes no
+# location from Tack: docket gives the team its own working folder, so the team never works inside
+# the checkout. The folder of the repository is `.docket/teams/<team>/`; its pod.yaml names its
+# shape and asks for a fetch host, which docket reviews before it runs anything on this machine.
+rec post-pods-shape POST /pods yes "the body Tack sends to make a team in a folder from a shape: no location, since docket gives the team its own folder" \
+  --body '{"name": "saas-team", "blueprint": "respond", "ensure": true}'; expect 201 post-pods-shape
+TEAM_DIR=$SCRATCH/team-repo/.docket/teams/saas-team
+mkdir -p "$TEAM_DIR"
+printf 'shape: respond\nsettings:\n  fetchDomains:\n    - docs.python.org\n' >"$TEAM_DIR/pod.yaml"
+APPLY_BODY=$(jq -cn --arg directory "$TEAM_DIR" '{directory: $directory}')
+OPTIONAL_KEYS=accept rec pod-apply-needs-code POST /pods/saas-team/apply yes "a folder that would run something on this machine and no accept: 409 with the reviewCode and what runs" --body "$APPLY_BODY"; expect 409 pod-apply-needs-code
+CODE=$(jq -r '.reviewCode' <<<"$LAST_BODY")
+[ -n "$CODE" ] && [ "$CODE" != null ] || die "docket gave no review code: $LAST_BODY"
+OPTIONAL_KEYS=accept rec pod-apply-code-changed POST /pods/saas-team/apply yes "an accept that is not the code of what the folder runs: 409, no reviewCode, runs lists what changed" \
+  --body "$(jq -c '. + {accept: "0123456789abcdef"}' <<<"$APPLY_BODY")"; expect 409 pod-apply-code-changed
+OPTIONAL_KEYS=accept rec pod-apply-applied POST /pods/saas-team/apply yes "the same call with the reviewCode as accept: 200, one item per thing the folder declares" \
+  --body "$(jq -c --arg code "$CODE" '. + {accept: $code}' <<<"$APPLY_BODY")"; expect 200 pod-apply-applied
+OPTIONAL_KEYS=accept rec pod-apply-again POST /pods/saas-team/apply yes "the same folder again with no accept: nothing runs that was not reviewed, every item is skipped" --body "$APPLY_BODY"; expect 200 pod-apply-again
+rec pod-apply-no-directory POST /pods/saas-team/apply no "a team in a folder with no directory: refused, since it has no repository to read .docket/ from" --body '{}'; expect 400 pod-apply-no-directory
+rec pod-apply-unknown POST /pods/no-such-team/apply yes "a team docket does not know" --body "$APPLY_BODY"; expect 404 pod-apply-unknown
+OTHER_DIR=$SCRATCH/team-repo/.docket/teams/other
+mkdir -p "$OTHER_DIR"
+printf 'shape: build\n' >"$OTHER_DIR/pod.yaml"
+OPTIONAL_KEYS=accept rec pod-apply-shape-mismatch POST /pods/saas-team/apply yes "a folder whose pod.yaml names a shape the team was not made from: 400 naming both" \
+  --body "$(jq -cn --arg directory "$OTHER_DIR" '{directory: $directory}')"; expect 400 pod-apply-shape-mismatch
+
+# A task that names a method the team cannot staff: accepted, then refused at claim with
+# failureKind pipeline and the roles in the sentence, before any hop.
+ROLES_BODY=$(jq -cn '{description: "a method the team cannot staff", pipeline: "cross-family-review"}')
+OPTIONAL_KEYS="pipeline" rec post-task-pipeline-roles POST /tasks/saas-dev no "a task naming a method whose roles the team lacks: POST /tasks does not refuse it" --body "$ROLES_BODY"; expect 201 post-task-pipeline-roles
+ROLES_ID=$(jq -r '.task' <<<"$LAST_BODY")
+wait_for saas-dev "$ROLES_ID" failed
+rec task-failed-pipeline-roles GET "/tasks/saas-dev/$ROLES_ID" yes "the same task refused at claim: failed, failureKind pipeline, the pipeline, its source and each missing role with its step in reason, no hop"; expect 200 task-pipeline-roles
+[ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = pipeline ] || die "the task was not refused for its pipeline: $LAST_BODY"
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

@@ -359,10 +359,12 @@ start it but has not), or "no binary is set to start one".
 The Teams block of the Automation settings has a button to apply a repository's teams. The board has
 no line to docket or to the project's folder, so it asks a runner that has the agent: the runner makes
 each team from its shape on its docket, then applies the team's `.docket/teams/<team>` folder from the
-project's folder. This needs a docket that lists `podShape` among the `features` of its `/health`; the
+project's folder. A `build` team is made to work in the project's folder; a team of any other shape works
+in a folder docket makes for it, so it never writes in the project's checkout, and a team that already
+exists is left as it is. This needs a docket that lists `podShape` among the `features` of its `/health`; the
 button, and the **Create** button beside a missing team in the Orchestration Map and in the preview of an
 imported project file, are disabled, with their reason, until a runner reports one, and the project's code
-must be a folder on the runner's computer. A request no runner answers within half a minute is not applied.
+must be a folder on the runner's computer, and docket must run on that computer too, because it reads the team's folder from its own disk (a docket elsewhere answers that the folder was not found). A `build` team's agents work in a worktree under docket's own state, not in the checkout, so they cannot change the folder that is applied; a change to what the folder runs is read by a person again before docket applies it. A request no runner answers within half a minute is not applied.
 
 docket will not apply a folder that runs commands on the machine (an install command, an allowed command,
 open network access) until someone has read them. The runner passes docket's list to the board with the

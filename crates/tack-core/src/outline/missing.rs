@@ -9,18 +9,21 @@ use serde::Serialize;
 
 use super::Outline;
 
-/// docket's shipped recipes: a method of this name is made by `docket init --recipe`, and any
-/// other is a pipeline the team's owner writes.
-const SHIPPED_RECIPES: [&str; 12] = [
+/// docket's shipped recipes that bring a pipeline: a method of this name is a recipe docket
+/// applies with `docket init --recipe`, and any other is a pipeline the team's owner writes.
+const SHIPPED_RECIPES: [&str; 15] = [
+    "anti-tautology",
     "cross-family-review",
     "explore-then-edit",
     "frugal",
+    "intake",
     "mutation",
     "parallel-explore",
     "reflexion",
     "research-review",
     "secure-build",
     "spec-first",
+    "spec-writer",
     "strong-plan-cheap-edit",
     "tdd",
     "web-research",
@@ -52,15 +55,18 @@ pub struct Missing {
     pub fix: String,
 }
 
-/// docket's command that makes a team of this shape with these methods.
+/// docket's command that makes a team of this shape, with the first of these methods that is a
+/// shipped recipe.
 fn init_command(name: &str, shape: Option<&str>, methods: &[String]) -> String {
     let mut command = format!("docket init {name}");
     if let Some(shape) = shape {
         command.push_str(&format!(" --blueprint {shape}"));
     }
-    for method in methods
+    // `docket init` takes one recipe, and a second `--recipe` silently replaces the first. Any
+    // shipped recipe can still be named per task once the team has the roles it needs.
+    if let Some(method) = methods
         .iter()
-        .filter(|method| SHIPPED_RECIPES.contains(&method.as_str()))
+        .find(|method| SHIPPED_RECIPES.contains(&method.as_str()))
     {
         command.push_str(&format!(" --recipe {method}"));
     }

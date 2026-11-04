@@ -321,9 +321,11 @@ needs a runner whose docket lists `podShape`, and a person approves the commands
 (its budget is spent), so this task waits. Resume it with `docket run --pod saas-code --resume`." On
 the **Agents** page, the team's card under Teams says "Paused: budget spent".
 
-**Cause.** docket paused the team, which it does when the team's budget is spent. While a team is paused it
-starts nothing: the tasks sent to it, and every task queued behind them, stay waiting. Only a docket that
-lists `podPause` in `GET /health` says so; with an older docket the run shows no such line.
+**Cause.** docket paused the team, which it does when the team's budget is spent: the first task step that
+starts after the tokens counted in the budget's span (all time, each day or each week) reach the limit
+pauses it. While a team is paused it starts nothing: the tasks sent to it, and every task queued behind them,
+stay waiting. Only a docket that lists `podPause` in `GET /health` says so; with an older docket the run
+shows no such line.
 
 **What to do.** Press **Resume team** on the team's card in **Agents → Teams**. Tack asks the runner that
 reports the team, which asks docket, so it answers within a few seconds and says so if the runner is busy
@@ -331,6 +333,11 @@ or offline. The button works when `GET /health` lists `podResume`; with an older
 and the answer is docket's own command, on the runner's machine: `docket run --pod <team> --resume`. The
 waiting tasks start by themselves once the team runs, and the run continues. If you would rather give up,
 stop the run from its card.
+
+Resuming does not change the budget. When the tokens counted are still at or over the limit, the card says
+so, and docket pauses the team again at the next step, within about half a minute. Raise the limit first with
+`docket pod set budgetTokens <tokens> --pod <team>`, which also resumes the team, or, for a budget counted
+each day or week, wait for the next span to begin and press **Resume team** then.
 
 ---
 
@@ -347,8 +354,9 @@ its network as none and no member holds `fetch`. ...
 **Cause.** Before docket gets the task, Tack reads what the team says it can do. The run stops there
 when the team has no network and no member that reads the web while the run needs the web (the profile's
 network is on, or the person turned it on for the run), when the profile is a Planner and no member of
-the team can propose items, when the run changes the repository and the team delivers a report or records,
-when the profile names a way of working the team does not have or cannot run in full, or when the team says
+the team can propose items, when the run changes the repository and the team delivers a report,
+when the profile names a way of working the team does not have, cannot run in full or whose file does not
+load, or when the team says
 one of its needs is not met (a service it still has to be given, or an agent that is not signed in on the
 runner). Otherwise the team would start, find it cannot, and stop to ask a person for something only its
 own setup can give. Nothing was sent and no token was spent.
@@ -364,12 +372,19 @@ own setup can give. Nothing was sent and no token was spent.
 - The repository: point the profile at a team that works in the repository, or give the card's role a Planner
   or Researcher profile, which change nothing in it.
 - A way of working: name one of the team's own in the profile, or give the team the member it lacks and apply
-  it. The reason names the roles that are missing.
+  it. The reason names the roles that are missing, or the first line of the error when the method's file does
+  not load (check it with `docket pod validate`).
 - A need: the reason carries the fix the team or the runner gave. For an agent that is not signed in, run its
   sign-in command on the runner's computer, then start the run again.
 
 Then start the run again. A Researcher is not refused for proposals: it runs, and is told how to propose
 only when its team can.
+
+docket checks the method itself too. If the team changed after Tack read it, or Tack could not tell, the
+task is accepted and then refused when the team claims it, before any step runs. That run also ends **Not
+started**, and its reason reads "The team saas-research refused the method before any step ran: pipeline
+'cross-family-review' (recipe:cross-family-review) names roles this pod does not have: reviewer (step
+review)". Give the team the role and start the run again.
 
 ---
 

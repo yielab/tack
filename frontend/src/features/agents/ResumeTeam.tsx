@@ -1,7 +1,7 @@
 import { type Component, Show, createSignal } from 'solid-js';
 import { Button } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
-import { resumeGate, teamsApi, type TeamEntry, type TeamReport } from '../../shared/execution';
+import { resumeGate, resumedText, teamsApi, type TeamEntry, type TeamReport } from '../../shared/execution';
 
 /**
  * Lets a paused team claim tasks again, through the computer that reports it. Drawn only for a paused
@@ -20,7 +20,9 @@ const ResumeTeam: Component<{ entry: TeamEntry; onResumed: (report: TeamReport |
     setRefusal(null);
     try {
       const resumed = await teamsApi.resume(harness, props.entry.name);
-      toast.success(`${props.entry.name} can claim tasks again`);
+      const said = resumedText(props.entry.name, resumed.report);
+      if (said.spent) toast.warning(said.text);
+      else toast.success(said.text);
       props.onResumed(resumed.report ?? null);
     } catch (err) {
       setRefusal(err instanceof Error ? err.message : `${props.entry.name} could not be resumed.`);

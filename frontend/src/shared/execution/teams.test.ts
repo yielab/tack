@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTeamOfOne, methodsByType, misfitText, notSentText, podsOnly, teamChoices, unmetNeeds, type TeamEntry, type TeamReport } from './teams';
+import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, type TeamEntry, type TeamReport } from './teams';
 
 const pod = (name: string, report: Partial<TeamReport> = {}): TeamEntry =>
   ({ name, harness: 'docket', reported: true, profiles: [], report: { name, profile: 'attended', ...report } }) as TeamEntry;
@@ -42,19 +42,27 @@ describe('misfitText', () => {
     expect(misfitText('saas', 'no_repository', report)).toBe(
       "changes the project's repository, and saas hands back a report, not a branch. Point the profile at a team that delivers a branch, or make it a Researcher.",
     );
-    expect(misfitText('saas', 'no_repository', { ...report, delivers: 'records' })).toContain('hands back rows in its record sets');
   });
 
   it('names_the_methods_a_team_has_when_a_name_is_unknown', () => {
     expect(misfitText('saas', { unknown_method: { name: 'lint' } }, report)).toBe(
-      'names the method lint, which fab does not have. It has tdd, secure-build. Choose one it has, or leave the method out.',
+      'names the method lint, which saas does not have. It can run tdd. Choose one it can run, or leave the method out.',
     );
-    expect(misfitText('saas', { unknown_method: { name: 'lint' } })).not.toContain('It has');
+    expect(misfitText('saas', { unknown_method: { name: 'lint' } })).not.toContain('It can run');
+  });
+
+  it('says_a_method_whose_file_does_not_load_and_lists_the_runnable_ones_first', () => {
+    const broken = { name: 'capture-broken', source: 'pod:capture-broken', default: false, missing_roles: [], error: 'YAML parse error: while parsing\n  in x' };
+    const methods = [broken, ...report.methods!];
+    expect(misfitText('saas', { method_broken: { method: 'capture-broken', error: broken.error } })).toBe(
+      'names the method capture-broken, whose file in saas does not load: YAML parse error: while parsing. Fix the file, or choose another method.',
+    );
+    expect(runnableFirst(methods).map((m) => m.name)).toEqual(['tdd', 'secure-build', 'capture-broken']);
   });
 
   it('names_the_role_a_method_would_skip', () => {
     expect(misfitText('saas', { steps_skipped: { method: 'secure-build', roles: ['security-vetter'] } })).toContain(
-      'which would skip steps on fab: no member plays security-vetter. Add that member to the team',
+      'which saas cannot run: no member plays security-vetter. Add that member to the team',
     );
   });
 
@@ -84,5 +92,35 @@ describe('what a report says about the work', () => {
     ]);
     expect(methodsByType({})).toEqual([]);
     expect(methodsByType(null)).toEqual([]);
+  });
+});
+
+describe('a team whose budget is spent', () => {
+  // The captured team over its day budget: 2500 counted of 1000.
+  const spent = { tokens: 1000, used: 2500, window: 'day', window_start: '2026-11-04T00:00:00Z' };
+  const entry = (budget: TeamReport['budget']) => pod('saas-budget', { budget, paused: 'budget' });
+
+  it('is_spent_only_with_a_cap_and_more_used_than_it', () => {
+    expect(budgetSpent({ name: 'x', budget: spent } as TeamReport)).toBe(true);
+    expect(budgetSpent({ name: 'x', budget: { ...spent, used: 999 } } as TeamReport)).toBe(false);
+    expect(budgetSpent({ name: 'x', budget: { used: 9, window: 'none' } } as TeamReport)).toBe(false);
+    expect(budgetSpent({ name: 'x' } as TeamReport)).toBe(false);
+    expect(budgetSpent(null)).toBe(false);
+  });
+
+  it('says_resuming_pauses_it_again_and_what_raises_the_limit', () => {
+    const text = pausedText(entry(spent), 'budget').resume;
+    expect(text).toContain('Its budget is still spent, so resuming now pauses it again');
+    expect(text).toContain('docket pod set budgetTokens <tokens> --pod saas-budget');
+    // A new window counts nothing yet, so resuming works.
+    expect(pausedText(entry({ ...spent, used: 0 }), 'budget').resume).toContain('Press Resume team');
+  });
+
+  it('says_so_again_after_the_resume_answer', () => {
+    expect(resumedText('saas-budget', { name: 'x', budget: spent } as TeamReport)).toMatchObject({ spent: true });
+    expect(resumedText('saas-budget', { name: 'x', budget: { ...spent, used: 0 } } as TeamReport)).toEqual({
+      text: 'saas-budget can claim tasks again',
+      spent: false,
+    });
   });
 });

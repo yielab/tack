@@ -113,8 +113,10 @@ dashes whose heading says how to get it.
   count ("leads, 2 rows").
 - **Runs to the end by itself** or **Stops to ask a person**, with what to change so that it runs to the end;
   its network; and **Can propose items**, or the reason it cannot.
-- **Paused: budget spent**, when the agent has stopped the team from taking tasks, with the command that
-  resumes it. Tack has no button for it; a run sent to a paused team waits and its timeline says so.
+- **Paused: budget spent**, when the agent has stopped the team from taking tasks, with **Resume team**
+  (or the command that resumes it, when the agent has no way to do it from the board). A run sent to a paused
+  team waits and its timeline says so. If the budget is still spent, the note says the team pauses again and
+  how to raise the limit; see [A Team](teams.md#how-far-does-it-go).
 - **Profiles that use it**, each a link that opens the profile for editing.
 
 A line the agent did not report is one greyed line, "Not reported by Docket", so that "no network" and "the
@@ -137,6 +139,9 @@ you choose a profile for a role.
 **Apply the repository's teams** makes the teams the project's roles work with that no computer reports yet,
 from the folders the project's repository holds in `.docket/teams/`, on the computer that holds the project's
 folder. Under the button each missing team has the shape it is made from (`build` unless you choose another).
+A `build` team works in the project's folder. A team of any other shape (`respond`, `operate`, `routine`)
+works in a folder docket makes for it, never in your project's folder, and reads its configuration from
+`.docket/teams/` in the project.
 The Orchestration Map and the preview of an imported project file list the same missing teams, each with a
 **Create** button beside its command that makes just that one. The board does not reach that computer itself: it asks a
 computer that runs docket, which makes each team from its shape and applies the team's folder. The button
@@ -150,7 +155,9 @@ must be a folder on that computer.
 When a team's folder would run commands on the computer (an install command, a command it is allowed to
 run, open network access), docket stops and lists them. The board shows the list with a code: read the
 commands, and confirm if you agree, and the computer then applies the team. If you cancel, the team is not
-made. A team docket refuses shows docket's reason beside the button. If no computer answers within half a
+made. A team docket refuses shows docket's reason beside the button, for example a team folder whose shape
+differs from the one the team was first made from; a team that already exists is never made again with another
+shape, so change the shape in the folder or remove the team in docket. If no computer answers within half a
 minute, the team is not applied and the board says so. **Manage profiles** links to
 the profiles on the Agents page.
 

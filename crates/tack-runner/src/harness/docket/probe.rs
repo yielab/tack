@@ -253,14 +253,15 @@ fn steps(raw: Vec<serde_json::Value>) -> Option<Vec<TeamStep>> {
         })
 }
 
-/// What a team says it delivers, in Tack's words; `None` for a word Tack has none for.
-fn delivers(word: &str) -> Option<TeamDelivers> {
-    Some(match word {
-        "branch" => TeamDelivers::Branch,
-        "report" => TeamDelivers::Report,
-        "records" => TeamDelivers::Records,
-        _ => return None,
-    })
+/// What a task on the team hands back, in Tack's words. docket sends a list whose first entry is
+/// `branch` or `report`; a `records` after it says the team keeps record sets, which the team's
+/// `records` already carries. `None` for a list that does not start with a word Tack has.
+fn delivers(raw: &serde_json::Value) -> Option<TeamDelivers> {
+    match raw.as_array()?.first()?.as_str()? {
+        "branch" => Some(TeamDelivers::Branch),
+        "report" => Some(TeamDelivers::Report),
+        _ => None,
+    }
 }
 
 /// Every entry of a list docket sent, each read on its own; one that cannot be read makes the
@@ -290,7 +291,7 @@ pub(super) fn contract(report: &mut PodReport, listed: bool) -> Contract {
         return Contract::default();
     }
     Contract {
-        delivers: report.delivers.as_deref().and_then(delivers),
+        delivers: report.delivers.as_ref().and_then(delivers),
         methods: report
             .methods
             .take()
@@ -303,6 +304,7 @@ pub(super) fn contract(report: &mut PodReport, listed: bool) -> Contract {
                         source: method.source,
                         default: method.default,
                         missing_roles: method.missing_roles,
+                        error: method.error,
                     })
                     .collect()
             }),

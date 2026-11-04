@@ -14,6 +14,9 @@ use super::{client::Client, wire::ApplyAnswer};
 /// the pods of a folder.
 pub(super) const POD_SHAPE: &str = "podShape";
 
+/// The one shape whose team works in the repository; the others work in a folder of their own.
+const SHAPE_IN_REPOSITORY: &str = "build";
+
 /// Where, inside the project's checkout, a team's folder is kept.
 const TEAMS_FOLDER: [&str; 2] = [".docket", "teams"];
 
@@ -43,7 +46,10 @@ pub(super) async fn apply_team(
             folder.display()
         ));
     }
-    match client.ensure_pod(team, directory, Some(shape)).await {
+    // A team in a folder must not be given the checkout as its working folder: it would write
+    // inside the person's working tree, and read and change its own configuration of record.
+    let location = (shape == SHAPE_IN_REPOSITORY).then_some(directory);
+    match client.ensure_pod(team, location, Some(shape)).await {
         Ok(reply) if reply.status == 200 || reply.status == 201 => {}
         Ok(reply) => {
             return refused(format!(

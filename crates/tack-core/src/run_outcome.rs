@@ -9,9 +9,14 @@ use tack_protocol::execution::ExecutionState;
 /// or the agent was not installed).
 const HARNESS_REJECTED: &str = "harness_rejected";
 
+/// The code a runner reports when the team refused the task at claim, before any step, because
+/// the method it names cannot run on that team.
+const PIPELINE_REFUSED: &str = "pipeline";
+
 /// Whether an attempt ended without ever starting work: it failed, and the computer refused it
-/// (`code` is `harness_rejected`) or the team's own ceiling did (docket words it "ceiling L<n>"
-/// in the `message`, and sends no code). Such a run used nothing and changed nothing, so it is
+/// (`code` is `harness_rejected`), the team refused the method the task named (`code` is
+/// `pipeline`) or the team's own ceiling did (docket words it "ceiling L<n>" in the `message`,
+/// and sends no code). Such a run used nothing and changed nothing, so it is
 /// "Not started", never a failure of the work. An attempt in any other state is never one, whatever
 /// its reason says.
 pub fn never_started(state: ExecutionState, terminal_reason: Option<&Value>) -> bool {
@@ -21,11 +26,13 @@ pub fn never_started(state: ExecutionState, terminal_reason: Option<&Value>) -> 
     let Some(reason) = terminal_reason else {
         return false;
     };
-    reason.get("code").and_then(Value::as_str) == Some(HARNESS_REJECTED)
-        || reason
-            .get("message")
-            .and_then(Value::as_str)
-            .is_some_and(names_a_ceiling)
+    matches!(
+        reason.get("code").and_then(Value::as_str),
+        Some(HARNESS_REJECTED | PIPELINE_REFUSED)
+    ) || reason
+        .get("message")
+        .and_then(Value::as_str)
+        .is_some_and(names_a_ceiling)
 }
 
 /// Whether `message` names the level a team's ceiling stopped at: the word "ceiling" (any case),
@@ -71,6 +78,7 @@ mod tests {
             failed,
             Some(&json!({"code": "harness_rejected"}))
         ));
+        assert!(never_started(failed, Some(&json!({"code": "pipeline"}))));
         assert!(never_started(
             failed,
             Some(&json!({"message": "run refused: ceiling L3 (needs approval)"}))

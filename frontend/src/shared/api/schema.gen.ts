@@ -6988,7 +6988,10 @@ export interface components {
              * @description The tokens it has spent in the span.
              */
             used: number;
-            /** @description How long the span lasts, in the harness's word for it (`lifetime`, `day`). */
+            /**
+             * @description How long the span lasts, in the harness's word for it (`none` for a span that never
+             *     restarts, `day`, `week`).
+             */
             window: string;
             /** @description When the current span began; absent for a span that never restarts. */
             window_start?: string | null;
@@ -7002,7 +7005,7 @@ export interface components {
          * @description What a team hands back when a task ends.
          * @enum {string}
          */
-        TeamDelivers: "branch" | "report" | "records";
+        TeamDelivers: "branch" | "report";
         TeamDigest: {
             /** Format: int64 */
             blocked: number;
@@ -7100,9 +7103,11 @@ export interface components {
         TeamMethod: {
             /** @description Whether a task that names no method goes through this one. */
             default: boolean;
+            /** @description Why the method cannot run at all: its file does not load. Absent for a method that loads. */
+            error?: string | null;
             /**
-             * @description The roles the method has a step for and the team has no member for: those steps would be
-             *     skipped. Empty when the team can run every step.
+             * @description The roles the method has a step for and the team has no member for: a task that names it is
+             *     refused. Empty when the team can run every step.
              */
             missing_roles?: string[];
             /** @description The name a task gives to choose it. */
@@ -7121,13 +7126,16 @@ export interface components {
                 name: string;
             };
         } | {
-            /**
-             * @description The task names a method the team offers but lacks the members for: those steps would be
-             *     skipped.
-             */
+            /** @description The task names a method the team offers but lacks the members for: it would be refused. */
             steps_skipped: {
                 method: string;
                 roles: string[];
+            };
+        } | {
+            /** @description The task names a method the team lists but whose file does not load. */
+            method_broken: {
+                error: string;
+                method: string;
             };
         } | {
             /** @description The team says one of its needs is not met. */

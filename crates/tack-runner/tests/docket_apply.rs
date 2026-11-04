@@ -72,20 +72,41 @@ async fn the_pod_is_made_from_its_shape_and_then_the_teams_folder_is_applied() {
         .collect();
     assert_eq!(posts.len(), 2, "the pod, then the apply: {posts:?}");
     assert_eq!(posts[0].path, "/pods");
+    // A team in a folder is given no location: docket makes it a working folder of its own, so
+    // the team never works inside the checkout, where its own configuration of record is.
     assert_eq!(
         posts[0].body,
-        json!({
-            "name": TEAM,
-            "blueprint": "respond",
-            "location": checkout.path().display().to_string(),
-            "ensure": true,
-        })
+        json!({"name": TEAM, "blueprint": "respond", "ensure": true})
     );
     assert_eq!(posts[1].path, format!("/pods/{TEAM}/apply"));
     assert_eq!(
         posts[1].body,
         json!({"directory": checkout.path().join(".docket/teams").join(TEAM).display().to_string()}),
         "the team's own folder, and no code before docket asked for one"
+    );
+}
+
+#[tokio::test]
+async fn a_team_that_works_in_the_repository_is_given_the_checkout() {
+    let fake = shaped().await;
+    let (adapter, _state) = adapter(&fake);
+    let checkout = checkout();
+
+    let outcome = apply(&adapter, checkout.path(), "build", None).await;
+
+    assert!(
+        matches!(outcome, OperationOutcome::Done { .. }),
+        "{outcome:?}"
+    );
+    let made = &fake.requests_to("POST", "/pods")[0].body;
+    assert_eq!(
+        made,
+        &json!({
+            "name": TEAM,
+            "blueprint": "build",
+            "location": checkout.path().display().to_string(),
+            "ensure": true,
+        })
     );
 }
 

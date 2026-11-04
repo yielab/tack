@@ -55,7 +55,7 @@ describe('limitRows', () => {
   });
 
   it('says a team with no limit has none', () => {
-    const rows = limitRows({ team: { name: 'saas-dev', budget: { tokens: null, used: 10, window: 'lifetime' } } });
+    const rows = limitRows({ team: { name: 'saas-dev', budget: { tokens: null, used: 10, window: 'none' } } });
     expect(rows).toHaveLength(1);
     expect(rows[0].lines).toEqual(['No token limit', '10 used']);
   });

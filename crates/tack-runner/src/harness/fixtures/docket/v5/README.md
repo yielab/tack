@@ -3,7 +3,8 @@
 The files in this directory are **captures from a real docket**, plus the answers that are
 marked `constructed`. Captured from `docket 0.3.0b1` (operator API version `6`, with the
 escalation record, the task as fields, the prompt manifest, the two-level home, the four
-blueprints, `workspaceKind`, `blueprint` and `pipeline.steps`), source checkout `cdeabac3`, on 2026-10-31. The directory keeps the name `v5` from the
+blueprints, `workspaceKind`, `blueprint`, `pipeline.steps`, and the team's contract, budget, resume
+and shape), source checkout `1d180651`, on 2026-11-04. The directory keeps the name `v5` from the
 first capture; the answers say `apiVersion: "6"`.
 
 `scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a
@@ -77,9 +78,13 @@ scripted model; its `checked:` line says when.
   `gateApplied`, `usage` and `tokenBudget` when they apply. A pod's queue counts are `pending`,
   `running`, `waitingApproval`, `waitingInput`, `blocked`, `failed`, `done`, `cancelled` (no
   `completed`).
-- `POST /pods` names no shape in Tack's body, and docket's default is `build`; the blueprint the
-  first capture sent, `software`, is an unknown name now (the four are `build`, `respond`,
-  `operate`, `routine`).
+- `POST /pods` names no shape in Tack's body for the default team, and docket's default is `build`; the
+  blueprint the first capture sent, `software`, is an unknown name now (the four are `build`, `respond`,
+  `operate`, `routine`). For a folder shape docket takes `location` as the team's working folder, so Tack
+  sends none.
+- `delivers` is a list, not a word; a method that does not load is listed with an `error` and no
+  missing role; `window` is `none`, `day` or `week`; a resumed team whose budget is still spent is paused
+  again. The features were first built in Tack from the proposal, and each of these differed.
 - A task posted with `task` is echoed back as `task`; docket's record has no `brief` key unless the
   caller sent one, and Tack no longer does.
 - `GET /pods/<pod>` carries no `codebase`: the list (`GET /pods`) does, `""` for a team that works
@@ -222,6 +227,52 @@ before them: no `scope`, no `_role`, no `capabilities`, and `task=` ignored (eve
 comes back), which is why a test of the older docket proves Tack never sends it. No capture of
 that docket exists; the variant is the captures with those keys taken out.
 
+## A team's contract, budget, resume, shape and apply: captured
+
+docket committed this as `fe78d068` and `fb20eed8` (`podContract`), `c948a4b0` and `19e8332a`
+(`podResume`), `dffdcf49` (`podShape`) and `ae33098a` (`pipelineChecked`), all additive on API `6`, and
+the script captures it. The features are named in `GET /health` exactly as above.
+
+- **`podContract`** puts three keys on every report (`pod-attended`, `pod-folder`, `pod-contract`).
+  `delivers` is a **list**: `["branch"]` for a team in a repository, `["report"]` for one in a folder, and
+  `"records"` after it when the team declares record sets (`["report","records"]`). `methods[]` is every
+  pipeline a task may name, one per name, each `{name, source, default, missingRoles}` (`source` is
+  `recipe:<name>`, `pod:<name>`, ...); a lean team in a repository lists fifteen, and most name a role it
+  lacks. `default` is true only for the method whose file is the team's bound pipeline, which a team made
+  from a shape has none of until a recipe is applied (`pod-contract` has one). A file that does not load
+  is listed with `error` (a multi-line parser sentence), `missingRoles: []` and `default: false`, so the
+  absence of a missing role is not a sign that it runs. `needs[]` is `{kind, name, fix, satisfied}`, `kind`
+  equal to `name` (`fetch-hosts`, `search-host`, `isolation`), recomputed on every call; a met need has an
+  empty `fix`. A team nothing was recorded for says `[]`.
+- **`podResume`** puts `budget` on every row of `GET /pods` and on every report: `{tokens, used, window,
+  windowStart}`. `tokens` is `null` without a cap, `window` is `none`, `day` or `week` and `windowStart`
+  is `null` for `none`; `used` is what the gate would count now, over the window. The key is there with no
+  cap (`pod-attended`). A team over its budget is not paused until a task meets the gate: `pod-budget-spent`
+  has `used` above `tokens` and `paused: false`; `pod-budget` is the same team after the first hop met
+  the gate, `paused: true` and `pausedReason: "budget"` (the key is absent while it runs), and
+  `pods-paused` is the list with that row. `POST /pods/<pod>/resume` takes no body, clears the pause,
+  puts the team's blocked tasks back to `pending` and answers `200` with the team's whole report plus
+  `resumed` (`pod-resumed`: `true`); a team that is not paused answers the same with `resumed: false` and
+  writes nothing (`pod-resume-not-paused`); an unknown team is `404` (`pod-resume-unknown`). It changes no
+  budget: a team whose budget is still spent is paused again by the next task's first step, within a
+  dispatch tick.
+- **`podShape`**: `POST /pods` takes `blueprint` (`build`, `respond`, `operate`, `routine`) and `location`.
+  `location` is the repository of a `build` team and the **working folder** of the other three, which
+  docket otherwise gives a folder of its own (`post-pods-shape` is the body Tack sends for a folder shape:
+  no `location`). `ensure` on a team that exists changes nothing, whatever shape it is asked for.
+  `pod.yaml` may carry `shape:`, and `POST /pods/<pod>/apply` refuses a folder whose shape is not the
+  team's (`pod-apply-shape-mismatch`, `400`). A team in a folder needs an absolute `directory`
+  (`pod-apply-no-directory`, `400`, a request Tack never sends); a folder that would run something on this
+  machine (here a fetch host) is `409` with a `reviewCode` and what runs (`pod-apply-needs-code`), a wrong
+  `accept` is `409` without a code (`pod-apply-code-changed`), the right one `200` with the items
+  (`pod-apply-applied`: `action` `add`), and the same folder again is `200` with every item `skip`
+  (`pod-apply-again`). The code is a hash of what runs and of the team's working folder, so it is not
+  stable between runs and the script redacts it. An unknown team is `404` (`pod-apply-unknown`).
+- **`pipelineChecked`**: `POST /tasks/<pod>` with a `pipeline` whose roles the team lacks is accepted
+  (`post-task-pipeline-roles`, `201`, `pending`) and refused at claim, before any hop
+  (`task-failed-pipeline-roles`): `failed`, `failureKind: "pipeline"`, no hop, and the sentence
+  `pipeline '<name>' (<source>) names roles this pod does not have: <role> (step <step>)` in `reason`.
+
 ## Every fixture
 
 | Fixture | Route | Status | Captured or constructed |
@@ -244,23 +295,33 @@ that docket exists; the variant is the captures with those keys taken out.
 | `escalations-task-since` | `GET /escalations` | 200 | captured |
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
-| `pod-apply-applied` | `POST /pods/<pod>/apply` | 200 | constructed |
-| `pod-apply-code-changed` | `POST /pods/<pod>/apply` | 409 | constructed |
-| `pod-apply-needs-code` | `POST /pods/<pod>/apply` | 409 | constructed |
+| `pod-apply-applied` | `POST /pods/<pod>/apply` | 200 | captured |
+| `pod-apply-again` | `POST /pods/<pod>/apply` | 200 | captured |
+| `pod-apply-code-changed` | `POST /pods/<pod>/apply` | 409 | captured |
+| `pod-apply-needs-code` | `POST /pods/<pod>/apply` | 409 | captured |
+| `pod-apply-no-directory` | `POST /pods/<pod>/apply` | 400 | captured |
+| `pod-apply-shape-mismatch` | `POST /pods/<pod>/apply` | 400 | captured |
+| `pod-apply-unknown` | `POST /pods/<pod>/apply` | 404 | captured |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
+| `pod-budget-spent` | `GET /pods/<pod>` | 200 | captured |
+| `pod-budget` | `GET /pods/<pod>` | 200 | captured |
 | `pod-capabilities` | `GET /pods/<pod>` | 200 | captured |
-| `pod-contract` | `GET /pods/<pod>` | 200 | constructed |
+| `pod-contract` | `GET /pods/<pod>` | 200 | captured |
 | `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
+| `pod-resume-not-paused` | `POST /pods/<pod>/resume` | 200 | captured |
+| `pod-resume-unknown` | `POST /pods/<pod>/resume` | 404 | captured |
+| `pod-resumed` | `POST /pods/<pod>/resume` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |
 | `pods-empty` | `GET /pods` | 200 | captured |
 | `pods` | `GET /pods` | 200 | captured |
+| `pods-paused` | `GET /pods` | 200 | captured |
 | `post-pods-conflict` | `POST /pods` | 409 | captured |
 | `post-pods-created-second` | `POST /pods` | 201 | captured |
 | `post-pods-created` | `POST /pods` | 201 | captured |
 | `post-pods-existing` | `POST /pods` | 200 | captured |
 | `post-pods-old-fields` | `POST /pods` | 400 | captured |
-| `post-pods-shape` | `POST /pods` | 201 | constructed |
+| `post-pods-shape` | `POST /pods` | 201 | captured |
 | `post-task-autonomy-l5` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-created` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-existing` | `POST /tasks/<pod>` | 200 | captured |
@@ -269,6 +330,7 @@ that docket exists; the variant is the captures with those keys taken out.
 | `post-task-folder` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-gated` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-minimal` | `POST /tasks/<pod>` | 201 | captured |
+| `post-task-pipeline-roles` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-prepare` | `POST /tasks/<pod>` | 201 | captured |
 | `post-tasks-autonomy-above-ceiling` | `POST /tasks/<pod>` | 422 | captured |
 | `post-tasks-autonomy-invalid` | `POST /tasks/<pod>` | 400 | captured |
@@ -310,6 +372,7 @@ that docket exists; the variant is the captures with those keys taken out.
 | `task-failed-hop` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-needs-human` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-pipeline` | `GET /tasks/<pod>/<id>` | 200 | captured |
+| `task-failed-pipeline-roles` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-prepare-folder` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-unknown` | `GET /tasks/<pod>/<id>` | 404 | captured |
 | `task-usage-by-model` | `GET /tasks/<pod>/<id>` | 200 | constructed |
@@ -326,8 +389,8 @@ that docket exists; the variant is the captures with those keys taken out.
 
 `pod-folder`, `records` and `records-rows` are captured from a `routine` team in a plain folder with
 the `records` recipe applied by `docket pod update`; the one row of `records-rows` is inserted into
-the set's own table, because only an agent's tool call writes one. The requests of `POST /pods` carry
-no `blueprint`, as Tack sends none.
+the set's own table, because only an agent's tool call writes one. `post-pods-created` carries
+no `blueprint`, as Tack sends none for the default team; `post-pods-shape` carries one and no `location`.
 
 A team that works in a folder has no repository to cut a worktree from. `post-task-folder` is the
 task as Tack sends it there (no `baseRef`, no `prepare`; `optional-keys` on it is why the fake does not
@@ -338,15 +401,9 @@ which docket claims and settles `failed` before any hop (`task-failed-base-ref-f
 `task-failed-approval-expired` stays `constructed` on purpose: docket's own deadline for an approval is
 hours, and the script waits for nothing.
 
-The three `pod-apply-*` files and `post-pods-shape` are the answers of `podShape` (a pod made from a
-named shape, and `POST /pods/<pod>/apply`, which answers `409` with a `reviewCode` until the call
-carries it as `accept`). They are read from docket's source, not run.
-
-`pod-contract` is `pod-attended` with the three keys of `podContract` (`delivers`, `methods`, `needs`).
-`pod-budget` is `pod-attended` paused on its budget, with the `budget` key of `podResume`, and `pod-resumed` is the
-answer of `POST /pods/<pod>/resume`, which Tack reads only for its status. These three are the constructed files
-whose keys the source does not list, because docket has not shipped the features: they are the keys Tack asked for.
-`pod-folder` and `pod-attended` stay as the case without them.
+`pod-folder` and `pod-attended` are the reports of a team in a folder and of one in a repository, with the
+keys of the contract and the budget; the fake takes those keys out for a docket before the feature
+(`podContract`, `podResume`).
 
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.

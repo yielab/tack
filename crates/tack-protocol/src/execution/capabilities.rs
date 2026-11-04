@@ -240,8 +240,9 @@ pub struct TeamReport {
     /// harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<String>,
-    /// What the team hands back when a task ends. Absent means the harness did not say, which is
-    /// not the same as a branch; no field may carry a harness's own key name.
+    /// What the team hands back when a task ends, apart from the rows in its record sets, which
+    /// `records` says. Absent means the harness did not say, which is not the same as a branch; no
+    /// field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivers: Option<TeamDelivers>,
     /// Every method a task may name, each with the roles the team lacks. Absent means the harness
@@ -334,6 +335,7 @@ impl TeamReport {
                 source: "harness".to_owned(),
                 default: true,
                 missing_roles: Vec::new(),
+                error: None,
             }]),
             needs: (!needs.is_empty()).then_some(needs),
             budget: None,
@@ -372,8 +374,6 @@ pub enum TeamDelivers {
     Branch,
     /// A report: the team's last step says what it did and there is nothing to merge.
     Report,
-    /// Rows in record sets the team keeps.
-    Records,
 }
 
 impl TeamDelivers {
@@ -382,7 +382,6 @@ impl TeamDelivers {
         match self {
             Self::Branch => "branch",
             Self::Report => "report",
-            Self::Records => "records",
         }
     }
 }
@@ -397,10 +396,13 @@ pub struct TeamMethod {
     pub source: String,
     /// Whether a task that names no method goes through this one.
     pub default: bool,
-    /// The roles the method has a step for and the team has no member for: those steps would be
-    /// skipped. Empty when the team can run every step.
+    /// The roles the method has a step for and the team has no member for: a task that names it is
+    /// refused. Empty when the team can run every step.
     #[serde(default)]
     pub missing_roles: Vec<String>,
+    /// Why the method cannot run at all: its file does not load. Absent for a method that loads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// One thing a team's work still needs, and how to give it.
@@ -460,9 +462,10 @@ pub enum TeamMisfit {
     NoRepository,
     /// The task names a method the team does not offer.
     UnknownMethod { name: String },
-    /// The task names a method the team offers but lacks the members for: those steps would be
-    /// skipped.
+    /// The task names a method the team offers but lacks the members for: it would be refused.
     StepsSkipped { method: String, roles: Vec<String> },
+    /// The task names a method the team lists but whose file does not load.
+    MethodBroken { method: String, error: String },
     /// The team says one of its needs is not met.
     NeedsUnmet { name: String },
 }
@@ -496,12 +499,7 @@ pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> 
     if needs.proposals && none_can(|member| member.can_propose) {
         misfits.push(TeamMisfit::NoProposals);
     }
-    if needs.repository
-        && matches!(
-            facts.delivers,
-            Some(TeamDelivers::Report | TeamDelivers::Records)
-        )
-    {
+    if needs.repository && facts.delivers == Some(TeamDelivers::Report) {
         misfits.push(TeamMisfit::NoRepository);
     }
     if let (Some(method), Some(offered)) = (
@@ -512,6 +510,12 @@ pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> 
             None => misfits.push(TeamMisfit::UnknownMethod {
                 name: method.to_owned(),
             }),
+            Some(found) if found.error.is_some() => {
+                misfits.push(TeamMisfit::MethodBroken {
+                    method: method.to_owned(),
+                    error: found.error.clone().unwrap_or_default(),
+                });
+            }
             Some(found) if !found.missing_roles.is_empty() => {
                 misfits.push(TeamMisfit::StepsSkipped {
                     method: method.to_owned(),
@@ -540,7 +544,8 @@ pub struct TeamBudget {
     pub tokens: Option<u64>,
     /// The tokens it has spent in the span.
     pub used: u64,
-    /// How long the span lasts, in the harness's word for it (`lifetime`, `day`).
+    /// How long the span lasts, in the harness's word for it (`none` for a span that never
+    /// restarts, `day`, `week`).
     pub window: String,
     /// When the current span began; absent for a span that never restarts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
