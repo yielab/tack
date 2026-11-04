@@ -70,6 +70,17 @@ proposes items. What the team's work still needs reads "The operator still has t
 signing an agent in on the runner's computer; a need already met reads "Ready". A team that stops to ask limits how far Tack may merge by itself: see
 [The ceiling](automation.md#ceiling).
 
+A docket team also learns about its work. After a task it may note a fact about the repository: a file that is
+generated, a tool that works, a pitfall, a convention. docket accepts by itself what it can check (a path that is
+there, a command whose exit status it saw), refuses what it can see is wrong, and holds back the rest until you
+decide. The sheet shows both under **What it has learnt** (newest first, an entry whose file has since gone marked
+**Stale**) and **What it waits to learn**. Each waiting entry gives the two commands that decide it, with a **Copy**
+button: `docket pod memory approve <id> --pod <team>` and `docket pod memory refuse <id> --pod <team> --reason "<why>"`.
+**Approve** and **Refuse** are on the sheet too, greyed, saying that docket decides this with its own command for
+now. A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens the team's sheet, and it
+closes once the entry is decided, however you decided it. The board hears of a change when the computer next
+reports its teams, which takes a few minutes. A team whose docket does not offer this shows no memory.
+
 When a team asks, the question waits in the **Now** panel and on the task's Execution tab, under **Needs you**.
 Answer it there, or in docket's own command, and the question closes either way. A team about to do something that
 leaves it, such as sending an email or posting somewhere, shows the whole action before you answer, and Tack

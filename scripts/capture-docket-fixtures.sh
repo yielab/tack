@@ -21,6 +21,8 @@
 # sends it there and refuses, at claim, one with a `baseRef` (`failureKind` base_ref) and one with a
 # `prepare` (`prepare`). Last, it declares `tack_proposals` with `scope: task` on three teams, writes rows through
 # docket's own records port and reads them back by task (rows, the two 400s, `limit`, what each member reaches).
+# A team's memory (accepted, pending, refused and a stale entry) is recorded by docket's own function in the throwaway home,
+# since no model writes the `## Memory` section of a reply; the three status queries are then read over HTTP.
 # An approval that expires is not reachable (docket's deadline is hours): that
 # fixture stays constructed. It refuses to run when DOCKET_HOME is unset or is the operator's
 # ~/.docket, and it never reads that folder. The bearer token docket writes is read from its
@@ -196,6 +198,7 @@ rec() {
     /pods/*/records) route=/pods/'<pod>'/records ;;
     /pods/*/apply) route=/pods/'<pod>'/apply ;;
     /pods/*/resume) route=/pods/'<pod>'/resume ;;
+    /pods/*/memory) route=/pods/'<pod>'/memory ;;
     /pods/*) route=/pods/'<pod>' ;;
     /tasks/*/*/cancel) route=/tasks/'<pod>'/'<id>'/cancel ;;
     /tasks/*/*/retry) route=/tasks/'<pod>'/'<id>'/retry ;;
@@ -717,6 +720,69 @@ ROLES_ID=$(jq -r '.task' <<<"$LAST_BODY")
 wait_for saas-dev "$ROLES_ID" failed
 rec task-failed-pipeline-roles GET "/tasks/saas-dev/$ROLES_ID" yes "the same task refused at claim: failed, failureKind pipeline, the pipeline, its source and each missing role with its step in reason, no hop"; expect 200 task-pipeline-roles
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = pipeline ] || die "the task was not refused for its pipeline: $LAST_BODY"
+
+# ── What a team has learnt and what waits to be approved: no model ──────────────────────────────
+# A team's memory is written when a task ends, from the `## Memory` section of a hop's reply, and
+# docket decides every entry itself: a path present at the task's commit is accepted, a path that
+# is not is refused, and a pitfall or an instruction waits for the operator. No model writes a reply
+# here, so docket's own function (`record_task_memory`) is called in the throwaway home with one
+# hop whose reply carries the section and whose commit is the seed of the throwaway repository.
+cat >"$SCRATCH/write-memory.py" <<'PY'
+import json, os, subprocess, sys
+from types import SimpleNamespace
+from docket.bootstrap import bind_adapters
+from docket.observability import trace
+from docket.teams import memory
+
+pod, root, task = sys.argv[1], sys.argv[2], sys.argv[3]
+bind_adapters()
+
+def git(*args):
+    return subprocess.run(["git", "-C", root, "-c", "user.name=capture", "-c", "user.email=capture@localhost", *args],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+def finish(task_id, reply):
+    """What a finished task leaves for docket to record: one ok hop at the repository's commit."""
+    session = f"agent:{pod}:{task_id}"
+    trace.trace_event(pod, session, "implementer", "session_start", json.dumps({"source": "capture"}))
+    hop = SimpleNamespace(role="implementer", ok=True, output=reply, evidence={"commit": git("rev-parse", "HEAD")}, verify=None,
+                          trace={"project": pod, "session": session, "firstTs": "0", "lastTs": "9"})
+    return memory.record_task_memory(pod, task_id, SimpleNamespace(hops=[hop]), root=root)
+
+os.makedirs(os.path.join(root, "notes"), exist_ok=True)
+with open(os.path.join(root, "notes", "old.md"), "w") as handle:
+    handle.write("to be removed\n")
+git("add", "-A")
+git("commit", "-q", "-m", "notes")
+entries = finish(task, "\n".join([
+    "Done.",
+    "",
+    "## Memory",
+    "- generated: README.md -- The repository's readme, written by hand.",
+    "- generated: notes/old.md -- A note that a later commit removes.",
+    "- generated: dist/gone.js -- A build output that is not in the repository.",
+    "- pitfall: README.md -- Edits to the readme need the docs rebuilt.",
+    "- convention: docs/ -- Every page there opens with its audience.",
+]))
+# A later task removes the note: docket marks the accepted entry stale when it next looks.
+git("rm", "-q", "notes/old.md")
+git("commit", "-q", "-m", "remove the note")
+finish(task + "-later", "Done.")
+print(json.dumps(sorted((e.status, e.kind, e.subject) for e in entries)))
+PY
+guard
+MEMORY_WRITTEN=$("${DOCKET_ENV[@]}" "$DOCKET_PY" -I "$SCRATCH/write-memory.py" saas-dev "$SCRATCH/repo" task-capture-memory 2>"$SCRATCH/write-memory.log") \
+  || die "writing the team's memory failed: $(cat "$SCRATCH/write-memory.log")"
+[ "$(jq -c '[.[][0]] | unique' <<<"$MEMORY_WRITTEN")" = '["accepted","pending","refused"]' ] || die "docket did not decide the entries as the capture needs: $MEMORY_WRITTEN"
+rec pod-memory-accepted GET '/pods/saas-dev/memory?status=accepted' yes "a team's accepted entries, oldest first: docket checked each path against the task's commit; evidence is empty for a path, provenance names the task, the date and the commit; a later task removed one of the files, so its entry is stale"; expect 200 pod-memory-accepted
+[ "$(jq -c '[.entries[].stale]' <<<"$LAST_BODY")" = '[false,true]' ] || die "the team does not hold one fresh and one stale accepted entry: $LAST_BODY"
+rec pod-memory-pending GET '/pods/saas-dev/memory?status=pending' yes "the entries that wait for the operator: a pitfall and a convention are held, reason says why, and docket's inbox gives them docket pod memory approve and refuse"; expect 200 pod-memory-pending
+[ "$(jq '.entries | length' <<<"$LAST_BODY")" = 2 ] || die "the team does not hold the two pending entries: $LAST_BODY"
+rec pod-memory-refused GET '/pods/saas-dev/memory?status=refused' no "the entries docket refused itself, with its reason; Tack does not read them"; expect 200 pod-memory-refused
+rec pod-memory-default GET /pods/saas-dev/memory no "no status: accepted, as docket documents"; expect 200 pod-memory-default
+rec pod-memory-none GET '/pods/saas-lights/memory?status=pending' no "a team that has learnt nothing: an empty list, not an error"; expect 200 pod-memory-none
+rec pod-memory-bad-status GET '/pods/saas-dev/memory?status=waiting' no "a status docket does not have: 400 naming the three"; expect 400 pod-memory-bad-status
+rec pod-memory-unknown GET '/pods/no-such-team/memory?status=pending' no "a team docket does not know: 404"; expect 404 pod-memory-unknown
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

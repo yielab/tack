@@ -17,11 +17,12 @@ mod types;
 pub use activity::{ActivityState, ActivityTask, CurrentStep, FinishedStep, TeamActivity, WaitsOn};
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
-    EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
-    ModelsReport, NEED_MODEL, NEED_SIGN_IN, RunnerCapabilities, SignInReport, SignInState,
-    TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember, TeamMethod, TeamMisfit, TeamNeed,
-    TeamNeeds, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep,
-    TeamStepCheck, TeamStepKind, TeamViolation, WorksIn, team_misfits,
+    EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, MemoryEntry,
+    MemoryEvidence, ModelListSource, ModelsReport, NEED_MODEL, NEED_SIGN_IN, RunnerCapabilities,
+    SignInReport, SignInState, TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember,
+    TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamNeeds, TeamNetwork, TeamPause, TeamQueue,
+    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
+    team_misfits,
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,

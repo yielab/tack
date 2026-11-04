@@ -114,6 +114,38 @@ pub(super) struct PodReport {
     pub budget: Option<Value>,
 }
 
+/// `GET /pods/<pod>/memory`: the entries, each kept as it came and read on its own so an entry
+/// Tack cannot read costs that entry and never the team's others.
+#[derive(Debug, Deserialize)]
+pub(super) struct MemoryList {
+    pub entries: Vec<Value>,
+}
+
+/// One entry of a team's memory. `status` is the one the query named, so it is not read.
+#[derive(Debug, Deserialize)]
+pub(super) struct MemoryItem {
+    pub id: String,
+    pub kind: String,
+    pub subject: String,
+    #[serde(default)]
+    pub note: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub stale: bool,
+    #[serde(default)]
+    pub provenance: std::collections::BTreeMap<String, String>,
+    /// `{"exit": n}`, `{"ok": bool}` or `{}`.
+    #[serde(default)]
+    pub evidence: Option<MemoryProof>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct MemoryProof {
+    pub exit: Option<i64>,
+    pub ok: Option<bool>,
+}
+
 /// `budget` of a team's report.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

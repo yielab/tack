@@ -268,3 +268,43 @@ fn kinds_and_levels_have_the_names_the_store_and_the_api_use() {
     assert_eq!(serde_json::to_value(Level::NeedsYou).unwrap(), "needs_you");
     assert_eq!(Level::Info.as_str(), "info");
 }
+
+#[test]
+fn a_memory_entry_waiting_needs_you_under_its_team_and_entry() {
+    let n = memory_waiting(
+        project(),
+        "saas-dev",
+        "mem-b0ec5e2b1b",
+        "README.md",
+        "laptop",
+    );
+    assert_eq!((n.kind, n.level), (Kind::Memory, Level::NeedsYou));
+    assert_eq!(n.key, Key::memory("saas-dev", "mem-b0ec5e2b1b"));
+    assert_eq!(n.key.as_str(), "memory:saas-dev:mem-b0ec5e2b1b");
+    assert_eq!(Kind::Memory.as_str(), "memory");
+    assert_eq!(
+        n.title,
+        "Team saas-dev waits for you to approve what it learnt about README.md"
+    );
+    assert_eq!((n.item_id, n.request_id), (None, None));
+    assert_eq!(n.project_id, project());
+    assert_eq!(n.cause, "runner:laptop");
+}
+
+#[test]
+fn a_memory_key_names_its_team_and_no_other_key_does() {
+    assert_eq!(
+        Key::memory("saas-dev", "mem-1").memory_team(),
+        Some("saas-dev")
+    );
+    assert_eq!(Key::decision("d-1").memory_team(), None);
+    assert_eq!(Key::from_stored("memory:odd").memory_team(), None);
+}
+
+#[test]
+fn a_long_subject_is_cut_in_the_title() {
+    let long = "x".repeat(200);
+    let n = memory_waiting(project(), "t", "mem-1", &long, "laptop");
+    assert!(n.title.ends_with(&format!("{}...", "x".repeat(80))));
+    assert!(n.title.chars().count() < 160);
+}

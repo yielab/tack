@@ -435,6 +435,19 @@ impl Repository {
         rows.into_iter().map(WaitingRunRow::into_run).collect()
     }
 
+    /// The project a notification about no project is filed under: the board's oldest project
+    /// that is not archived, `None` on a board with none. A team belongs to no project, but a
+    /// notification must be filed under one, and the oldest is the one that stays.
+    #[instrument(skip(self))]
+    pub async fn filing_project(&self) -> Result<Option<Uuid>, StoreError> {
+        let id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM projects WHERE archived = 0 ORDER BY created_at, id LIMIT 1",
+        )
+        .fetch_optional(self.pool())
+        .await?;
+        id.map(|id| decode::uuid("projects", "id", &id)).transpose()
+    }
+
     /// The change sets with an operation still waiting for a person.
     #[instrument(skip(self))]
     pub async fn waiting_change_sets(&self) -> Result<Vec<WaitingChangeSet>, StoreError> {

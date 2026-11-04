@@ -5686,14 +5686,14 @@ export interface components {
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
          *     fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`.
+         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<team>:<entry>`.
          */
         Key: string;
         /**
          * @description What happened that a person is told about.
          * @enum {string}
          */
-        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon" | "children_finished";
+        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon" | "children_finished" | "memory";
         /**
          * @description The step of a docket run an attempt is in, read from the text of its latest hop event so a
          *     screen finds the step on the team's list without fetching the events.
@@ -5754,6 +5754,34 @@ export interface components {
             value?: number;
         } & {
             [key: string]: unknown;
+        };
+        /** @description One thing a team remembers. */
+        MemoryEntry: {
+            evidence?: null | components["schemas"]["MemoryEvidence"];
+            /** @description The harness's own id, which its commands take. */
+            id: string;
+            /**
+             * @description What sort of fact it is, in the harness's word (`generated`, `tool`, `pitfall`,
+             *     `convention`).
+             */
+            kind: string;
+            note: string;
+            /** @description Where it was learnt, as the harness records it (the task, the date, the commit). */
+            provenance?: {
+                [key: string]: string;
+            };
+            /** @description Why the harness decided as it did, or why it waits. */
+            reason: string;
+            /** @description Whether what the entry names is gone since it was accepted. */
+            stale: boolean;
+            /** @description What it is about: a path, a label or a command. */
+            subject: string;
+        };
+        /** @description What backs an entry: the exit status of a command or whether a tool call succeeded. */
+        MemoryEvidence: {
+            /** Format: int64 */
+            exit?: number | null;
+            ok?: boolean | null;
         };
         /**
          * @description Merge recommendation.
@@ -7099,6 +7127,16 @@ export interface components {
              */
             writes_project?: boolean | null;
         };
+        /**
+         * @description What a team remembers about its work: the entries it has learnt and those that wait for a
+         *     person to approve them. Both lists are oldest first, as the harness gives them.
+         */
+        TeamMemory: {
+            /** @description Checked or approved; the team reads them in its next task. */
+            accepted: components["schemas"]["MemoryEntry"][];
+            /** @description Held back until a person decides; the team does not use them yet. */
+            pending: components["schemas"]["MemoryEntry"][];
+        };
         /** @description One way of working a task that a team offers. */
         TeamMethod: {
             /** @description Whether a task that names no method goes through this one. */
@@ -7230,6 +7268,7 @@ export interface components {
              *     harness did not say; no field may carry a harness's own key name.
              */
             members?: components["schemas"]["TeamMember"][] | null;
+            memory?: null | components["schemas"]["TeamMemory"];
             /**
              * @description Every method a task may name, each with the roles the team lacks. Absent means the harness
              *     did not say (an empty list is not a team without methods); no field may carry a harness's

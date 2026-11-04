@@ -6,17 +6,17 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use tack_protocol::execution::{
-    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamBudget, TeamDecides, TeamDelivers, TeamMember, TeamMethod,
-    TeamNeed, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep,
-    TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
+    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, MemoryEntry, MemoryEvidence,
+    ModelListSource, ModelsReport, SignInReport, SignInState, TeamBudget, TeamDecides,
+    TeamDelivers, TeamMember, TeamMemory, TeamMethod, TeamNeed, TeamNetwork, TeamPause, TeamQueue,
+    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
 };
 
 use super::{
     client::Client,
     wire::{
-        MemberReach, PodBudget, PodList, PodMember, PodMethod, PodNeed, PodNetwork, PodReport,
-        PodRow, PodStep, RecordList, StatusAnswer,
+        MemberReach, MemoryItem, MemoryList, PodBudget, PodList, PodMember, PodMethod, PodNeed,
+        PodNetwork, PodReport, PodRow, PodStep, RecordList, StatusAnswer,
     },
 };
 
@@ -347,30 +347,104 @@ fn budget(report: &mut PodReport, listed: bool) -> Option<TeamBudget> {
     }
 }
 
+/// The entries of a team's memory in one status, oldest first. `None` when docket cannot say: the
+/// route fails, answers something else or holds an entry Tack cannot read. A list with an entry
+/// missing would read as a different one, and a pending entry is what a person is waiting to be
+/// told of.
+async fn memory_entries(client: &Client, name: &str, status: &str) -> Option<Vec<MemoryEntry>> {
+    let reply = client
+        .pod_memory(name, status)
+        .await
+        .inspect_err(|why| tracing::warn!(why, team = name, "docket's memory could not be read"))
+        .ok()?;
+    if reply.status != 200 {
+        tracing::warn!(
+            team = name,
+            status = reply.status,
+            "docket's memory could not be read"
+        );
+        return None;
+    }
+    let list: MemoryList = reply
+        .read()
+        .inspect_err(|why| tracing::warn!(why, team = name, "docket's memory could not be read"))
+        .ok()?;
+    let items = all::<MemoryItem>(list.entries, "memory entries")?;
+    Some(
+        items
+            .into_iter()
+            .map(|item| MemoryEntry {
+                id: item.id,
+                kind: item.kind,
+                subject: item.subject,
+                note: item.note,
+                reason: item.reason,
+                stale: item.stale,
+                provenance: item.provenance,
+                evidence: item
+                    .evidence
+                    .filter(|proof| proof.exit.is_some() || proof.ok.is_some())
+                    .map(|proof| MemoryEvidence {
+                        exit: proof.exit,
+                        ok: proof.ok,
+                    }),
+            })
+            .collect(),
+    )
+}
+
+/// What a team has learnt and what waits for a person (`memoryStatus`). Absent from a docket that
+/// does not list the feature, and when either list cannot be read: the team's report never fails
+/// for its memory.
+async fn memory(client: &Client, name: &str, listed: bool) -> Option<TeamMemory> {
+    if !listed {
+        return None;
+    }
+    Some(TeamMemory {
+        pending: memory_entries(client, name, "pending").await?,
+        accepted: memory_entries(client, name, "accepted").await?,
+    })
+}
+
+/// What `GET /health` lists of the features a team's report depends on.
+#[derive(Clone, Copy)]
+struct Listed {
+    pause: bool,
+    contract: bool,
+    resume: bool,
+    memory: bool,
+}
+
+impl Listed {
+    async fn of(client: &Client) -> Listed {
+        Listed {
+            pause: client.has_feature(super::POD_PAUSE).await,
+            contract: client.has_feature(super::POD_CONTRACT).await,
+            resume: client.has_feature(super::POD_RESUME).await,
+            memory: client.has_feature(super::MEMORY_STATUS).await,
+        }
+    }
+}
+
 /// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
 /// where it works, who is in it, how it decides, what it holds and what it keeps.
-async fn team(
-    client: &Client,
-    row: &PodRow,
-    pause_listed: bool,
-    contract_listed: bool,
-    resume_listed: bool,
-) -> Result<TeamReport, String> {
+async fn team(client: &Client, row: &PodRow, listed: Listed) -> Result<TeamReport, String> {
     let name = &row.name;
     let reply = client.pod(name).await?;
     if reply.status != 200 {
         return Err(reply.error());
     }
     let mut report: PodReport = reply.read()?;
-    let contract = contract(&mut report, contract_listed);
-    let budget = budget(&mut report, resume_listed);
+    let contract = contract(&mut report, listed.contract);
+    let budget = budget(&mut report, listed.resume);
+    let memory = memory(client, name, listed.memory).await;
     let works_in = works_in(row, &report);
     let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
         Some((sets, shared)) => (Some(sets), shared),
         None => (None, None),
     };
     // Said only by a docket that lists `podPause`, and only while the team is paused.
-    let paused = pause_listed.then(|| paused(row, &report)).flatten();
+    let paused = listed.pause.then(|| paused(row, &report)).flatten();
     let mut team = TeamReport {
         name: name.clone(),
         profile: Some(report.profile.name),
@@ -408,6 +482,7 @@ async fn team(
         methods: contract.methods,
         needs: contract.needs,
         budget,
+        memory,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson
@@ -424,12 +499,10 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
         return Err(reply.error());
     }
     let list: PodList = reply.read()?;
-    let pause_listed = client.has_feature(super::POD_PAUSE).await;
-    let contract_listed = client.has_feature(super::POD_CONTRACT).await;
-    let resume_listed = client.has_feature(super::POD_RESUME).await;
+    let listed = Listed::of(client).await;
     let mut teams = Vec::new();
     for pod in &list.pods {
-        teams.push(team(client, pod, pause_listed, contract_listed, resume_listed).await?);
+        teams.push(team(client, pod, listed).await?);
     }
     Ok(teams)
 }
@@ -458,11 +531,11 @@ pub(super) async fn resume(client: &Client, name: &str) -> Result<Option<TeamRep
     let Some(row) = list.pods.iter().find(|pod| pod.name == name) else {
         return Ok(None);
     };
-    let pause_listed = client.has_feature(super::POD_PAUSE).await;
-    let contract_listed = client.has_feature(super::POD_CONTRACT).await;
-    team(client, row, pause_listed, contract_listed, true)
-        .await
-        .map(Some)
+    let listed = Listed {
+        resume: true,
+        ..Listed::of(client).await
+    };
+    team(client, row, listed).await.map(Some)
 }
 
 /// A team that needs a person during a run: attended, or with a violation.

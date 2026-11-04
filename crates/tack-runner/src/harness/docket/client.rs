@@ -164,6 +164,18 @@ impl Client {
         self.send(Method::GET, &["pods", pod], &[], None).await
     }
 
+    /// `GET /pods/<pod>/memory?status=`: the team's entries of one status (`accepted`, `pending`
+    /// or `refused`), oldest first (`memoryStatus`).
+    pub async fn pod_memory(&self, pod: &str, status: &str) -> Result<Reply, String> {
+        self.send(
+            Method::GET,
+            &["pods", pod, "memory"],
+            &[("status", status)],
+            None,
+        )
+        .await
+    }
+
     /// `POST /pods/<pod>/resume`, no body: the team claims tasks again (`podResume`).
     pub async fn resume_pod(&self, pod: &str) -> Result<Reply, String> {
         self.send(Method::POST, &["pods", pod, "resume"], &[], None)

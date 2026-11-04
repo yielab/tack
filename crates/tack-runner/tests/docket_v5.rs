@@ -6509,15 +6509,140 @@ async fn an_operation_the_board_hands_out_is_done_and_its_result_sent_back() {
     assert!(ended.is_ok(), "the runner stops on shutdown");
 }
 
+// ── What a team has learnt and what waits to be approved ─────────────────────────────────────────
+
+/// The captured memory of a team: two accepted entries (one stale since a later commit removed the
+/// file), two pending and one refused that Tack does not read.
+#[tokio::test]
+async fn probe_reads_a_teams_pending_and_accepted_memory_from_the_captures() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory(POD);
+    fake.add_pod("saas-lights", "lights-out", &[]);
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    let find = |name: &str| teams.iter().find(|team| team.name == name).expect(name);
+
+    let memory = find(POD).memory.as_ref().expect("the team's memory");
+    assert_eq!(
+        memory
+            .pending
+            .iter()
+            .map(|entry| (entry.kind.as_str(), entry.subject.as_str()))
+            .collect::<Vec<_>>(),
+        [("pitfall", "README.md"), ("convention", "docs/")]
+    );
+    let pitfall = &memory.pending[0];
+    assert!(pitfall.id.starts_with("mem-"));
+    assert_eq!(pitfall.note, "Edits to the readme need the docs rebuilt.");
+    assert_eq!(pitfall.reason, "awaits operator approval");
+    assert_eq!(
+        pitfall.provenance.get("task").map(String::as_str),
+        Some("task-capture-memory")
+    );
+    assert!(pitfall.evidence.is_none(), "docket sends {{}} for a path");
+    assert_eq!(
+        memory
+            .accepted
+            .iter()
+            .map(|entry| (entry.subject.as_str(), entry.stale))
+            .collect::<Vec<_>>(),
+        [("README.md", false), ("notes/old.md", true)],
+        "oldest first, a file a later commit removed is stale"
+    );
+    // A team that has learnt nothing says so: an empty memory, not an absent one.
+    let none = find("saas-lights")
+        .memory
+        .as_ref()
+        .expect("said, and empty");
+    assert!(none.pending.is_empty() && none.accepted.is_empty());
+}
+
+#[tokio::test]
+async fn probe_sends_the_status_query_and_asks_for_each_team_twice() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory(POD);
+    adapter(&fake, &scene).probe().await;
+    let asked: Vec<String> = fake
+        .requests_to("GET", &format!("/pods/{POD}/memory"))
+        .iter()
+        .map(|request| request.query.clone())
+        .collect();
+    assert_eq!(asked, ["status=pending", "status=accepted"]);
+}
+
+#[tokio::test]
+async fn probe_reads_no_memory_from_a_docket_that_does_not_list_the_feature() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.seed_memory(POD);
+    let team = adapter(&fake, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    assert!(team.memory.is_none(), "an older docket has no status query");
+    assert!(
+        fake.requests_to("GET", &format!("/pods/{POD}/memory"))
+            .is_empty(),
+        "a docket that does not list memoryStatus is not asked"
+    );
+}
+
+#[tokio::test]
+async fn a_memory_that_cannot_be_read_leaves_the_team_and_its_report_intact() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory(POD);
+    fake.fail_memory_reads();
+    let capability = adapter(&fake, &scene).probe().await;
+    assert!(
+        capability.probe_error.is_none(),
+        "{:?}",
+        capability.probe_error
+    );
+    let team = capability.teams.expect("teams").remove(0);
+    assert_eq!(team.name, POD);
+    assert!(team.memory.is_none(), "unknown is not empty");
+    assert_eq!(team.profile.as_deref(), Some("lights-out"));
+    assert!(team.members.is_some());
+}
+
+#[tokio::test]
+async fn a_team_whose_memory_changes_is_read_again_by_the_next_probe() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory(POD);
+    let adapter = adapter(&fake, &scene);
+    let pending = |teams: Vec<tack_protocol::execution::TeamReport>| {
+        teams[0].memory.as_ref().expect("memory").pending.len()
+    };
+    assert_eq!(pending(adapter.probe().await.teams.expect("teams")), 2);
+    let id = fixture("pod-memory-pending")["entries"][0]["id"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
+    fake.decide_memory(POD, &id, "accepted");
+    let teams = adapter.probe().await.teams.expect("teams");
+    assert_eq!(pending(teams.clone()), 1);
+    assert_eq!(teams[0].memory.as_ref().unwrap().accepted.len(), 3);
+}
+
 // ── The fake is the captures ──────────────────────────────────────────────────
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 19] = [
+const CLIENT_ROUTES: [&str; 20] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
     "GET /pods/<pod>",
+    "GET /pods/<pod>/memory",
     "GET /pods/<pod>/records",
     "GET /pods/<pod>/records/<set>",
     "POST /pods",
@@ -6705,6 +6830,42 @@ fn request_file(name: &str) -> Value {
         std::fs::read_to_string(fake_docket::fixtures_dir().join(format!("{name}.request.json")))
             .expect("request file");
     serde_json::from_str(&text).expect("JSON")
+}
+
+#[tokio::test]
+async fn the_fake_answers_a_teams_memory_as_the_captures_do() {
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory(POD);
+    fake.add_pod("saas-lights", "lights-out", &[]);
+    let read = |team: &str, query: &str| format!("/pods/{team}/memory{query}");
+    for (name, path) in [
+        ("pod-memory-accepted", read(POD, "?status=accepted")),
+        ("pod-memory-pending", read(POD, "?status=pending")),
+        ("pod-memory-refused", read(POD, "?status=refused")),
+        ("pod-memory-default", read(POD, "")),
+        ("pod-memory-none", read("saas-lights", "?status=pending")),
+        ("pod-memory-bad-status", read(POD, "?status=waiting")),
+        (
+            "pod-memory-unknown",
+            read("no-such-team", "?status=pending"),
+        ),
+    ] {
+        let (status, answer) = ask(&fake, "GET", &path, None).await;
+        let expected = fake_docket::provenances()
+            .into_iter()
+            .find(|found| found.name == name)
+            .and_then(|found| found.get("status").and_then(|s| s.parse::<u16>().ok()))
+            .expect("the capture's status");
+        assert_eq!(status, expected, "{name}");
+        // The pod names differ from the capture's; the shape and the entries are the capture's.
+        let captured = fixture(name);
+        if status == 200 {
+            assert_eq!(answer["entries"], captured["entries"], "{name}");
+        } else {
+            assert_eq!(answer["ok"], captured["ok"], "{name}");
+        }
+    }
 }
 
 #[tokio::test]

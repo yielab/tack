@@ -37,6 +37,7 @@ const FULL_TEAM = {
     violations: [{ requirement: 'A tool needs approval', fix: 'Allow it in the team settings' }],
     network: 'limited',
     queue: { waiting: 3, running: 1 },
+    memory: { pending: [], accepted: [] },
     records: [{ name: 'leads', description: 'People to write to', rows: 2 }],
     steps: [
       { name: 'write', kind: 'agent', role: 'Lead', checked_by: 'reviewer', sends_back_to: 'write', sends_back_max: 2 },
@@ -667,5 +668,86 @@ describe('TeamsPanel sheet', () => {
     expect(none.querySelector('a')!.textContent).toContain('Administrator Guide');
     const some = card(c, 'reads').querySelector('[data-testid="team-reads"]')!;
     expect(some.textContent).toBe('Its sandbox also reads /home/x/venv, and cannot change them.');
+  });
+
+  describe('What a team has learnt', () => {
+    const entry = (id: string, subject: string, extra: Record<string, unknown> = {}) => ({
+      id, kind: 'generated', subject, note: `About ${subject}`, reason: 'path present at the task commit', stale: false,
+      provenance: { task: 'task-1' }, ...extra,
+    });
+    const WITH_MEMORY = {
+      ...FULL_TEAM,
+      report: {
+        ...FULL_TEAM.report,
+        memory: {
+          accepted: [entry('mem-a', 'README.md'), entry('mem-b', 'notes/old.md', { stale: true })],
+          pending: [
+            entry('mem-p', 'docs/', { kind: 'convention', reason: 'awaits operator approval' }),
+            entry('mem-q', 'api/schema.proto', { kind: 'pitfall', reason: 'awaits operator approval' }),
+          ],
+        },
+      },
+    };
+    const memory = (c: HTMLElement) => row(card(c, 'saas-code'), 'memory');
+
+    it('lists what it has learnt newest first and marks a stale entry', async () => {
+      mockApi([WITH_MEMORY]);
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      const learnt = memory(c).querySelector<HTMLElement>('[data-testid="team-memory-learnt"]')!;
+      expect(learnt.querySelector('h5')!.textContent).toBe('What it has learnt');
+      const items = Array.from(learnt.querySelectorAll('li'));
+      expect(items.map((li) => li.getAttribute('data-testid'))).toEqual(['team-memory-entry-mem-b', 'team-memory-entry-mem-a']);
+      expect(items[0].getAttribute('data-stale')).toBe('yes');
+      expect(items[0].textContent).toContain('Stale');
+      expect(items[1].textContent).not.toContain('Stale');
+      expect(items[1].textContent).toContain('About README.md');
+    });
+
+    it('lists what it waits to learn with docket\'s two commands to copy and the buttons disabled with their reason', async () => {
+      mockApi([WITH_MEMORY]);
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      const waiting = memory(c).querySelector<HTMLElement>('[data-testid="team-memory-waiting"]')!;
+      expect(waiting.querySelector('h5')!.textContent).toBe('What it waits to learn');
+      const first = waiting.querySelector<HTMLElement>('[data-testid="team-memory-entry-mem-p"]')!;
+      expect(first.textContent).toContain('docs/');
+      expect(first.textContent).toContain('Held back: awaits operator approval');
+      const commands = Array.from(first.querySelectorAll('[data-testid="copy-fix-text"]')).map((code) => code.textContent);
+      expect(commands).toEqual([
+        'docket pod memory approve mem-p --pod saas-code',
+        'docket pod memory refuse mem-p --pod saas-code --reason "<why>"',
+      ]);
+      const approve = first.querySelector<HTMLButtonElement>('button[aria-label="Approve docs/"]')!;
+      const refuse = first.querySelector<HTMLButtonElement>('button[aria-label="Refuse docs/"]')!;
+      expect(approve.disabled).toBe(true);
+      expect(refuse.disabled).toBe(true);
+      const reason = first.querySelector('[data-testid="team-memory-decide-reason"]')!;
+      expect(reason.textContent).toBe('docket decides this with its own command for now');
+      expect(approve.getAttribute('aria-describedby')).toBe(reason.id);
+      expect(refuse.getAttribute('aria-describedby')).toBe(reason.id);
+      expect(waiting.querySelectorAll('li[data-testid^="team-memory-entry-"]')).toHaveLength(2);
+    });
+
+    it('says plainly when nothing was learnt and nothing waits', async () => {
+      mockApi([FULL_TEAM]);
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      expect(memory(c).querySelector('[data-testid="team-memory-learnt"]')!.textContent).toContain('Nothing yet');
+      expect(memory(c).querySelector('[data-testid="team-memory-waiting"]')!.textContent).toContain('Nothing waits for you');
+    });
+
+    it('is one disabled line for a team whose agent did not report a memory', async () => {
+      const { memory: _unreported, ...report } = FULL_TEAM.report;
+      mockApi([{ ...FULL_TEAM, report }]);
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      expect(memory(c).querySelector('[data-testid="team-memory-waiting"]')).toBeNull();
+      expect(memory(c).textContent).toContain('Not reported by Docket');
+    });
   });
 });

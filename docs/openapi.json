@@ -14325,7 +14325,7 @@
       },
       "Key": {
         "type": "string",
-        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`."
+        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<team>:<entry>`."
       },
       "Kind": {
         "type": "string",
@@ -14336,7 +14336,8 @@
           "change_set",
           "run_finished",
           "due_soon",
-          "children_finished"
+          "children_finished",
+          "memory"
         ]
       },
       "LatestHop": {
@@ -14442,6 +14443,83 @@
           }
         },
         "additionalProperties": {}
+      },
+      "MemoryEntry": {
+        "type": "object",
+        "description": "One thing a team remembers.",
+        "required": [
+          "id",
+          "kind",
+          "subject",
+          "note",
+          "reason",
+          "stale"
+        ],
+        "properties": {
+          "evidence": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MemoryEvidence",
+                "description": "What the harness saw that backs it, when it saw anything."
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The harness's own id, which its commands take."
+          },
+          "kind": {
+            "type": "string",
+            "description": "What sort of fact it is, in the harness's word (`generated`, `tool`, `pitfall`,\n`convention`)."
+          },
+          "note": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "object",
+            "description": "Where it was learnt, as the harness records it (the task, the date, the commit).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the harness decided as it did, or why it waits."
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Whether what the entry names is gone since it was accepted."
+          },
+          "subject": {
+            "type": "string",
+            "description": "What it is about: a path, a label or a command."
+          }
+        }
+      },
+      "MemoryEvidence": {
+        "type": "object",
+        "description": "What backs an entry: the exit status of a command or whether a tool call succeeded.",
+        "properties": {
+          "exit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
       },
       "MergeDecision": {
         "type": "string",
@@ -18140,6 +18218,30 @@
           }
         }
       },
+      "TeamMemory": {
+        "type": "object",
+        "description": "What a team remembers about its work: the entries it has learnt and those that wait for a\nperson to approve them. Both lists are oldest first, as the harness gives them.",
+        "required": [
+          "pending",
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntry"
+            },
+            "description": "Checked or approved; the team reads them in its next task."
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntry"
+            },
+            "description": "Held back until a person decides; the team does not use them yet."
+          }
+        }
+      },
       "TeamMethod": {
         "type": "object",
         "description": "One way of working a task that a team offers.",
@@ -18489,6 +18591,17 @@
               "$ref": "#/components/schemas/TeamMember"
             },
             "description": "Who does the work: one entry per member, with the model it runs on. Absent means the\nharness did not say; no field may carry a harness's own key name."
+          },
+          "memory": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamMemory",
+                "description": "What the team has learnt about its work and what it waits to have approved. Absent means\nthe harness keeps no such memory or did not say, which is not the same as nothing learnt;\nno field may carry a harness's own key name."
+              }
+            ]
           },
           "methods": {
             "type": [

@@ -301,6 +301,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             methods: None,
             needs: None,
             budget: None,
+            memory: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
@@ -325,6 +326,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             methods: None,
             needs: None,
             budget: None,
+            memory: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
@@ -346,6 +348,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             methods: None,
             needs: None,
             budget: None,
+            memory: None,
         },
     ]);
     assert_eq!(

@@ -49,7 +49,7 @@ features and Tack used 16. Four cards, in two rounds (D, then A ∥ B ∥ C):
   carries its memory (pending and accepted entries). A pending entry opens a **needs-you** notification
   that closes when the entry is decided; the team's sheet shows what it learnt and what waits, with
   docket's `docket pod memory approve` and `refuse` commands to copy and **Approve**/**Refuse** shown
-  disabled with that reason. docket is asked for a route to decide an entry, probed when it comes.
+  disabled with that reason. docket is asked for a route to decide an entry (`memoryDecide`), probed when it comes.
 - **C — docket's check of a named method is read as a refusal.** A task docket refuses at claim with
   `failureKind: pipeline` (its `pipelineChecked`) reads **Not started** with docket's reason, as a
   `capability_missing` refusal does; Tack's own refusal before sending reads only the team's reported

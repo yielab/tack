@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "id": "mem-cb6fe8eb74",
+      "kind": "generated",
+      "subject": "dist/gone.js",
+      "note": "A build output that is not in the repository.",
+      "status": "refused",
+      "reason": "path not present at the task commit",
+      "provenance": {
+        "task": "task-capture-memory",
+        "date": "2026-11-04",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {}
+    }
+  ]
+}

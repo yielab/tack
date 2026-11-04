@@ -259,6 +259,11 @@ pub struct TeamReport {
     /// key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget: Option<TeamBudget>,
+    /// What the team has learnt about its work and what it waits to have approved. Absent means
+    /// the harness keeps no such memory or did not say, which is not the same as nothing learnt;
+    /// no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<TeamMemory>,
 }
 
 /// The kind of a [`TeamNeed`] that a signed-in agent meets.
@@ -339,6 +344,7 @@ impl TeamReport {
             }]),
             needs: (!needs.is_empty()).then_some(needs),
             budget: None,
+            memory: None,
         }
     }
 
@@ -533,6 +539,51 @@ pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> 
         }
     }
     misfits
+}
+
+/// What a team remembers about its work: the entries it has learnt and those that wait for a
+/// person to approve them. Both lists are oldest first, as the harness gives them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamMemory {
+    /// Held back until a person decides; the team does not use them yet.
+    pub pending: Vec<MemoryEntry>,
+    /// Checked or approved; the team reads them in its next task.
+    pub accepted: Vec<MemoryEntry>,
+}
+
+/// One thing a team remembers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct MemoryEntry {
+    /// The harness's own id, which its commands take.
+    pub id: String,
+    /// What sort of fact it is, in the harness's word (`generated`, `tool`, `pitfall`,
+    /// `convention`).
+    pub kind: String,
+    /// What it is about: a path, a label or a command.
+    pub subject: String,
+    pub note: String,
+    /// Why the harness decided as it did, or why it waits.
+    pub reason: String,
+    /// Whether what the entry names is gone since it was accepted.
+    pub stale: bool,
+    /// Where it was learnt, as the harness records it (the task, the date, the commit).
+    #[serde(default)]
+    pub provenance: BTreeMap<String, String>,
+    /// What the harness saw that backs it, when it saw anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<MemoryEvidence>,
+}
+
+/// What backs an entry: the exit status of a command or whether a tool call succeeded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct MemoryEvidence {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ok: Option<bool>,
 }
 
 /// What a team may spend: the harness applies it, Tack shows it.

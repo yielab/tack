@@ -29,6 +29,8 @@ pub enum Kind {
     DueSoon,
     /// No child of a parent item has a run open any more.
     ChildrenFinished,
+    /// A team holds something it learnt and waits for a person to approve it.
+    Memory,
 }
 
 impl Kind {
@@ -40,6 +42,7 @@ impl Kind {
             Kind::RunFinished => "run_finished",
             Kind::DueSoon => "due_soon",
             Kind::ChildrenFinished => "children_finished",
+            Kind::Memory => "memory",
         }
     }
 }
@@ -66,7 +69,7 @@ impl Level {
 
 /// The situation a notification is about, so the same situation is never open twice and the
 /// fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`.
+/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<team>:<entry>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -98,6 +101,17 @@ impl Key {
     /// The runs of a parent's children have all ended; said again each time they do.
     pub fn children(parent_id: Uuid) -> Key {
         Key(format!("children:{parent_id}"))
+    }
+
+    /// A team's memory entry that waits for approval, until it is no longer pending.
+    pub fn memory(team: &str, entry_id: &str) -> Key {
+        Key(format!("memory:{team}:{entry_id}"))
+    }
+
+    /// The team a [`Key::memory`] names, or `None` for any other key.
+    pub fn memory_team(&self) -> Option<&str> {
+        let (team, _entry) = self.0.strip_prefix("memory:")?.rsplit_once(':')?;
+        Some(team)
     }
 
     /// The key as it is stored.
@@ -246,6 +260,38 @@ pub fn due_soon(item: &Item, now: DateTime<Utc>) -> Notice {
         request_id: None,
         title: format!("\"{}\" is due within the hour", item.title),
         cause: crate::principal::Principal::system().label(),
+    }
+}
+
+/// How much of an entry's subject a title carries; a command can be long.
+const SUBJECT_IN_TITLE: usize = 80;
+
+/// The notice for a memory entry a team waits to have approved. It is not a board fact: the team
+/// reports it, and the reconcile opens it by the team's report. A team belongs to no project, so
+/// `project_id` is the project the notification is filed under; `reporter` is the runner whose
+/// report it is.
+pub fn memory_waiting(
+    project_id: Uuid,
+    team: &str,
+    entry_id: &str,
+    subject: &str,
+    reporter: &str,
+) -> Notice {
+    let subject = if subject.chars().count() > SUBJECT_IN_TITLE {
+        let cut: String = subject.chars().take(SUBJECT_IN_TITLE).collect();
+        format!("{cut}...")
+    } else {
+        subject.to_owned()
+    };
+    Notice {
+        kind: Kind::Memory,
+        level: Level::NeedsYou,
+        key: Key::memory(team, entry_id),
+        project_id,
+        item_id: None,
+        request_id: None,
+        title: format!("Team {team} waits for you to approve what it learnt about {subject}"),
+        cause: crate::principal::Principal::runner(reporter).label(),
     }
 }
 
