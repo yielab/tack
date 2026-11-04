@@ -2,7 +2,9 @@ import { type Component, For, type JSX, Show, createSignal } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { Badge } from '../ui';
 import { toast } from '../ui/toast';
-import type { RunRecordSet, RunStep, RunStepPrompt } from '../execution';
+import Markdown from '../ui/Markdown';
+import type { ArtifactRecord, RunRecordSet, RunStep, RunStepPrompt } from '../execution';
+import { ArtifactView, saveTextAs } from './ArtifactDownloadPanel';
 import { hopDurationText, hopMilliseconds, inProject } from './attemptFormat';
 import EventTimeline from './EventTimeline';
 import { plainLine } from './plainWords';
@@ -25,32 +27,59 @@ export const SideSlot: Component<{ page: boolean; target?: HTMLElement; children
   </Show>
 );
 
-/** What the agent said at the end, as written, clipped to a few lines. */
-export const AgentConcluded: Component<{ result: string | null; workspace: string | null }> = (props) => {
+/** What the agent said at the end, read as a page: its Markdown shown as headings, lists and
+ *  links, clipped to the top of the report until "Read full report". With the report's own file
+ *  (a Researcher's `report.md`) it opens in a window of its own, and the text downloads as a file. */
+export const AgentConcluded: Component<{
+  result: string | null;
+  workspace: string | null;
+  /** The file the runner kept the conclusion in, when it kept one. */
+  report?: ArtifactRecord;
+  requestId?: string;
+  attemptNumber?: number;
+}> = (props) => {
   const [full, setFull] = createSignal(false);
+  const [open, setOpen] = createSignal(false);
   const text = () => inProject(props.result ?? '', props.workspace);
   const long = () => text().length > CLAMP_CHARS || text().split('\n').length > CLAMP_LINES;
   const clamped = () => long() && !full();
+  const linkStyle = { color: 'var(--color-accent-ink)' };
   return (
     <Show when={props.result}>
       <section data-testid="agent-concluded">
         <h4 class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent concluded</h4>
-        <p
+        <div
           data-testid="agent-result"
-          class="whitespace-pre-wrap rounded-item px-4 py-3 text-sm"
-          classList={{ 'max-h-96 overflow-auto': !clamped() }}
-          style={{
-            'background-color': 'var(--color-bg-panel)',
-            color: 'var(--color-text-primary)',
-            ...(clamped() ? { display: '-webkit-box', '-webkit-line-clamp': String(CLAMP_LINES), '-webkit-box-orient': 'vertical', overflow: 'hidden' } : {}),
-          }}
+          class="relative rounded-item px-4 py-3"
+          classList={{ 'max-h-60 overflow-hidden': clamped() }}
+          style={{ 'background-color': 'var(--color-bg-panel)' }}
         >
-          {text()}
-        </p>
-        <Show when={long()}>
-          <button type="button" aria-expanded={full()} class="mt-1 text-xs font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => setFull((v) => !v)}>
-            {full() ? 'Show less' : 'Read full report'}
-          </button>
+          <Markdown text={text()} />
+          <Show when={clamped()}>
+            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: 'linear-gradient(to bottom, transparent, var(--color-bg-panel))' }} />
+          </Show>
+        </div>
+        <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <Show when={long()}>
+            <button type="button" aria-expanded={full()} class="text-xs font-semibold hover:underline" style={linkStyle} onClick={() => setFull((v) => !v)}>
+              {full() ? 'Show less' : 'Read full report'}
+            </button>
+          </Show>
+          <Show when={props.report && props.requestId !== undefined && props.attemptNumber !== undefined}>
+            <button type="button" data-testid="open-report" class="text-xs font-semibold hover:underline" style={linkStyle} onClick={() => setOpen(true)}>
+              Open report
+            </button>
+          </Show>
+          <Show when={long()}>
+            <button type="button" data-testid="download-report" class="text-xs font-semibold hover:underline" style={linkStyle}
+              onClick={() => saveTextAs(props.report?.name || 'report.md', props.result ?? '')}>
+              Download {props.report?.name || 'report.md'}
+            </button>
+          </Show>
+        </div>
+        <Show when={props.requestId !== undefined && props.attemptNumber !== undefined}>
+          <ArtifactView requestId={props.requestId as string} attemptNumber={props.attemptNumber as number}
+            artifact={open() ? props.report : undefined} onClose={() => setOpen(false)} />
         </Show>
       </section>
     </Show>

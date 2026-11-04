@@ -579,6 +579,7 @@ where
                 &self.workspaces,
                 &spec.workspace,
                 harness_kind,
+                crate::harness::profile_kind(&spec.work.request),
                 terminal_reason,
                 usage,
                 spec.work.request.brief.as_ref(),

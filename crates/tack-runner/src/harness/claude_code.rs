@@ -64,6 +64,11 @@ const EVERY_TOOL: &[&str] = &[
     "Write",
 ];
 
+/// Tools that only read, whether files or the web. With `approvals: ask` they run without
+/// stopping for a person: a Researcher fetching twenty pages would otherwise ask twenty times,
+/// and nothing they do changes anything. Every other tool still asks.
+const READ_ONLY_TOOLS: &[&str] = &["Glob", "Grep", "Read", "WebFetch", "WebSearch"];
+
 /// Settings passed on the command line, the only ones `--setting-sources ""`
 /// leaves: no reminder asking the agent to sign its commits and pull requests
 /// as Claude's (measured on 2.1.302, it reaches every call with tools).
@@ -364,15 +369,26 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             .map(str::to_owned),
         );
         // `""` would turn every tool off.
-        if all_tools {
-            let every: Vec<&str> = EVERY_TOOL
+        let given: Vec<String> = if all_tools {
+            EVERY_TOOL
                 .iter()
                 .copied()
                 .filter(|tool| policy.network || !is_network_tool(tool))
-                .collect();
-            args.push(every.join(","));
+                .map(str::to_owned)
+                .collect()
         } else {
-            args.push(tools.join(","));
+            tools
+        };
+        args.push(given.join(","));
+        if ask {
+            let reading: Vec<&str> = given
+                .iter()
+                .map(String::as_str)
+                .filter(|tool| READ_ONLY_TOOLS.contains(tool))
+                .collect();
+            if !reading.is_empty() {
+                args.extend(["--allowedTools".to_owned(), reading.join(",")]);
+            }
         }
         if let Some(model) = &request.requested_model {
             args.extend(["--model".to_owned(), model.clone()]);

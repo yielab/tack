@@ -462,7 +462,7 @@ describe('AttemptList', () => {
       // The raw log is with the ids.
       expect((c.querySelector('[data-testid="attempt-ids"] button:not([aria-label])') as HTMLButtonElement).textContent).toBe('Raw log');
       // What the agent said is on the card, not behind a button.
-      expect(c.querySelector('[data-testid="agent-result"]')?.textContent).toBe('Done.');
+      expect(c.querySelector('[data-testid="agent-result"]')?.textContent?.trim()).toBe('Done.');
       (c.querySelector('[data-testid="attempt-tools"] button') as HTMLButtonElement).click();
       await flush();
       await flush();
@@ -504,7 +504,7 @@ describe('AttemptList', () => {
       expect(labels(c)).toEqual([]);
       const rawLog = Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Raw log') as HTMLButtonElement;
       expect(rawLog.disabled).toBe(false);
-      expect(c.querySelector('[data-testid="agent-result"]')?.textContent).toBe('Done.');
+      expect(c.querySelector('[data-testid="agent-result"]')?.textContent?.trim()).toBe('Done.');
     });
 
     it('with no log the raw log is disabled and says why, never hidden', async () => {
@@ -616,12 +616,47 @@ describe('AttemptList', () => {
       const result = c.querySelector('[data-testid="agent-result"]') as HTMLElement;
       expect(result.textContent).toContain('Changed src/app.ts.');
       expect(result.textContent).not.toContain('/var/tmp');
-      expect(result.style.webkitLineClamp || result.getAttribute('style')).toContain('5');
+      expect(result.classList.contains('max-h-60')).toBe(true);
       const toggle = Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Read full report') as HTMLButtonElement;
       toggle.click();
       await flush();
       expect(toggle.textContent).toBe('Show less');
-      expect(result.getAttribute('style')).not.toContain('line-clamp');
+      expect(result.classList.contains('max-h-60')).toBe(false);
+    });
+
+    it('what the agent concluded is read as a page: headings and links, not their marks, and a link opens in its own tab', async () => {
+      mockApi([]);
+      const report = '# Findings\n\n- [A source](https://example.com/a)\n- <script>alert(1)</script>plain\n\n| a | b |\n|---|---|\n| 1 | 2 |\n';
+      const c = mount([attempt({ terminal_reason: { result: report } })]);
+      await flush();
+      await flush();
+      const result = c.querySelector('[data-testid="agent-result"]') as HTMLElement;
+      expect(result.querySelector('h1')?.textContent).toBe('Findings');
+      const link = result.querySelector('a') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('https://example.com/a');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(result.querySelector('table td')?.textContent).toBe('1');
+      expect(result.querySelector('script')).toBeNull();
+      expect(result.textContent).not.toContain('# Findings');
+    });
+
+    it('a report the runner kept as a file opens as a page and downloads as that file', async () => {
+      const long = `# Findings\n\n${'More detail about the work. '.repeat(40)}`;
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/content')) return Promise.resolve(new Response(long));
+        return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [art('r1', 'report', 'report.md')] })));
+      });
+      const c = mount([attempt({ terminal_reason: { result: long } })]);
+      await flush();
+      await flush();
+      (c.querySelector('[data-testid="open-report"]') as HTMLButtonElement).click();
+      await flush();
+      await flush();
+      expect(document.querySelector('[data-testid="artifact-markdown"] h1')?.textContent).toBe('Findings');
+      expect(document.querySelector('[data-testid="artifact-text"]')).toBeNull();
+      expect(document.querySelector('[data-testid="artifact-save"]')?.textContent).toBe('Download report.md');
+      expect(c.querySelector('[data-testid="download-report"]')?.textContent).toBe('Download report.md');
     });
 
     it('a short report is shown whole, with nothing to expand', async () => {

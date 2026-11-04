@@ -71,7 +71,9 @@ offers; see [CLI](cli.md#runner).
   also reports its own cost estimate at list price, which is an estimate and not your bill. It honours the
   tools you allow; when the run names none, the profile's list for Claude Code is used. Every tool means
   its file, shell and web tools, not its sub-agents or schedules, and it is not asked to sign its commits as
-  Claude's. Tack stops it when the run's counted tokens reach the token limit. A run that turns web tools off blocks only Claude Code's own web fetch
+  Claude's. With **Ask before each action** on, the tools that only read (`Read`, `Glob`, `Grep`, `WebFetch`
+  and `WebSearch`) run without stopping, so a Researcher can read twenty pages without twenty questions;
+  every other tool still asks. Tack stops it when the run's counted tokens reach the token limit. A run that turns web tools off blocks only Claude Code's own web fetch
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
 - **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its

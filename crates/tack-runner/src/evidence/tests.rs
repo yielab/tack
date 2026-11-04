@@ -52,6 +52,7 @@ async fn a_changed_workspace_yields_a_patch_and_a_file_list() {
         &workspaces,
         &workspace,
         "codex".to_owned(),
+        "",
         serde_json::json!({"code": "completed"}),
         serde_json::Value::Null,
         None,
@@ -123,6 +124,7 @@ async fn the_steps_a_harness_recorded_are_staged_as_one_artifact() {
             &workspaces,
             &workspace,
             "docket".to_owned(),
+            "",
             reason,
             serde_json::Value::Null,
             None,
@@ -183,6 +185,7 @@ async fn a_plan_file_is_staged_and_excluded_from_the_patch() {
             &workspaces,
             &workspace,
             "codex".to_owned(),
+            "",
             serde_json::json!({"code": "completed"}),
             serde_json::Value::Null,
             None,
@@ -257,6 +260,7 @@ async fn an_install_the_project_already_ignores_does_not_stop_the_capture() {
             &workspaces,
             &workspace,
             "codex".to_owned(),
+            "",
             serde_json::json!({"code": "completed"}),
             serde_json::Value::Null,
             None,
@@ -318,6 +322,7 @@ async fn a_reply_is_staged_from_the_harness_or_the_file_and_kept_out_of_the_patc
             &workspaces,
             &workspace,
             "codex".to_owned(),
+            "",
             terminal_reason,
             serde_json::Value::Null,
             None,
@@ -352,5 +357,74 @@ async fn a_reply_is_staged_from_the_harness_or_the_file_and_kept_out_of_the_patc
         fs::read(reply["staged_path"].as_str().unwrap()).unwrap(),
         b"from the harness"
     );
+    fs::remove_dir_all(scratch).expect("scratch");
+}
+
+#[tokio::test]
+async fn a_researchers_conclusion_is_staged_as_a_report_and_no_other_profiles_is() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("skipped: the git binary is not on PATH");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let path = root.path().join("ws");
+    fs::create_dir_all(&path).expect("workspace");
+    assert!(git(&path, &["init", "--quiet"]));
+    fs::write(path.join("keep.txt"), "keep\n").expect("keep");
+    assert!(git(&path, &["add", "-A"]));
+    assert!(git(&path, &["commit", "--quiet", "-m", "base"]));
+    let base = Command::new("git")
+        .current_dir(&path)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("rev-parse");
+    let base = String::from_utf8_lossy(&base.stdout).trim().to_owned();
+    fs::write(path.join(".tack-attempt"), "attempt").expect("marker");
+    let workspace = Workspace {
+        attempt_id: AttemptId::new("attempt"),
+        id: WorkspaceId::new("ws_attempt"),
+        path: path.clone(),
+        base_revision: base,
+    };
+    let workspaces =
+        WorkspaceManager::new(root.path().join("root"), GitWorktreeProvisioner::default());
+    let run = |profile_kind: &'static str, result: &'static str| {
+        capture(
+            &workspaces,
+            &workspace,
+            "claude-code".to_owned(),
+            profile_kind,
+            serde_json::json!({"result": result}),
+            serde_json::Value::Null,
+            None,
+            None,
+            ("Tack <t@localhost>", "work"),
+            None,
+        )
+    };
+
+    let (scratch, staged) = run(
+        "researcher",
+        "# Findings\n\n[a source](https://example.com)",
+    )
+    .await;
+    let report = staged
+        .iter()
+        .find(|item| item["kind"] == "report")
+        .expect("the conclusion is staged as the report");
+    assert_eq!(report["name"], "report.md");
+    assert_eq!(report["media_type"], "text/markdown");
+    assert_eq!(
+        fs::read(report["staged_path"].as_str().unwrap()).unwrap(),
+        b"# Findings\n\n[a source](https://example.com)"
+    );
+    fs::remove_dir_all(scratch).expect("scratch");
+
+    let (scratch, staged) = run("implementer", "done").await;
+    assert!(staged.iter().all(|item| item["kind"] != "report"));
+    fs::remove_dir_all(scratch).expect("scratch");
+
+    let (scratch, staged) = run("researcher", "  \n").await;
+    assert!(staged.iter().all(|item| item["kind"] != "report"));
     fs::remove_dir_all(scratch).expect("scratch");
 }
