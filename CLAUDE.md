@@ -124,6 +124,10 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   no team is a team of one filled from its runner's report; docket adds members, methods, step and team limits
   and folder teams, reported and probed, never required. Four additive asks to docket
   (`podShape`, `podContract`, `pipelineChecked`, `podResume`), each probed. Cards A ∥ C; D; E; F; G.
+- **Opened 2026-11-04:** Phase 91 (`docs/plans/phase-91.md`, ADR 0037, accepted) — the five docket features Tack did not
+  use, each decided: `conversation` (a docket thread continues), `podMemory`/`memoryStatus` (pending memory needs you),
+  `pipelineChecked` (docket owns the check), `readScope` (not used, why), `consultParts` proved in the fake; and Tack names
+  docket 0.3.0-beta.1. Cards D; A ∥ B ∥ C.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.

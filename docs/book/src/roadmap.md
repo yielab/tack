@@ -32,6 +32,14 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 Phases 73 to 90 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
 
+**Phase 91 — what docket offers, Tack uses or says why not** ([ADR 0037](https://github.com/yielab/tack/blob/develop/docs/adr/0037-what-docket-offers-tack-uses-or-says-why-not.md),
+opened 2026-11-04; plan in `docs/plans/phase-91.md`). docket 0.3.0-beta.1 lists 21 features and Tack used
+16. A thread on a docket team continues one task turn by turn instead of replaying; what a team waits to
+learn opens a notification and its sheet shows what it learnt, with docket's commands to decide it
+until docket offers a route; docket's check of a named method is the one check, read by Tack; the
+read-only token is not used, with the reason; a question in parts is proved against the fake; and Tack
+names docket's next version, 0.3.0-beta.1, instead of one that was never released. Four cards in two rounds.
+
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
 file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
 
