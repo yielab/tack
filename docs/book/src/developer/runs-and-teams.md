@@ -108,7 +108,7 @@ docket 0.3.0-beta.1 lists 21 features. Each name is a fact docket adds without m
 | `podResume` | `POST /pods/<p>/resume` | used: Resume team |
 | `memoryStatus` | `?status=` on the memory route | not used |
 
-An `apiVersion` below 6, or one that is not a number, is a probe error: "needs docket 0.2.0-beta.6 (API 6); this docket answers API N". A docket that answers the version but not `GET /escalations` is a probe error too: "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API N without it". The version number cannot tell the two apart, so the route decides. `validate` runs both checks before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
+An `apiVersion` below 6, or one that is not a number, is a probe error: "needs docket 0.3.0-beta.1 (API 6); this docket answers API N". A docket that answers the version but not `GET /escalations` is a probe error too: "needs docket 0.3.0-beta.1 with the escalation record; this docket answers API N without it". The version number cannot tell the two apart, so the route decides. `validate` runs both checks before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
 
 The task body carries `prepare` from the request's `repository.prepare`: a `Replace` sends its command, `Off` sends `""`, and `Detect` sends nothing, so docket uses its team's `prepare:` or the lockfile's command. A task docket settles `failed` with `failureKind: "prepare"` ends the attempt `failed` with the reason "Could not prepare the dependencies (docket): " followed by docket's own.
 

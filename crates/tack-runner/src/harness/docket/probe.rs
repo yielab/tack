@@ -28,12 +28,12 @@ pub const MIN_API_VERSION: u32 = 6;
 const LIGHTS_OUT: &str = "lights-out";
 
 fn needs_beta_6(found: &str) -> String {
-    format!("needs docket 0.2.0-beta.6 (API {MIN_API_VERSION}); this docket answers API {found}")
+    format!("needs docket 0.3.0-beta.1 (API {MIN_API_VERSION}); this docket answers API {found}")
 }
 
 fn without_escalations(found: u32) -> String {
     format!(
-        "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API {found} without it"
+        "needs docket 0.3.0-beta.1 with the escalation record; this docket answers API {found} without it"
     )
 }
 
