@@ -191,7 +191,8 @@ browser tab's title ("(2) Board · Tack"). Each row opens what it is about; **Re
 clears everything unread. A question or a failure stays open until it is answered or run again, however you
 answered it. While Tack is open, a new one that needs you also appears as a notice on the page. To hear about it
 when you are in another tab, turn on **Notify me when this tab is hidden** in a project's **Settings → General**; the
-browser asks once, and the choice stays in that browser.
+browser asks once, and the choice stays in that browser. In the desktop app the same switch sends the system's own
+notification, and the tray icon's tooltip says how many need you.
 
 While a run is going, the item reads itself again each time the run changes state, so whatever changed on it
 shows without a reload. It stops once every run has ended.

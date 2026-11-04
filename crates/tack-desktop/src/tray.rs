@@ -71,6 +71,40 @@ impl AgentExecutionStatus {
     }
 }
 
+/// `GET /api/notifications`'s body, narrowed to the one number the tooltip
+/// shows: how many notifications are open, whatever `limit` cut.
+#[derive(Debug, serde::Deserialize)]
+struct NotificationsBody {
+    open: usize,
+}
+
+/// The tray icon's tooltip: the app, and what it has to say. A server that
+/// is not answering says so; otherwise the count of what needs the person,
+/// or just the name when nothing does.
+fn tooltip(status: &AgentExecutionStatus, open: usize) -> String {
+    match (status, open) {
+        (AgentExecutionStatus::ServerNotAnswering, _) => "Tack · waiting for the server".into(),
+        (_, 0) => "Tack".into(),
+        (_, 1) => "Tack · 1 needs you".into(),
+        (_, n) => format!("Tack · {n} need you"),
+    }
+}
+
+/// How many notifications are open, or `None` when the server did not
+/// answer or answered with something this app cannot read: the tooltip then
+/// keeps what it said, since a failed request says nothing about the count.
+async fn open_notifications(client: &reqwest::Client, base_url: &str) -> Option<usize> {
+    let response = client
+        .get(format!("{base_url}/api/notifications?state=open&limit=0"))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    Some(response.json::<NotificationsBody>().await.ok()?.open)
+}
+
 /// The server's base URL, built from the port this app's own settings.json
 /// names — the same file [`crate::first_run`] writes — falling back to the
 /// default port when the file is missing or unreadable (nothing has run yet,
@@ -146,7 +180,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let launch_at_login_for_handler = launch_at_login_item.clone();
-    TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -237,6 +271,16 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             if let Err(err) = poll_target.set_text(label) {
                 tracing::error!(error = %err, "failed to update the agent-execution tray label");
             }
+
+            let open = match status {
+                AgentExecutionStatus::ServerNotAnswering => Some(0),
+                _ => open_notifications(&client, &base_url).await,
+            };
+            if let Some(open) = open
+                && let Err(err) = tray.set_tooltip(Some(tooltip(&status, open)))
+            {
+                tracing::error!(error = %err, "failed to update the tray tooltip");
+            }
             tokio::time::sleep(POLL_INTERVAL).await;
         }
     });
@@ -284,6 +328,25 @@ mod tests {
         assert_eq!(
             AgentExecutionStatus::from_body(&body(false, "running")).label(),
             "Agent execution: turning off…"
+        );
+    }
+
+    #[test]
+    fn tooltip_names_the_app_alone_when_nothing_needs_the_person() {
+        assert_eq!(tooltip(&AgentExecutionStatus::On, 0), "Tack");
+    }
+
+    #[test]
+    fn tooltip_counts_what_needs_the_person() {
+        assert_eq!(tooltip(&AgentExecutionStatus::On, 1), "Tack · 1 needs you");
+        assert_eq!(tooltip(&AgentExecutionStatus::Off, 3), "Tack · 3 need you");
+    }
+
+    #[test]
+    fn tooltip_says_when_the_server_is_not_answering() {
+        assert_eq!(
+            tooltip(&AgentExecutionStatus::ServerNotAnswering, 0),
+            "Tack · waiting for the server"
         );
     }
 
