@@ -343,6 +343,8 @@ struct Pod {
     /// What the report says of `budget` instead of the capture's: an object holding any of its
     /// four keys.
     budget: Option<Value>,
+    /// Every entry of the team's memory in docket's own shape, whatever its `status`.
+    memory: Vec<Value>,
 }
 
 /// The code an apply asks for, and what the directory would run (kind, name, text).
@@ -447,6 +449,11 @@ struct World {
     /// (kind, name, text). An apply that carries no `accept` is answered `409` with the code, one
     /// that carries another code `409` without it, and one that carries this code is applied.
     apply_review: Option<ApplyReview>,
+    /// A docket that lists `memoryStatus`: `GET /pods/<pod>/memory?status=` answers the entries of
+    /// one status. Without it the route answers `404`, as a docket without the route would.
+    memory_status: bool,
+    /// Every read of a team's memory fails with `500`.
+    memory_unreadable: bool,
 }
 
 pub struct FakeDocket {
@@ -499,6 +506,8 @@ impl FakeDocket {
             pipeline_steps: HashMap::new(),
             apply_review: None,
             applied_pods: BTreeSet::new(),
+            memory_status: false,
+            memory_unreadable: false,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -546,6 +555,7 @@ impl FakeDocket {
                 fetch: false,
                 contract: None,
                 budget: None,
+                memory: Vec::new(),
             },
         );
     }
@@ -699,6 +709,55 @@ impl FakeDocket {
     /// `404`, as a docket without the route would.
     pub fn without_retry_continues(&self) {
         self.shared.lock().unwrap().without_retry_continues = true;
+    }
+
+    /// A docket that lists `memoryStatus`: a team's memory is read by status.
+    pub fn with_memory_status(&self) {
+        self.shared.lock().unwrap().memory_status = true;
+    }
+
+    /// Gives the team the entries of the captures: the accepted ones (a fresh one and a stale
+    /// one), the pending ones and the refused one, as `GET /pods/<pod>/memory` answered them.
+    pub fn seed_memory(&self, name: &str) {
+        let entries = [
+            "pod-memory-accepted",
+            "pod-memory-pending",
+            "pod-memory-refused",
+        ]
+        .into_iter()
+        .flat_map(|capture| {
+            fixture(capture)["entries"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .memory = entries;
+    }
+
+    /// `docket pod memory approve|refuse`, which no HTTP route does: the entry takes `status`.
+    pub fn decide_memory(&self, name: &str, id: &str, status: &str) {
+        let mut world = self.shared.lock().unwrap();
+        let entry = world
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .memory
+            .iter_mut()
+            .find(|entry| entry["id"] == id)
+            .unwrap_or_else(|| panic!("no entry {id}"));
+        entry["status"] = json!(status);
+    }
+
+    /// From now on every read of a team's memory fails.
+    pub fn fail_memory_reads(&self) {
+        self.shared.lock().unwrap().memory_unreadable = true;
     }
 
     /// A docket whose pods declare their own `fetch` hosts: `/health` lists `podFetch`.
@@ -1145,6 +1204,7 @@ async fn handle(
         }
         ("GET", ["pods"]) => pods(&state),
         ("GET", ["pods", pod]) => pod_report(&state, pod),
+        ("GET", ["pods", pod, "memory"]) => pod_memory(&state, pod, &query),
         ("GET", ["pods", pod, "records"]) => pod_records(&state, pod),
         ("GET", ["pods", pod, "records", set]) => record_rows(&state, pod, set, &query),
         ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
@@ -1211,6 +1271,9 @@ fn features(state: &World) -> Value {
     }
     if state.conversation {
         listed.push("conversation");
+    }
+    if state.memory_status {
+        listed.push("memoryStatus");
     }
     json!(listed)
 }
@@ -1563,6 +1626,35 @@ fn write_row(state: &mut World, pod: &str, set: &str, task: &str, row: Value) {
     set.rows.push(stored);
 }
 
+/// `GET /pods/<pod>/memory?status=` (`memoryStatus`): the team's entries of one status, `accepted`
+/// when none is named, oldest first. A status docket does not have is `400`, a team it does not
+/// know `404`.
+fn pod_memory(state: &World, pod: &str, query: &str) -> Response {
+    if !state.memory_status {
+        return error(404, "not found");
+    }
+    let Some(team) = state.pods.get(pod) else {
+        return refusal("pod-memory-unknown", &[("no-such-team", pod)]);
+    };
+    if state.memory_unreadable {
+        return error(500, "the fake: the team's memory cannot be read");
+    }
+    let status = reqwest::Url::parse(&format!("http://fake/?{query}"))
+        .expect("a query")
+        .query_pairs()
+        .find(|(key, _)| key == "status")
+        .map_or_else(|| "accepted".to_owned(), |(_, value)| value.into_owned());
+    if !["accepted", "pending", "refused"].contains(&status.as_str()) {
+        return refusal("pod-memory-bad-status", &[]);
+    }
+    let entries: Vec<&Value> = team
+        .memory
+        .iter()
+        .filter(|entry| entry["status"] == status)
+        .collect();
+    reply(200, json!({"entries": entries}))
+}
+
 /// `GET /pods/<pod>/records`: the sets the team declares, with how many rows each holds.
 fn pod_records(state: &World, pod: &str) -> Response {
     if state.without_records || !state.pods.contains_key(pod) {
@@ -1720,6 +1812,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             fetch: false,
             contract: None,
             budget: None,
+            memory: Vec::new(),
         },
     );
     let created = match shape {

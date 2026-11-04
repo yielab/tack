@@ -15,6 +15,8 @@ export type TeamMethod = components['schemas']['TeamMethod'];
 export type TeamNeed = components['schemas']['TeamNeed'];
 export type TeamBudget = components['schemas']['TeamBudget'];
 export type TeamResumed = components['schemas']['TeamResumed'];
+export type TeamMemory = components['schemas']['TeamMemory'];
+export type MemoryEntry = components['schemas']['MemoryEntry'];
 
 export const teamsApi = {
   /** Every team any agent reports, then the names only profiles use. */
@@ -201,6 +203,23 @@ export function resumeGate(entry: TeamEntry): { enabled: boolean; reason: string
   if (!entry.harness) return { enabled: false, reason: 'No computer reports this team.' };
   if (!entry.report?.budget) return { enabled: false, reason: `${agentName(entry.harness)} does not offer this yet: resume the team with its own command.` };
   return { enabled: true, reason: null };
+}
+
+/** Why Approve and Refuse stay disabled: no agent offers a route to decide a memory entry yet. */
+export const MEMORY_DECIDE_REASON = 'docket decides this with its own command for now';
+
+/** The two commands that decide a pending memory entry of a docket team, to copy. The refusal's reason is the
+ *  person's to write. */
+export function memoryCommands(team: string, id: string): { approve: string; refuse: string } {
+  return {
+    approve: `docket pod memory approve ${id} --pod ${team}`,
+    refuse: `docket pod memory refuse ${id} --pod ${team} --reason "<why>"`,
+  };
+}
+
+/** What a team has learnt, newest first: docket lists its entries oldest first. */
+export function learntNewestFirst(memory: TeamMemory): MemoryEntry[] {
+  return [...memory.accepted].reverse();
 }
 
 /** Whether the team has used its whole budget in the window it counts over. A team that says nothing

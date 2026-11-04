@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tack_app::change_sets::{Mode, Proposal, propose, reject};
 use tack_app::events::{DomainEvent, EventBus, Fact, RecordedEvents, RunRef};
 use tack_app::notifications::Inbox;
-use tack_app::notifications::subscriber::{Reconciled, drain, reconcile};
+use tack_app::notifications::subscriber::{Reconciled, drain, reconcile, reconcile_memory};
 use tack_app::ports::DomainEvents;
 use tack_core::change_set::{CreateOp, Operation, Origin};
 use tack_core::notification::{Key, Kind, Level, Notice};
@@ -18,7 +18,7 @@ use tack_test_support::{FixedClock, seed};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::common::{RUNNER_ID, Running, World, enqueue, running_attempt, world};
+use crate::common::{self, RUNNER_ID, Running, World, enqueue, running_attempt, world};
 
 struct Fixture {
     world: World,
@@ -408,4 +408,190 @@ async fn the_last_open_run_among_a_parents_children_opens_one_info_notification_
         .unwrap()
         .status;
     assert_eq!(status_after, status_before, "the parent did not move");
+}
+
+/// Memory entries as `(id, subject)`.
+type Entries<'a> = &'a [(&'a str, &'a str)];
+
+/// What a runner's report holds when a docket team has these memory entries (pending, accepted);
+/// `None` is a team whose report carries none.
+fn docket_report(world: &World, teams: &[(&str, Option<(Entries, Entries)>)]) -> String {
+    let entry = |(id, subject): &(&str, &str)| {
+        serde_json::json!({
+            "id": id, "kind": "pitfall", "subject": subject, "note": "a note",
+            "reason": "awaits operator approval", "stale": false,
+            "provenance": {"task": "task-1"}
+        })
+    };
+    let teams: Vec<_> = teams
+        .iter()
+        .map(|(name, memory)| {
+            let mut team = serde_json::json!({"name": name, "violations": []});
+            if let Some((pending, accepted)) = memory {
+                team["memory"] = serde_json::json!({
+                    "pending": pending.iter().map(entry).collect::<Vec<_>>(),
+                    "accepted": accepted.iter().map(entry).collect::<Vec<_>>(),
+                });
+            }
+            team
+        })
+        .collect();
+    let mut snapshot = common::capabilities(world.clock.now(), 2, 2);
+    snapshot["harnesses"] = serde_json::json!([{
+        "harness_kind": "docket", "installed_version": "0.3.0b1", "probe_error": null,
+        "probed_at": world.clock.now().to_rfc3339(), "requires_model": false, "teams": teams,
+    }]);
+    snapshot.to_string()
+}
+
+/// The runner reports `snapshot` as its capabilities, as a refresh stores it.
+async fn reports(world: &World, snapshot: &str) {
+    tack_app::runs::refresh::refresh(
+        &world.repo,
+        world.clock.now(),
+        tack_app::runs::refresh::Refresh {
+            runner_id: RUNNER_ID,
+            presented_credential_hash: common::CREDENTIAL_HASH,
+            runner_version: "2.0.0",
+            labels_json: "{}",
+            capability_snapshot_json: snapshot,
+            new_credential_hash: None,
+        },
+    )
+    .await
+    .expect("refresh");
+}
+
+#[tokio::test]
+async fn a_pending_memory_entry_needs_you_until_it_leaves_pending() {
+    let fx = fixture().await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md"), ("mem-2", "docs/")];
+    let accepted: &[(&str, &str)] = &[("mem-0", "src/")];
+    reports(
+        &fx.world,
+        &docket_report(&fx.world, &[("saas-dev", Some((pending, accepted)))]),
+    )
+    .await;
+
+    let done = reconcile(&fx.world.repo, &fx.inbox, &fx.world.clock)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        done,
+        Reconciled {
+            opened: 2,
+            closed: 0
+        }
+    );
+    assert_eq!(
+        fx.keys().await,
+        ["memory:saas-dev:mem-1", "memory:saas-dev:mem-2"],
+        "one per pending entry, none for an accepted one"
+    );
+    let opened = fx.inbox.open_notifications(100).await.unwrap();
+    let first = opened
+        .iter()
+        .find(|n| n.key == Key::memory("saas-dev", "mem-1"))
+        .unwrap();
+    assert_eq!(
+        (first.kind, first.level, first.project_id),
+        (Kind::Memory, Level::NeedsYou, fx.project)
+    );
+    assert_eq!(
+        first.title,
+        "Team saas-dev waits for you to approve what it learnt about README.md"
+    );
+    assert_eq!(first.cause, format!("runner:{RUNNER_ID}"));
+
+    // Nothing twice.
+    assert_eq!(
+        reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap(),
+        Reconciled::default()
+    );
+
+    // The operator approves mem-1 at docket's own CLI: the next report no longer lists it pending.
+    let after_pending: &[(&str, &str)] = &[("mem-2", "docs/")];
+    let after_accepted: &[(&str, &str)] = &[("mem-0", "src/"), ("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(
+            &fx.world,
+            &[("saas-dev", Some((after_pending, after_accepted)))],
+        ),
+    )
+    .await;
+    assert_eq!(
+        reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap(),
+        Reconciled {
+            opened: 0,
+            closed: 1
+        }
+    );
+    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-2"]);
+}
+
+#[tokio::test]
+async fn a_team_that_does_not_list_the_feature_opens_nothing() {
+    let fx = fixture().await;
+    reports(&fx.world, &docket_report(&fx.world, &[("saas-dev", None)])).await;
+
+    let done = reconcile(&fx.world.repo, &fx.inbox, &fx.world.clock)
+        .await
+        .unwrap();
+
+    assert_eq!(done, Reconciled::default());
+    assert!(fx.keys().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_report_without_memory_leaves_open_what_the_team_asked_but_a_vanished_team_closes_it() {
+    let fx = fixture().await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(&fx.world, &[("saas-dev", Some((pending, &[])))]),
+    )
+    .await;
+    reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap();
+    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-1"]);
+
+    // The read of the team's memory failed this time: the report says nothing, so nothing closes.
+    reports(&fx.world, &docket_report(&fx.world, &[("saas-dev", None)])).await;
+    assert_eq!(
+        reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap(),
+        Reconciled::default()
+    );
+    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-1"]);
+
+    // The team is no longer reported by any computer: what it asked is moot.
+    reports(&fx.world, &docket_report(&fx.world, &[("other", None)])).await;
+    assert_eq!(
+        reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap(),
+        Reconciled {
+            opened: 0,
+            closed: 1
+        }
+    );
+}
+
+#[tokio::test]
+async fn the_full_reconcile_leaves_the_memory_notifications_to_the_teams_reports() {
+    let fx = fixture().await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(&fx.world, &[("saas-dev", Some((pending, &[])))]),
+    )
+    .await;
+    reconcile(&fx.world.repo, &fx.inbox, &fx.world.clock)
+        .await
+        .unwrap();
+
+    let again = reconcile(&fx.world.repo, &fx.inbox, &fx.world.clock)
+        .await
+        .unwrap();
+
+    assert_eq!(again, Reconciled::default());
+    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-1"]);
 }

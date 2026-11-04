@@ -1,0 +1,34 @@
+{
+  "entries": [
+    {
+      "id": "mem-b0ec5e2b1b",
+      "kind": "generated",
+      "subject": "README.md",
+      "note": "The repository's readme, written by hand.",
+      "status": "accepted",
+      "reason": "path present at the task commit",
+      "provenance": {
+        "task": "task-capture-memory",
+        "date": "2026-11-04",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {}
+    },
+    {
+      "id": "mem-8ed99a926b",
+      "kind": "generated",
+      "subject": "notes/old.md",
+      "note": "A note that a later commit removes.",
+      "status": "accepted",
+      "reason": "path present at the task commit",
+      "provenance": {
+        "task": "task-capture-memory",
+        "date": "2026-11-04",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": true,
+      "evidence": {}
+    }
+  ]
+}

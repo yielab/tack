@@ -5,14 +5,20 @@
 //! bus said it dropped events, and after a write failed: it opens what has no notification and
 //! closes what no longer waits. That is also what closes a failed run that was run again under a
 //! new request, which no single fact names.
+//!
+//! What a team waits to have approved for its memory is no board fact: the team reports it. The
+//! runner sends its report when it changes, and checks for a change every five minutes at most, so
+//! [`reconcile_memory`] reads the reports the board already holds (the snapshots of the active
+//! runners, the read behind the list of teams) every [`MEMORY_EVERY`] passes. A person learns of an
+//! entry within the runner's check plus that pass, and the notification closes the same way.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use tack_core::event::{DomainEvent, Fact, RunRef};
-use tack_core::notification::{Key, Level, Notice, closes, notice};
+use tack_core::notification::{Key, Kind, Level, Notice, closes, memory_waiting, notice};
 use tack_core::principal::Principal;
 use tack_db::Repository;
 use tack_db::repo::notifications::WaitingRun;
@@ -26,6 +32,10 @@ use crate::ports::DomainEvents;
 
 /// How often the events are read.
 const EVERY: Duration = Duration::from_secs(2);
+
+/// How many passes lie between two reads of the teams' reports: thirty seconds, against a report
+/// the runner refreshes every five minutes.
+const MEMORY_EVERY: u32 = 15;
 
 /// How long a failed run stays news: an older failure is not opened by the reconcile, and one
 /// that is open is closed when it ages out.
@@ -133,6 +143,88 @@ async fn waiting(repo: &Repository, clock: &dyn Clock) -> Result<Vec<Notice>, Ap
     Ok(notices)
 }
 
+/// What the active runners report of one team: whose report it is and what it says of memory.
+struct ReportedTeam {
+    name: String,
+    runner: String,
+    reported_at: chrono::DateTime<chrono::Utc>,
+    memory: Option<tack_protocol::execution::TeamMemory>,
+}
+
+/// The newest report of each team by agent and name, from the capability snapshots of the active
+/// runners: the read `GET /api/teams` makes.
+async fn reported_teams(repo: &Repository) -> Result<Vec<ReportedTeam>, AppError> {
+    let mut newest: BTreeMap<(String, String), ReportedTeam> = BTreeMap::new();
+    for runner in repo.list_runners().await? {
+        if runner.state != "active" || runner.revoked_at.is_some() {
+            continue;
+        }
+        for harness in crate::autonomy::harnesses_of(&runner.capability_snapshot) {
+            let kind = harness.harness_kind.as_str().to_owned();
+            for team in harness.teams.into_iter().flatten() {
+                let key = (kind.clone(), team.name.clone());
+                if newest
+                    .get(&key)
+                    .is_some_and(|seen| seen.reported_at > harness.probed_at)
+                {
+                    continue;
+                }
+                newest.insert(
+                    key,
+                    ReportedTeam {
+                        name: team.name,
+                        runner: runner.id.clone(),
+                        reported_at: harness.probed_at,
+                        memory: team.memory,
+                    },
+                );
+            }
+        }
+    }
+    Ok(newest.into_values().collect())
+}
+
+/// Makes the needs-you notifications for what teams wait to have approved say what the teams
+/// report: one open for each pending entry, none for an entry that is no longer pending or for a
+/// team that no longer reports. A team whose report carries no memory (its docket does not offer
+/// it, or the read failed) says nothing, so what is open for it stays. Idempotent, by the key.
+pub async fn reconcile_memory(repo: &Repository, inbox: &Inbox) -> Result<Reconciled, AppError> {
+    let open: Vec<_> = inbox
+        .open_notifications(u32::MAX)
+        .await?
+        .into_iter()
+        .filter(|notification| notification.kind == Kind::Memory)
+        .collect();
+    let teams = reported_teams(repo).await?;
+    let mut done = Reconciled::default();
+    let mut holding: HashSet<Key> = HashSet::new();
+    if let Some(project) = repo.filing_project().await? {
+        for team in &teams {
+            for entry in team.memory.iter().flat_map(|memory| &memory.pending) {
+                let notice =
+                    memory_waiting(project, &team.name, &entry.id, &entry.subject, &team.runner);
+                holding.insert(notice.key.clone());
+                if inbox.open(&notice).await?.is_some() {
+                    done.opened += 1;
+                }
+            }
+        }
+    }
+    for notification in open {
+        let silent = notification.key.memory_team().is_some_and(|name| {
+            teams.iter().any(|team| team.name == name)
+                && !teams
+                    .iter()
+                    .any(|team| team.name == name && team.memory.is_some())
+        });
+        if !holding.contains(&notification.key) && !silent && inbox.close(&notification.key).await?
+        {
+            done.closed += 1;
+        }
+    }
+    Ok(done)
+}
+
 /// Makes the needs-you notifications say what the store says: one open for each question, failed
 /// run and change set that waits on a person, none for anything else. Idempotent: the key keeps a
 /// situation from being opened twice.
@@ -154,12 +246,16 @@ pub async fn reconcile(
     let holding: HashSet<&Key> = wanted.iter().map(|notice| &notice.key).collect();
     for notification in open {
         if notification.level == Level::NeedsYou
+            && notification.kind != Kind::Memory
             && !holding.contains(&notification.key)
             && inbox.close(&notification.key).await?
         {
             done.closed += 1;
         }
     }
+    let memory = reconcile_memory(repo, inbox).await?;
+    done.opened += memory.opened;
+    done.closed += memory.closed;
     Ok(done)
 }
 
@@ -176,14 +272,31 @@ pub fn spawn(
         .subscribe()
         .map(|receiver| Arc::new(Mutex::new(receiver)));
     let repair = Arc::new(AtomicBool::new(true));
+    let passes = Arc::new(AtomicU32::new(0));
     loops.spawn_tick("notifications", Start::Immediately, EVERY, move || {
         let (repo, clock, inbox) = (repo.clone(), clock.clone(), inbox.clone());
-        let (receiver, repair) = (receiver.clone(), repair.clone());
+        let (receiver, repair, passes) = (receiver.clone(), repair.clone(), passes.clone());
         async move {
             if let Some(receiver) = receiver
                 && drain(&repo, &inbox, &mut *receiver.lock().await).await
             {
                 repair.store(true, Ordering::Relaxed);
+            }
+            let memory_due = passes.fetch_add(1, Ordering::Relaxed) % MEMORY_EVERY == 0;
+            if !repair.load(Ordering::Relaxed) && memory_due {
+                match reconcile_memory(&repo, &inbox).await {
+                    Ok(done) if done != Reconciled::default() => {
+                        tracing::info!(
+                            opened = done.opened,
+                            closed = done.closed,
+                            "notifications: what teams wait to learn was read"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "notifications: the teams' memory could not be read; it will be tried again");
+                    }
+                }
             }
             if repair.swap(false, Ordering::Relaxed) {
                 match reconcile(&repo, &inbox, clock.as_ref()).await {

@@ -28,6 +28,7 @@ import {
 import { CapabilityGlyph, IconBranch, IconFolder } from '../../shared/runWithAgent/runDialogIcons';
 import { requestProfileEdit } from './profileEditRequest';
 import DisabledLine from './DisabledLine';
+import TeamMemory from './TeamMemory';
 
 const HAIRLINE = { 'border-top': '1px solid var(--color-border-light)' } as const;
 
@@ -500,6 +501,11 @@ const TeamCard: Component<TeamCardProps> = (props) => {
             <p data-testid="team-proposals-shared" class="text-caption" style={MUTED}>
               {SHARED_PROPOSALS_TEXT}
             </p>
+          </Show>
+          <Show when={!solo()}>
+            <Part id="memory" agent={agent()} value={report()?.memory}>
+              {(memory) => <TeamMemory team={entry().name} memory={memory} />}
+            </Part>
           </Show>
         </Question>
 

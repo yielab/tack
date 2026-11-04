@@ -88,6 +88,10 @@ const POD_CONTRACT: &str = "podContract";
 /// carries `budget`.
 const POD_RESUME: &str = "podResume";
 
+/// The feature of `GET /health` under which `GET /pods/<pod>/memory` takes a `status`, so a team's
+/// pending and accepted entries can be read apart.
+const MEMORY_STATUS: &str = "memoryStatus";
+
 /// The feature of `GET /health` under which a pod declares the hosts its `fetch` reads.
 const POD_FETCH: &str = "podFetch";
 

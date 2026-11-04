@@ -273,6 +273,21 @@ the script captures it. The features are named in `GET /health` exactly as above
   (`task-failed-pipeline-roles`): `failed`, `failureKind: "pipeline"`, no hop, and the sentence
   `pipeline '<name>' (<source>) names roles this pod does not have: <role> (step <step>)` in `reason`.
 
+## A team's memory: captured
+
+`GET /pods/<pod>/memory?status=accepted|pending|refused` (the `memoryStatus` feature, named in `GET /health`)
+answers `{"entries": [...]}`, oldest first, each `{id, kind, subject, note, status, reason, provenance, stale,
+evidence}`. No model writes a team's memory in the capture, so the script has docket's own function
+(`record_task_memory`) record one task's `## Memory` section in the throwaway home, with docket deciding every
+entry itself: a path present at the task's commit is `accepted` (`reason: "path present at the task commit"`,
+`evidence: {}`), one that is not is `refused`, and a pitfall or a convention waits (`pending`, `reason: "awaits
+operator approval"`). A second task that finds a file gone flips its accepted entry to `stale: true`. `provenance`
+is `{task, date, commit}` (`root` instead of `commit` for a team in a folder). The default status is `accepted`
+(`pod-memory-default`), a team with no memory answers `{"entries": []}` (`pod-memory-none`), a status docket does
+not have is `400` naming the three (`pod-memory-bad-status`) and a team it does not dispatch is `404`
+(`pod-memory-unknown`). `evidence` is `{"exit": n}` or `{"ok": bool}` for an entry about a command or a tool call,
+which a path never has; no capture holds one, because it needs a task's trace with a bash call in it.
+
 ## Every fixture
 
 | Fixture | Route | Status | Captured or constructed |
@@ -309,6 +324,13 @@ the script captures it. The features are named in `GET /health` exactly as above
 | `pod-contract` | `GET /pods/<pod>` | 200 | captured |
 | `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
+| `pod-memory-accepted` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-bad-status` | `GET /pods/<pod>/memory` | 400 | captured |
+| `pod-memory-default` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-none` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-pending` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-refused` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-unknown` | `GET /pods/<pod>/memory` | 404 | captured |
 | `pod-resume-not-paused` | `POST /pods/<pod>/resume` | 200 | captured |
 | `pod-resume-unknown` | `POST /pods/<pod>/resume` | 404 | captured |
 | `pod-resumed` | `POST /pods/<pod>/resume` | 200 | captured |

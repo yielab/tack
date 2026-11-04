@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "status must be one of accepted, pending, refused"
+}
