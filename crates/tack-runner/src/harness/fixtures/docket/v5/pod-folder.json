@@ -18,6 +18,7 @@
         ],
         "tools": [
           "consult",
+          "fetch",
           "glob",
           "grep",
           "read",
@@ -32,6 +33,9 @@
           ],
           "query": true
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -54,6 +58,7 @@
         ],
         "tools": [
           "consult",
+          "fetch",
           "glob",
           "grep",
           "read",
@@ -68,6 +73,9 @@
           ],
           "query": true
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -94,6 +102,7 @@
           "bash",
           "consult",
           "edit",
+          "fetch",
           "glob",
           "grep",
           "process_output",
@@ -112,6 +121,9 @@
           ],
           "query": true
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -136,6 +148,7 @@
         "tools": [
           "consult",
           "edit",
+          "fetch",
           "glob",
           "grep",
           "read",
@@ -152,6 +165,9 @@
           ],
           "query": true
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -300,6 +316,11 @@
     "enforced": true
   },
   "fetchDomains": [],
+  "webRead": {
+    "mode": "open",
+    "reason": "a folder team under the jail reads any public host",
+    "fix": ""
+  },
   "needs": [],
   "delivers": [
     "report",
@@ -443,8 +464,8 @@
     "windowStart": null
   },
   "workDir": "/scratch/notes",
-  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
-  "configDigest": "47a1b2a9254590b2a4072945c6749176cd70f3ca098dd54170ffd7e63c9022cc",
+  "configSource": "/home/ox/.local/lib/docket/venv/lib/python3.11/site-packages/docket/templates/recipes/records",
+  "configDigest": "684915f612aace312c3d9a9d74a3308217cbce2ed03e75f2d952cdf0c92d16a3",
   "drift": "no",
   "profile": {
     "name": "attended",

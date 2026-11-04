@@ -1614,9 +1614,10 @@ fn pod_report_value(state: &World, name: &str) -> Option<Value> {
             }
         }
     }
-    if state.web_read_listed
-        && let Some(web_read) = &pod.web_read
-    {
+    // The captured reports carry `webRead`; a docket that does not list the feature sends none.
+    if !state.web_read_listed {
+        report.as_object_mut().unwrap().remove("webRead");
+    } else if let Some(web_read) = &pod.web_read {
         report["webRead"] = web_read.clone();
     }
     put_budget(state, pod, &mut report);

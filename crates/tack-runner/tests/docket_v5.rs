@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, CapabilitySupport, ExecutionRequestSnapshot,
     HarnessKind, RunnerId as DomainRunnerId, TaskDocument, TeamDecides, TeamDelivers, TeamPause,
-    WorksIn,
+    TeamWebMode, WorksIn,
 };
 use tack_protocol::prepare::PrepareSetting;
 use tack_runner::{
@@ -1657,6 +1657,7 @@ async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_tea
     let scene = scene();
     let fake = pods_fake().await;
     fake.with_pod_contract();
+    fake.with_web_read();
     fake.add_folder_pod("saas-contract");
     fake.set_contract("saas-contract", contract_of("pod-contract"));
     let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
@@ -1687,18 +1688,41 @@ async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_tea
         broken.missing_roles.is_empty(),
         "an unloadable file says no roles"
     );
+    // A folder team under the jail meets all three needs; only the fetch hosts block the work,
+    // and docket says so for a need whether or not it is met.
     let needs = team.needs.as_deref().expect("needs");
     assert_eq!(
         needs
             .iter()
-            .map(|need| (need.kind.as_str(), need.satisfied, need.fix.is_empty()))
+            .map(|need| (
+                need.kind.as_str(),
+                need.satisfied,
+                need.fix.is_empty(),
+                need.blocking
+            ))
             .collect::<Vec<_>>(),
         [
-            ("fetch-hosts", false, false),
-            ("search-host", false, false),
-            ("isolation", true, true)
+            ("fetch-hosts", true, true, Some(true)),
+            ("search-host", true, true, Some(false)),
+            ("isolation", true, true, Some(false))
         ],
         "a met need has no fix"
+    );
+    let web = team.web_read.as_ref().expect("webRead");
+    assert_eq!(web.mode, TeamWebMode::Open);
+    assert_eq!(
+        web.reason,
+        "a folder team under the jail reads any public host"
+    );
+    // What docket says of the web agrees with what the members hold: each of them but a role that
+    // sends has `fetch`, here the whole team.
+    assert!(
+        team.members
+            .as_deref()
+            .unwrap()
+            .iter()
+            .all(|member| member.reads_web == Some(true)
+                && member.web_hosts.as_deref() == Some(&["*".to_owned()][..]))
     );
 }
 
@@ -1707,6 +1731,7 @@ async fn the_fake_serves_a_contract_with_the_keys_of_the_captured_reports() {
     let fake = pods_fake().await;
     fake.with_pod_contract();
     fake.with_pod_resume();
+    fake.with_web_read();
     fake.add_folder_pod("saas-contract");
     // The first method of the capture is the one whose file does not load.
     fake.set_contract("saas-contract", contract_of("pod-contract"));
@@ -1807,6 +1832,7 @@ async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_the_captures() {
     let fake = pods_fake().await;
     fake.with_pod_resume();
     fake.with_pod_contract();
+    fake.with_web_read();
     fake.pause_pod(POD, "budget");
     let (_, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
     if let Err(why) = same_shape(&report, &fake_docket::fixture("pod-budget"), "pod-budget") {
@@ -1960,8 +1986,8 @@ async fn probe_reads_the_captured_reports_of_every_kind_of_team_as_docket_sent_t
             .map(|need| (need.name.as_str(), need.satisfied))
             .collect::<Vec<_>>(),
         [
-            ("fetch-hosts", false),
-            ("search-host", false),
+            ("fetch-hosts", true),
+            ("search-host", true),
             ("isolation", true)
         ]
     );
@@ -7342,6 +7368,7 @@ async fn captured_docket() -> FakeDocket {
     let fake = FakeDocket::start().await;
     fake.with_pod_contract();
     fake.with_pod_resume();
+    fake.with_web_read();
     fake
 }
 

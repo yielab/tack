@@ -198,6 +198,11 @@
     "enforced": true
   },
   "fetchDomains": [],
+  "webRead": {
+    "mode": "none",
+    "reason": "no host is allowed",
+    "fix": "docket pod set fetchDomains <host> --pod saas-lights"
+  },
   "needs": [],
   "delivers": [
     "branch",
@@ -335,7 +340,7 @@
     "windowStart": null
   },
   "configSource": "/scratch/plan-team",
-  "configDigest": "553b91da9c40e1a7878a1d6201b3a3dede46288a0b5c80ccfff9210fae59200d",
+  "configDigest": "226b824f8ead27bc7415c93b46d57ff77740df91a53b0bc684848f65ee057098",
   "drift": "no",
   "profile": {
     "name": "lights-out",

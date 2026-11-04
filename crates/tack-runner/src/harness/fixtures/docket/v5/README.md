@@ -4,7 +4,7 @@ The files in this directory are **captures from a real docket**, plus the answer
 marked `constructed`. Captured from `docket 0.3.0b1` (operator API version `6`, with the
 escalation record, the task as fields, the prompt manifest, the two-level home, the four
 blueprints, `workspaceKind`, `blueprint`, `pipeline.steps`, and the team's contract, budget, resume
-and shape), source checkout `2462c872`, on 2026-11-04. The directory keeps the name `v5` from the
+and shape), source checkout `cceff398`, on 2026-11-04. The directory keeps the name `v5` from the
 first capture; the answers say `apiVersion: "6"`.
 
 `scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a
@@ -241,9 +241,16 @@ the script captures it. The features are named in `GET /health` exactly as above
   lacks. `default` is true only for the method whose file is the team's bound pipeline, which a team made
   from a shape has none of until a recipe is applied (`pod-contract` has one). A file that does not load
   is listed with `error` (a multi-line parser sentence), `missingRoles: []` and `default: false`, so the
-  absence of a missing role is not a sign that it runs. `needs[]` is `{kind, name, fix, satisfied}`, `kind`
-  equal to `name` (`fetch-hosts`, `search-host`, `isolation`), recomputed on every call; a met need has an
-  empty `fix`. A team nothing was recorded for says `[]`.
+  absence of a missing role is not a sign that it runs. `needs[]` is `{kind, name, fix, satisfied,
+  blocking}`, `kind` equal to `name` (`fetch-hosts`, `search-host`, `isolation`), recomputed on every call;
+  a met need has an empty `fix`. `blocking` is a fact of the kind of need, served whether or not it is met:
+  `fetch-hosts` blocks, `search-host` and `isolation` only degrade the work. A team nothing was recorded for
+  says `[]`.
+- **`webRead`** (docket's Phase 67) puts `webRead {mode, reason, fix}` on every report: `open` (a folder team
+  under the jail reads any public host), `listed` (the hosts it names, or any public host granted with
+  `--widen`) or `none` (with docket's `fix`; `fix` is empty otherwise). It agrees with the members'
+  `capabilities`: a team that reads the web has `fetch` in each member's tools but the one that sends, and
+  `fetchDomains` says `["*"]` under open reading. The fake lists it only after `with_web_read`.
 - **`podResume`** puts `budget` on every row of `GET /pods` and on every report: `{tokens, used, window,
   windowStart}`. `tokens` is `null` without a cap, `window` is `none`, `day` or `week` and `windowStart`
   is `null` for `none`; `used` is what the gate would count now, over the window. The key is there with no
