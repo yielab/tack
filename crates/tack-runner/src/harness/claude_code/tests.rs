@@ -171,6 +171,38 @@ fn an_ask_request_keeps_stdin_open_and_asks_the_host() {
     assert_eq!(plain, b"do it");
 }
 
+/// With `ask`, the tools that only read run without stopping for a person and the rest still ask;
+/// `auto` passes no list, and a run with no reading tool passes none either.
+#[test]
+fn an_ask_request_lets_the_reading_tools_through_and_asks_for_the_rest() {
+    let allowed = |tools: &[&str], network: bool, approvals: Option<Approvals>| {
+        let mut spec = request(tools, network);
+        spec.work.request.permission_policy.approvals = approvals;
+        let args = invocation(&spec).expect("invocation").args;
+        args.iter()
+            .position(|arg| arg == "--allowedTools")
+            .map(|at| args[at + 1].clone())
+    };
+    let tools = ["Read", "WebFetch", "WebSearch", "Write", "Bash"];
+    assert_eq!(
+        allowed(&tools, true, Some(Approvals::Ask)).as_deref(),
+        Some("Read,WebFetch,WebSearch")
+    );
+    assert_eq!(
+        allowed(&tools, false, Some(Approvals::Ask)).as_deref(),
+        Some("Read")
+    );
+    assert_eq!(
+        allowed(&["*"], true, Some(Approvals::Ask)).as_deref(),
+        Some("Glob,Grep,Read,WebFetch,WebSearch")
+    );
+    assert_eq!(
+        allowed(&["Write", "Bash"], true, Some(Approvals::Ask)),
+        None
+    );
+    assert_eq!(allowed(&tools, true, None), None);
+}
+
 /// A `can_use_tool` control request becomes a question; a terminal `result`
 /// line — even with stdin still open — tells the core the conversation is
 /// over. Any other captured line means nothing here.

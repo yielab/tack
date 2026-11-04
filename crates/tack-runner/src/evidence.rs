@@ -156,6 +156,13 @@ pub struct PlanSubtask {
 
 /// The steps of a run that recorded them (`terminal_reason.steps`), staged as one artifact.
 pub const TRAJECTORY_FILE: &str = "trajectory.json";
+/// What a Researcher concluded (`terminal_reason.result`), staged as one Markdown file so the
+/// report is a file a person can open and keep, not only text on the run card.
+pub const REPORT_FILE: &str = "report.md";
+/// The artifact kind of [`REPORT_FILE`].
+pub const REPORT_KIND: &str = "report";
+/// The profile kind whose conclusion is its deliverable.
+const REPORT_PROFILE_KIND: &str = "researcher";
 /// Why `captured` is false when git could not read the workspace.
 pub const EVIDENCE_REASON_GIT_UNREADABLE: &str = "git could not read the workspace";
 /// Why `captured` is false when the provisioner has no repository to read.
@@ -165,6 +172,9 @@ pub const EVIDENCE_REASON_NO_REPOSITORY: &str = "this worktree provisioner reads
 /// directory holding the staged files (the caller removes it once they are
 /// uploaded) and one JSON object per staged artifact, in the shape
 /// `terminal_reason.artifact` already has.
+///
+/// `profile_kind` is the kind of the agent profile the run used (empty when it has none): a
+/// Researcher's conclusion is staged as [`REPORT_FILE`].
 ///
 /// `base_commit` is the commit id fixed at provisioning, and `commit` the
 /// author and message of the commit the capture makes of the work. With a
@@ -176,6 +186,7 @@ pub async fn capture<P: WorktreeProvisioner>(
     workspaces: &WorkspaceManager<P>,
     workspace: &Workspace,
     harness_kind: String,
+    profile_kind: &str,
     terminal_reason: serde_json::Value,
     usage: serde_json::Value,
     brief: Option<&serde_json::Value>,
@@ -352,6 +363,13 @@ pub async fn capture<P: WorktreeProvisioner>(
     };
     if let Some(bytes) = reply.filter(|bytes| !bytes.iter().all(u8::is_ascii_whitespace)) {
         stage(REPLY_FILE, REPLY_KIND, REPLY_MEDIA_TYPE, &bytes);
+    }
+    if profile_kind == REPORT_PROFILE_KIND
+        && let Some(text) = evidence.terminal_reason["result"]
+            .as_str()
+            .filter(|text| !text.trim().is_empty())
+    {
+        stage(REPORT_FILE, REPORT_KIND, "text/markdown", text.as_bytes());
     }
     let manifest = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
     stage("evidence.json", "evidence", "application/json", &manifest);

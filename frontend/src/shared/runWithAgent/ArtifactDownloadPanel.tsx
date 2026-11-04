@@ -4,6 +4,7 @@ import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound, type Ar
 import DiffView from './DiffView';
 import { inDesktop } from './desktop';
 import { truncateMiddle } from '../ui/truncateMiddle';
+import Markdown from '../ui/Markdown';
 
 export interface ArtifactDownloadPanelProps {
   requestId: string;
@@ -14,7 +15,24 @@ export interface ArtifactDownloadPanelProps {
 
 type DownloadStatusKind = 'idle' | 'downloading' | 'done' | 'not_found' | 'not_verified' | 'error';
 
-/** An artifact's content, read in place: a patch as a diff, JSON indented, anything else as text. */
+/** A file that is Markdown: a report or a reply, read as a page and not as marks. */
+export const isMarkdownArtifact = (a: Pick<ArtifactRecord, 'kind' | 'name' | 'media_type'> | undefined): boolean =>
+  !!a && (a.kind === 'report' || a.kind === 'reply' || a.media_type === 'text/markdown' || (a.name ?? '').endsWith('.md'));
+
+/** Hands text to the browser (or the desktop app) as a file. */
+export function saveTextAs(name: string, text: string, mediaType = 'text/markdown'): void {
+  const url = URL.createObjectURL(new Blob([text], { type: `${mediaType};charset=utf-8` }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** An artifact's content, read in place: a patch as a diff, JSON indented, Markdown as a page,
+ *  anything else as text. */
 export const ArtifactView: Component<{
   requestId: string; attemptNumber: number; artifact: ArtifactRecord | undefined; onClose: () => void;
 }> = (props) => {
@@ -36,11 +54,21 @@ export const ArtifactView: Component<{
       <Show when={!text.loading} fallback={<p class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>Loading…</p>}>
         <Show when={!text.error} fallback={<p class="text-sm" style={{ color: 'var(--color-danger-600)' }}>Couldn't read this artifact.</p>}>
           <Show when={shown() !== ''} fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>This file is empty.</p>}>
-            <Show when={isPatch()} fallback={
+            <Show when={isMarkdownArtifact(props.artifact)}>
+              <div class="mb-3 flex justify-end">
+                <button type="button" data-testid="artifact-save" class="text-xs font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}
+                  onClick={() => saveTextAs(props.artifact?.name || 'report.md', shown())}>
+                  Download {props.artifact?.name || 'report.md'}
+                </button>
+              </div>
+              <div class="overflow-auto pr-1" style={{ "max-height": "70vh" }}><Markdown testId="artifact-markdown" text={shown()} /></div>
+            </Show>
+            <Show when={!isMarkdownArtifact(props.artifact) && isPatch()}>
+              <DiffView patch={shown()} />
+            </Show>
+            <Show when={!isMarkdownArtifact(props.artifact) && !isPatch()}>
               <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-item px-4 py-3 text-xs"
                 style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>{shown()}</pre>
-            }>
-              <DiffView patch={shown()} />
             </Show>
           </Show>
         </Show>

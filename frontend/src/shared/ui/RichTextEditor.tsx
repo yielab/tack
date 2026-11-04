@@ -14,6 +14,12 @@ const ALLOWED_ELEMENTS = new Set([
   'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'blockquote', 'pre', 'code', 'a',
 ]);
 
+/** What a report written by an agent may use: the editor's vocabulary plus the rest of the headings,
+ *  rules, tables and strikethrough that Markdown makes. */
+const REPORT_ELEMENTS = new Set([
+  ...ALLOWED_ELEMENTS, 'h4', 'h5', 'h6', 'hr', 'del', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+]);
+
 /** A line the browser wrapped in a `div` (Enter in a contenteditable) is a paragraph. */
 const RENAMED_ELEMENTS: Record<string, string> = { div: 'p' };
 
@@ -32,6 +38,16 @@ function safeLink(value: string): string | null {
  * elements are unwrapped, while executable/embedded elements are removed.
  */
 export function sanitizeRichText(value: string): string {
+  return sanitizeHtml(value, ALLOWED_ELEMENTS, false);
+}
+
+/** The same cleaning for a report an agent wrote (rendered Markdown): a wider vocabulary, and a
+ *  link opens in its own tab so the report stays where it is. */
+export function sanitizeReport(value: string): string {
+  return sanitizeHtml(value, REPORT_ELEMENTS, true);
+}
+
+function sanitizeHtml(value: string, allowed: ReadonlySet<string>, linksInNewTab: boolean): string {
   const documentFragment = new DOMParser().parseFromString(value, 'text/html');
   const output = document.createElement('div');
   const blockedElements = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template']);
@@ -47,7 +63,7 @@ export function sanitizeRichText(value: string): string {
     const raw = element.tagName.toLowerCase();
     const tag = RENAMED_ELEMENTS[raw] ?? raw;
     if (blockedElements.has(tag)) return;
-    if (!ALLOWED_ELEMENTS.has(tag)) {
+    if (!allowed.has(tag)) {
       for (const child of Array.from(element.childNodes)) appendClean(child, parent);
       return;
     }
@@ -59,6 +75,7 @@ export function sanitizeRichText(value: string): string {
       if (safeHref) {
         clean.setAttribute('href', safeHref);
         clean.setAttribute('rel', 'noopener noreferrer');
+        if (linksInNewTab) clean.setAttribute('target', '_blank');
       }
     }
     for (const child of Array.from(element.childNodes)) appendClean(child, clean);

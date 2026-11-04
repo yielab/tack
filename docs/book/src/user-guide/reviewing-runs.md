@@ -20,7 +20,9 @@ reads from the top down, in the same order every time: the verdict first, then w
    left a pack, a reason is required and is saved with the verdict on the checks; without a pack,
    **Reject…** asks for a note, which is optional), **Merge** once it is accepted, **Run again** when nothing else is left.
    Under it, **Why it stopped** for a run that did not finish and **What the agent concluded**, the agent's
-   report as written.
+   report read as a page (headings, lists, tables and links), clipped to its top until **Read full report**.
+   A Researcher's report is also kept as a file, `report.md`: **Open report** shows it in a window of its own and
+   **Download report.md** saves it.
 2. **Needs you**, only while the agent waits for an answer: the question, the options and the decision
    token field. A run that asked nothing has no such field.
 3. **Checks.** The criteria as a checklist: ✓ passed, ✗ failed, ◐ needs a person, with the kind of check
@@ -58,7 +60,7 @@ reads from the top down, in the same order every time: the verdict first, then w
      docket team refused and each question docket opened, who answered it and whether it expired. Only the
      Claude Code log names its steps by tool; for any other agent **By tool** is disabled and says why, and
      the timeline is what there is. Only docket reports its steps while the run works.
-6. **Files from this run**, one row for each with **View** and **Download**.
+6. **Files from this run**, one row for each with **View** and **Download**; a Markdown file such as `report.md` is viewed as a page.
 7. **Technical**: the request, attempt and runner ids (each copies with one press), what the agent got
    (whether it ran in an isolated sandbox, the names of its environment variables when it had any, where it
    worked, and the exact prompt it read), the **Usage** in full (see [Usage and cost](#usage-and-cost)), the

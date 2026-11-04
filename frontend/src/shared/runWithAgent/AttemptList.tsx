@@ -242,6 +242,7 @@ const AttemptRow: Component<{
   const patch = () => listed().find((a) => a.kind === 'patch');
   const log = () => listed().find((a) => a.kind === 'log' || (a.name ?? '').endsWith('.log'));
   const plan = () => listed().find((a) => a.kind === 'plan');
+  const report = () => listed().find((a) => a.kind === 'report');
   const evidence = () => listed().find((a) => a.kind === 'evidence');
   const patchHasChanges = () => (patch()?.size_bytes ?? 0) > 0;
   const [branch] = createResource(evidence, async (e) => {
@@ -534,7 +535,7 @@ const AttemptRow: Component<{
         </div>
 
         <Show when={terminal()}>
-          <AgentConcluded result={result()} workspace={folder()} />
+          <AgentConcluded result={result()} workspace={folder()} report={report()} requestId={props.requestId} attemptNumber={n()} />
         </Show>
       </section>
 

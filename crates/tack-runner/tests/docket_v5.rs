@@ -8082,6 +8082,7 @@ async fn captured(
         &workspaces,
         &work.workspace,
         "docket".to_owned(),
+        "",
         outcome.terminal_reason.clone(),
         Value::Null,
         None,
