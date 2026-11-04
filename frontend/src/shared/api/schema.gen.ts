@@ -1196,6 +1196,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/notifications/channels */
+        get: operations["get_channels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications/read-all": {
         parameters: {
             query?: never;
@@ -5552,6 +5569,23 @@ export interface components {
             /** Format: date-time */
             resolved_at?: string | null;
             title: string;
+        };
+        /** @description How one channel's deliveries stand. */
+        NotificationChannel: {
+            /**
+             * Format: int32
+             * @description Deliveries given up on: refused for good, or still failing after the last try.
+             */
+            failed: number;
+            /** @description Why the newest failing delivery failed. */
+            last_error?: string | null;
+            /** @description The channel's name, as the deliveries know it. */
+            name: string;
+            /**
+             * Format: int32
+             * @description Deliveries waiting for their first or next try.
+             */
+            pending: number;
         };
         NotificationList: {
             notifications: components["schemas"]["Notification"][];
@@ -10038,6 +10072,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_channels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every channel notifications leave through, with how many deliveries wait, how many were given up on, and the last error */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationChannel"][];
                 };
             };
         };
