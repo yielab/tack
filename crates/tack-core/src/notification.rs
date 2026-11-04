@@ -69,7 +69,7 @@ impl Level {
 
 /// The situation a notification is about, so the same situation is never open twice and the
 /// fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<team>:<entry>`.
+/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -103,15 +103,17 @@ impl Key {
         Key(format!("children:{parent_id}"))
     }
 
-    /// A team's memory entry that waits for approval, until it is no longer pending.
-    pub fn memory(team: &str, entry_id: &str) -> Key {
-        Key(format!("memory:{team}:{entry_id}"))
+    /// A team's memory entry that waits for approval, for one project that uses the team, until
+    /// the entry is no longer pending.
+    pub fn memory(project_id: Uuid, team: &str, entry_id: &str) -> Key {
+        Key(format!("memory:{project_id}:{team}:{entry_id}"))
     }
 
-    /// The team a [`Key::memory`] names, or `None` for any other key.
-    pub fn memory_team(&self) -> Option<&str> {
-        let (team, _entry) = self.0.strip_prefix("memory:")?.rsplit_once(':')?;
-        Some(team)
+    /// The project and the team a [`Key::memory`] names, or `None` for any other key.
+    pub fn memory_use(&self) -> Option<(Uuid, &str)> {
+        let (project, rest) = self.0.strip_prefix("memory:")?.split_once(':')?;
+        let (team, _entry) = rest.rsplit_once(':')?;
+        Some((project.parse().ok()?, team))
     }
 
     /// The key as it is stored.
@@ -268,8 +270,8 @@ const SUBJECT_IN_TITLE: usize = 80;
 
 /// The notice for a memory entry a team waits to have approved. It is not a board fact: the team
 /// reports it, and the reconcile opens it by the team's report. A team belongs to no project, so
-/// `project_id` is the project the notification is filed under; `reporter` is the runner whose
-/// report it is.
+/// there is one notice for each project that uses the team; `reporter` is the runner whose report
+/// it is.
 pub fn memory_waiting(
     project_id: Uuid,
     team: &str,
@@ -286,7 +288,7 @@ pub fn memory_waiting(
     Notice {
         kind: Kind::Memory,
         level: Level::NeedsYou,
-        key: Key::memory(team, entry_id),
+        key: Key::memory(project_id, team, entry_id),
         project_id,
         item_id: None,
         request_id: None,

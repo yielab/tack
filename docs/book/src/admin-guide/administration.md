@@ -147,7 +147,7 @@ The event name is sent both as the `X-Tack-Event` request header and as the `eve
 | `notification.change_set` | An agent proposed a change set |
 | `notification.run_finished` | A run finished |
 | `notification.due_soon` | An item is due within the next hour (checked hourly) |
-| `notification.memory` | A docket team holds something it learnt and waits for you to approve it with docket's own command (`project_id` is the board's oldest project, since a team belongs to none; it is sent within about five minutes of the team's report changing) |
+| `notification.memory` | A docket team holds something it learnt and waits for you to approve it with docket's own command (one is sent for each project that uses the team, with that project's `project_id`, within about five minutes of the team's report changing) |
 
 ### Payload
 

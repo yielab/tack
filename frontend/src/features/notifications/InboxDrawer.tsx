@@ -17,7 +17,8 @@ import {
 /** Where a notification leads: a change set to the panel that applies it, a team's memory to the team's sheet, anything else to its item (on the run, when it is about one). */
 export function notificationHref(n: InboxNotification): string | null {
   if (n.kind === 'memory') {
-    const team = n.key.slice('memory:'.length).replace(/:[^:]*$/, '');
+    // memory:<project>:<team>:<entry>
+    const team = n.key.split(':').slice(2, -1).join(':');
     return `/agents#team-${encodeURIComponent(team)}`;
   }
   if (n.kind === 'change_set') {

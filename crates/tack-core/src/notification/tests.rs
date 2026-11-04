@@ -279,8 +279,11 @@ fn a_memory_entry_waiting_needs_you_under_its_team_and_entry() {
         "laptop",
     );
     assert_eq!((n.kind, n.level), (Kind::Memory, Level::NeedsYou));
-    assert_eq!(n.key, Key::memory("saas-dev", "mem-b0ec5e2b1b"));
-    assert_eq!(n.key.as_str(), "memory:saas-dev:mem-b0ec5e2b1b");
+    assert_eq!(n.key, Key::memory(project(), "saas-dev", "mem-b0ec5e2b1b"));
+    assert_eq!(
+        n.key.as_str(),
+        format!("memory:{}:saas-dev:mem-b0ec5e2b1b", project())
+    );
     assert_eq!(Kind::Memory.as_str(), "memory");
     assert_eq!(
         n.title,
@@ -292,13 +295,18 @@ fn a_memory_entry_waiting_needs_you_under_its_team_and_entry() {
 }
 
 #[test]
-fn a_memory_key_names_its_team_and_no_other_key_does() {
+fn a_memory_key_names_its_project_and_team_and_no_other_key_does() {
     assert_eq!(
-        Key::memory("saas-dev", "mem-1").memory_team(),
-        Some("saas-dev")
+        Key::memory(project(), "saas-dev", "mem-1").memory_use(),
+        Some((project(), "saas-dev"))
     );
-    assert_eq!(Key::decision("d-1").memory_team(), None);
-    assert_eq!(Key::from_stored("memory:odd").memory_team(), None);
+    assert_ne!(
+        Key::memory(project(), "saas-dev", "mem-1"),
+        Key::memory(Uuid::from_u128(2), "saas-dev", "mem-1"),
+        "the same entry is one situation for each project"
+    );
+    assert_eq!(Key::decision("d-1").memory_use(), None);
+    assert_eq!(Key::from_stored("memory:odd").memory_use(), None);
 }
 
 #[test]

@@ -10,6 +10,7 @@ use tack_app::notifications::Inbox;
 use tack_app::notifications::subscriber::{Reconciled, drain, reconcile, reconcile_memory};
 use tack_app::ports::DomainEvents;
 use tack_core::change_set::{CreateOp, Operation, Origin};
+use tack_core::models::CreateRole;
 use tack_core::notification::{Key, Kind, Level, Notice};
 use tack_core::principal::{Capability, Principal, Scope};
 use tack_protocol::Clock;
@@ -462,9 +463,85 @@ async fn reports(world: &World, snapshot: &str) {
     .expect("refresh");
 }
 
+/// A profile that names the docket team `team`.
+async fn team_profile(world: &World, id: &str, team: &str) {
+    let policy = serde_json::json!({"agent": "docket", "docket": {"team": team}}).to_string();
+    world
+        .repo
+        .create_agent_profile(
+            tack_db::repo::execution::NewAgentProfile {
+                id,
+                name: id,
+                instructions: "work",
+                tool_policy: &policy,
+                limits: "{}",
+            },
+            world.clock.now(),
+        )
+        .await
+        .expect("profile");
+}
+
+/// A role of `project` whose profile is `profile`; the role's id.
+async fn role_using(world: &World, project: Uuid, name: &str, profile: &str) -> Uuid {
+    let role = world
+        .repo
+        .create_role(
+            project,
+            CreateRole {
+                name: name.into(),
+                color: None,
+                icon: None,
+            },
+        )
+        .await
+        .expect("role");
+    set_role_profile(world, role.id, Some(profile)).await;
+    role.id
+}
+
+async fn set_role_profile(world: &World, role: Uuid, profile: Option<&str>) {
+    world
+        .repo
+        .update_role(
+            role,
+            tack_core::models::UpdateRole {
+                name: None,
+                color: None,
+                icon: None,
+                agent_profile_id: Some(profile.map(str::to_owned)),
+            },
+        )
+        .await
+        .expect("update")
+        .expect("role exists");
+}
+
+/// Another project on the same board.
+async fn another_project(fx: &Fixture) -> Uuid {
+    let workspace = fx
+        .world
+        .repo
+        .get_project(fx.project)
+        .await
+        .unwrap()
+        .unwrap()
+        .workspace_id;
+    tack_test_support::make_project(&fx.world.repo, workspace)
+        .await
+        .id
+}
+
+fn memory_key(project: Uuid, team: &str, id: &str) -> String {
+    Key::memory(project, team, id).to_string()
+}
+
 #[tokio::test]
-async fn a_pending_memory_entry_needs_you_until_it_leaves_pending() {
+async fn a_pending_memory_entry_needs_you_in_the_project_that_uses_the_team_until_it_leaves_pending()
+ {
     let fx = fixture().await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    role_using(&fx.world, fx.project, "Builder", "p-dev").await;
     let pending: &[(&str, &str)] = &[("mem-1", "README.md"), ("mem-2", "docs/")];
     let accepted: &[(&str, &str)] = &[("mem-0", "src/")];
     reports(
@@ -484,15 +561,20 @@ async fn a_pending_memory_entry_needs_you_until_it_leaves_pending() {
             closed: 0
         }
     );
+    let mut wanted = vec![
+        memory_key(fx.project, "saas-dev", "mem-1"),
+        memory_key(fx.project, "saas-dev", "mem-2"),
+    ];
+    wanted.sort();
     assert_eq!(
         fx.keys().await,
-        ["memory:saas-dev:mem-1", "memory:saas-dev:mem-2"],
+        wanted,
         "one per pending entry, none for an accepted one"
     );
     let opened = fx.inbox.open_notifications(100).await.unwrap();
     let first = opened
         .iter()
-        .find(|n| n.key == Key::memory("saas-dev", "mem-1"))
+        .find(|n| n.key == Key::memory(fx.project, "saas-dev", "mem-1"))
         .unwrap();
     assert_eq!(
         (first.kind, first.level, first.project_id),
@@ -528,12 +610,122 @@ async fn a_pending_memory_entry_needs_you_until_it_leaves_pending() {
             closed: 1
         }
     );
-    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-2"]);
+    assert_eq!(
+        fx.keys().await,
+        [memory_key(fx.project, "saas-dev", "mem-2")]
+    );
+}
+
+#[tokio::test]
+async fn two_projects_that_use_a_team_are_each_asked_and_a_project_that_does_not_is_not() {
+    let fx = fixture().await;
+    let second = another_project(&fx).await;
+    let third = another_project(&fx).await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    team_profile(&fx.world, "p-other", "other").await;
+    role_using(&fx.world, fx.project, "Builder", "p-dev").await;
+    // The second project uses the team as its default profile, not through a role.
+    fx.world
+        .repo
+        .update_project(
+            second,
+            tack_core::models::UpdateProject {
+                default_profile_id: Some(Some("p-dev".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    // The third uses another team.
+    role_using(&fx.world, third, "Builder", "p-other").await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(
+            &fx.world,
+            &[("saas-dev", Some((pending, &[]))), ("other", None)],
+        ),
+    )
+    .await;
+
+    let done = reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap();
+
+    assert_eq!(
+        done,
+        Reconciled {
+            opened: 2,
+            closed: 0
+        }
+    );
+    let opened = fx.inbox.open_notifications(100).await.unwrap();
+    let mut projects: Vec<Uuid> = opened.iter().map(|n| n.project_id).collect();
+    projects.sort();
+    let mut users = vec![fx.project, second];
+    users.sort();
+    assert_eq!(projects, users, "one for each project that uses the team");
+    assert!(opened.iter().all(|n| n.project_id != third));
+}
+
+#[tokio::test]
+async fn a_team_no_project_uses_opens_nothing() {
+    let fx = fixture().await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(&fx.world, &[("saas-dev", Some((pending, &[])))]),
+    )
+    .await;
+
+    let done = reconcile(&fx.world.repo, &fx.inbox, &fx.world.clock)
+        .await
+        .unwrap();
+
+    assert_eq!(done, Reconciled::default());
+    assert!(fx.keys().await.is_empty());
+}
+
+#[tokio::test]
+async fn changing_a_role_away_from_the_team_closes_that_projects_notification_only() {
+    let fx = fixture().await;
+    let second = another_project(&fx).await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    team_profile(&fx.world, "p-other", "other").await;
+    let role = role_using(&fx.world, fx.project, "Builder", "p-dev").await;
+    role_using(&fx.world, second, "Builder", "p-dev").await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(
+            &fx.world,
+            &[("saas-dev", Some((pending, &[]))), ("other", None)],
+        ),
+    )
+    .await;
+    reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap();
+    assert_eq!(fx.keys().await.len(), 2);
+
+    set_role_profile(&fx.world, role, Some("p-other")).await;
+
+    assert_eq!(
+        reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap(),
+        Reconciled {
+            opened: 0,
+            closed: 1
+        }
+    );
+    assert_eq!(
+        fx.keys().await,
+        [memory_key(second, "saas-dev", "mem-1")],
+        "the project that still uses the team keeps its notification"
+    );
 }
 
 #[tokio::test]
 async fn a_team_that_does_not_list_the_feature_opens_nothing() {
     let fx = fixture().await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    role_using(&fx.world, fx.project, "Builder", "p-dev").await;
     reports(&fx.world, &docket_report(&fx.world, &[("saas-dev", None)])).await;
 
     let done = reconcile(&fx.world.repo, &fx.inbox, &fx.world.clock)
@@ -547,6 +739,9 @@ async fn a_team_that_does_not_list_the_feature_opens_nothing() {
 #[tokio::test]
 async fn a_report_without_memory_leaves_open_what_the_team_asked_but_a_vanished_team_closes_it() {
     let fx = fixture().await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    role_using(&fx.world, fx.project, "Builder", "p-dev").await;
+    let key = memory_key(fx.project, "saas-dev", "mem-1");
     let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
     reports(
         &fx.world,
@@ -554,7 +749,7 @@ async fn a_report_without_memory_leaves_open_what_the_team_asked_but_a_vanished_
     )
     .await;
     reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap();
-    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-1"]);
+    assert_eq!(fx.keys().await, std::slice::from_ref(&key));
 
     // The read of the team's memory failed this time: the report says nothing, so nothing closes.
     reports(&fx.world, &docket_report(&fx.world, &[("saas-dev", None)])).await;
@@ -562,7 +757,7 @@ async fn a_report_without_memory_leaves_open_what_the_team_asked_but_a_vanished_
         reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap(),
         Reconciled::default()
     );
-    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-1"]);
+    assert_eq!(fx.keys().await, std::slice::from_ref(&key));
 
     // The team is no longer reported by any computer: what it asked is moot.
     reports(&fx.world, &docket_report(&fx.world, &[("other", None)])).await;
@@ -578,6 +773,8 @@ async fn a_report_without_memory_leaves_open_what_the_team_asked_but_a_vanished_
 #[tokio::test]
 async fn the_full_reconcile_leaves_the_memory_notifications_to_the_teams_reports() {
     let fx = fixture().await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    role_using(&fx.world, fx.project, "Builder", "p-dev").await;
     let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
     reports(
         &fx.world,
@@ -593,5 +790,48 @@ async fn the_full_reconcile_leaves_the_memory_notifications_to_the_teams_reports
         .unwrap();
 
     assert_eq!(again, Reconciled::default());
-    assert_eq!(fx.keys().await, ["memory:saas-dev:mem-1"]);
+    assert_eq!(
+        fx.keys().await,
+        [memory_key(fx.project, "saas-dev", "mem-1")]
+    );
+}
+
+#[tokio::test]
+async fn the_webhook_carries_the_project_a_memory_notification_belongs_to() {
+    use tack_app::notifications::channel::Channel;
+    use tack_app::notifications::webhook::WebhookChannel;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let fx = fixture().await;
+    let second = another_project(&fx).await;
+    team_profile(&fx.world, "p-dev", "saas-dev").await;
+    role_using(&fx.world, second, "Builder", "p-dev").await;
+    let pending: &[(&str, &str)] = &[("mem-1", "README.md")];
+    reports(
+        &fx.world,
+        &docket_report(&fx.world, &[("saas-dev", Some((pending, &[])))]),
+    )
+    .await;
+    reconcile_memory(&fx.world.repo, &fx.inbox).await.unwrap();
+    let notification = fx.inbox.open_notifications(10).await.unwrap().remove(0);
+
+    let receiver = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&receiver)
+        .await;
+    WebhookChannel::new(format!("{}/hook", receiver.uri()), None)
+        .send(&notification)
+        .await
+        .expect("delivered");
+
+    let received = receiver.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+    assert_eq!(body["event"], "notification.memory");
+    assert_eq!(body["notification"]["project_id"], second.to_string());
+    assert_eq!(
+        body["notification"]["key"],
+        memory_key(second, "saas-dev", "mem-1")
+    );
 }

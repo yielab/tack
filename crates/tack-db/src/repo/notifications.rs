@@ -435,17 +435,25 @@ impl Repository {
         rows.into_iter().map(WaitingRunRow::into_run).collect()
     }
 
-    /// The project a notification about no project is filed under: the board's oldest project
-    /// that is not archived, `None` on a board with none. A team belongs to no project, but a
-    /// notification must be filed under one, and the oldest is the one that stays.
+    /// The tool policy of every profile each project that is not archived uses: the profile of
+    /// one of its roles, and its default profile. A project appears once for each profile.
     #[instrument(skip(self))]
-    pub async fn filing_project(&self) -> Result<Option<Uuid>, StoreError> {
-        let id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM projects WHERE archived = 0 ORDER BY created_at, id LIMIT 1",
+    pub async fn project_profile_policies(&self) -> Result<Vec<(Uuid, String)>, StoreError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT r.project_id, p.tool_policy FROM roles r
+               JOIN agent_profiles p ON p.id = r.agent_profile_id
+               JOIN projects pr ON pr.id = r.project_id
+              WHERE pr.archived = 0
+             UNION
+             SELECT pr.id, p.tool_policy FROM projects pr
+               JOIN agent_profiles p ON p.id = pr.default_profile_id
+              WHERE pr.archived = 0",
         )
-        .fetch_optional(self.pool())
+        .fetch_all(self.pool())
         .await?;
-        id.map(|id| decode::uuid("projects", "id", &id)).transpose()
+        rows.into_iter()
+            .map(|(project, policy)| Ok((decode::uuid("projects", "id", &project)?, policy)))
+            .collect()
     }
 
     /// The change sets with an operation still waiting for a person.
