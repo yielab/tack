@@ -33,6 +33,12 @@ const WAIT_ROWS = [
   { request_id: 'req-wait-failed', item_id: 'item-wait', state: 'failed', cancellation_requested_at: null, created_at: '2025-02-03T00:00:00Z', waiting_reason: NO_RUNNER, waiting_since: FIVE_MIN_AGO },
 ];
 
+const REFUSED_ROWS = [
+  { request_id: 'req-refused', item_id: 'item-refused', state: 'failed', never_started: true, cancellation_requested_at: null, created_at: '2025-03-01T00:00:00Z' },
+  { request_id: 'req-broke', item_id: 'item-refused', state: 'failed', cancellation_requested_at: null, created_at: '2025-03-02T00:00:00Z' },
+  { request_id: 'req-refused-again', item_id: 'item-refused', state: 'failed', never_started: true, cancellation_requested_at: null, created_at: '2025-03-03T00:00:00Z' },
+];
+
 const ATTEMPT_ROW = {
   attempt_id: 'att-1',
   request_id: 'req-running',
@@ -88,7 +94,7 @@ function mockFetch(): typeof fetch {
       return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
     }
     if (url.includes('/executions')) {
-      return new Response(JSON.stringify({ protocol_version: 1, data: [...ROWS, ...WAIT_ROWS] }), { status: 200 });
+      return new Response(JSON.stringify({ protocol_version: 1, data: [...ROWS, ...WAIT_ROWS, ...REFUSED_ROWS] }), { status: 200 });
     }
     return new Response(JSON.stringify({}), { status: 200 });
   }) as typeof fetch;
@@ -158,6 +164,14 @@ describe('ExecutionTimeline', () => {
     expect(status.textContent).toContain('Running');
     await pick(c, 'Run 3');
     expect(picked).toEqual(['req-needs-operator']);
+  });
+
+  it('runs refused before they started read Not started on every chip, whether or not their attempts are loaded', async () => {
+    const c = mount('item-refused');
+    for (let i = 0; i < 6; i++) await flush();
+    // The chips say their state as the tooltip; newest first. The server flag decides, not the request's state.
+    const titles = [...c.querySelectorAll<HTMLElement>('[data-testid="run-chip"]')].map((b) => b.title);
+    expect(titles).toEqual(['Run 3: Not started', 'Run 2: Failed', 'Run 1: Not started']);
   });
 
   it('an item with one run shows no chips, and Run again is offered', async () => {
