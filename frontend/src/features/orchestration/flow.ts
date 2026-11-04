@@ -12,11 +12,12 @@ import { cardRun, countStates, passesFilters, type CardRun, type RunFilter } fro
 import type { RunStateName } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { Dependency, Item } from '../../shared/types';
+import type { Routed } from '../../shared/execution/routing';
 
 type RunSettings = components['schemas']['RunSettings'];
 type TeamLine = components['schemas']['TeamLine'];
 
-// ── Routing: which profile, and so which lane, a task goes to ──────────────────────────────────
+// ── Routing: the server says which profile, and so which lane, a task goes to ──────────────────
 
 /** A role of the project, and the profile a task with that role runs with. */
 export interface RoleProfile {
@@ -24,17 +25,16 @@ export interface RoleProfile {
   profileId: string | null;
 }
 
-export interface RoutingContext {
+export interface LaneContext {
   profiles: readonly AgentProfileSummary[];
   teams: readonly TeamEntry[];
-  /** The project's default profile. */
-  defaultProfileId: string | null;
 }
 
-/** Where the choice came from, in the order it is taken: the task's own, its role's, the project's. */
-export type RouteSource = 'task' | 'role' | 'project';
+/** Where the choice came from, in the order a run takes it: the task's own, its role's, the project's
+ *  default (also when its roles disagree), then the built-in Implementer. */
+export type RouteSource = 'task' | 'role' | 'project' | 'ambiguous' | 'implementer';
 
-export type NobodyReason = 'no_role' | 'role_without_profile' | 'profile_missing' | 'team_not_reported';
+export type NobodyReason = NonNullable<Routed['nobody']>;
 
 export type Route =
   | { kind: 'lane'; lane: string; profile: AgentProfileSummary; source: RouteSource; role: string | null }
@@ -43,77 +43,72 @@ export type Route =
 export const teamLaneKey = (team: string): string => `team:${team}`;
 export const agentLaneKey = (kind: string): string => `agent:${kind}`;
 
-/** The profile a task's own settings name, or null. */
-export function ownProfileId(item: Pick<Item, 'run_settings'>): string | null {
-  return item.run_settings?.agent_profile_id || null;
-}
-
-/** The lane a profile belongs to: its team, or, naming none, the single agent it runs. A team nobody
- *  reports has no lane. */
-export function laneOfProfile(profile: AgentProfileSummary, ctx: Pick<RoutingContext, 'teams'>): { lane: string } | { nobody: NobodyReason; detail: string } {
+/** The lane a profile is drawn in: its team's, or, naming none, the single agent it runs. A team nobody
+ *  reports has no lane. This places a profile on the screen; who gets a card is `/routing`'s answer. */
+export function laneOf(profile: AgentProfileSummary, ctx: Pick<LaneContext, 'teams'>): string | null {
   const team = teamOf(profile);
-  if (team) {
-    return ctx.teams.find((t) => t.name === team)?.reported
-      ? { lane: teamLaneKey(team) }
-      : { nobody: 'team_not_reported', detail: team };
-  }
-  return { lane: agentLaneKey(agentKindOf(profile, ctx.teams)) };
+  if (team) return ctx.teams.find((t) => t.name === team)?.reported ? teamLaneKey(team) : null;
+  return agentLaneKey(agentKindOf(profile, ctx.teams));
 }
 
-/**
- * The lane a task goes to: the profile chosen on the task, else the first role that has one, else the
- * project's default (the order the item's Automation row and the Run dialog take). Null while the
- * task's roles are not known, since they could change the answer.
- */
-export function routeItem(
-  item: Pick<Item, 'run_settings'>,
-  roles: readonly RoleProfile[] | undefined,
-  ctx: RoutingContext,
-): Route | null {
-  const own = ownProfileId(item);
-  if (!own && !roles) return null;
-  const withProfile = (roles ?? []).find((r) => r.profileId);
-  let source: RouteSource;
-  let id: string | null;
-  if (own) {
-    source = 'task';
-    id = own;
-  } else if (withProfile) {
-    source = 'role';
-    id = withProfile.profileId;
-  } else {
-    source = 'project';
-    id = ctx.defaultProfileId;
+const SOURCES: Record<string, RouteSource> = { run_settings: 'task', project_default: 'project', ambiguous: 'ambiguous', implementer: 'implementer' };
+
+/** The server's word for where a choice came from, as a source and the role it names. */
+function sourceOf(label: string | null | undefined): { source: RouteSource; role: string | null } {
+  if (label?.startsWith('role:')) return { source: 'role', role: label.slice('role:'.length) };
+  return { source: (label && SOURCES[label]) || 'project', role: null };
+}
+
+/** What the server worked out for a task, with the profile it names; the lane is the profile's team,
+ *  else the single agent it runs. */
+export function routeOf(routed: Routed, ctx: LaneContext): Route {
+  const { source, role } = sourceOf(routed.source);
+  const profile = routed.profile_id ? ctx.profiles.find((p) => p.agent_profile_id === routed.profile_id) : undefined;
+  const reason = routed.nobody ?? (profile ? null : routed.profile_id ? 'profile_missing' : 'no_role');
+  if (reason) {
+    const detail: Record<NobodyReason, string | null> = {
+      no_role: null,
+      role_without_profile: routed.role ?? null,
+      profile_missing: source === 'task' ? 'task' : source === 'role' ? 'role' : 'project',
+      team_not_reported: routed.team ?? null,
+      harness_not_reported: routed.harness ?? null,
+    };
+    return { kind: 'nobody', reason, detail: detail[reason] };
   }
-  if (!id) {
-    const bare = (roles ?? [])[0];
-    return bare ? { kind: 'nobody', reason: 'role_without_profile', detail: bare.name } : { kind: 'nobody', reason: 'no_role', detail: null };
-  }
-  const profile = ctx.profiles.find((p) => p.agent_profile_id === id);
-  if (!profile) return { kind: 'nobody', reason: 'profile_missing', detail: source };
-  const placed = laneOfProfile(profile, ctx);
-  if ('nobody' in placed) return { kind: 'nobody', reason: placed.nobody, detail: placed.detail };
-  return { kind: 'lane', lane: placed.lane, profile, source, role: source === 'role' ? withProfile!.name : null };
+  const lane = routed.team ? teamLaneKey(routed.team) : agentLaneKey(routed.harness ?? agentKindOf(profile!, ctx.teams));
+  return { kind: 'lane', lane, profile: profile!, source, role };
 }
 
 /** The sentence under a task nobody will take: why, in words. */
 export function nobodyText(route: Extract<Route, { kind: 'nobody' }>): string {
   switch (route.reason) {
     case 'no_role':
-      return 'It has no role, no profile chosen on it, and the project has no default profile.';
+      return 'It has no role, no profile chosen on it, and neither the project nor the board has a profile to fall back on.';
     case 'role_without_profile':
-      return `Its role ${route.detail} has no profile, and the project has no default profile.`;
+      return `Its role ${route.detail} has no profile, and neither the project nor the board has one to fall back on.`;
     case 'profile_missing':
       return `The profile ${route.detail === 'task' ? 'chosen on this task' : route.detail === 'role' ? 'of its role' : 'the project uses by default'} no longer exists.`;
     case 'team_not_reported':
       return `No computer reports the team ${route.detail} that its profile names.`;
+    case 'harness_not_reported':
+      return `No computer reports the agent ${route.detail} that its profile runs.`;
   }
 }
 
 /** Where a choice came from, as the item's Automation row words it. */
 export function sourceText(route: Extract<Route, { kind: 'lane' }>): string {
-  if (route.source === 'task') return 'chosen on this task';
-  return route.source === 'role' ? `from the role ${route.role}` : "the project's default";
+  switch (route.source) {
+    case 'task':
+      return 'chosen on this task';
+    case 'role':
+      return `from the role ${route.role}`;
+    case 'ambiguous':
+      return "the project's default: its roles name different profiles";
+    case 'implementer':
+      return 'the built-in Implementer: nothing else is named';
+    case 'project':
+      return "the project's default";
+  }
 }
 
 /** The task's run settings with the chosen profile set, or cleared; null when nothing else is left. */
@@ -222,8 +217,8 @@ export interface StatusDef {
 
 export interface FlowInput {
   items: readonly Item[];
-  /** The tasks' roles, by item id, once known. */
-  roles: ReadonlyMap<string, readonly RoleProfile[]>;
+  /** What `/routing` says of each open task, by item id. */
+  routing: ReadonlyMap<string, Routed>;
   /** The ids of each task's blockers, by item id. */
   blockers: ReadonlyMap<string, readonly string[]>;
   /** The project's runs: the open ones and those that ended in the last day. */
@@ -357,12 +352,11 @@ export function mergeRung(
 }
 
 function upNextOf(item: Item, summary: ExecutionSummary | undefined, input: FlowInput, route: Route | null, blocked: number): UpNext {
-  const hasRole = (input.roles.get(item.id)?.length ?? 0) > 0;
   const queuedReason = summary && summary.state === 'queued' ? (summary.waiting_reason ?? null) : null;
   const start = input.startStatus ?? 'its first status';
   if (!input.autoStart) return { mode: 'hand', text: 'by hand: the project does not start tasks by itself', queuedReason };
   // Auto-start only takes tasks that say who does them: a role or a profile chosen on the task.
-  if (route?.kind === 'lane' && route.source === 'project' && !hasRole) {
+  if (route?.kind === 'lane' && (route.source === 'project' || route.source === 'implementer')) {
     return { mode: 'hand', text: 'by hand: only the default profile would do it', queuedReason };
   }
   if (blocked > 0) return { mode: 'hand', text: `by hand until the ${blocked === 1 ? 'task it waits for is' : `${blocked} tasks it waits for are`} done`, queuedReason };
@@ -389,7 +383,7 @@ const rank: Record<Urgency, number> = { needs: 0, running: 1, idle: 2 };
  * a task with neither goes to the Nobody lane.
  */
 export function buildFlow(input: FlowInput): Flow {
-  const ctx: RoutingContext = { profiles: input.profiles, teams: input.teams, defaultProfileId: input.defaultProfileId };
+  const ctx: LaneContext = { profiles: input.profiles, teams: input.teams };
   const itemsById = new Map(input.items.map((i) => [i.id, i]));
   const statusCategory = new Map(input.statuses.map((s) => [s.name, s.category]));
   const hasChildren = new Set(input.items.flatMap((i) => (i.parent_id ? [i.parent_id] : [])));
@@ -405,17 +399,16 @@ export function buildFlow(input: FlowInput): Flow {
   };
   reach(input.defaultProfileId);
   for (const r of input.projectRoles) reach(r.profileId);
-  for (const roles of input.roles.values()) for (const r of roles) reach(r.profileId);
-  for (const i of input.items) reach(ownProfileId(i));
+  for (const routed of input.routing.values()) reach(routed.profile_id);
   for (const r of input.runs) reach(r.agent_profile_id);
   const reachable = input.profiles.filter((p) => profileIds.has(p.agent_profile_id));
 
   // One lane per team a reachable profile names (and some computer reports), one per single agent.
   const lanes = new Map<string, FlowLane>();
   for (const profile of reachable) {
-    const placed = laneOfProfile(profile, ctx);
-    if ('nobody' in placed) continue;
-    const existing = lanes.get(placed.lane);
+    const placed = laneOf(profile, ctx);
+    if (!placed) continue;
+    const existing = lanes.get(placed);
     if (existing) {
       existing.profiles.push(profile);
       continue;
@@ -425,8 +418,8 @@ export function buildFlow(input: FlowInput): Flow {
     const report = entry?.report ?? null;
     const steps = report?.steps ?? [];
     const kind = agentKindOf(profile, input.teams);
-    lanes.set(placed.lane, {
-      key: placed.lane,
+    lanes.set(placed, {
+      key: placed,
       kind: team ? 'team' : 'agent',
       name: team ?? (kind ? agentName(kind) : 'Agent'),
       entry,
@@ -460,15 +453,15 @@ export function buildFlow(input: FlowInput): Flow {
     const run = cardRun(summary, item.needs_review === true);
     const eligible = !!run || startable(item);
     if (!eligible) continue;
-    const route = routeItem(item, input.roles.get(item.id), ctx);
+    const routed = input.routing.get(item.id);
+    const route = routed ? routeOf(routed, ctx) : null;
     let lane: string | null = null;
     const used = summary?.agent_profile_id ? input.profiles.find((p) => p.agent_profile_id === summary.agent_profile_id) : undefined;
     if (used) {
-      const placed = laneOfProfile(used, ctx);
-      if ('lane' in placed) lane = placed.lane;
+      lane = laneOf(used, ctx);
     }
     if (!lane && route?.kind === 'lane') lane = route.lane;
-    if (!lane && route === null) continue; // its roles are not known yet
+    if (!lane && route === null) continue; // the server has not said who would take it
     pending.push({ item, summary, route, lane });
     laneOfToken.set(item.id, lane);
   }
@@ -541,9 +534,9 @@ export function buildFlow(input: FlowInput): Flow {
   for (const run of input.runs) {
     const used = run.limit?.used;
     const profile = run.agent_profile_id ? input.profiles.find((p) => p.agent_profile_id === run.agent_profile_id) : undefined;
-    const placed = profile ? laneOfProfile(profile, ctx) : undefined;
-    if (typeof used === 'number' && placed && 'lane' in placed) {
-      const target = lanes.get(placed.lane);
+    const placed = profile ? laneOf(profile, ctx) : null;
+    if (typeof used === 'number' && placed) {
+      const target = lanes.get(placed);
       if (target) target.tokensToday += used;
     }
   }

@@ -3,6 +3,7 @@
 //! once: a replay of a report, a question already asked or an answer already given announces
 //! nothing, because it made nothing true.
 
+use tack_core::children;
 use tack_core::principal::Principal;
 use tack_db::{Repository, queries};
 use tack_protocol::execution::{AttemptId, ExecutionState};
@@ -67,14 +68,43 @@ pub async fn run_ended(
         return;
     };
     if let Some((project_id, run)) = run_of(repo, attempt_id).await {
+        let item_id = run.item_id;
         let fact = match response.terminal_state {
             ExecutionState::Succeeded => Some(Fact::RunFinished { run }),
             ExecutionState::Failed => Some(Fact::RunFailed { run }),
             _ => None,
         };
+        let finished = matches!(fact, Some(Fact::RunFinished { .. }));
         if let Some(fact) = fact {
             events.emit(DomainEvent::new(project_id, principal, fact));
         }
+        if finished {
+            children_finished(repo, events, principal, project_id, item_id).await;
+        }
+    }
+}
+
+/// A child's run finished: when its parent's children have no run open any more, the parent's
+/// children have finished. The parent's status is not asked and not moved.
+async fn children_finished(
+    repo: &Repository,
+    events: &dyn DomainEvents,
+    principal: &Principal,
+    project_id: Uuid,
+    item_id: Uuid,
+) {
+    let settled = async {
+        let parent_id = repo.get_item(item_id).await.ok()??.parent_id?;
+        let children = queries::children::of_parent(repo, parent_id).await.ok()?;
+        children::runs_settled(&children).then_some(parent_id)
+    }
+    .await;
+    if let Some(parent_id) = settled {
+        events.emit(DomainEvent::new(
+            project_id,
+            principal,
+            Fact::ChildrenFinished { parent_id },
+        ));
     }
 }
 

@@ -16,6 +16,13 @@ export const teamsApi = {
   list: async (): Promise<TeamEntry[]> => (await request<Partial<TeamList>>('/teams')).teams ?? [],
 };
 
+/** What a team's `profile` is called on the board: its Supervision. Lights-out is the one profile that
+ *  runs without a person; any other asks, as the board's merge rule reads it. Null when the agent did not say. */
+export function supervisionText(profile: string | null | undefined): string | null {
+  if (!profile || profile === 'unknown') return null;
+  return profile === 'lights-out' ? 'Lights-out' : 'Attended';
+}
+
 /** The names a Team field offers: the reported teams first, then names only profiles use. */
 export function teamChoices(
   entries: readonly TeamEntry[],

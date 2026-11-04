@@ -1502,6 +1502,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{id}/routing */
+        get: operations["get_routing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/boards": {
         parameters: {
             query?: never;
@@ -4237,6 +4254,18 @@ export interface components {
          * @enum {string}
          */
         ChangeSetStatus: "waiting" | "applied" | "rejected" | "partly";
+        /**
+         * @description How far a parent item's children are: how many there are, how many are in a done status, and
+         *     the teams (or single agents) their latest runs went to.
+         */
+        ChildrenProgress: {
+            /** Format: int32 */
+            done: number;
+            /** @description Each team once, by name; a child run by a single agent counts as a team named for the agent. */
+            teams: string[];
+            /** Format: int32 */
+            total: number;
+        };
         /** @enum {string} */
         CodeOrigin: "folder" | "new_folder" | "url" | "none";
         Comment: {
@@ -5346,6 +5375,7 @@ export interface components {
          *     item and never written back, which is why they are not part of the aggregate.
          */
         ItemCard: components["schemas"]["Item"] & {
+            children_progress?: null | components["schemas"]["ChildrenProgress"];
             /**
              * @description Who created the item through the API: `operator`, or the name of the agent credential.
              *     `None` for an item made before callers were recorded, or by Tack itself.
@@ -5376,6 +5406,10 @@ export interface components {
             item: components["schemas"]["ItemCard"];
             roles: components["schemas"]["Role"][];
         };
+        /** @description An item of the tree, with how far its children are when it has any. */
+        ItemNode: components["schemas"]["Item"] & {
+            children_progress?: null | components["schemas"]["ChildrenProgress"];
+        };
         /** @description An item an operation names: one the change set creates, or one the board already has. */
         ItemRef: number | string;
         ItemRole: {
@@ -5401,14 +5435,14 @@ export interface components {
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
          *     fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`.
+         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`.
          */
         Key: string;
         /**
          * @description What happened that a person is told about.
          * @enum {string}
          */
-        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon";
+        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon" | "children_finished";
         /**
          * @description The step of a docket run an attempt is in, read from the text of its latest hop event so a
          *     screen finds the step on the team's list without fetching the events.
@@ -5549,6 +5583,11 @@ export interface components {
         };
         /** @enum {string} */
         MrpVerdict: "accept" | "reject";
+        /**
+         * @description Why nobody would take a card.
+         * @enum {string}
+         */
+        NobodyReason: "no_role" | "role_without_profile" | "profile_missing" | "team_not_reported" | "harness_not_reported";
         /** @description A notice as the inbox keeps it. */
         Notification: {
             cause: string;
@@ -6126,6 +6165,32 @@ export interface components {
             name: string;
             /** Format: uuid */
             project_id: string;
+        };
+        /** @description The profile that would do one open card, and where it would run. */
+        Routed: {
+            /** @description The agent the profile runs. */
+            harness?: string | null;
+            /** Format: uuid */
+            item_id: string;
+            nobody?: null | components["schemas"]["NobodyReason"];
+            /** @description The profile chosen; `null` when nobody would take the card and none is chosen. */
+            profile_id?: string | null;
+            /**
+             * @description The role the profile came from; with `nobody` `role_without_profile`, the role that names
+             *     none.
+             */
+            role?: string | null;
+            /**
+             * @description Where the choice came from: `run_settings` (chosen on the card), `role:<name>`,
+             *     `project_default`, `implementer` (the built-in profile, when nothing else is named) or
+             *     `ambiguous` (its roles name different profiles, so the project's default is used).
+             */
+            source?: string | null;
+            /**
+             * @description The team the profile names; the card runs in it, or nobody takes it when no computer
+             *     reports it. `null` for a profile that names none: the card runs in its single agent.
+             */
+            team?: string | null;
         };
         /** @description A run's token limit, who set it and who applies it, with the one sentence every screen prints. */
         RunLimit: {
@@ -10872,6 +10937,38 @@ export interface operations {
             };
         };
     };
+    get_routing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description For each open card of the project, the profile that would do it, where that choice came from, and the team or agent it runs in; or why nobody would take it. The same choice a run takes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Routed"][];
+                };
+            };
+            /** @description No such project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_boards: {
         parameters: {
             query?: never;
@@ -11179,13 +11276,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Item hierarchy (parents with nested children) */
+            /** @description Every item of the project, parents first, each parent with how far its children are */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Item"][];
+                    "application/json": components["schemas"]["ItemNode"][];
                 };
             };
         };

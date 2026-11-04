@@ -67,6 +67,19 @@ pub fn resolve(
     implementer.and_then(|id| found(id, Source::Implementer))
 }
 
+/// The team a profile names (`tool_policy.docket.team`) and the agent it runs
+/// (`tool_policy.agent`), or `None` for a profile that names no team. The one reading of that
+/// field: every layer that needs a profile's team calls this.
+pub fn named_team(tool_policy: &serde_json::Value) -> Option<(String, Option<String>)> {
+    let team = tool_policy
+        .get("docket")?
+        .get("team")?
+        .as_str()
+        .filter(|team| !team.is_empty())?;
+    let agent = tool_policy.get("agent").and_then(serde_json::Value::as_str);
+    Some((team.to_owned(), agent.map(str::to_owned)))
+}
+
 /// A token count as every sentence prints it: digits in groups of three,
 /// separated by a space ("1 600 000").
 pub fn token_count(n: i64) -> String {
@@ -236,6 +249,28 @@ pub fn profile_capabilities(tool_policy: &serde_json::Value) -> ProfileCapabilit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_team_is_what_the_tool_policy_names_under_docket() {
+        use serde_json::json;
+        assert_eq!(
+            named_team(&json!({"agent": "docket", "docket": {"team": "fab-build"}})),
+            Some(("fab-build".to_owned(), Some("docket".to_owned())))
+        );
+        assert_eq!(
+            named_team(&json!({"docket": {"team": "fab-build"}})),
+            Some(("fab-build".to_owned(), None))
+        );
+        for none in [
+            json!({"agent": "claude-code"}),
+            json!({"agent": "docket", "docket": {}}),
+            json!({"docket": {"team": ""}}),
+            json!({"docket": {"team": 3}}),
+            json!(null),
+        ] {
+            assert_eq!(named_team(&none), None, "{none}");
+        }
+    }
 
     #[test]
     fn capabilities_are_read_from_the_tools_of_the_agent() {

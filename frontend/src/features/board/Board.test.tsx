@@ -89,6 +89,13 @@ describe('Board ItemCard', () => {
     expect(plain.querySelector('[data-testid="card-parent"]')).toBeNull();
   });
 
+  it('a_parent_card_says_how_many_of_its_children_are_done_and_which_teams_have_them', async () => {
+    const parent = await mount(makeItem({ children_progress: { total: 2, done: 1, teams: ['claude-code', 'fab-build'] } }));
+    expect(parent.querySelector('[data-testid="card-children"]')!.textContent).toBe('1 of 2 children done · claude-code, fab-build');
+    const lone = await mount(makeItem());
+    expect(lone.querySelector('[data-testid="card-children"]')).toBeNull();
+  });
+
   it('a_card_shows_ready_for_review_when_its_run_left_something_to_review', async () => {
     const flagged = await mount(makeItem({ needs_review: true }), undefined, { run: cardRun(undefined, true) });
     expect(flagged.querySelector('[data-testid="card-meta"]')?.textContent).toContain('Ready for review');

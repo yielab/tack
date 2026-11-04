@@ -26,8 +26,8 @@ use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
     briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
     export, import_github, import_linear, items, local_runner, metrics, mrp, notifications,
-    outline, projects, roles, runner_admin, runner_protocol, settings, sprints, teams, templates,
-    threads, triggers, websocket,
+    outline, projects, roles, routing, runner_admin, runner_protocol, settings, sprints, teams,
+    templates, threads, triggers, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -447,6 +447,7 @@ pub fn build_router(state: AppState) -> Router {
             post(agent_credentials::revoke_credential),
         )
         .route("/projects/{id}/auto-start", get(auto_start::get_auto_start))
+        .route("/projects/{id}/routing", get(routing::get_routing))
         .route(
             "/projects/{id}/autonomy",
             get(autonomy::get_autonomy).put(autonomy::put_autonomy),

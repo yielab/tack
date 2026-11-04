@@ -720,18 +720,7 @@ pub async fn resolve_profile(
     let implementer = queries::agent_profiles::implementer_profile_id(repo)
         .await
         .map_err(internal)?;
-    let profiles: Vec<Candidate> = queries::agent_profiles::profile_candidates(repo)
-        .await
-        .map_err(internal)?
-        .into_iter()
-        .map(|row| Candidate {
-            profile_id: row.id,
-            fleet_id: row.fleet_id,
-            harness: serde_json::from_str::<Value>(&row.tool_policy)
-                .ok()
-                .and_then(|p| p.get("agent")?.as_str().map(str::to_owned)),
-        })
-        .collect();
+    let profiles = profile_candidates(repo).await.map_err(internal)?;
     Ok(resolve(
         explicit,
         item.run_settings
@@ -742,6 +731,21 @@ pub async fn resolve_profile(
         implementer.as_deref(),
         &profiles,
     ))
+}
+
+/// Every agent profile as [`resolve`] chooses among them.
+pub async fn profile_candidates(repo: &Repository) -> Result<Vec<Candidate>, tack_db::StoreError> {
+    Ok(queries::agent_profiles::profile_candidates(repo)
+        .await?
+        .into_iter()
+        .map(|row| Candidate {
+            profile_id: row.id,
+            fleet_id: row.fleet_id,
+            harness: serde_json::from_str::<Value>(&row.tool_policy)
+                .ok()
+                .and_then(|p| p.get("agent")?.as_str().map(str::to_owned)),
+        })
+        .collect())
 }
 
 /// Where a run that names no selector goes: its profile's fleet, else the only online runner

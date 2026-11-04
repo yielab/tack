@@ -3,6 +3,8 @@ import type { AgentProfileSummary, ExecutionSummary, LatestHop } from '../../sha
 import type { TeamEntry, TeamStep } from '../../shared/execution/teams';
 import { cardRun } from '../../shared/runWithAgent/cardRun';
 import type { Dependency, Item } from '../../shared/types';
+import type { Routed } from '../../shared/execution/routing';
+import { routingFixture } from '../../test/routing';
 import {
   ageText,
   endedTally,
@@ -16,7 +18,8 @@ import {
   movesBetween,
   nobodyText,
   placements,
-  routeItem,
+  sourceText,
+  routeOf,
   scopedNobody,
   sentBackOf,
   showsNobody,
@@ -29,7 +32,8 @@ import {
   type FlowFilter,
   type FlowInput,
   type FlowScope,
-  type RoutingContext,
+  type LaneContext,
+  type RoleProfile,
 } from './flow';
 
 const item = (p: Partial<Item> & { id: string }): Item =>
@@ -81,85 +85,90 @@ const run = (over: Partial<ExecutionSummary> & { item_id: string }): ExecutionSu
 
 const hop = (role: string, over: Partial<LatestHop> = {}): LatestHop => ({ role, kind: 'started', verdict: null, cycle: null, ...over });
 
-const ctx = (over: Partial<RoutingContext> = {}): RoutingContext => ({
+const ctx = (over: Partial<LaneContext> = {}): LaneContext => ({
   profiles: [profile('notes', 'saas-notes'), profile('solo', undefined, 'claude-code')],
   teams: [team('saas-notes')],
-  defaultProfileId: null,
   ...over,
 });
 
-const input = (over: Partial<FlowInput> = {}): FlowInput => ({
-  items: [],
-  roles: new Map(),
-  blockers: new Map(),
-  runs: [],
-  profiles: [profile('notes', 'saas-notes'), profile('solo', undefined, 'claude-code')],
-  teams: [team('saas-notes')],
-  projectRoles: [],
-  defaultProfileId: null,
-  statuses: [{ name: 'To Do', category: 'todo' }, { name: 'Doing', category: 'in_progress' }, { name: 'Done', category: 'done' }],
-  startStatus: 'To Do',
-  autoStart: true,
-  autonomy: { level: 'L3', teams: [] },
-  ...over,
-});
+/** A flow input; the routing is what the server would answer for it unless the test gives its own. */
+const input = (over: Partial<FlowInput> & { roles?: ReadonlyMap<string, readonly RoleProfile[]> } = {}): FlowInput => {
+  const { roles, ...given } = over;
+  const base = {
+    items: [],
+    blockers: new Map(),
+    runs: [],
+    profiles: [profile('notes', 'saas-notes'), profile('solo', undefined, 'claude-code')],
+    teams: [team('saas-notes')],
+    projectRoles: [],
+    defaultProfileId: null,
+    statuses: [{ name: 'To Do', category: 'todo' }, { name: 'Doing', category: 'in_progress' }, { name: 'Done', category: 'done' }],
+    startStatus: 'To Do',
+    autoStart: true,
+    autonomy: { level: 'L3', teams: [] },
+    ...given,
+  };
+  return { ...base, routing: given.routing ?? routingFixture({ ...base, roles }) };
+};
 
 const own = (id: string) => ({ agent_profile_id: id });
 
-describe('routeItem: the profile a task goes to', () => {
-  it('takes_the_profile_chosen_on_the_task_before_its_role_and_the_project_default', () => {
-    const c = ctx({ defaultProfileId: 'solo' });
-    const route = routeItem(item({ id: 'a', run_settings: own('notes') }), [{ name: 'Writer', profileId: 'solo' }], c);
-    expect(route).toMatchObject({ kind: 'lane', lane: 'team:saas-notes', source: 'task' });
-  });
+const routed = (over: Partial<Routed> = {}): Routed => ({ item_id: 'a', profile_id: null, source: null, role: null, team: null, harness: null, nobody: null, ...over });
 
-  it('takes_the_first_role_that_has_a_profile_before_the_project_default', () => {
-    const c = ctx({ defaultProfileId: 'solo' });
-    const route = routeItem(item({ id: 'a' }), [{ name: 'Empty', profileId: null }, { name: 'Writer', profileId: 'notes' }], c);
-    expect(route).toMatchObject({ kind: 'lane', lane: 'team:saas-notes', source: 'role', role: 'Writer' });
-  });
-
-  it('falls_back_to_the_project_default', () => {
-    expect(routeItem(item({ id: 'a' }), [], ctx({ defaultProfileId: 'solo' }))).toMatchObject({
-      kind: 'lane',
-      lane: 'agent:claude-code',
-      source: 'project',
-    });
+describe('routeOf: the lane the server says a task goes to', () => {
+  it('puts_a_profile_that_names_a_team_in_the_lane_of_the_team', () => {
+    const route = routeOf(routed({ profile_id: 'notes', source: 'run_settings', team: 'saas-notes', harness: 'docket' }), ctx());
+    expect(route).toMatchObject({ kind: 'lane', lane: 'team:saas-notes', source: 'task', role: null });
   });
 
   it('puts_a_profile_that_names_no_team_in_the_lane_of_its_agent', () => {
-    const route = routeItem(item({ id: 'a', run_settings: own('solo') }), [], ctx());
-    expect(route).toMatchObject({ kind: 'lane', lane: 'agent:claude-code' });
+    const route = routeOf(routed({ profile_id: 'solo', source: 'project_default', harness: 'claude-code' }), ctx());
+    expect(route).toMatchObject({ kind: 'lane', lane: 'agent:claude-code', source: 'project' });
   });
 
-  it('is_unknown_while_the_roles_are_not_loaded_unless_the_task_names_its_own_profile', () => {
-    expect(routeItem(item({ id: 'a' }), undefined, ctx())).toBeNull();
-    expect(routeItem(item({ id: 'a', run_settings: own('notes') }), undefined, ctx())).toMatchObject({ kind: 'lane' });
+  it('puts_a_profile_that_names_no_agent_in_the_lane_of_the_first_agent_it_lists', () => {
+    const builtin: AgentProfileSummary = { ...profile('implementer'), tool_policy: { tools: { 'claude-code': ['Read'], codex: ['*'] } } };
+    const route = routeOf(routed({ profile_id: 'implementer', source: 'implementer' }), ctx({ profiles: [builtin] }));
+    expect(route).toMatchObject({ kind: 'lane', lane: 'agent:claude-code', source: 'implementer' });
+    expect(sourceText(route as never)).toContain('Implementer');
   });
 
-  it('says_nobody_when_there_is_no_role_and_no_default', () => {
-    const route = routeItem(item({ id: 'a' }), [], ctx());
-    expect(route).toEqual({ kind: 'nobody', reason: 'no_role', detail: null });
-    expect(nobodyText(route as never)).toContain('no role');
+  it('names_the_role_a_choice_came_from', () => {
+    const route = routeOf(routed({ profile_id: 'notes', source: 'role:Writer', role: 'Writer', team: 'saas-notes' }), ctx());
+    expect(route).toMatchObject({ kind: 'lane', source: 'role', role: 'Writer' });
+    expect(sourceText(route as never)).toBe('from the role Writer');
   });
 
-  it('says_nobody_naming_the_role_when_it_has_no_profile', () => {
-    const route = routeItem(item({ id: 'a' }), [{ name: 'Content', profileId: null }], ctx());
-    expect(route).toEqual({ kind: 'nobody', reason: 'role_without_profile', detail: 'Content' });
-    expect(nobodyText(route as never)).toBe('Its role Content has no profile, and the project has no default profile.');
+  it('says_a_default_taken_because_the_roles_disagree', () => {
+    const route = routeOf(routed({ profile_id: 'solo', source: 'ambiguous', harness: 'claude-code' }), ctx());
+    expect(route).toMatchObject({ kind: 'lane', source: 'ambiguous' });
+    expect(sourceText(route as never)).toContain('different profiles');
   });
 
-  it('says_nobody_when_the_profile_names_a_team_no_computer_reports', () => {
-    const c = ctx({ teams: [team('saas-notes', { reported: false })] });
-    const route = routeItem(item({ id: 'a', run_settings: own('notes') }), [], c);
-    expect(route).toEqual({ kind: 'nobody', reason: 'team_not_reported', detail: 'saas-notes' });
-    expect(nobodyText(route as never)).toBe('No computer reports the team saas-notes that its profile names.');
+  it('says_nobody_with_the_reason_and_the_fact_the_server_gave', () => {
+    const none = routeOf(routed({ nobody: 'no_role' }), ctx());
+    expect(none).toEqual({ kind: 'nobody', reason: 'no_role', detail: null });
+    expect(nobodyText(none as never)).toContain('no role');
+
+    const bare = routeOf(routed({ nobody: 'role_without_profile', role: 'Content' }), ctx());
+    expect(bare).toEqual({ kind: 'nobody', reason: 'role_without_profile', detail: 'Content' });
+    expect(nobodyText(bare as never)).toBe('Its role Content has no profile, and neither the project nor the board has one to fall back on.');
+
+    const ghost = routeOf(routed({ profile_id: 'notes', team: 'saas-notes', nobody: 'team_not_reported' }), ctx());
+    expect(ghost).toEqual({ kind: 'nobody', reason: 'team_not_reported', detail: 'saas-notes' });
+    expect(nobodyText(ghost as never)).toBe('No computer reports the team saas-notes that its profile names.');
+
+    const codex = routeOf(routed({ profile_id: 'c', harness: 'codex', nobody: 'harness_not_reported' }), ctx());
+    expect(codex).toEqual({ kind: 'nobody', reason: 'harness_not_reported', detail: 'codex' });
+    expect(nobodyText(codex as never)).toBe('No computer reports the agent codex that its profile runs.');
+
+    const gone = routeOf(routed({ profile_id: 'gone', source: 'run_settings', nobody: 'profile_missing' }), ctx());
+    expect(gone).toEqual({ kind: 'nobody', reason: 'profile_missing', detail: 'task' });
+    expect(nobodyText(gone as never)).toContain('chosen on this task');
   });
 
-  it('says_nobody_when_the_chosen_profile_was_deleted', () => {
-    const route = routeItem(item({ id: 'a', run_settings: own('gone') }), [], ctx());
-    expect(route).toEqual({ kind: 'nobody', reason: 'profile_missing', detail: 'task' });
-    expect(nobodyText(route as never)).toContain('chosen on this task');
+  it('says_nobody_when_the_server_names_a_profile_this_page_has_not_read', () => {
+    expect(routeOf(routed({ profile_id: 'new', source: 'implementer' }), ctx())).toMatchObject({ kind: 'nobody', reason: 'profile_missing' });
   });
 });
 
@@ -458,8 +467,8 @@ describe('buildFlow: lanes, stations and tokens', () => {
     expect(flow.counts.nobody).toBe(3);
   });
 
-  it('waits_to_judge_a_task_until_its_roles_are_known', () => {
-    const flow = flowOf({ items: [item({ id: 'a' })] });
+  it('waits_to_judge_a_task_until_the_server_has_said_who_would_take_it', () => {
+    const flow = flowOf({ items: [item({ id: 'a' })], routing: new Map() });
     expect(flow.nobody).toEqual([]);
     expect(flow.lanes).toEqual([]);
   });

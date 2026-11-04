@@ -103,6 +103,7 @@ describe('TeamsPanel', () => {
     expect(row(team, 'members').textContent).toContain('opus');
     expect(row(team, 'members').textContent).toContain('Reviewer');
     expect(row(team, 'members').textContent).toContain('sonnet');
+    expect(row(team, 'supervision').textContent).toContain('Attended');
     expect(row(team, 'decides').textContent).toContain('Stops to ask a person');
     expect(row(team, 'decides').textContent).toContain('Allow it in the team settings');
     expect(row(team, 'network').textContent).toContain('Limited network');
@@ -117,6 +118,14 @@ describe('TeamsPanel', () => {
     expect(steps[0].textContent).toContain('sent back to write up to 2 times');
     expect(steps[1].textContent).toContain('checked by a command');
     expect(team.querySelectorAll('[data-reported="no"]')).toHaveLength(0);
+  });
+
+  it('calls a lights-out profile Lights-out under Supervision', async () => {
+    mockApi([{ ...FULL_TEAM, report: { ...FULL_TEAM.report, profile: 'lights-out' } }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    expect(row(card(c, 'saas-code'), 'supervision').textContent).toContain('Lights-out');
   });
 
   it('says in plain words what a member can do when the agent reported it, and nothing when it did not', async () => {

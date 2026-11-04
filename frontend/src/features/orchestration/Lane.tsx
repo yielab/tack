@@ -2,7 +2,7 @@ import { type Component, type JSX, For, Show, createEffect, createMemo, createSi
 import { A } from '@solidjs/router';
 import { Avatar, Badge, RunState } from '../../shared/ui';
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
-import { memberReachText, networkText, queueText, type TeamMember } from '../../shared/execution';
+import { memberReachText, networkText, queueText, supervisionText, type TeamMember } from '../../shared/execution';
 import { checkText } from '../../shared/runWithAgent/teamSteps';
 import { runTally, tallySentence } from '../../shared/runWithAgent/cardRun';
 import UsageMeter from '../../shared/runWithAgent/UsageMeter';
@@ -98,6 +98,13 @@ const Facts: Component<{ lane: FlowLane }> = (props) => {
             {where() === 'repository' ? <IconBranch /> : <IconFolder />}
             {where() === 'repository' ? 'Repository' : 'Folder'}
           </Mark>
+        )}
+      </Show>
+      <Show when={supervisionText(report()?.profile)}>
+        {(supervision) => (
+          <span data-testid="flow-supervision" title="How closely a person supervises this team">
+            {`Supervision: ${supervision()}`}
+          </span>
         )}
       </Show>
       <Show when={report()?.decides}>

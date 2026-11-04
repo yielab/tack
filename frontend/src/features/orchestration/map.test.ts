@@ -3,6 +3,7 @@ import type { AgentProfileSummary } from '../../shared/execution/api';
 import type { TeamEntry, TeamMember, TeamStep } from '../../shared/execution/teams';
 import type { Item } from '../../shared/types';
 import { buildFlow, type FlowInput, type RoleProfile } from './flow';
+import { routingFixture } from '../../test/routing';
 import {
   NODE_H,
   NODE_W,
@@ -70,10 +71,11 @@ const team = (name: string, over: Partial<TeamEntry> = {}, report: Partial<NonNu
     ...over,
   }) as TeamEntry;
 
-const flowOf = (over: Partial<FlowInput> & Pick<FlowInput, 'profiles' | 'teams'>) =>
-  buildFlow({
+/** A flow; the routing is what the server would answer for the items and their roles. */
+const flowOf = (over: Partial<Omit<FlowInput, 'routing'>> & Pick<FlowInput, 'profiles' | 'teams'> & { roles?: ReadonlyMap<string, readonly RoleProfile[]> }) => {
+  const { roles, ...given } = over;
+  const base = {
     items: [],
-    roles: new Map(),
     blockers: new Map(),
     runs: [],
     projectRoles: [],
@@ -82,8 +84,10 @@ const flowOf = (over: Partial<FlowInput> & Pick<FlowInput, 'profiles' | 'teams'>
     startStatus: 'To Do',
     autoStart: true,
     autonomy: { level: 'L3', teams: [] },
-    ...over,
-  });
+    ...given,
+  };
+  return buildFlow({ ...base, routing: routingFixture({ ...base, roles }) });
+};
 
 const roleOf = (name: string, profileId: string | null): RoleProfile => ({ name, profileId });
 
@@ -188,21 +192,13 @@ describe('buildMap: links are as wide as the open tasks routed along them', () =
 
   it('does_not_count_a_task_that_ended', () => {
     const { input } = world();
-    const finished = buildFlow({
-      ...{
-        items: [item('t1', { status: 'Done' })],
-        roles: new Map([['t1', [roleOf('Writer', 'writer-p')]]]),
-        blockers: new Map(),
-        runs: [{ request_id: 'r', item_id: 't1', state: 'succeeded', cancellation_requested_at: null, created_at: '2026-01-02T00:00:00Z', agent_profile_id: 'writer-p' }],
-        profiles: input.profiles,
-        teams: input.teams,
-        projectRoles: input.roles,
-        defaultProfileId: null,
-        statuses: [{ name: 'To Do', category: 'todo' }, { name: 'Done', category: 'done' }],
-        startStatus: 'To Do',
-        autoStart: true,
-        autonomy: { level: 'L3', teams: [] },
-      },
+    const finished = flowOf({
+      items: [item('t1', { status: 'Done' })],
+      roles: new Map([['t1', [roleOf('Writer', 'writer-p')]]]),
+      runs: [{ request_id: 'r', item_id: 't1', state: 'succeeded', cancellation_requested_at: null, created_at: '2026-01-02T00:00:00Z', agent_profile_id: 'writer-p' }],
+      profiles: input.profiles,
+      teams: input.teams,
+      projectRoles: input.roles,
     });
     const m = buildMap({ ...input, flow: finished });
     expect(link(m, 'role:Writer>profile:writer-p')!.tasks).toBe(0);

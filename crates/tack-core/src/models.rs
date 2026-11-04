@@ -260,6 +260,21 @@ pub struct ItemCard {
     /// Who last changed the item through the API, in the same words as `created_by`.
     #[serde(default)]
     pub updated_by: Option<String>,
+    /// How far the item's children are; `None` for an item without children, and on a read that
+    /// does not work it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub children_progress: Option<ChildrenProgress>,
+}
+
+/// How far a parent item's children are: how many there are, how many are in a done status, and
+/// the teams (or single agents) their latest runs went to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ChildrenProgress {
+    pub total: u32,
+    pub done: u32,
+    /// Each team once, by name; a child run by a single agent counts as a team named for the agent.
+    pub teams: Vec<String>,
 }
 
 impl From<Item> for ItemCard {
@@ -274,6 +289,7 @@ impl From<Item> for ItemCard {
             merged_by: None,
             created_by: None,
             updated_by: None,
+            children_progress: None,
         }
     }
 }

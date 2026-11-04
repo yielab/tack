@@ -2,6 +2,7 @@ pub mod auto_start;
 pub mod autonomy;
 pub mod brief;
 pub mod change_set;
+pub mod children;
 pub mod decision;
 pub mod dependency;
 pub mod digest;

@@ -590,6 +590,7 @@ impl ItemCardRow {
             merged_by: self.merged_by,
             created_by: self.created_by,
             updated_by: self.updated_by,
+            children_progress: None,
         })
     }
 }

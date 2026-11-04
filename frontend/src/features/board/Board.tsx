@@ -2,7 +2,7 @@ import { createMemo, createUniqueId, For, Show, createSignal, createEffect, onMo
 import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import AutomationBadge from '../../shared/ui/AutomationBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
-import type { ExecutionSummary } from '../../shared/execution';
+import { childrenText, type ExecutionSummary } from '../../shared/execution';
 import { useExecutionStore } from '../../shared/state/executionContext';
 import { api } from '../../shared/api';
 import { deriveBoard } from '../../shared/api/boards';
@@ -213,6 +213,16 @@ export const ItemCard: Component<{
             style={{ margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
           >
             Part of: {parent()}
+          </p>
+        )}
+      </Show>
+      <Show when={childrenText(props.item.children_progress)}>
+        {(text) => (
+          <p
+            data-testid="card-children"
+            style={{ margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
+          >
+            {text()}
           </p>
         )}
       </Show>

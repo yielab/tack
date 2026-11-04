@@ -12,6 +12,7 @@ pub mod attempt_reviews;
 pub mod autonomy;
 pub mod backup;
 pub mod budgets;
+pub mod children;
 pub mod database;
 pub mod digest;
 pub mod execution_artifacts;

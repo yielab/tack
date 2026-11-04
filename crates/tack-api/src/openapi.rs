@@ -892,6 +892,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── Factory metrics ───────────────────────────────────────────────
         handlers::auto_start::get_auto_start,
         handlers::autonomy::get_autonomy,
+        handlers::routing::get_routing,
         handlers::autonomy::put_autonomy,
         handlers::change_sets::list_change_sets,
         handlers::change_sets::propose_change_set,
@@ -1015,6 +1016,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::auto_start::WaitingTask,
         handlers::auto_start::WaitingReason,
         handlers::autonomy::AutonomySettings,
+        handlers::routing::Routed,
+        handlers::items::ItemNode,
+        handlers::routing::NobodyReason,
         handlers::autonomy::DomainSettings,
         handlers::autonomy::BudgetSettings,
         handlers::threads::CreateThread,

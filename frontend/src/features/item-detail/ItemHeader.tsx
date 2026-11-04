@@ -9,6 +9,7 @@ import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item, UpdateItem } from '../../shared/types';
 import { shortItemId } from '../../shared/shortItemId';
+import { childrenText } from '../../shared/execution';
 
 export interface ItemHeaderProps {
   item: Item;
@@ -151,6 +152,13 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
       <Show when={children().length > 0}>
         <div data-testid="item-children" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
           <span>Sub-items:</span>
+          <Show when={childrenText(props.item.children_progress)}>
+            {(text) => (
+              <span data-testid="item-children-progress" class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                {' '}{text()}
+              </span>
+            )}
+          </Show>
           <ul class="mt-0.5 flex flex-col gap-0.5">
             <For each={children()}>
               {(c) => (
