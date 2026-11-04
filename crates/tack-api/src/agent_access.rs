@@ -369,6 +369,11 @@ mod tests {
             classify(&Method::POST, "/api/teams/docket/writers/resume"),
             Access::OperatorOnly
         );
+        // So is deciding what a team may remember.
+        assert_eq!(
+            classify(&Method::POST, "/api/teams/docket/writers/memory/mem-1"),
+            Access::OperatorOnly
+        );
         // So is making a team on the runner's computer.
         assert_eq!(
             classify(

@@ -1,0 +1,53 @@
+{
+  "entries": [
+    {
+      "id": "mem-faf51eecd9",
+      "kind": "tool",
+      "subject": "bash make test",
+      "note": "The suite runs with make test.",
+      "status": "accepted",
+      "reason": "exit status found in the task's trace",
+      "provenance": {
+        "task": "task-capture-built",
+        "date": "2026-01-01",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {
+        "exit": 1
+      }
+    },
+    {
+      "id": "mem-4080d0c119",
+      "kind": "tool",
+      "subject": "grep",
+      "note": "Search the tree with grep.",
+      "status": "accepted",
+      "reason": "tool call found in the task's trace",
+      "provenance": {
+        "task": "task-capture-built",
+        "date": "2026-01-01",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {
+        "ok": true
+      }
+    },
+    {
+      "id": "mem-0be85d9634",
+      "kind": "generated",
+      "subject": "dist/bundle.js",
+      "note": "Built output, not source.",
+      "status": "accepted",
+      "reason": "path present at the task commit",
+      "provenance": {
+        "task": "task-capture-built",
+        "date": "2026-01-01",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {}
+    }
+  ]
+}

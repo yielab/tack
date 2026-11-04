@@ -1,0 +1,15 @@
+{
+  "id": "mem-f8686cf7d8",
+  "kind": "convention",
+  "subject": "docs/",
+  "note": "Every page there opens with its audience.",
+  "status": "refused",
+  "reason": "The readme is rebuilt by CI.",
+  "provenance": {
+    "task": "task-capture-memory",
+    "date": "2026-11-04",
+    "commit": "0000000000000000000000000000000000000000"
+  },
+  "stale": false,
+  "evidence": {}
+}

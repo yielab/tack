@@ -454,6 +454,9 @@ struct World {
     memory_status: bool,
     /// Every read of a team's memory fails with `500`.
     memory_unreadable: bool,
+    /// A docket that lists `memoryDecide`: `POST /pods/<pod>/memory/<id>` approves or refuses a
+    /// pending entry. Without it the route answers `404`, as a docket without the route would.
+    memory_decide: bool,
 }
 
 pub struct FakeDocket {
@@ -508,6 +511,7 @@ impl FakeDocket {
             applied_pods: BTreeSet::new(),
             memory_status: false,
             memory_unreadable: false,
+            memory_decide: false,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -714,6 +718,36 @@ impl FakeDocket {
     /// A docket that lists `memoryStatus`: a team's memory is read by status.
     pub fn with_memory_status(&self) {
         self.shared.lock().unwrap().memory_status = true;
+    }
+
+    /// A docket that lists `memoryDecide`: a pending entry can be approved or refused over HTTP.
+    pub fn with_memory_decide(&self) {
+        self.shared.lock().unwrap().memory_decide = true;
+    }
+
+    /// Gives the team the entries built in the capture's throwaway home: a command with its exit
+    /// status, a tool call with its `ok`, a path with no evidence, a pending and a refused entry.
+    pub fn seed_memory_evidence(&self, name: &str) {
+        let entries = [
+            "pod-memory-evidence-accepted",
+            "pod-memory-evidence-pending",
+            "pod-memory-evidence-refused",
+        ]
+        .into_iter()
+        .flat_map(|capture| {
+            fixture(capture)["entries"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .memory = entries;
     }
 
     /// Gives the team the entries of the captures: the accepted ones (a fresh one and a stale
@@ -1187,6 +1221,7 @@ async fn handle(
             })
         }
         ("POST", ["pods", _, "apply"]) => keyed("POST /pods/<pod>/apply"),
+        ("POST", ["pods", _, "memory", _]) => keyed("POST /pods/<pod>/memory/<id>"),
         ("POST", ["tasks", _]) => keyed("POST /tasks/<pod>"),
         ("POST", ["escalations", _]) => keyed("POST /escalations/<id>"),
         _ => None,
@@ -1210,6 +1245,9 @@ async fn handle(
         ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
         ("POST", ["pods", pod, "resume"]) => resume_pod_route(&mut state, pod),
+        ("POST", ["pods", pod, "memory", id]) => {
+            decide_pod_memory(&mut state, pod, id, &parsed, raw_body)
+        }
         ("POST", ["pods", pod, "apply"]) => apply_pod(&mut state, pod, &parsed),
         ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["tasks", pod]) => post_task(&mut state, pod, &parsed),
@@ -1274,6 +1312,9 @@ fn features(state: &World) -> Value {
     }
     if state.memory_status {
         listed.push("memoryStatus");
+    }
+    if state.memory_decide {
+        listed.push("memoryDecide");
     }
     json!(listed)
 }
@@ -1653,6 +1694,57 @@ fn pod_memory(state: &World, pod: &str, query: &str) -> Response {
         .filter(|entry| entry["status"] == status)
         .collect();
     reply(200, json!({"entries": entries}))
+}
+
+/// `POST /pods/<pod>/memory/<id>` (`memoryDecide`): `{"decision": "approve"|"refuse", "reason"?}`
+/// settles a pending entry and answers it, in its new status, not wrapped. The checks are docket's,
+/// in its order: the team, the body, the entry, whether it still waits.
+fn decide_pod_memory(
+    state: &mut World,
+    pod: &str,
+    id: &str,
+    body: &Value,
+    raw_body: bool,
+) -> Response {
+    if !state.memory_decide {
+        return error(404, "not found");
+    }
+    if !state.pods.contains_key(pod) {
+        return refusal("pod-memory-decide-unknown-pod", &[("no-such-team", pod)]);
+    }
+    if raw_body {
+        return refusal("pod-memory-decide-invalid-json", &[]);
+    }
+    let Some(object) = body.as_object() else {
+        return refusal("pod-memory-decide-not-object", &[]);
+    };
+    let decision = object.get("decision").and_then(Value::as_str);
+    if !matches!(decision, Some("approve" | "refuse")) {
+        return refusal("pod-memory-decide-bad-decision", &[]);
+    }
+    let reason = match object.get("reason") {
+        None => "",
+        Some(Value::String(reason)) => reason.as_str(),
+        Some(_) => return refusal("pod-memory-decide-bad-reason", &[]),
+    };
+    if decision == Some("refuse") && reason.trim().is_empty() {
+        return refusal("pod-memory-decide-no-reason", &[]);
+    }
+    let team = state.pods.get_mut(pod).expect("the team exists");
+    let Some(entry) = team.memory.iter_mut().find(|entry| entry["id"] == id) else {
+        return refusal("pod-memory-decide-unknown-entry", &[("mem-nothing", id)]);
+    };
+    if entry["status"] != "pending" {
+        return refusal("pod-memory-decide-settled", &[("mem-734a96fa7e", id)]);
+    }
+    if decision == Some("approve") {
+        entry["status"] = json!("accepted");
+        entry["reason"] = fixture("pod-memory-approved")["reason"].clone();
+    } else {
+        entry["status"] = json!("refused");
+        entry["reason"] = json!(reason);
+    }
+    reply(200, entry.clone())
 }
 
 /// `GET /pods/<pod>/records`: the sets the team declares, with how many rows each holds.

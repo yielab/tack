@@ -40,8 +40,8 @@ pub use messages::{
     LeaseResult, RefreshRequest, RefreshResponse,
 };
 pub use operations::{
-    OperationOutcome, OperationPollRequest, OperationPollResponse, OperationResultRequest,
-    OperationResultResponse, RunnerOperation, TeamOperation,
+    MemoryDecision, OperationOutcome, OperationPollRequest, OperationPollResponse,
+    OperationResultRequest, OperationResultResponse, RunnerOperation, TeamOperation,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

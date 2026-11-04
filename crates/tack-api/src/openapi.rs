@@ -953,6 +953,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::agent_credentials::revoke_credential,
         handlers::teams::team_activity,
         handlers::teams::resume_team,
+        handlers::teams::decide_team_memory,
         handlers::team_apply::apply_teams,
         handlers::metrics::factory_metrics,
         // ── Comments ──────────────────────────────────────────────────────
@@ -1137,6 +1138,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         tack_core::principal::CredentialState,
         handlers::teams::TeamActivityEntry,
         handlers::teams::TeamResumed,
+        handlers::teams::DecideMemoryRequest,
+        handlers::teams::TeamMemoryDecided,
+        tack_protocol::execution::MemoryDecision,
         handlers::team_apply::TeamToApply,
         handlers::team_apply::ApplyTeamsRequest,
         handlers::team_apply::TeamApplyResult,

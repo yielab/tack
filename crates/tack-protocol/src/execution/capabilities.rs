@@ -550,6 +550,10 @@ pub struct TeamMemory {
     pub pending: Vec<MemoryEntry>,
     /// Checked or approved; the team reads them in its next task.
     pub accepted: Vec<MemoryEntry>,
+    /// Whether a pending entry can be approved or refused from the board. When it cannot, the
+    /// harness has its own command for it.
+    #[serde(default)]
+    pub can_decide: bool,
 }
 
 /// One thing a team remembers.

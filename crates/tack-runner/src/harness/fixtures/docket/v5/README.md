@@ -288,6 +288,24 @@ not have is `400` naming the three (`pod-memory-bad-status`) and a team it does 
 (`pod-memory-unknown`). `evidence` is `{"exit": n}` or `{"ok": bool}` for an entry about a command or a tool call,
 which a path never has; no capture holds one, because it needs a task's trace with a bash call in it.
 
+### Deciding an entry: captured
+
+`POST /pods/<pod>/memory/<id>` (the `memoryDecide` feature) takes `{"decision": "approve" | "refuse",
+"reason"?}` and answers `200` with the one entry as the list gives it, not wrapped in `entries`, in its new status
+(`pod-memory-approved`: `accepted`, `reason: "approved by the operator"`; `pod-memory-refused-by-http`: `refused`,
+`reason` the one sent). `reason` is required for a refusal and ignored for an approval. An entry that is not pending
+is `409` and unchanged (`pod-memory-decide-settled`), an entry or a team docket does not have is `404`
+(`pod-memory-decide-unknown-entry`, `-unknown-pod`), and `400` is a body that is not JSON or not an object, a
+decision that is neither word, a reason that is not a string, and a refusal with no reason or a blank one
+(`pod-memory-decide-invalid-json`, `-not-object`, `-bad-decision`, `-bad-reason`, `-no-reason`, `-blank-reason`).
+Without the token it is `401`. The capture decides the two entries `saas-dev` holds pending, after every read of them.
+
+`pod-memory-evidence-accepted|pending|refused` are **built, not queued**: no task of the capture runs a command or a
+tool, so the script writes the memory file of the team `saas-notes` with docket's own `MemoryEntry` and
+`store.write_json`, which is what docket's own HTTP tests do. It is a test-side recipe, not a product API; docket
+lists the entries as it lists any. They hold the evidence the task-made ones cannot: `{"exit": 1}` for a command,
+`{"ok": true}` for a tool call and `{}` for a path, with one pending and one refused entry.
+
 ## Every fixture
 
 | Fixture | Route | Status | Captured or constructed |
@@ -324,6 +342,21 @@ which a path never has; no capture holds one, because it needs a task's trace wi
 | `pod-contract` | `GET /pods/<pod>` | 200 | captured |
 | `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
+| `pod-memory-approved` | `POST /pods/<pod>/memory/<id>` | 200 | captured |
+| `pod-memory-decide-bad-decision` | `POST /pods/<pod>/memory/<id>` | 400 | captured |
+| `pod-memory-decide-bad-reason` | `POST /pods/<pod>/memory/<id>` | 400 | captured |
+| `pod-memory-decide-blank-reason` | `POST /pods/<pod>/memory/<id>` | 400 | captured |
+| `pod-memory-decide-invalid-json` | `POST /pods/<pod>/memory/<id>` | 400 | captured |
+| `pod-memory-decide-no-reason` | `POST /pods/<pod>/memory/<id>` | 400 | captured |
+| `pod-memory-decide-not-object` | `POST /pods/<pod>/memory/<id>` | 400 | captured |
+| `pod-memory-decide-settled` | `POST /pods/<pod>/memory/<id>` | 409 | captured |
+| `pod-memory-decide-unauthorized` | `POST /pods/<pod>/memory/<id>` | 401 | captured |
+| `pod-memory-decide-unknown-entry` | `POST /pods/<pod>/memory/<id>` | 404 | captured |
+| `pod-memory-decide-unknown-pod` | `POST /pods/<pod>/memory/<id>` | 404 | captured |
+| `pod-memory-evidence-accepted` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-evidence-pending` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-evidence-refused` | `GET /pods/<pod>/memory` | 200 | captured |
+| `pod-memory-refused-by-http` | `POST /pods/<pod>/memory/<id>` | 200 | captured |
 | `pod-memory-accepted` | `GET /pods/<pod>/memory` | 200 | captured |
 | `pod-memory-bad-status` | `GET /pods/<pod>/memory` | 400 | captured |
 | `pod-memory-default` | `GET /pods/<pod>/memory` | 200 | captured |

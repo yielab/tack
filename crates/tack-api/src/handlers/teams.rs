@@ -15,7 +15,7 @@ use tack_core::principal::{Capability, Principal, may};
 use tack_db::queries;
 use tack_protocol::execution::{
     ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, HarnessCapability, HarnessKind,
-    OperationOutcome, TeamMisfit, TeamNeeds, TeamOperation, TeamReport,
+    MemoryDecision, OperationOutcome, TeamMisfit, TeamNeeds, TeamOperation, TeamReport,
 };
 
 use crate::error::{ApiError, ApiResult};
@@ -423,6 +423,51 @@ pub async fn team_activity(
 /// waits for it every few seconds.
 const RUNNER_ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// The runner whose newest report holds the team of that agent.
+async fn reporting_runner(
+    state: &AppState,
+    harness: &str,
+    team: &str,
+) -> ApiResult<ReportedHarness> {
+    let mut asked: Option<ReportedHarness> = None;
+    for reported in reported_harnesses(state).await? {
+        let holds = reported.kind == harness
+            && reported
+                .capability
+                .teams
+                .as_ref()
+                .is_some_and(|teams| teams.iter().any(|reported| reported.name == team));
+        if holds
+            && asked
+                .as_ref()
+                .is_none_or(|seen| seen.capability.probed_at <= reported.capability.probed_at)
+        {
+            asked = Some(reported);
+        }
+    }
+    asked.ok_or_else(|| {
+        ApiError::NotFound(format!(
+            "no active runner reports a team named {team} for {harness}"
+        ))
+    })
+}
+
+/// Queues `operation` for the runner and waits for its answer.
+async fn ask_runner(
+    asked: &ReportedHarness,
+    operation: TeamOperation,
+) -> ApiResult<OperationOutcome> {
+    tack_app::runner_operations::operations()
+        .ask(&asked.runner_id, operation, RUNNER_ANSWER_WITHIN)
+        .await
+        .map_err(|_| {
+            ApiError::Conflict(format!(
+                "The runner {} did not answer in time. It may be busy or offline; try again in a moment.",
+                asked.runner
+            ))
+        })
+}
+
 /// What a runner's harness said after it was asked to resume a team.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TeamResumed {
@@ -457,44 +502,15 @@ pub async fn resume_team(
     State(state): State<AppState>,
     Path((harness, team)): Path<(String, String)>,
 ) -> ApiResult<Json<TeamResumed>> {
-    // The newest report of the team, by the runners that run the agent.
-    let mut asked: Option<ReportedHarness> = None;
-    for reported in reported_harnesses(&state).await? {
-        let holds = reported.kind == harness
-            && reported
-                .capability
-                .teams
-                .as_ref()
-                .is_some_and(|teams| teams.iter().any(|reported| reported.name == team));
-        if holds
-            && asked
-                .as_ref()
-                .is_none_or(|seen| seen.capability.probed_at <= reported.capability.probed_at)
-        {
-            asked = Some(reported);
-        }
-    }
-    let Some(asked) = asked else {
-        return Err(ApiError::NotFound(format!(
-            "no active runner reports a team named {team} for {harness}"
-        )));
-    };
-    let outcome = tack_app::runner_operations::operations()
-        .ask(
-            &asked.runner_id,
-            TeamOperation::ResumeTeam {
-                harness: HarnessKind::new(harness.clone()),
-                team: team.clone(),
-            },
-            RUNNER_ANSWER_WITHIN,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::Conflict(format!(
-                "The runner {} did not answer in time. It may be busy or offline; try again in a moment.",
-                asked.runner
-            ))
-        })?;
+    let asked = reporting_runner(&state, &harness, &team).await?;
+    let outcome = ask_runner(
+        &asked,
+        TeamOperation::ResumeTeam {
+            harness: HarnessKind::new(harness.clone()),
+            team: team.clone(),
+        },
+    )
+    .await?;
     match outcome {
         OperationOutcome::Done { team: report } => Ok(Json(TeamResumed {
             team,
@@ -506,6 +522,89 @@ pub async fn resume_team(
         // Resuming asks nobody to read anything; a runner that says so has answered another request.
         OperationOutcome::NeedsReview { .. } => Err(ApiError::Conflict(
             "The runner asked for a review of commands, which resuming a team never has."
+                .to_owned(),
+        )),
+    }
+}
+
+/// What a person decides about a memory entry of a team.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct DecideMemoryRequest {
+    pub decision: MemoryDecision,
+    /// Why the entry is refused; required for a refusal, ignored for an approval.
+    pub reason: Option<String>,
+}
+
+/// What a runner's harness said after it was asked to decide a memory entry.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamMemoryDecided {
+    pub team: String,
+    pub harness: String,
+    /// The runner that asked the harness.
+    pub runner: String,
+    /// The team as the harness reports it now, with the entry no longer waiting; `null` when it
+    /// did not say.
+    pub report: Option<TeamReport>,
+}
+
+/// POST /api/teams/{harness}/{name}/memory/{id}
+///
+/// Deciding what a team may remember is a person's call, so the route is the operator's alone
+/// (`agent_access`).
+#[instrument(skip(state, request))]
+#[utoipa::path(
+    post,
+    path = "/api/teams/{harness}/{name}/memory/{id}",
+    tag = "teams",
+    params(
+        ("harness" = String, Path, description = "The agent that runs the team, as `GET /api/teams` names it"),
+        ("name" = String, Path, description = "The team's name"),
+        ("id" = String, Path, description = "The memory entry's id, as the team's report lists it"),
+    ),
+    request_body = DecideMemoryRequest,
+    responses(
+        (status = 200, description = "The agent approved or refused the entry; the team's report afterwards", body = TeamMemoryDecided),
+        (status = 404, description = "not_found (no active runner reports a team of that name for that agent)"),
+        (status = 409, description = "conflict (the agent refused, with its reason: the entry is no longer waiting, or it cannot decide from the board; or the runner did not answer in time)", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "validation_error (a refusal without a reason)", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn decide_team_memory(
+    State(state): State<AppState>,
+    Path((harness, team, entry)): Path<(String, String, String)>,
+    Json(request): Json<DecideMemoryRequest>,
+) -> ApiResult<Json<TeamMemoryDecided>> {
+    let reason = request
+        .reason
+        .map(|reason| reason.trim().to_owned())
+        .filter(|reason| !reason.is_empty());
+    if request.decision == MemoryDecision::Refuse && reason.is_none() {
+        return Err(ApiError::Unprocessable(
+            "A refusal needs a reason.".to_owned(),
+        ));
+    }
+    let asked = reporting_runner(&state, &harness, &team).await?;
+    let outcome = ask_runner(
+        &asked,
+        TeamOperation::DecideMemory {
+            harness: HarnessKind::new(harness.clone()),
+            team: team.clone(),
+            entry,
+            decision: request.decision,
+            reason,
+        },
+    )
+    .await?;
+    match outcome {
+        OperationOutcome::Done { team: report } => Ok(Json(TeamMemoryDecided {
+            team,
+            harness,
+            runner: asked.runner,
+            report: report.map(|report| *report),
+        })),
+        OperationOutcome::Refused { reason } => Err(ApiError::Conflict(reason)),
+        OperationOutcome::NeedsReview { .. } => Err(ApiError::Conflict(
+            "The runner asked for a review of commands, which deciding a memory entry never has."
                 .to_owned(),
         )),
     }

@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (127 paths, 171 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (128 paths, 172 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -874,6 +874,25 @@ GET /api/teams
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Every team any active runner reports, once per name and agent, with the profiles that name it; plus the names profiles use that no runner reports | `TeamList` |
+
+#### `POST /api/teams/{harness}/{name}/memory/{id}`
+
+POST /api/teams/{harness}/{name}/memory/{id}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `harness` | path | `string` | yes | The agent that runs the team, as `GET /api/teams` names it |
+| `name` | path | `string` | yes | The team's name |
+| `id` | path | `string` | yes | The memory entry's id, as the team's report lists it |
+
+**Request body:** `DecideMemoryRequest`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The agent approved or refused the entry; the team's report afterwards | `TeamMemoryDecided` |
+| 404 | not_found (no active runner reports a team of that name for that agent) | — |
+| 409 | conflict (the agent refused, with its reason: the entry is no longer waiting, or it cannot decide from the board; or the runner did not answer in time) | `ErrorEnvelope` |
+| 422 | validation_error (a refusal without a reason) | `ErrorEnvelope` |
 
 #### `POST /api/teams/{harness}/{name}/resume`
 

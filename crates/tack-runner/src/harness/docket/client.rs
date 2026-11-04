@@ -176,6 +176,28 @@ impl Client {
         .await
     }
 
+    /// `POST /pods/<pod>/memory/<id>`: approves a pending entry, or refuses it with a reason
+    /// (`memoryDecide`).
+    pub async fn decide_memory(
+        &self,
+        pod: &str,
+        entry: &str,
+        decision: &str,
+        reason: Option<&str>,
+    ) -> Result<Reply, String> {
+        let mut body = json!({"decision": decision});
+        if let Some(reason) = reason {
+            body["reason"] = json!(reason);
+        }
+        self.send(
+            Method::POST,
+            &["pods", pod, "memory", entry],
+            &[],
+            Some(body),
+        )
+        .await
+    }
+
     /// `POST /pods/<pod>/resume`, no body: the team claims tasks again (`podResume`).
     pub async fn resume_pod(&self, pod: &str) -> Result<Reply, String> {
         self.send(Method::POST, &["pods", pod, "resume"], &[], None)

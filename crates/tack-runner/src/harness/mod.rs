@@ -243,6 +243,23 @@ pub async fn do_team_operation(
                 Err(reason) => OperationOutcome::Refused { reason },
             }
         }
+        TeamOperation::DecideMemory {
+            harness,
+            team,
+            entry,
+            decision,
+            reason,
+        } => {
+            match adapters
+                .decide_memory(harness.as_str(), &team, &entry, decision, reason.as_deref())
+                .await
+            {
+                Ok(team) => OperationOutcome::Done {
+                    team: team.map(Box::new),
+                },
+                Err(reason) => OperationOutcome::Refused { reason },
+            }
+        }
         TeamOperation::ApplyTeam {
             harness,
             team,
@@ -310,6 +327,20 @@ pub trait HarnessProbe: Send + Sync {
     /// that has no such thing, or does not offer it, says so and where to do it instead.
     async fn resume_team(&self, _team: &str) -> Result<Option<TeamReport>, String> {
         Err("this agent has no team to resume".to_owned())
+    }
+
+    /// Approves or refuses one memory entry of a team that waits for a person, and returns the
+    /// team's report afterwards (`None` when the harness did not give one). `Err` is the sentence a
+    /// person reads: a harness that keeps no memory, or cannot decide it from the board, says so
+    /// and which command decides it instead.
+    async fn decide_memory(
+        &self,
+        _team: &str,
+        _entry: &str,
+        _decision: tack_protocol::execution::MemoryDecision,
+        _reason: Option<&str>,
+    ) -> Result<Option<TeamReport>, String> {
+        Err("this agent keeps no team memory to decide".to_owned())
     }
 
     /// Makes the team of a project's repository from `shape` and applies its folder inside the
@@ -605,6 +636,22 @@ impl AdapterRegistry {
     pub async fn resume_team(&self, kind: &str, team: &str) -> Result<Option<TeamReport>, String> {
         match self.probes.get(kind) {
             Some(probe) => probe.resume_team(team).await,
+            None => Err(format!("this runner does not run {kind}")),
+        }
+    }
+
+    /// [`HarnessProbe::decide_memory`] of the harness `kind`, or the sentence saying this runner
+    /// runs no such harness.
+    pub async fn decide_memory(
+        &self,
+        kind: &str,
+        team: &str,
+        entry: &str,
+        decision: tack_protocol::execution::MemoryDecision,
+        reason: Option<&str>,
+    ) -> Result<Option<TeamReport>, String> {
+        match self.probes.get(kind) {
+            Some(probe) => probe.decide_memory(team, entry, decision, reason).await,
             None => Err(format!("this runner does not run {kind}")),
         }
     }

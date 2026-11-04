@@ -855,3 +855,118 @@ async fn a_profile_that_does_not_change_code_fits_a_team_that_delivers_a_report(
         "{got}"
     );
 }
+
+/// `POST /api/teams/{harness}/{name}/memory/{id}`: the runner that reports the team is asked to
+/// approve or refuse the entry, a refusal without a reason is not asked at all, and what the agent
+/// answers is what the person gets.
+#[tokio::test]
+async fn deciding_a_memory_entry_asks_the_runner_that_reports_the_team() {
+    use tack_protocol::execution::{MemoryDecision, OperationOutcome, TeamOperation, TeamReport};
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    let decide = |team: &'static str, body: Value| {
+        let (app, headers) = (&b.app, operator_headers());
+        async move {
+            common::send(
+                app,
+                "POST",
+                &format!("/api/teams/docket/{team}/memory/mem-1"),
+                body,
+                &headers,
+            )
+            .await
+        }
+    };
+    let (status, body) = decide("writers", json!({"decision": "approve"})).await;
+    assert_eq!(status, 404, "no runner reports it: {body}");
+
+    seed::agent_runner_reporting(
+        repo,
+        "ru-memory",
+        &snapshot(json!([harness(
+            "docket",
+            "2026-08-06T12:00:00Z",
+            Some(json!([{"name": "writers", "profile": "lights-out", "violations": []}]))
+        )])),
+    )
+    .await;
+    let (status, body) = decide("writers", json!({"decision": "refuse"})).await;
+    assert_eq!(status, 422, "a refusal needs a reason: {body}");
+    let (status, body) = decide("writers", json!({"decision": "refuse", "reason": "  "})).await;
+    assert_eq!(status, 422, "{body}");
+    let (status, _) = decide("writers", json!({"decision": "keep"})).await;
+    assert!(
+        status == 400 || status == 422,
+        "an unknown decision: {status}"
+    );
+
+    let report: TeamReport = serde_json::from_value(json!({
+        "name": "writers", "violations": [],
+        "memory": {"pending": [], "accepted": [], "can_decide": true}
+    }))
+    .unwrap();
+    let runner = tokio::spawn(async move {
+        let queue = tack_app::runner_operations::operations();
+        let answers = vec![
+            OperationOutcome::Done {
+                team: Some(Box::new(report)),
+            },
+            OperationOutcome::Refused {
+                reason: "That entry is no longer waiting.".to_owned(),
+            },
+        ]
+        .into_iter();
+        let mut handed_out = Vec::new();
+        for answer in answers {
+            let handed = loop {
+                let handed = queue.take("ru-memory");
+                if let Some(first) = handed.into_iter().next() {
+                    break first;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            };
+            assert!(queue.finish("ru-memory", &handed.operation_id, answer));
+            handed_out.push(handed.operation);
+        }
+        handed_out
+    });
+    let (status, body) = decide(
+        "writers",
+        json!({"decision": "refuse", "reason": " CI rebuilds it "}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["runner"], "ru", "{body}");
+    assert_eq!(body["report"]["memory"]["can_decide"], true, "{body}");
+    let (status, body) = decide("writers", json!({"decision": "approve"})).await;
+    assert_eq!(status, 409, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("no longer waiting"),
+        "{body}"
+    );
+    let handed = runner.await.unwrap();
+    assert_eq!(
+        handed,
+        [
+            TeamOperation::DecideMemory {
+                harness: tack_protocol::execution::HarnessKind::new("docket"),
+                team: "writers".to_owned(),
+                entry: "mem-1".to_owned(),
+                decision: MemoryDecision::Refuse,
+                reason: Some("CI rebuilds it".to_owned()),
+            },
+            TeamOperation::DecideMemory {
+                harness: tack_protocol::execution::HarnessKind::new("docket"),
+                team: "writers".to_owned(),
+                entry: "mem-1".to_owned(),
+                decision: MemoryDecision::Approve,
+                reason: None,
+            },
+        ]
+    );
+}

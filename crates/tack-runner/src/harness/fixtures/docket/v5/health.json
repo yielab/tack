@@ -22,7 +22,8 @@
     "podShape",
     "podContract",
     "podResume",
-    "memoryStatus"
+    "memoryStatus",
+    "memoryDecide"
   ],
   "dispatch": {
     "on": true,

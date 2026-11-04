@@ -49,7 +49,9 @@ features and Tack used 16. Four cards, in two rounds (D, then A ∥ B ∥ C):
   carries its memory (pending and accepted entries). A pending entry opens a **needs-you** notification
   that closes when the entry is decided; the team's sheet shows what it learnt and what waits, with
   docket's `docket pod memory approve` and `refuse` commands to copy and **Approve**/**Refuse** shown
-  disabled with that reason. docket is asked for a route to decide an entry (`memoryDecide`), probed when it comes.
+  disabled with that reason. Built after docket added the route to decide an entry (`memoryDecide`): with a
+  docket that lists it, **Approve** and **Refuse** (which asks for a reason) are real and the entry leaves
+  the list.
 - **C — docket's check of a named method is read as a refusal.** A task docket refuses at claim with
   `failureKind: pipeline` (its `pipelineChecked`) reads **Not started** with docket's reason, as a
   `capability_missing` refusal does; Tack's own refusal before sending reads only the team's reported
@@ -146,8 +148,8 @@ can come back as a card of its own.
   its token limit; the tokens a verifier spends count whole, cache included; only docket reports a
   running agent's steps on its timeline; a team's pending memory reaches the inbox in about five
   minutes (the runner looks at docket again every 300 s, the board reads the reports every 30 s) and
-  is decided with docket's own command until docket offers a route (`memoryDecide`, asked of docket
-  on 2026-11-04); closing a thread in Tack does not close its docket conversation, which ends by its
+  is decided from the sheet only with a docket that lists `memoryDecide`, and with docket's own command
+  otherwise; closing a thread in Tack does not close its docket conversation, which ends by its
   own turn cap or when its `turn` question expires; **Resume team** clears a pause but not the spent
   budget, so a team out of budget is paused again until the budget is raised.
 

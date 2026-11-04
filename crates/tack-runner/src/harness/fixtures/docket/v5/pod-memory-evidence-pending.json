@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "id": "mem-8fb092b99f",
+      "kind": "convention",
+      "subject": "docs/",
+      "note": "Every page opens with its audience.",
+      "status": "pending",
+      "reason": "awaits operator approval",
+      "provenance": {
+        "task": "task-capture-built",
+        "date": "2026-01-01",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {}
+    }
+  ]
+}

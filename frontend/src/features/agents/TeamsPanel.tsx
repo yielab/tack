@@ -15,6 +15,7 @@ import {
   teamsApi,
   type AgentProfileSummary,
   type TeamEntry,
+  type TeamReport,
 } from '../../shared/execution';
 import type { RunnerSummary } from '../../shared/execution/api';
 import { harnessesOf } from './runnerObservations';
@@ -54,6 +55,12 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
       defaultProfileId: project.default_profile_id ?? null,
     };
   };
+
+  /** Puts the team's report as its agent gave it after an action in place of the one shown. */
+  const replaceReport = (entry: TeamEntry) => (report: TeamReport | null) =>
+    report
+      ? mutateTeams((all) => (all ?? []).map((e) => (e.name === entry.name && e.harness === entry.harness ? { ...e, report } : e)))
+      : void refetchTeams();
 
   const entries = (): TeamEntry[] => (teams.error ? [] : (teams() ?? []));
   const rows = (): AgentProfileSummary[] => (profiles.error ? [] : (profiles()?.data.data ?? []));
@@ -169,13 +176,10 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
                 actions={
                   <ResumeTeam
                     entry={entry}
-                    onResumed={(report) =>
-                      report
-                        ? mutateTeams((all) => (all ?? []).map((e) => (e.name === entry.name && e.harness === entry.harness ? { ...e, report } : e)))
-                        : void refetchTeams()
-                    }
+                    onResumed={replaceReport(entry)}
                   />
                 }
+                onReport={replaceReport(entry)}
               />
             );
           }}
