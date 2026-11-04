@@ -25,8 +25,8 @@ use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamDelivers,
-    TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, OperationOutcome,
+    TeamActivity, TeamDelivers, TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
     WorkspaceId as DomainWorkspaceId, team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
@@ -43,6 +43,7 @@ use crate::{
 };
 
 mod activity;
+mod apply;
 mod client;
 pub mod daemon;
 mod probe;
@@ -1645,6 +1646,16 @@ impl HarnessProbe for DocketAdapter {
     async fn resume_team(&self, team: &str) -> Result<Option<TeamReport>, String> {
         probe::resume(&self.client, team).await
     }
+
+    async fn apply_team(
+        &self,
+        team: &str,
+        shape: &str,
+        directory: &str,
+        accept: Option<&str>,
+    ) -> OperationOutcome {
+        apply::apply_team(&self.client, team, shape, directory, accept).await
+    }
 }
 
 #[async_trait]
@@ -1706,7 +1717,7 @@ impl HarnessAdapter for DocketAdapter {
         // the call, so a slow docket delays only the run that waits on it.
         let known = self.ensured.lock().await.contains(&pod);
         if !known {
-            match self.client.ensure_pod(&pod, &location).await {
+            match self.client.ensure_pod(&pod, &location, None).await {
                 Ok(reply) if reply.status == 200 || reply.status == 201 => {
                     self.ensured.lock().await.insert(pod.clone());
                 }

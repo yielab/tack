@@ -240,6 +240,9 @@ that docket exists; the variant is the captures with those keys taken out.
 | `escalations-task-since` | `GET /escalations` | 200 | captured |
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
+| `pod-apply-applied` | `POST /pods/<pod>/apply` | 200 | constructed |
+| `pod-apply-code-changed` | `POST /pods/<pod>/apply` | 409 | constructed |
+| `pod-apply-needs-code` | `POST /pods/<pod>/apply` | 409 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
 | `pod-capabilities` | `GET /pods/<pod>` | 200 | captured |
 | `pod-contract` | `GET /pods/<pod>` | 200 | constructed |
@@ -253,6 +256,7 @@ that docket exists; the variant is the captures with those keys taken out.
 | `post-pods-created` | `POST /pods` | 201 | captured |
 | `post-pods-existing` | `POST /pods` | 200 | captured |
 | `post-pods-old-fields` | `POST /pods` | 400 | captured |
+| `post-pods-shape` | `POST /pods` | 201 | constructed |
 | `post-task-autonomy-l5` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-created` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-existing` | `POST /tasks/<pod>` | 200 | captured |
@@ -330,6 +334,10 @@ which docket claims and settles `failed` before any hop (`task-failed-base-ref-f
 `task-failed-approval-expired` stays `constructed` on purpose: docket's own deadline for an approval is
 hours, and the script waits for nothing.
 
+The three `pod-apply-*` files and `post-pods-shape` are the answers of `podShape` (a pod made from a
+named shape, and `POST /pods/<pod>/apply`, which answers `409` with a `reviewCode` until the call
+carries it as `accept`). They are read from docket's source, not run.
+
 `pod-contract` is `pod-attended` with the three keys of `podContract` (`delivers`, `methods`, `needs`).
 `pod-budget` is `pod-attended` paused on its budget, with the `budget` key of `podResume`, and `pod-resumed` is the
 answer of `POST /pods/<pod>/resume`, which Tack reads only for its status. These three are the constructed files
@@ -342,7 +350,7 @@ provenance says. A script run replaces every capture; the constructed files stay
 ## What it leaves out
 
 - `GET /tasks/<pod>` and its `externalRef`/`status` filters, `POST .../retry`,
-  `POST /pods/<p>/apply`, `GET /pods/<p>/corrections`, `/metrics`, `/runs`,
+  `GET /pods/<p>/corrections`, `/metrics`, `/runs`,
   `POST /dispatch/<pod>`, `GET .../evidence`.
 - The one-second hold-back of `GET /traces` by the clock (the fake holds a line back for a time a test
   sets, `hold_back_traces`, and none by default), the

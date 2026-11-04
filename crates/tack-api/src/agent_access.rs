@@ -369,5 +369,13 @@ mod tests {
             classify(&Method::POST, "/api/teams/docket/writers/resume"),
             Access::OperatorOnly
         );
+        // So is making a team on the runner's computer.
+        assert_eq!(
+            classify(
+                &Method::POST,
+                "/api/projects/00000000-0000-0000-0000-000000000001/teams/apply"
+            ),
+            Access::OperatorOnly
+        );
     }
 }

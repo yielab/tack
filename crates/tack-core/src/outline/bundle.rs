@@ -272,7 +272,7 @@ fn team_is_valid(team: &Value) -> bool {
 }
 
 /// docket's project id: `^[a-z0-9][a-z0-9-]{0,63}$`. A method is named the same way.
-fn is_team_name(name: &str) -> bool {
+pub fn is_team_name(name: &str) -> bool {
     name.len() <= 64
         && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
         && name

@@ -26,8 +26,8 @@ use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
     briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
     export, import_github, import_linear, items, local_runner, metrics, mrp, notifications,
-    outline, projects, roles, routing, runner_admin, runner_protocol, settings, sprints, teams,
-    templates, threads, triggers, websocket,
+    outline, projects, roles, routing, runner_admin, runner_protocol, settings, sprints,
+    team_apply, teams, templates, threads, triggers, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -435,6 +435,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/teams", get(teams::list_teams))
         .route("/teams/{id}/activity", get(teams::team_activity))
         .route("/teams/{harness}/{name}/resume", post(teams::resume_team))
+        .route("/projects/{id}/teams/apply", post(team_apply::apply_teams))
         .route(
             "/agent-credentials",
             get(agent_credentials::list_credentials).post(agent_credentials::issue_credential),

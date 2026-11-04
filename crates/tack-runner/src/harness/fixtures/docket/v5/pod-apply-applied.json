@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "project": "saas-dev",
+  "items": [
+    {
+      "kind": "role",
+      "name": "lead",
+      "action": "update",
+      "note": ""
+    },
+    {
+      "kind": "service",
+      "name": "mailbox",
+      "action": "add",
+      "note": ""
+    },
+    {
+      "kind": "pipeline",
+      "name": "research-review",
+      "action": "skip",
+      "note": "unchanged"
+    }
+  ],
+  "dryRun": false
+}

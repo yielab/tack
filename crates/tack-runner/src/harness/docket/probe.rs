@@ -518,6 +518,12 @@ pub(super) async fn probe(
     };
     capability.installed_version = version.unwrap_or_default();
     capability.set_api_version(&api.to_string());
+    // The board offers to make a team only where docket can.
+    let mut listed = Vec::new();
+    if client.has_feature(super::apply::POD_SHAPE).await {
+        listed.push(super::apply::POD_SHAPE);
+    }
+    capability.set_api_features(&listed);
     if let Err(why) = escalation_record(client, api).await {
         capability.probe_error = Some(why);
         return capability;

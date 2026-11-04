@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (126 paths, 170 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (127 paths, 171 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -849,6 +849,23 @@ sets
 ## Teams
 
 The teams the board's agents report, with the profiles that name them.
+
+#### `POST /api/projects/{id}/teams/apply`
+
+POST /api/projects/{id}/teams/apply
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+**Request body:** `ApplyTeamsRequest`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | How each team went, in the order asked: applied, waiting for a person to read the commands docket listed, or refused with the reason | `TeamApplyResult`[] |
+| 400 | No team named, a name or shape docket does not know, or the project's code is not a folder on a computer | `ErrorEnvelope` |
+| 404 | No such project | `ErrorEnvelope` |
+| 409 | No active runner reports a docket that lists `podShape`; the sentence says what to do | `ErrorEnvelope` |
 
 #### `GET /api/teams`
 

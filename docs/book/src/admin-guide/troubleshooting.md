@@ -309,8 +309,8 @@ held back.
 
 **What to do.** Run the fix the doctor prints, with docket's own commands, on the runner's machine, then
 run `tack runner doctor` again. The ceiling lifts when the team reports `lights-out`. The button in
-Settings that would apply a repository's teams is shown disabled, because the board has no way to reach
-the runner's machine. See
+Settings that applies a repository's teams makes teams the repository holds, and sets none of this; it
+needs a runner whose docket lists `podShape`, and a person approves the commands docket lists. See
 [Making a team run without a person](runners.md#making-a-team-run-without-a-person).
 
 ---

@@ -10,6 +10,7 @@ mod bootstrap_entrypoint;
 mod briefing_schema;
 mod cli;
 mod crash_matrix;
+mod docket_apply;
 mod docket_v5;
 mod evidence_contract;
 mod g2_journal_corruption_test;

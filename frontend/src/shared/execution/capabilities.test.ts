@@ -4,6 +4,7 @@ import {
   gateFeatureAcrossRunners,
   listReportedHarnessKinds,
   harnessProbeStatus,
+  gateApiFeature,
 } from './capabilities';
 import type { RunnerCapabilities } from './types';
 
@@ -144,6 +145,44 @@ describe('harnessProbeStatus', () => {
     expect(harnessProbeStatus([fixtureCapabilities()], 'claude_code')).toEqual({
       probed: false,
       lastError: null,
+    });
+  });
+});
+
+describe('gateApiFeature', () => {
+  const docket = (features?: string[], probeError: string | null = null) =>
+    fixtureCapabilities({
+      harnesses: [
+        {
+          harness_kind: 'docket',
+          installed_version: '0.3',
+          probe_error: probeError,
+          probed_at: '2026-11-04T10:00:00Z',
+          ...(features ? { api_features: features } : {}),
+        },
+      ],
+    });
+
+  it('is enabled when a runner reports the harness listing the feature', () => {
+    expect(gateApiFeature([docket([]), docket(['podShape'])], 'docket', 'podShape')).toEqual({
+      enabled: true,
+      reason: null,
+    });
+  });
+
+  it('says to update the harness when none lists the feature, whether the key is absent or empty', () => {
+    for (const snapshots of [[docket()], [docket([])]]) {
+      const gate = gateApiFeature(snapshots, 'docket', 'podShape');
+      expect(gate.enabled).toBe(false);
+      expect(gate.reason).toContain('does not list podShape');
+    }
+  });
+
+  it('says no computer reports the harness when none does, and gives the probe error when it failed', () => {
+    expect(gateApiFeature([fixtureCapabilities()], 'docket', 'podShape').reason).toContain('No computer reports docket');
+    expect(gateApiFeature([docket(['podShape'], 'docket is not answering')], 'docket', 'podShape')).toEqual({
+      enabled: false,
+      reason: 'docket is not answering',
     });
   });
 });

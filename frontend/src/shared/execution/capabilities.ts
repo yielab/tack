@@ -111,4 +111,31 @@ export function harnessProbeStatus(
   return { probed: sawClean, lastError: sawClean ? null : lastError };
 }
 
+/**
+ * Whether the board may ask a runner of `harnessKind` for something only a newer API does (docket's
+ * `podShape`: apply the repository's teams): enabled when at least one runner reports the harness with no
+ * probe error and lists `feature` in `api_features`. The reason says which of the two is missing, so a
+ * button that cannot act stays on screen and says why.
+ */
+export function gateApiFeature(snapshots: RunnerCapabilities[], harnessKind: string, feature: string): CapabilityGate {
+  const { probed, lastError } = harnessProbeStatus(snapshots, harnessKind);
+  if (!probed) {
+    return {
+      enabled: false,
+      reason: lastError ?? `No computer reports ${harnessKind}. Install it on a computer that runs a runner.`,
+    };
+  }
+  const lists = snapshots.some((snapshot) =>
+    snapshot.harnesses.some(
+      (harness) =>
+        harness.harness_kind === harnessKind &&
+        harness.probe_error === null &&
+        (harness.api_features ?? []).includes(feature),
+    ),
+  );
+  return lists
+    ? { enabled: true, reason: null }
+    : { enabled: false, reason: `The ${harnessKind} on your computers does not list ${feature}. Update it.` };
+}
+
 export type { CapabilitySupport };

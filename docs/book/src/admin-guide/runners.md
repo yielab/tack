@@ -356,9 +356,19 @@ When the daemon does not answer, the `daemon:` line says why, for example "not a
 http://127.0.0.1:7399/health; the runner starts it with the runner" (the runner is configured to
 start it but has not), or "no binary is set to start one".
 
-The Teams block of the Automation settings has a button to apply a repository's teams. It is shown
-disabled, with its reason, because the board has no channel to the runner's machine. Apply a team
-with docket's own commands on that machine.
+The Teams block of the Automation settings has a button to apply a repository's teams. The board has
+no line to docket or to the project's folder, so it asks a runner that has the agent: the runner makes
+each team from its shape on its docket, then applies the team's `.docket/teams/<team>` folder from the
+project's folder. This needs a docket that lists `podShape` among the `features` of its `/health`; the
+button is disabled, with its reason, until a runner reports one, and the project's code must be a folder on
+the runner's computer. A request no runner answers within half a minute is not applied.
+
+docket will not apply a folder that runs commands on the machine (an install command, an allowed command,
+open network access) until someone has read them. The runner passes docket's list to the board with the
+code docket gave for it; a person reads the commands in the board and confirms with the code, and the
+board asks the runner again with that code, which it sends to docket as `accept`. A folder that changes between the two is refused and asks again. Tack
+writes no recipe, service, secret or quota: it only asks docket to apply what the repository holds. You
+can still apply a team with docket's own commands on that machine.
 
 ### What a team's sandbox can read
 

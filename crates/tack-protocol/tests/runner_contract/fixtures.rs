@@ -57,8 +57,16 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("heartbeat.response.json", 0x63a2_31d5_7dd3_20e3),
     ("lifecycle-transitions.json", 0x6545_6c76_7dc0_93a4),
     ("limits.json", 0xed78_5be0_4be8_ed98),
+    (
+        "operations.poll.apply-team.response.json",
+        0x05bd_25cc_c9bb_c5ab,
+    ),
     ("operations.poll.request.json", 0xb770_da76_bac0_f8d9),
     ("operations.poll.response.json", 0x58f2_c96c_bbaf_3cfb),
+    (
+        "operations.result.needs-review.request.json",
+        0x831d_4ceb_b511_e823,
+    ),
     ("operations.result.request.json", 0x896f_eae4_a978_b567),
     ("operations.result.response.json", 0x31d0_7bad_499b_7f22),
     ("protocol.json", 0x26a4_0191_6f13_1941),
@@ -124,7 +132,7 @@ pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
 #[test]
 fn every_json_fixture_parses_and_value_round_trips_without_loss() {
     let paths = fixture_paths();
-    assert_eq!(paths.len(), 56, "the frozen fixture manifest changed");
+    assert_eq!(paths.len(), 58, "the frozen fixture manifest changed");
 
     for path in paths {
         let name = fixture_name(&path);

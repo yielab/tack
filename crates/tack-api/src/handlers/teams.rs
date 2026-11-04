@@ -503,5 +503,10 @@ pub async fn resume_team(
             report: report.map(|report| *report),
         })),
         OperationOutcome::Refused { reason } => Err(ApiError::Conflict(reason)),
+        // Resuming asks nobody to read anything; a runner that says so has answered another request.
+        OperationOutcome::NeedsReview { .. } => Err(ApiError::Conflict(
+            "The runner asked for a review of commands, which resuming a team never has."
+                .to_owned(),
+        )),
     }
 }

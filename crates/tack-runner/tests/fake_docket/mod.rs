@@ -331,6 +331,9 @@ struct Pod {
     budget: Option<Value>,
 }
 
+/// The code an apply asks for, and what the directory would run (kind, name, text).
+type ApplyReview = (String, Vec<(String, String, String)>);
+
 struct World {
     api_version: String,
     pods: BTreeMap<String, Pod>,
@@ -414,6 +417,14 @@ struct World {
     /// The channel of the next task posted; `http` unless a test says another (a person at the
     /// CLI, a routine).
     next_channel: Option<String>,
+    /// A docket that lists `podShape`: `POST /pods` makes a pod from the `blueprint` it names (a
+    /// folder shape has no `codebase`), and `POST /pods/<pod>/apply` reaches a pod that has none.
+    /// Without it a pod with no `codebase` is refused an apply, as docket did.
+    pod_shape: bool,
+    /// What an apply asks a person to read first: the code, and what the directory would run
+    /// (kind, name, text). An apply that carries no `accept` is answered `409` with the code, one
+    /// that carries another code `409` without it, and one that carries this code is applied.
+    apply_review: Option<ApplyReview>,
 }
 
 pub struct FakeDocket {
@@ -461,6 +472,8 @@ impl FakeDocket {
             next_retry_script: None,
             rev: 0,
             next_channel: None,
+            pod_shape: false,
+            apply_review: None,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -562,6 +575,23 @@ impl FakeDocket {
     /// a task may name and what its work still needs, as `pod-contract` does.
     pub fn with_pod_contract(&self) {
         self.shared.lock().unwrap().pod_contract = Some(true);
+    }
+
+    /// A docket that lists `podShape`.
+    pub fn with_pod_shape(&self) {
+        self.shared.lock().unwrap().pod_shape = true;
+    }
+
+    /// From now on an apply asks a person to read `runs` first and to send `code` back.
+    pub fn require_apply_review(&self, code: &str, runs: &[(&str, &str, &str)]) {
+        self.shared.lock().unwrap().apply_review = Some((
+            code.to_owned(),
+            runs.iter()
+                .map(|(kind, name, text)| {
+                    ((*kind).to_owned(), (*name).to_owned(), (*text).to_owned())
+                })
+                .collect(),
+        ));
     }
 
     /// A docket that sends the three keys of `podContract` without listing the feature.
@@ -1037,6 +1067,7 @@ async fn handle(
                 })
             })
         }
+        ("POST", ["pods", _, "apply"]) => keyed("POST /pods/<pod>/apply"),
         ("POST", ["tasks", _]) => keyed("POST /tasks/<pod>"),
         ("POST", ["escalations", _]) => keyed("POST /escalations/<id>"),
         _ => None,
@@ -1059,6 +1090,7 @@ async fn handle(
         ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
         ("POST", ["pods", pod, "resume"]) => resume_pod_route(&mut state, pod),
+        ("POST", ["pods", pod, "apply"]) => apply_pod(&state, pod, &parsed),
         ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["tasks", pod]) => post_task(&mut state, pod, &parsed),
         ("GET", ["tasks", pod]) => list_tasks(&state, pod, &query),
@@ -1113,6 +1145,9 @@ fn features(state: &World) -> Value {
     }
     if state.pod_resume {
         listed.push("podResume");
+    }
+    if state.pod_shape {
+        listed.push("podShape");
     }
     json!(listed)
 }
@@ -1566,11 +1601,22 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             refusal("post-pods-conflict", &[("saas-dev", name)])
         };
     }
+    // A docket that lists `podShape` makes the pod from the shape named; a folder shape works in
+    // no repository, so it records no `codebase`.
+    let shape = body["blueprint"]
+        .as_str()
+        .filter(|_| state.pod_shape)
+        .map(str::to_owned);
+    let folder = shape.as_deref().is_some_and(|shape| shape != "build");
     state.pods.insert(
         name.to_owned(),
         Pod {
-            codebase: body["location"].as_str().unwrap_or_default().to_owned(),
-            folder: false,
+            codebase: if folder {
+                String::new()
+            } else {
+                body["location"].as_str().unwrap_or_default().to_owned()
+            },
+            folder,
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
             read_only: None,
@@ -1581,10 +1627,63 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             budget: None,
         },
     );
-    reply(
-        201,
-        fixture_with("post-pods-created", &[("saas-dev", name)]),
-    )
+    let created = match shape {
+        Some(shape) => {
+            let mut created = fixture_with("post-pods-shape", &[("saas-dev", name)]);
+            created["blueprint"] = json!(shape);
+            created
+        }
+        None => fixture_with("post-pods-created", &[("saas-dev", name)]),
+    };
+    reply(201, created)
+}
+
+/// `POST /pods/<pod>/apply`: applies a directory on this machine to the pod. A pod with no
+/// `codebase` is refused unless the docket lists `podShape`; a directory that runs commands is
+/// refused until the call carries the code of what it runs.
+fn apply_pod(state: &World, pod: &str, body: &Value) -> Response {
+    let Some(found) = state.pods.get(pod) else {
+        return error(404, &format!("Unknown pod: {pod}"));
+    };
+    if found.codebase.is_empty() && !state.pod_shape {
+        return error(
+            400,
+            &format!(
+                "pod {pod} has no recorded codebase; docket pod update reviews a directory \
+                 against the repository the pod was made from"
+            ),
+        );
+    }
+    let Some(directory) = body["directory"].as_str() else {
+        return error(400, "directory is required");
+    };
+    if !Path::new(directory).is_absolute() {
+        return error(400, "directory must be an absolute path");
+    }
+    if !Path::new(directory).is_dir() {
+        return error(400, &format!("directory not found: {directory}"));
+    }
+    if let Some((code, runs)) = &state.apply_review {
+        let runs_json: Vec<Value> = runs
+            .iter()
+            .map(|(kind, name, text)| json!({"kind": kind, "name": name, "runs": text}))
+            .collect();
+        match body["accept"].as_str() {
+            None => {
+                let mut answer = fixture("pod-apply-needs-code");
+                answer["reviewCode"] = json!(code);
+                answer["runs"] = json!(runs_json);
+                return reply(409, answer);
+            }
+            Some(sent) if sent != code => {
+                let mut answer = fixture("pod-apply-code-changed");
+                answer["runs"] = json!(runs_json);
+                return reply(409, answer);
+            }
+            Some(_) => {}
+        }
+    }
+    reply(200, fixture_with("pod-apply-applied", &[("saas-dev", pod)]))
 }
 
 /// docket's `TaskRequest` (`extra="forbid"`): strings, lists of strings and a list of objects, each

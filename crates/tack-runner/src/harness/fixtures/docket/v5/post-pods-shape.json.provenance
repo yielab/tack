@@ -1,0 +1,11 @@
+constructed
+route: POST /pods
+status: 201
+tack-sends: yes
+optional-keys: blueprint
+built-from: post-pods-created.json with the blueprint the request named
+source: src/docket/interfaces/http/routes/pod_create.py (the `blueprint` key, `ensure`) and src/docket/interfaces/http/routes/health.py (the feature `podShape`) at the checkout a268257b, read and not run
+request: {"name":"saas-dev","blueprint":"respond","location":"/scratch/repo","ensure":true}
+docket: docket 0.3.0b1 (API 6), source checkout a268257b, read and not run
+date: 2026-11-04
+note: the body Tack sends when it makes a team from a shape (Tack names a shape only for a team of a repository's own; for the default team it names none and docket defaults it); the values are made up. Tack sends `blueprint` only to a docket whose `GET /health` lists `podShape`.

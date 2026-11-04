@@ -1,0 +1,9 @@
+constructed
+route: POST /pods/<pod>/apply
+status: 409
+tack-sends: no
+built-from: the answer docket writes when the call carries an `accept` that is not the code of what the directory runs now: no `reviewCode`, the sentence and `runs`
+source: src/docket/interfaces/http/routes/pod_apply.py (the `code_mismatch` branch) at the checkout a268257b, read and not run
+docket: docket 0.3.0b1 (API 6), source checkout a268257b, read and not run
+date: 2026-11-04
+note: not captured, because the answer needs a directory that changed between two calls; the values are made up.
