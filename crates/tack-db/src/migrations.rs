@@ -166,6 +166,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("102_threads", &MIGRATION_102[..]),
         ordinary("103_drop_status_moves", &MIGRATION_103[..]),
         ordinary("104_triggers", &MIGRATION_104[..]),
+        ordinary("105_notifications", &MIGRATION_105[..]),
     ]
 }
 
@@ -2104,4 +2105,37 @@ const MIGRATION_104: [&str; 6] = [
         events INTEGER NOT NULL
     )"##,
     "CREATE INDEX idx_trigger_firings_trigger ON trigger_firings(trigger_id, fired_at)",
+];
+
+// 105: notifications (ADR 0035, decisions 2 and 5). The inbox: one row per situation that needs a person or is worth
+// telling. `key` names the situation (`decision:<id>`, `run:<request>`, ...), and the partial unique index lets a
+// situation be open once, whatever the bus repeats; a closed row frees the key. `notification_deliveries` is one row
+// per (notification, channel): tried when the notification opens, retried with a backoff until `delivered_at` is set
+// or `next_at` is cleared after the last try.
+const MIGRATION_105: [&str; 4] = [
+    r##"CREATE TABLE notifications (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        level TEXT NOT NULL,
+        key TEXT NOT NULL,
+        item_id TEXT REFERENCES items(id) ON DELETE SET NULL,
+        request_id TEXT,
+        title TEXT NOT NULL,
+        cause TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        resolved_at TEXT
+    )"##,
+    "CREATE UNIQUE INDEX notifications_open_key ON notifications(key) WHERE resolved_at IS NULL",
+    "CREATE INDEX idx_notifications_created ON notifications(created_at)",
+    r##"CREATE TABLE notification_deliveries (
+        notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+        channel TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_at TEXT,
+        delivered_at TEXT,
+        last_error TEXT,
+        PRIMARY KEY (notification_id, channel)
+    )"##,
 ];

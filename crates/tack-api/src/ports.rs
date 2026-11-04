@@ -102,7 +102,7 @@ impl DomainEvents for Adapter {
 }
 
 /// What the open boards are told of an event: the message they have always understood, or
-/// nothing for an event they have no message for (a run, a decision).
+/// nothing for an event they have no message for (a run, a decision, a change set).
 fn board_message(event: &DomainEvent) -> Option<BoardEvent> {
     let project_id = event.project_id;
     Some(match &event.fact {
@@ -132,6 +132,8 @@ fn board_message(event: &DomainEvent) -> Option<BoardEvent> {
         | Fact::RunFailed { .. }
         | Fact::RunWaiting { .. }
         | Fact::DecisionOpened { .. }
-        | Fact::DecisionResolved { .. } => return None,
+        | Fact::DecisionResolved { .. }
+        | Fact::ChangeSetProposed { .. }
+        | Fact::ChangeSetSettled { .. } => return None,
     })
 }
