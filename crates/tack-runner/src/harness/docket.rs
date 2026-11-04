@@ -494,15 +494,8 @@ impl DocketAdapter {
 
     /// The team a profile names, when it names one.
     fn named_team(spec: &ExecutionSpec) -> Option<String> {
-        spec.work
-            .request
-            .resolved_agent_profile
-            .tool_policy
-            .get("docket")
-            .and_then(|docket| docket.get("team"))
-            .and_then(Value::as_str)
-            .filter(|team| !team.is_empty())
-            .map(str::to_owned)
+        tack_core::run_defaults::named_team(&spec.work.request.resolved_agent_profile.tool_policy)
+            .map(|(team, _)| team)
     }
 
     /// The pod a task goes to: the profile's team, else the project's default

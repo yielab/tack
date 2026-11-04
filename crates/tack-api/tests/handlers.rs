@@ -73,6 +73,8 @@ mod rejections;
 mod remote_backup;
 #[path = "handlers/rework.rs"]
 mod rework;
+#[path = "handlers/routing.rs"]
+mod routing;
 #[path = "handlers/run_summary_facts.rs"]
 mod run_summary_facts;
 #[path = "handlers/teams.rs"]

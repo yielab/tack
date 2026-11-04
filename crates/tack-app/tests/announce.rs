@@ -228,3 +228,84 @@ async fn a_success_finishes_a_failure_fails_and_a_replay_or_a_cancellation_says_
         assert_eq!(events.events(), expected.into_iter().collect::<Vec<_>>());
     }
 }
+
+async fn child_of(world: &common::World, parent: Uuid, title: &str) -> common::World {
+    let item = world
+        .repo
+        .create_item(
+            project_of(world).await,
+            "To Do",
+            tack_core::models::CreateItem {
+                title: title.into(),
+                parent_id: Some(parent),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("child");
+    common::World {
+        repo: world.repo.clone(),
+        clock: common::FakeClock(world.clock.0.clone()),
+        item_id: item.id.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn the_children_of_a_parent_are_announced_when_the_last_open_run_among_them_finishes() {
+    let world = world().await;
+    let parent = Uuid::parse_str(&world.item_id).unwrap();
+    let (project, runner) = (project_of(&world).await, Principal::runner(RUNNER_ID));
+    let (first, second) = (
+        child_of(&world, parent, "first").await,
+        child_of(&world, parent, "second").await,
+    );
+    let (run_a, run_b) = (
+        running_attempt(&first, "child-a").await,
+        running_attempt(&second, "child-b").await,
+    );
+    let events = RecordedEvents::default();
+
+    for (child, run, completion) in [(&first, &run_a, "done-a"), (&second, &run_b, "done-b")] {
+        let completed = end(child, run, completion, ExecutionState::Succeeded, json!({})).await;
+        announce::run_ended(
+            &world.repo,
+            &events,
+            &runner,
+            &AttemptId::new(&run.attempt_id),
+            &completed,
+        )
+        .await;
+    }
+
+    let children_finished = DomainEvent::new(
+        project,
+        &runner,
+        Fact::ChildrenFinished { parent_id: parent },
+    );
+    let recorded = events.events();
+    assert_eq!(recorded.len(), 3, "{recorded:?}");
+    assert!(matches!(recorded[0].fact, Fact::RunFinished { .. }));
+    assert!(matches!(recorded[1].fact, Fact::RunFinished { .. }));
+    assert_eq!(
+        recorded[2], children_finished,
+        "said once, when the second child's run ended and the first had already"
+    );
+}
+
+#[tokio::test]
+async fn a_run_of_an_item_without_a_parent_says_nothing_about_children() {
+    let world = world().await;
+    let run = running_attempt(&world, "no-parent").await;
+    let runner = Principal::runner(RUNNER_ID);
+    let events = RecordedEvents::default();
+    let completed = end(&world, &run, "done-1", ExecutionState::Succeeded, json!({})).await;
+    announce::run_ended(
+        &world.repo,
+        &events,
+        &runner,
+        &AttemptId::new(&run.attempt_id),
+        &completed,
+    )
+    .await;
+    assert_eq!(events.events().len(), 1);
+}

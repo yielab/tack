@@ -4916,6 +4916,52 @@
         }
       }
     },
+    "/api/projects/{id}/routing": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "GET /api/projects/{id}/routing",
+        "operationId": "get_routing",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "For each open card of the project, the profile that would do it, where that choice came from, and the team or agent it runs in; or why nobody would take it. The same choice a run takes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Routed"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/boards": {
       "get": {
         "tags": [
@@ -5479,13 +5525,13 @@
         ],
         "responses": {
           "200": {
-            "description": "Item hierarchy (parents with nested children)",
+            "description": "Every item of the project, parents first, each parent with how far its children are",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Item"
+                    "$ref": "#/components/schemas/ItemNode"
                   }
                 }
               }
@@ -10701,6 +10747,34 @@
           "partly"
         ]
       },
+      "ChildrenProgress": {
+        "type": "object",
+        "description": "How far a parent item's children are: how many there are, how many are in a done status, and\nthe teams (or single agents) their latest runs went to.",
+        "required": [
+          "total",
+          "done",
+          "teams"
+        ],
+        "properties": {
+          "done": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Each team once, by name; a child run by a single agent counts as a team named for the agent."
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "CodeOrigin": {
         "type": "string",
         "enum": [
@@ -13673,6 +13747,17 @@
           {
             "type": "object",
             "properties": {
+              "children_progress": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChildrenProgress",
+                    "description": "How far the item's children are; `None` for an item without children, and on a read that\ndoes not work it out."
+                  }
+                ]
+              },
               "created_by": {
                 "type": [
                   "string",
@@ -13749,6 +13834,29 @@
             }
           }
         }
+      },
+      "ItemNode": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Item"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "children_progress": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChildrenProgress"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "An item of the tree, with how far its children are when it has any."
       },
       "ItemRef": {
         "oneOf": [
@@ -13849,7 +13957,7 @@
       },
       "Key": {
         "type": "string",
-        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`."
+        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`."
       },
       "Kind": {
         "type": "string",
@@ -13859,7 +13967,8 @@
           "run_failed",
           "change_set",
           "run_finished",
-          "due_soon"
+          "due_soon",
+          "children_finished"
         ]
       },
       "LatestHop": {
@@ -14164,6 +14273,17 @@
         "enum": [
           "accept",
           "reject"
+        ]
+      },
+      "NobodyReason": {
+        "type": "string",
+        "description": "Why nobody would take a card.",
+        "enum": [
+          "no_role",
+          "role_without_profile",
+          "profile_missing",
+          "team_not_reported",
+          "harness_not_reported"
         ]
       },
       "Notification": {
@@ -15892,6 +16012,65 @@
           "project_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "Routed": {
+        "type": "object",
+        "description": "The profile that would do one open card, and where it would run.",
+        "required": [
+          "item_id"
+        ],
+        "properties": {
+          "harness": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent the profile runs."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nobody": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NobodyReason",
+                "description": "Why nobody would take the card; `null` when someone would."
+              }
+            ]
+          },
+          "profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile chosen; `null` when nobody would take the card and none is chosen."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The role the profile came from; with `nobody` `role_without_profile`, the role that names\nnone."
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the choice came from: `run_settings` (chosen on the card), `role:<name>`,\n`project_default`, `implementer` (the built-in profile, when nothing else is named) or\n`ambiguous` (its roles name different profiles, so the project's default is used)."
+          },
+          "team": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The team the profile names; the card runs in it, or nobody takes it when no computer\nreports it. `null` for a profile that names none: the card runs in its single agent."
           }
         }
       },

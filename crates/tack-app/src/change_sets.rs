@@ -87,10 +87,10 @@ fn apply_failure(error: ApplyError) -> AppError {
     }
 }
 
-/// The team a profile names, from its tool policy.
+/// The team a profile names, from its tool policy text.
 fn team_of(tool_policy: &str) -> Option<String> {
     let policy: serde_json::Value = serde_json::from_str(tool_policy).unwrap_or_default();
-    policy["docket"]["team"].as_str().map(str::to_owned)
+    tack_core::run_defaults::named_team(&policy).map(|(team, _)| team)
 }
 
 /// Every id the operations name, plus the ones already made.

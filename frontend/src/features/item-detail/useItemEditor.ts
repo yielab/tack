@@ -49,7 +49,8 @@ export function useItemEditor(itemId: Accessor<string | undefined>) {
     if (!current) return;
     mutate({ ...current, ...p } as Item);
     try {
-      const updated = await api.items.update(current.id, p);
+      // Editing an item changes none of its children, and the answer to a PATCH does not count them.
+      const updated = { ...(await api.items.update(current.id, p)), children_progress: current.children_progress };
       mutate(updated);
       window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT, { detail: updated }));
     } catch (err) {

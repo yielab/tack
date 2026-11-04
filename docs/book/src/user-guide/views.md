@@ -38,7 +38,7 @@ Kanban columns driven by the project's workflow statuses.
 - **Move a card by keyboard.** Tab to the small arrow on a card, or hover the card to see it, and press Enter or Space to open **Move to…**. The arrow keys choose a column, Enter moves the card and the page announces where it went, and Escape closes the menu. Each column is a named region that scrolls inside itself: Tab into its list and use the arrow keys or Page Down to reach the last card, while the board's own scroll bar stays at the bottom of the screen.
 - **WIP limit** is shown in the column header when set. Dragging a card into a full column is blocked.
 - **Click a card** to open the item drawer (tabs Overview, Execution, Activity, Dependencies, Files and Fields; see [Working with Items](items.md)).
-- **A card reads top to bottom.** The title comes first. Under it one line says the card's **Work**: where its latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled** or **Not started**). Press it to open the task's Execution tab, or the run's question when it is asking one. Then come the team that ran it, the priority and the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** in Settings, under Display & accessibility, to show it on every card (this browser remembers the choice). The card's short id shows when you hover it and at the top of its **Move to…** menu.
+- **A card reads top to bottom.** The title comes first. Under it one line says the card's **Work**: where its latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled** or **Not started**). Press it to open the task's Execution tab, or the run's question when it is asking one. A card that is a parent adds a line under it, for example **1 of 2 children done · claude-code, saas-build**: how many of its sub-items are in a done status and the teams or agents their runs went to; the parent does not move when they finish. Then come the team that ran it, the priority and the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** in Settings, under Display & accessibility, to show it on every card (this browser remembers the choice). The card's short id shows when you hover it and at the top of its **Move to…** menu.
 - **Reading the work line.**
   - A run the verifier says to reject but that still waits for your look reads **Ready for review · verifier says reject**, in words, so the card does not read as plain good news.
   - A run turned away before the agent did anything (the computer refused it, or the team's level ceiling did) reads **Not started**, in neutral grey, and is not counted as failed.
@@ -116,8 +116,8 @@ task on its Execution tab (on the run's question when the run is asking).
 #### Nobody will take it
 
 When a task goes to no lane, a lane at the top, in the warning colour, lists it
-with the reason: it has no role and the project has no default profile, its role has no profile, the
-profile it uses no longer exists, or no computer reports the team its profile names. Each has the
+with the reason: there is no profile to fall back on (no profile chosen on the task, none on its role, none by default for the project and no built-in Implementer), its role has no profile, the
+profile it uses no longer exists, or no computer reports the team, or the agent, its profile names. A task goes where a run of it would go: the profile chosen on it, else the one its roles agree on, else the project's default. Each has the
 **Who does it** choice beside it, so a choice made there is saved on the task at once.
 
 #### Teams not used here

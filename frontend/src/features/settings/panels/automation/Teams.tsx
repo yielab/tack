@@ -1,13 +1,13 @@
 import { type Accessor, type Component, For, Show, createResource } from 'solid-js';
 import { api } from '../../../../shared/api';
 import type { AutonomySettings } from '../../../../shared/api/autonomy';
-import { SINGLE_AGENT_TEXT, fleetsApi, teamChoices, teamsApi, type AgentProfileSummary } from '../../../../shared/execution';
+import { SINGLE_AGENT_TEXT, fleetsApi, teamChoices, teamOf, teamsApi, type AgentProfileSummary } from '../../../../shared/execution';
 import { Button, HelpHint, LoadError } from '../../../../shared/ui';
 import { toast } from '../../../../shared/ui/toast';
 import { HELP } from '../../../../shared/help/texts';
 import { BOOK } from '../../../../shared/help/routes';
 import type { Project, Role } from '../../../../shared/types';
-import { Block, Heading, Note, inputStyle, teamOf } from './parts';
+import { Block, Heading, Note, inputStyle } from './parts';
 
 interface Props {
   roles: Accessor<Role[]>;

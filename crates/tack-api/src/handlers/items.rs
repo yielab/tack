@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::extract::{Json, Path, Query};
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -11,8 +13,10 @@ use validator::Validate;
 use tack_app::change_sets::{self, Mode, Proposal};
 use tack_app::events::{DomainEvent, Fact};
 use tack_core::change_set::{CreateOp, ItemRef, Operation, Origin};
-use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
+use tack_core::children;
+use tack_core::models::{ChildrenProgress, CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
 use tack_core::principal::Principal;
+use tack_db::queries;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_protocol::execution::StableErrorCode;
 
@@ -29,6 +33,34 @@ use crate::router::AppState;
 /// one's version counter.
 fn item_etag(id: Uuid, version: i64) -> String {
     format!("\"{id}-{version}\"")
+}
+
+/// How far each parent's children are, by parent, under the project's workflow.
+async fn progress_by_parent(
+    state: &AppState,
+    project_id: Uuid,
+) -> ApiResult<HashMap<Uuid, ChildrenProgress>> {
+    let project = state
+        .repo
+        .get_project(project_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
+    Ok(queries::children::of_project(&state.repo, project_id)
+        .await?
+        .into_iter()
+        .filter_map(|(parent, kids)| {
+            children::progress(&kids, &project.workflow).map(|progress| (parent, progress))
+        })
+        .collect())
+}
+
+/// An item of the tree, with how far its children are when it has any.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ItemNode {
+    #[serde(flatten)]
+    pub item: Item,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub children_progress: Option<ChildrenProgress>,
 }
 
 /// A stale `If-Match` answers 412 with the same `{"error": {status, message, code}}` envelope
@@ -139,7 +171,11 @@ pub async fn list_items(
     Path(project_id): Path<Uuid>,
     Query(filter): Query<ItemFilter>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let items = state.repo.list_items(project_id, &filter).await?;
+    let mut items = state.repo.list_items(project_id, &filter).await?;
+    let mut progress = progress_by_parent(&state, project_id).await?;
+    for card in &mut items {
+        card.children_progress = progress.remove(&card.item.id);
+    }
     let total = state.repo.count_items(project_id, &filter).await?;
     Ok(Json(serde_json::json!({
         "data": items,
@@ -165,11 +201,14 @@ pub async fn list_items(
     ),
 )]
 pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> ApiResult<Response> {
-    let snapshot = state
+    let mut snapshot = state
         .repo
         .get_item_snapshot(id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+    snapshot.item.children_progress = progress_by_parent(&state, snapshot.item.project_id)
+        .await?
+        .remove(&id);
 
     // Also fetch roles and dependencies for the detail view
     let roles = state.repo.get_roles_for_item(id).await?;
@@ -801,15 +840,25 @@ pub async fn create_subtasks_from_plan(
         ("project_id" = Uuid, Path, description = "Project ID"),
     ),
     responses(
-        (status = 200, description = "Item hierarchy (parents with nested children)", body = Vec<tack_core::models::Item>),
+        (status = 200, description = "Every item of the project, parents first, each parent with how far its children are", body = Vec<ItemNode>),
     ),
 )]
 pub async fn get_item_tree(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let items = state.repo.get_item_tree(project_id).await?;
-    Ok(Json(serde_json::to_value(items).unwrap()))
+    let mut progress = progress_by_parent(&state, project_id).await?;
+    let nodes: Vec<ItemNode> = state
+        .repo
+        .get_item_tree(project_id)
+        .await?
+        .into_iter()
+        .map(|item| ItemNode {
+            children_progress: progress.remove(&item.id),
+            item,
+        })
+        .collect();
+    Ok(Json(serde_json::to_value(nodes).unwrap()))
 }
 
 #[instrument(skip(state))]

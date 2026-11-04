@@ -144,7 +144,20 @@ describe('ItemBody', () => {
     const kids = container.querySelector('[data-testid="item-children"]')!;
     expect(kids.textContent).toContain('Sub-items');
     expect([...kids.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['First child', 'Second child']);
+    expect(container.querySelector('[data-testid="item-children-progress"]')).toBeNull();
     dispose();
+  });
+
+  it('a parent says how many of its children are done and which teams have them', async () => {
+    (ITEM as Record<string, unknown>).children_progress = { total: 2, done: 1, teams: ['saas-code'] };
+    projectItems = [ITEM, { ...ITEM, id: 'kid-1', parent_id: ITEM.id }, { ...ITEM, id: 'kid-2', parent_id: ITEM.id }];
+    try {
+      const { container, dispose } = await mount('drawer');
+      expect(container.querySelector('[data-testid="item-children-progress"]')?.textContent?.trim()).toBe('1 of 2 children done · saas-code');
+      dispose();
+    } finally {
+      delete (ITEM as Record<string, unknown>).children_progress;
+    }
   });
 
   it('an item with no run says who would do it, under its one Run with agent button', async () => {

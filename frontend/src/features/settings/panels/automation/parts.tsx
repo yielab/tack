@@ -59,5 +59,3 @@ export const inputStyle = {
   color: 'var(--color-text-primary)',
   'border-color': 'var(--color-border-medium)',
 } as const;
-
-export { teamOf } from '../../../../shared/execution';

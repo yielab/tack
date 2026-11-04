@@ -60,6 +60,11 @@ pub enum Fact {
         run: RunRef,
         decision_id: String,
     },
+    /// The last open run among a parent item's children ended. The parent's status is the
+    /// person's: nothing moves.
+    ChildrenFinished {
+        parent_id: Uuid,
+    },
     /// An agent proposed a change set; it waits for a person.
     ChangeSetProposed {
         change_set_id: String,

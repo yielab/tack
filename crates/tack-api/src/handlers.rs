@@ -24,6 +24,7 @@ pub mod notifications;
 pub mod outline;
 pub mod projects;
 pub mod roles;
+pub mod routing;
 pub mod runner_admin;
 pub mod runner_protocol;
 pub mod settings;

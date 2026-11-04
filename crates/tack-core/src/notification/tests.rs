@@ -97,6 +97,25 @@ fn a_run_that_finished_is_information_under_its_own_key() {
 }
 
 #[test]
+fn the_children_of_a_parent_finishing_is_information_under_the_parent() {
+    let parent = Uuid::from_u128(11);
+    let n = notice(&by(&runner(), Fact::ChildrenFinished { parent_id: parent })).expect("a notice");
+    assert_eq!((n.kind, n.level), (Kind::ChildrenFinished, Level::Info));
+    assert_eq!(n.key, Key::children(parent));
+    assert_eq!(n.key.as_str(), format!("children:{parent}"));
+    assert_eq!(n.kind.as_str(), "children_finished");
+    assert_eq!((n.item_id, n.request_id), (Some(parent), None));
+    assert_eq!(
+        notice(&by(
+            &Principal::operator("local"),
+            Fact::ChildrenFinished { parent_id: parent }
+        )),
+        None,
+        "what the operator caused never notifies the operator"
+    );
+}
+
+#[test]
 fn what_the_board_shows_already_is_no_notification() {
     let item_id = Uuid::from_u128(3);
     for fact in [
@@ -203,6 +222,9 @@ fn nothing_else_closes_anything() {
         Fact::RunWaiting { run: run() },
         Fact::ItemDeleted {
             item_id: Uuid::from_u128(3),
+        },
+        Fact::ChildrenFinished {
+            parent_id: Uuid::from_u128(11),
         },
         Fact::ChangeSetProposed {
             change_set_id: "cs-1".into(),

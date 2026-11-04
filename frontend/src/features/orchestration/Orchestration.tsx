@@ -6,6 +6,7 @@ import {
   agentProfilesApi,
   createExecutionRealtime,
   executionsApi,
+  routingApi,
   runnersApi,
   teamsApi,
   type AgentProfileSummary,
@@ -38,7 +39,6 @@ import {
   type Flow,
   type FlowFilter,
   type FlowScope,
-  type RoleProfile,
 } from './flow';
 import { buildCompare, buildMap, scopeOfNode } from './map';
 import { FlowUiContext, type FlowUi, type MoveSource } from './context';
@@ -179,17 +179,20 @@ const Orchestration: Component = () => {
   const teams = loader<TeamEntry[]>(() => teamsApi.list());
   const profiles = loader<AgentProfileSummary[]>(() => agentProfilesApi.list().then((r) => r.data.data ?? []));
   const roles = loader(() => api.roles.list(projectId()));
+  const routing = loader(() => routingApi.list(projectId()));
   const autonomy = loader<AutonomySettings | null>(() => api.autonomy.get(projectId()).catch(() => null));
   const runners = loader<RunnerSummary[] | null>(() => runnersApi.list().then((r) => r.data.data ?? [], () => null));
 
   const reload = () => {
     void runs.load();
     void teams.load();
+    void routing.load();
   };
   createEffect(() => {
     projectId();
     void runs.load();
     void teams.load();
+    void routing.load();
     void profiles.load();
     void roles.load();
     void autonomy.load();
@@ -236,9 +239,8 @@ const Orchestration: Component = () => {
   const statuses = createMemo(() => [...(project()?.workflow?.statuses ?? [])].sort((a, b) => a.order - b.order));
   const startStatus = () => project()?.auto_start_status ?? (statuses().find((s) => s.category === 'todo') ?? statuses()[0])?.name ?? null;
 
-  // The roles and blockers of the tasks that matter, read one task at a time and kept until it changes.
+  // The blockers of the tasks that matter, read one task at a time and kept until it changes.
   interface Detail {
-    roles: RoleProfile[];
     blockers: string[];
   }
   const [details, setDetails] = createSignal<ReadonlyMap<string, Detail>>(new Map());
@@ -253,7 +255,6 @@ const Orchestration: Component = () => {
         .then((d) =>
           setDetails((prior) =>
             new Map(prior).set(id, {
-              roles: (d.roles ?? []).map((r) => ({ name: r.name, profileId: r.agent_profile_id ?? null })),
               blockers: blockersOf(id, d.dependencies ?? []),
             }),
           ),
@@ -278,13 +279,13 @@ const Orchestration: Component = () => {
     pump();
   });
 
-  const ready = () => !!(items() && runs.value() && teams.value() && profiles.value());
+  const ready = () => !!(items() && runs.value() && teams.value() && profiles.value() && routing.value());
   const flow = createMemo<Flow | null>(() => {
     if (!ready()) return null;
     const d = details();
     return buildFlow({
       items: items()!,
-      roles: new Map([...d].map(([id, v]) => [id, v.roles])),
+      routing: new Map(routing.value()!.map((r) => [r.item_id, r])),
       blockers: new Map([...d].map(([id, v]) => [id, v.blockers])),
       runs: runs.value()!,
       profiles: profiles.value()!,

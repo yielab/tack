@@ -80,6 +80,8 @@ interface World {
   /** Dependency edges of each task, by id. */
   deps: Record<string, Json[]>;
   runners: Json[];
+  /** What `/routing` answers when the test says it differently from the rule `routing()` stands in for. */
+  routed?: Json[];
   patches: Array<{ id: string; body: Json }>;
   project: Json;
 }
@@ -108,6 +110,27 @@ function world(over: Partial<World> = {}): World {
   };
 }
 
+/** What the server's `/routing` answers for this world: the profile chosen on the task, else its first
+ *  role with one, else the project's default; nobody when none is named, gone, or its team is not reported. */
+function routing(w: World): Json[] {
+  const reported = new Set(w.teams.filter((t) => t.reported).map((t) => t.name));
+  return w.items
+    .filter((i) => i.status !== 'Done')
+    .map((i) => {
+      const roles = w.taskRoles[i.id as string] ?? [];
+      const own = (i.run_settings as { agent_profile_id?: string } | undefined)?.agent_profile_id;
+      const byRole = roles.find((r) => r.agent_profile_id);
+      const profileId = (own ?? byRole?.agent_profile_id ?? w.project.default_profile_id ?? null) as string | null;
+      const source = own ? 'run_settings' : byRole ? `role:${byRole.name}` : 'project_default';
+      const base = { item_id: i.id, profile_id: profileId, source: profileId ? source : null, role: (byRole?.name as string | undefined) ?? null, team: null, harness: null, nobody: null };
+      if (!profileId) return { ...base, role: (roles[0]?.name as string | undefined) ?? null, nobody: roles.length > 0 ? 'role_without_profile' : 'no_role' };
+      const found = w.profiles.find((p) => p.agent_profile_id === profileId) as { tool_policy: { agent?: string; docket?: { team?: string } } } | undefined;
+      if (!found) return { ...base, nobody: 'profile_missing' };
+      const named = found.tool_policy.docket?.team ?? null;
+      return { ...base, team: named, harness: found.tool_policy.agent ?? null, nobody: named && !reported.has(named) ? 'team_not_reported' : null };
+    });
+}
+
 async function settle() {
   for (let i = 0; i < 8; i += 1) await flush();
 }
@@ -129,6 +152,7 @@ async function mount(w: World) {
     }
     if (url.includes('/items?')) return json({ data: w.items, total: w.items.length, page: 1, per_page: 200 });
     if (url.includes('/executions?')) return json({ protocol_version: 1, data: w.runs });
+    if (url.endsWith('/routing')) return json(w.routed ?? routing(w));
     if (url.endsWith('/teams')) return json({ teams: w.teams });
     if (url.includes('/agent-profiles')) return json({ protocol_version: 1, data: w.profiles });
     if (url.endsWith('/roles')) return json(w.roles);
@@ -228,6 +252,20 @@ describe('Orchestration: lanes', () => {
     expect(q(idle, '[data-testid="flow-lane-toggle"]')!.getAttribute('aria-expanded')).toBe('false');
     expect(q(idle, '[data-testid="flow-station"]')).toBeNull();
     expect(q(c, '[data-lane="team:saas-notes"] [data-testid="flow-lane-toggle"]')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('draws_a_task_in_the_lane_the_routing_endpoint_names', async () => {
+    const w = threeLanes();
+    // Two roles that disagree: the server falls back to the project default, not to the first role.
+    w.items = [item('i-split', { status: 'To Do' }), w.items[1]];
+    w.runs = [w.runs[1]];
+    w.routed = [{ item_id: 'i-split', profile_id: 'notes-p', source: 'ambiguous', role: null, team: 'saas-notes', harness: 'docket', nobody: null }];
+    const c = await mount(w);
+    // An idle lane is folded; open it to see who stands in it.
+    q<HTMLButtonElement>(c, '[data-lane="team:saas-notes"] [data-testid="flow-lane-toggle"]')!.click();
+    await settle();
+    expect(q(c, '[data-lane="team:saas-notes"] [data-item-id="i-split"]')).not.toBeNull();
+    expect(q(c, '[data-lane="team:saas-code"] [data-item-id="i-split"]')).toBeNull();
   });
 
   it('puts_a_token_at_the_station_its_latest_hop_names', async () => {

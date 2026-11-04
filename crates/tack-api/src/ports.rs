@@ -133,6 +133,7 @@ fn board_message(event: &DomainEvent) -> Option<BoardEvent> {
         | Fact::RunWaiting { .. }
         | Fact::DecisionOpened { .. }
         | Fact::DecisionResolved { .. }
+        | Fact::ChildrenFinished { .. }
         | Fact::ChangeSetProposed { .. }
         | Fact::ChangeSetSettled { .. } => return None,
     })

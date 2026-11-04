@@ -248,6 +248,8 @@ async fn happened_of(
             format!("change set {change_set_id}"),
             None,
         ),
+        // A summary of runs the triggers have already seen one by one.
+        Fact::ChildrenFinished { .. } => return Ok(None),
     };
     if let Some(item) = item
         && repo.item_is_hidden(item).await?

@@ -311,3 +311,101 @@ async fn a_change_set_waits_in_the_inbox_until_it_is_settled() {
     assert_eq!(fx.reconcile().await.closed, 1);
     assert!(fx.keys().await.is_empty());
 }
+
+#[tokio::test]
+async fn the_last_open_run_among_a_parents_children_opens_one_info_notification_for_the_parent() {
+    use crate::common::FakeClock;
+    use tack_app::runs::announce;
+    use tack_app::runs::complete::{CompletionReport, complete};
+    use tack_core::models::CreateItem;
+    use tack_protocol::execution::{AttemptId, CompletionId, RunnerId};
+    use tack_test_support::completion::{actual_execution, terminal_reason_of, usage_not_measured};
+
+    let fx = fixture().await;
+    let status_before = fx
+        .world
+        .repo
+        .get_item(fx.item)
+        .await
+        .unwrap()
+        .unwrap()
+        .status;
+    let bus = EventBus::default();
+    let mut receiver = bus.subscribe();
+    let runner = Principal::runner(RUNNER_ID);
+    let child = |title: &'static str| {
+        let (repo, clock) = (fx.world.repo.clone(), fx.world.clock.0.clone());
+        async move {
+            let item = repo
+                .create_item(
+                    fx.project,
+                    "To Do",
+                    CreateItem {
+                        title: title.into(),
+                        parent_id: Some(fx.item),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            World {
+                repo,
+                clock: FakeClock(clock),
+                item_id: item.id.to_string(),
+            }
+        }
+    };
+    let (first, second) = (child("first").await, child("second").await);
+    let runs = [
+        (running_attempt(&first, "kid-a").await, "done-a"),
+        (running_attempt(&second, "kid-b").await, "done-b"),
+    ];
+
+    for (index, (run, completion)) in runs.iter().enumerate() {
+        async fn no_pack(_reference: String) -> Option<tack_protocol::mrp::MergeReadinessPack> {
+            None
+        }
+        let attempt = AttemptId::new(&run.attempt_id);
+        let completed = complete(
+            &fx.world.repo,
+            fx.world.clock.now(),
+            CompletionReport {
+                runner_id: &RunnerId::new(RUNNER_ID),
+                attempt_id: &attempt,
+                fencing_token: run.fence,
+                completion_id: &CompletionId::new(*completion),
+                final_event_checkpoint: None,
+                terminal_state: ExecutionState::Succeeded,
+                terminal_reason: &terminal_reason_of(serde_json::json!({})),
+                actual_execution: &actual_execution(),
+                usage: &usage_not_measured(),
+            },
+            no_pack,
+        )
+        .await
+        .unwrap();
+        announce::run_ended(&fx.world.repo, &bus, &runner, &attempt, &completed).await;
+        drain(&fx.world.repo, &fx.inbox, &mut receiver).await;
+        let parent_told = fx
+            .keys()
+            .await
+            .contains(&Key::children(fx.item).to_string());
+        assert_eq!(parent_told, index == 1, "told after run {index}");
+    }
+
+    let opened = fx.inbox.open_notifications(100).await.unwrap();
+    let told = opened
+        .iter()
+        .find(|n| n.kind == Kind::ChildrenFinished)
+        .expect("the parent was told");
+    assert_eq!((told.level, told.item_id), (Level::Info, Some(fx.item)));
+    let status_after = fx
+        .world
+        .repo
+        .get_item(fx.item)
+        .await
+        .unwrap()
+        .unwrap()
+        .status;
+    assert_eq!(status_after, status_before, "the parent did not move");
+}

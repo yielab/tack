@@ -27,6 +27,8 @@ pub enum Kind {
     RunFinished,
     /// An item is due within the hour.
     DueSoon,
+    /// No child of a parent item has a run open any more.
+    ChildrenFinished,
 }
 
 impl Kind {
@@ -37,6 +39,7 @@ impl Kind {
             Kind::ChangeSet => "change_set",
             Kind::RunFinished => "run_finished",
             Kind::DueSoon => "due_soon",
+            Kind::ChildrenFinished => "children_finished",
         }
     }
 }
@@ -63,7 +66,7 @@ impl Level {
 
 /// The situation a notification is about, so the same situation is never open twice and the
 /// fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`.
+/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -90,6 +93,11 @@ impl Key {
     /// One item is announced once for the day it falls due.
     pub fn due(item_id: Uuid, due: DateTime<Utc>) -> Key {
         Key(format!("due:{item_id}:{}", due.format("%Y-%m-%d")))
+    }
+
+    /// The runs of a parent's children have all ended; said again each time they do.
+    pub fn children(parent_id: Uuid) -> Key {
+        Key(format!("children:{parent_id}"))
     }
 
     /// The key as it is stored.
@@ -184,6 +192,14 @@ pub fn notice(event: &DomainEvent) -> Option<Notice> {
             Some(run.item_id),
             Some(run.request_id.clone()),
             "A run finished",
+        ),
+        Fact::ChildrenFinished { parent_id } => (
+            Kind::ChildrenFinished,
+            Level::Info,
+            Key::children(*parent_id),
+            Some(*parent_id),
+            None,
+            "The children of this card have finished",
         ),
         Fact::ItemCreated { .. }
         | Fact::ItemUpdated { .. }

@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (122 paths, 166 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (123 paths, 167 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -104,6 +104,19 @@ start
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Whether the project starts tasks by itself and why each waiting task is not started yet | `AutoStartState` |
+| 404 | No such project | `ErrorEnvelope` |
+
+#### `GET /api/projects/{id}/routing`
+
+GET /api/projects/{id}/routing
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | For each open card of the project, the profile that would do it, where that choice came from, and the team or agent it runs in; or why nobody would take it. The same choice a run takes | `Routed`[] |
 | 404 | No such project | `ErrorEnvelope` |
 
 ---
@@ -531,7 +544,7 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Item hierarchy (parents with nested children) | `Item`[] |
+| 200 | Every item of the project, parents first, each parent with how far its children are | `ItemNode`[] |
 
 ---
 

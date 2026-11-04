@@ -56,12 +56,9 @@ pub struct TeamList {
     pub teams: Vec<TeamEntry>,
 }
 
-/// A profile's team and agent, as its tool policy stores them.
+/// A profile's team and agent, as its tool policy text stores them.
 fn named_team(tool_policy: &str) -> Option<(String, Option<String>)> {
-    let policy: Value = serde_json::from_str(tool_policy).ok()?;
-    let team = policy.get("docket")?.get("team")?.as_str()?;
-    let agent = policy.get("agent").and_then(Value::as_str);
-    (!team.is_empty()).then(|| (team.to_owned(), agent.map(str::to_owned)))
+    tack_core::run_defaults::named_team(&serde_json::from_str(tool_policy).ok()?)
 }
 
 /// Whether a profile's role reaches the network, as its tool policy stores it.

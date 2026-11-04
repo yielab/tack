@@ -12,6 +12,7 @@ import {
   teamProposes,
   SHARED_PROPOSALS_TEXT,
   stepText,
+  supervisionText,
   type AgentCapabilityLine,
   type TeamEntry,
   type TeamStep,
@@ -290,6 +291,9 @@ const TeamCard: Component<TeamCardProps> = (props) => {
         </div>
 
         <dl class="flex flex-col gap-1.5 pt-2.5" style={HAIRLINE}>
+          <Rule id="supervision" label="Supervision" agent={agent()} value={supervisionText(report()?.profile)}>
+            {(supervision) => supervision}
+          </Rule>
           <Rule id="decides" label="Runs" agent={agent()} value={report()?.decides}>
             {(decides) => (
               <>
