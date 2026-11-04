@@ -43,6 +43,10 @@ of `specs/api/operator-api.spec.md`, or a model in docket's source, always with 
 Its values are made up or are those of the capture it is built from. No constructed file has a
 key the spec or the source does not list. The build is a one-off (the files are not rewritten
 by the script); a constructed file is replaced by a capture when the script can produce it.
+The keys of the ones that need only a model's reply (a finished task, a running one, the task list
+and its cursor, a consult of several questions, the hop events) are compared with a real docket's by
+`scripts/compare-constructed-docket-fixtures.py`, which runs docket's own end-to-end world on a
+scripted model; its `checked:` line says when.
 
 ## What `tests/fake_docket/` does with them
 

@@ -9,3 +9,4 @@ request: {"optionId":"redis","content":{"note":"the cluster is already deployed"
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
 date: 2026-10-26
 note: an answer to a consult that names an option and carries content; not captured, because docket sends it only while a model runs or a person answers one; every key is one docket writes, the values are made up, or come from the capture or the recording it is built from. The request is in this line because Tack sends it and no capture can: only the escalation-accepted capture holds a request file. It is where the fake learns that an answer may carry content, and that optionId may be left out: the spec lets an input be answered in text alone.
+checked: the keys equal those of a real run of docket 0.3.0b1 (source checkout 1d180651), found by scripts/compare-constructed-docket-fixtures.py on 2026-11-04

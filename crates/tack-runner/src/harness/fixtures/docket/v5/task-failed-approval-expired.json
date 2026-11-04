@@ -48,6 +48,5 @@
   "failureKind": "approval_expired",
   "pendingApprovalIndex": null,
   "hops": [],
-  "costUsd": 0.0,
   "tokenBudget": 1000
 }

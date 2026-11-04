@@ -2374,24 +2374,28 @@ fn cancel_task(state: &mut World, pod: &str, id: &str) -> Response {
 }
 
 /// `POST /tasks/<pod>/<id>/retry`: re-runs the step a task stopped at (its own budget exhausted)
-/// and continues the same session — the same one task, never a new one. `409` when the task is
-/// already `pending` or `running`: the retry was already sent, and the caller follows the task as
-/// it is rather than sending another.
+/// and continues the same session — the same one task, never a new one. Only a `failed` or
+/// `blocked` task is retried; any other is `409` with docket's sentence, and for a task already
+/// `pending` or `running` that means the retry was already sent, so the caller follows the task
+/// as it is rather than sending another.
 fn retry_task(state: &mut World, pod: &str, id: &str) -> Response {
     if state.without_retry_continues {
         return error(404, "the fake: this docket does not serve /retry");
     }
     let Some(index) = state.tasks.iter().position(|t| t.pod == pod && t.id == id) else {
         return refusal(
-            "task-cancel-unknown",
+            "post-task-retry-unknown",
             &[("saas-dev", pod), ("task-unknown", id)],
         );
     };
     let status = state.tasks[index].status.clone();
-    if matches!(status.as_str(), "pending" | "running") {
-        return error(
-            409,
-            "the task is already running; the retry was already sent",
+    if !matches!(status.as_str(), "failed" | "blocked") {
+        return refusal(
+            "post-task-retry-refused",
+            &[
+                ("task-00000000-0000-0000-0000-000000000000", id),
+                ("waiting_approval", &status),
+            ],
         );
     }
     let script = state.next_retry_script.take().unwrap_or_else(|| Script {

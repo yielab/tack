@@ -6,3 +6,4 @@ docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
 date: 2026-10-26
 note: not captured, because a task would have to run on a model (or a person would have to answer) for docket to send it; the keys are the ones docket's code writes, the values are made up.
 line: each event is a string holding one JSON line, as docket sends them.
+checked: the keys equal those of a real run of docket 0.3.0b1 (source checkout 1d180651), found by scripts/compare-constructed-docket-fixtures.py on 2026-11-04

@@ -111,7 +111,11 @@ in-process fake of docket's API that answers each route from a file under `fixtu
 (a capture from a real docket, or an answer marked `constructed` because a model would have to
 run for docket to send it) and answers `400` to a request key no captured request has.
 `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway
-home with no model (rerun it when docket changes, and commit the diff). `tests/docket_v5.rs`
+home with no model (rerun it when docket changes, and commit the diff).
+`scripts/compare-constructed-docket-fixtures.py` checks the `constructed` ones: it runs docket's own
+end-to-end world (a real `docket start --dispatch` and git repository, a scripted model on loopback,
+nothing spent) and compares the keys of a finished task, a running one, the task list and its
+cursor, a consult of several questions and the hop events with what the fixtures hold. `tests/docket_v5.rs`
 fails when a route the client sends has no capture, and the daemon's supervision is proved
 against a shell script on a scratch path that serves `/health`. No test runs a real docket or a
 model. The fake has one variant of an older docket, `before_task_scope()`: no `scope` on a record
@@ -392,7 +396,9 @@ with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`. It co
 docket's tests against the captures, so a key that docket sends and the fake does not, or the
 reverse, fails by name. It exits non-zero when anything drifted. What a capture cannot reach stays
 `constructed`, and its provenance says why: it needs a model's reply, an agent's call that leaves
-the machine, or a deadline of docket's that is hours long.
+the machine, or a deadline of docket's that is hours long. The constructed answers that need only a
+model's reply are checked by `scripts/compare-constructed-docket-fixtures.py`, which `--check` does
+not run: run it with docket's own interpreter (`$DOCKET_SRC/.venv/bin/python -B`) after a capture.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it

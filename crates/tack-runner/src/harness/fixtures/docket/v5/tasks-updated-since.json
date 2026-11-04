@@ -2,67 +2,103 @@
   "tasks": [
     {
       "id": "task-11111111-1111-1111-1111-111111111111",
-      "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
+      "description": "Capture only: a task started at the CLI.",
       "priority": "normal",
       "created": "2026-01-01T00:00:00Z",
       "channel": "cli",
-      "brief": {
-        "objective": "Capture only",
-        "acceptance": [
-          "nothing"
-        ],
-        "context": [],
-        "constraints": [
-          "nothing"
-        ],
-        "assumptions": [],
-        "questions": [],
-        "resources": [],
-        "expectedRiskyActions": [],
-        "answers": []
-      },
-      "idempotencyKey": "capture-attempt-1",
-      "baseRef": "main",
-      "pipeline": "no-such-pipeline",
-      "gate": {
-        "command": "true",
-        "timeoutS": 600
-      },
-      "maxTokens": 1000,
-      "restrictions": {
-        "deniedTools": [
-          "bash"
-        ],
-        "network": "none"
-      },
-      "autonomy": "L3",
+      "rev": 24,
       "status": "running",
       "startedAt": "2026-01-01T00:00:00Z",
       "completedAt": null,
       "claimedAt": "2026-01-01T00:00:00Z",
+      "claimPid": 0,
       "reason": "",
       "pendingApprovalIndex": null,
-      "hops": [],
-      "costUsd": 0.0,
-      "worktree": {
-        "dir": "/scratch/home/.docket/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
-        "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
-        "baseCommit": "0000000000000000000000000000000000000000",
-        "baseRef": "main",
-        "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
-        "commonDir": "/scratch/repo/.git"
-      },
-      "tokenBudget": 1000,
-      "rev": 8,
       "current": {
-        "stepId": "implementer",
+        "stepId": "implement",
         "role": "implementer",
-        "member": "saas-dev-implementer",
-        "model": "local/local-model",
+        "member": "e2e-implementer",
+        "model": "anthropic/claude-sonnet-5-5",
         "startedAt": "2026-01-01T00:00:00Z",
         "cycle": 0
-      }
+      },
+      "hops": [
+        {
+          "role": "lead",
+          "member": "e2e-lead",
+          "ok": true,
+          "output": "Plan.",
+          "error": "",
+          "attempts": 1,
+          "stepId": "plan",
+          "artifact": {
+            "summary": "Plan.",
+            "files_changed": [],
+            "diff_ref": null,
+            "diff": "",
+            "verdict": null,
+            "brief": null
+          },
+          "nextStep": null,
+          "parked": false,
+          "verify": null,
+          "evidence": null,
+          "usage": {
+            "input": 629,
+            "cached": 0,
+            "cacheWrite": 0,
+            "output": 1
+          },
+          "trace": {
+            "project": "e2e",
+            "session": "agent:e2e:task-11111111-1111-1111-1111-111111111111",
+            "firstTs": "2026-01-01T00:00:00Z",
+            "lastTs": "2026-01-01T00:00:00Z"
+          },
+          "repoFiles": null,
+          "model": "anthropic/claude-haiku-5-5",
+          "provider": "anthropic",
+          "startedAt": "2026-01-01T00:00:00Z",
+          "finishedAt": "2026-01-01T00:00:00Z",
+          "cycle": 0,
+          "promptManifest": {
+            "layers": [
+              {
+                "layer": "identity",
+                "name": "lead",
+                "version": "1.1.0",
+                "sha256": "7fc6794fc418c74e6b156e95d8ee382b23e093c6d114230074faa7d80af3e25f",
+                "scope": "shipped",
+                "tokens": 220
+              },
+              {
+                "layer": "hop",
+                "name": "lead",
+                "version": "1.0.0",
+                "sha256": "2df7c458fd5d7ab6cdc4954307888ef16ac6cc25dd76df0db340c2c3a1b92107",
+                "scope": "shipped",
+                "tokens": 28
+              }
+            ],
+            "model": "anthropic/claude-haiku-5-5",
+            "family": "anthropic",
+            "class": "any",
+            "profile": "hosted"
+          }
+        }
+      ],
+      "worktree": {
+        "dir": "/scratch/home/.docket/state/workspaces/projects/e2e-implementer/tasks/task-11111111-1111-1111-1111-111111111111",
+        "branch": "docket/e2e/task-11111111-1111-1111-1111-111111111111",
+        "baseCommit": "0000000000000000000000000000000000000000",
+        "baseRef": "main",
+        "gitDir": "/scratch/repo/.git/worktrees/task-11111111-1111-1111-1111-111111111111",
+        "commonDir": "/scratch/repo/.git"
+      },
+      "pipelineSource": "default",
+      "gateApplied": true,
+      "tokenBudget": 99370
     }
   ],
-  "next": "8"
+  "next": "24"
 }

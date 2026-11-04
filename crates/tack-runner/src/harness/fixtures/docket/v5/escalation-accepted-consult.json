@@ -65,5 +65,9 @@
     "options": [],
     "acceptsText": true,
     "resolveUrl": "/escalations/esc-000000000000"
+  },
+  "part": {
+    "index": 1,
+    "count": 1
   }
 }

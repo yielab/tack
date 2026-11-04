@@ -1,40 +1,45 @@
 {
   "id": "task-00000000-0000-0000-0000-000000000000",
-  "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
+  "description": "Make app.txt say fixed",
   "priority": "normal",
   "created": "2026-01-01T00:00:00Z",
   "channel": "http",
-  "brief": {
-    "objective": "Capture only",
+  "task": {
+    "objective": "Make app.txt say fixed",
+    "doneWhen": "app.txt says fixed",
     "acceptance": [
-      "nothing"
+      "it says fixed"
     ],
-    "context": [],
     "constraints": [
-      "nothing"
+      "none"
     ],
-    "assumptions": [],
-    "questions": [],
-    "resources": [],
-    "expectedRiskyActions": [],
-    "answers": []
+    "risk": "low",
+    "answers": [
+      {
+        "question": "Which file?",
+        "answer": "app.txt"
+      }
+    ],
+    "kind": "Feature",
+    "paths": [
+      "app.txt"
+    ]
   },
-  "externalRef": "capture-item/attempt-1",
-  "idempotencyKey": "capture-attempt-1",
+  "externalRef": "done-1/attempt-1",
+  "idempotencyKey": "done-1",
   "baseRef": "main",
-  "pipeline": "no-such-pipeline",
   "gate": {
     "command": "true",
     "timeoutS": 600
   },
-  "maxTokens": 1000,
+  "maxTokens": 100000,
   "restrictions": {
     "deniedTools": [
       "bash"
-    ],
-    "network": "none"
+    ]
   },
   "autonomy": "L3",
+  "rev": 15,
   "status": "done",
   "startedAt": "2026-01-01T00:00:00Z",
   "completedAt": "2026-01-01T00:00:00Z",
@@ -43,16 +48,15 @@
   "pendingApprovalIndex": null,
   "hops": [
     {
-      "role": "implementer",
-      "member": "saas-dev-implementer",
+      "role": "lead",
+      "member": "e2e-lead",
       "ok": true,
-      "output": "",
-      "costUsd": 0.0,
+      "output": "Plan: fix app.txt.",
       "error": "",
       "attempts": 1,
-      "stepId": "implementer",
+      "stepId": "plan",
       "artifact": {
-        "summary": "",
+        "summary": "Plan: fix app.txt.",
         "files_changed": [],
         "diff_ref": null,
         "diff": "",
@@ -64,44 +68,238 @@
       "verify": null,
       "evidence": null,
       "usage": {
-        "input": 1000,
+        "input": 629,
         "cached": 0,
         "cacheWrite": 0,
-        "output": 200
+        "output": 4
       },
       "trace": {
-        "project": "saas-dev",
-        "session": "agent:saas-dev:task-00000000-0000-0000-0000-000000000000",
+        "project": "e2e",
+        "session": "agent:e2e:task-00000000-0000-0000-0000-000000000000",
         "firstTs": "2026-01-01T00:00:00Z",
         "lastTs": "2026-01-01T00:00:00Z"
       },
-      "repoFiles": {},
-      "model": "local/local-model",
-      "provider": "local"
+      "repoFiles": null,
+      "model": "anthropic/claude-haiku-5-5",
+      "provider": "anthropic",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
+      "promptManifest": {
+        "layers": [
+          {
+            "layer": "identity",
+            "name": "lead",
+            "version": "1.1.0",
+            "sha256": "7fc6794fc418c74e6b156e95d8ee382b23e093c6d114230074faa7d80af3e25f",
+            "scope": "shipped",
+            "tokens": 220
+          },
+          {
+            "layer": "hop",
+            "name": "lead",
+            "version": "1.0.0",
+            "sha256": "2df7c458fd5d7ab6cdc4954307888ef16ac6cc25dd76df0db340c2c3a1b92107",
+            "scope": "shipped",
+            "tokens": 28
+          }
+        ],
+        "model": "anthropic/claude-haiku-5-5",
+        "family": "anthropic",
+        "class": "any",
+        "profile": "hosted"
+      }
+    },
+    {
+      "role": "implementer",
+      "member": "e2e-implementer",
+      "ok": true,
+      "output": "Done.",
+      "error": "",
+      "attempts": 1,
+      "stepId": "implement",
+      "artifact": {
+        "summary": "Done.",
+        "files_changed": [
+          "app.txt"
+        ],
+        "diff_ref": "docket/e2e/task-00000000-0000-0000-0000-000000000000",
+        "diff": "diff --git a/app.txt b/app.txt\nindex 57f89ed..eaaa2f8 100644\n--- a/app.txt\n+++ b/app.txt\n@@ -1 +1 @@\n-broken\n+fixed\n",
+        "verdict": null,
+        "brief": null
+      },
+      "nextStep": null,
+      "parked": false,
+      "verify": {
+        "cmd": "true",
+        "exitCode": 0,
+        "durationS": 0.008,
+        "outputTail": "",
+        "label": "pass",
+        "source": "task",
+        "reasonsInvalid": false
+      },
+      "evidence": {
+        "commit": "0000000000000000000000000000000000000000",
+        "baseCommit": "0000000000000000000000000000000000000000",
+        "diffStat": {
+          "files": 1,
+          "insertions": 1,
+          "deletions": 1
+        }
+      },
+      "usage": {
+        "input": 1466,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 11
+      },
+      "trace": {
+        "project": "e2e",
+        "session": "agent:e2e:task-00000000-0000-0000-0000-000000000000",
+        "firstTs": "2026-01-01T00:00:00Z",
+        "lastTs": "2026-01-01T00:00:00Z"
+      },
+      "repoFiles": null,
+      "model": "anthropic/claude-sonnet-5-5",
+      "provider": "anthropic",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
+      "promptManifest": {
+        "layers": [
+          {
+            "layer": "identity",
+            "name": "implementer",
+            "version": "1.1.0",
+            "sha256": "057997f776c62cc255dcb8c7c7166a67bfe3150e256cefeb41d2b7ac76b174eb",
+            "scope": "shipped",
+            "tokens": 232
+          },
+          {
+            "layer": "task",
+            "name": "task",
+            "version": "",
+            "sha256": "5bfda677da8bffc97fad97c8d8d9a76f230ece893ec8d96aed6d223fd602c24d",
+            "scope": "task",
+            "tokens": 95
+          },
+          {
+            "layer": "hop",
+            "name": "implementer",
+            "version": "1.0.0",
+            "sha256": "ae0f12ed58fdeeece3386467a9c4781c161ead7f37e925c07a48052b9621e379",
+            "scope": "shipped",
+            "tokens": 15
+          }
+        ],
+        "model": "anthropic/claude-sonnet-5-5",
+        "family": "anthropic",
+        "class": "any",
+        "profile": "hosted"
+      }
+    },
+    {
+      "role": "reviewer",
+      "member": "e2e-reviewer",
+      "ok": true,
+      "output": "APPROVE",
+      "error": "",
+      "attempts": 1,
+      "stepId": "review",
+      "artifact": {
+        "summary": "APPROVE",
+        "files_changed": [],
+        "diff_ref": null,
+        "diff": "",
+        "verdict": "approve",
+        "brief": null
+      },
+      "nextStep": null,
+      "parked": false,
+      "verify": null,
+      "evidence": null,
+      "usage": {
+        "input": 886,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 1
+      },
+      "trace": {
+        "project": "e2e",
+        "session": "agent:e2e:task-00000000-0000-0000-0000-000000000000",
+        "firstTs": "2026-01-01T00:00:00Z",
+        "lastTs": "2026-01-01T00:00:00Z"
+      },
+      "repoFiles": null,
+      "model": "anthropic/claude-sonnet-5-5",
+      "provider": "anthropic",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
+      "promptManifest": {
+        "layers": [
+          {
+            "layer": "identity",
+            "name": "reviewer",
+            "version": "1.0.0",
+            "sha256": "cc3e76251af9dc67171185aa819b6f59ff08c61c509b865ce17e9186cbeb777c",
+            "scope": "shipped",
+            "tokens": 279
+          },
+          {
+            "layer": "task",
+            "name": "task",
+            "version": "",
+            "sha256": "5bfda677da8bffc97fad97c8d8d9a76f230ece893ec8d96aed6d223fd602c24d",
+            "scope": "task",
+            "tokens": 95
+          },
+          {
+            "layer": "hop",
+            "name": "reviewer",
+            "version": "1.0.0",
+            "sha256": "84111376ef7bf928167e1df25eff4b97fcc1fd859afc545a0ce4b5d560d5934c",
+            "scope": "shipped",
+            "tokens": 51
+          }
+        ],
+        "model": "anthropic/claude-sonnet-5-5",
+        "family": "anthropic",
+        "class": "any",
+        "profile": "hosted"
+      }
     }
   ],
-  "costUsd": 0.0,
   "worktree": {
-    "dir": "/scratch/home/.docket/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
-    "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
+    "dir": "/scratch/home/.docket/state/workspaces/projects/e2e-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/e2e/task-00000000-0000-0000-0000-000000000000",
     "baseCommit": "0000000000000000000000000000000000000000",
     "baseRef": "main",
     "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
     "commonDir": "/scratch/repo/.git"
   },
-  "tokenBudget": 1000,
+  "pipelineSource": "default",
+  "gateApplied": true,
   "usage": {
-    "input": 1000,
+    "input": 2981,
     "cached": 0,
     "cacheWrite": 0,
-    "output": 200,
+    "output": 16,
     "byModel": {
-      "local/local-model": {
-        "input": 1000,
+      "anthropic/claude-haiku-5-5": {
+        "input": 629,
         "cached": 0,
         "cacheWrite": 0,
-        "output": 200
+        "output": 4
+      },
+      "anthropic/claude-sonnet-5-5": {
+        "input": 2352,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 12
       }
     }
-  }
+  },
+  "tokenBudget": 97003
 }

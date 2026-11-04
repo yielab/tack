@@ -195,6 +195,7 @@ rec() {
     /pods/*/records) route=/pods/'<pod>'/records ;;
     /pods/*) route=/pods/'<pod>' ;;
     /tasks/*/*/cancel) route=/tasks/'<pod>'/'<id>'/cancel ;;
+    /tasks/*/*/retry) route=/tasks/'<pod>'/'<id>'/retry ;;
     /tasks/*/*/diff) route=/tasks/'<pod>'/'<id>'/diff ;;
     /tasks/*/*) route=/tasks/'<pod>'/'<id>' ;;
     /tasks/*) route=/tasks/'<pod>' ;;
@@ -325,6 +326,7 @@ rec traces-after-failure GET /traces/saas-dev yes "the events of the tasks refus
 rec task-unknown GET /tasks/saas-dev/task-unknown yes "a task docket does not know"; expect 404 task-unknown
 OPTIONAL_KEYS=actor rec task-cancel-unknown POST /tasks/saas-dev/task-unknown/cancel yes "cancel of a task docket does not know" --body '{"reason":"the capture","actor":"tack"}'; expect 404 cancel-unknown
 rec task-diff-unknown GET /tasks/saas-dev/task-unknown/diff yes "the diff of a task docket does not know"; expect 404 diff-unknown
+rec post-task-retry-unknown POST /tasks/saas-dev/task-unknown/retry yes "retry of a task docket does not know" ; expect 404 retry-unknown
 
 # trace_cursor: docket holds back the events of the last second, so wait it out, then print the
 # cursor a read of the team's events would end on; a later read from it holds only what came after.
@@ -366,6 +368,7 @@ rec escalation-pending GET "/escalations/$ESC_ID" yes "the one record of a pendi
 rec escalations-task-since GET "/escalations?since=$NEXT&task=$GATED_ID" yes "the cursor and the task filter together: nothing newer, next equal to since"; expect 200 escalations-since
 [ "$(jq '.escalations | length' <<<"$LAST_BODY")" = 0 ] || die "the cursor returned a record: $LAST_BODY"
 rec task-waiting-escalation GET "/tasks/saas-dev/$GATED_ID" yes "a task waiting on an escalation: escalations lists the ids opened for it, and the keys of the retired shapes are gone"; expect 200 task-waiting
+rec post-task-retry-refused POST "/tasks/saas-dev/$GATED_ID/retry" yes "retry of a task that is not blocked or failed (here one waiting on a person; a pending, running or done task answers the same): 409, the sentence in error; Tack takes it as 'the retry was already sent' and follows the task" ; expect 409 retry-refused
 
 OPTIONAL_KEYS=content rec escalation-unknown POST /escalations/esc-000000000000 yes "an answer to an escalation docket does not know" \
   --body '{"optionId":"approve_once","actor":"tack"}'; expect 404 escalation-unknown
@@ -517,6 +520,13 @@ wait_for saas-notes "$PREPARE_ID" failed
 rec task-failed-prepare-folder GET "/tasks/saas-notes/$PREPARE_ID" yes "a task with a prepare for a team in a folder, settled failed before any hop: failureKind prepare"; expect 200 task-prepare-folder
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = prepare ] || die "the folder task failed, but not on its prepare: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
+
+# ── A retry of a failed task: no body, back to pending, nothing spent ───────────
+# The retry clears failureKind and reason and queues the task again; the folder team's claim refuses
+# the same `prepare` once more, so the task is failed again before the next capture reads it.
+rec post-task-retry POST "/tasks/saas-notes/$PREPARE_ID/retry" yes "a failed task retried: 200, status pending, the task id; the next run starts at the step whose hop failed and continues its session (retryContinues), here a task refused at claim that is refused again" ; expect 200 retry
+[ "$(jq -r '.status' <<<"$LAST_BODY")" = pending ] || die "the retry did not queue the task: $LAST_BODY"
+wait_for saas-notes "$PREPARE_ID" failed
 
 # ── Record sets that belong to a task, and what each member of a team reaches: no model ────────
 # A team that plans declares `tack_proposals` with `scope: task` (onboarding-lab/skill/references/

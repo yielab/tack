@@ -17,7 +17,12 @@
     "podWorkDir",
     "podFetch",
     "capabilityMissing",
-    "consultParts"
+    "consultParts",
+    "pipelineChecked",
+    "podShape",
+    "podContract",
+    "podResume",
+    "memoryStatus"
   ],
   "dispatch": {
     "on": true,
