@@ -27,7 +27,7 @@ file that was refused, are in the [User Guide's troubleshooting page](../user-gu
 | docket shows as absent, or the daemon is not started | [docket is absent and the daemon does not start](#docket-is-absent-and-the-daemon-does-not-start) |
 | A team is reported as attended and tasks stay at L3 | [A team is attended](#a-team-is-attended) |
 | A docket run is running and nothing moves, and the timeline says the team is paused | [A team is paused](#a-team-is-paused) |
-| A docket run ends **Not started** with "Not sent to docket", or Agents → Teams says a profile is refused on a team | [A team cannot do what the run needs](#a-team-cannot-do-what-the-run-needs) |
+| A run ends **Not started** with "Not sent to docket" or "is not signed in on the runner", or Agents → Teams says a profile is refused on a team | [A team cannot do what the run needs](#a-team-cannot-do-what-the-run-needs) |
 | A queued run shows "Waiting: …", or failed after thirty minutes | [A queued run says why it waits](#a-queued-run-says-why-it-waits) |
 | Projects with auto-start on never start a task | [Auto-start does not tick](#auto-start-does-not-tick) |
 | A run shows "Needs operator" and says the computer stopped answering | [A run says the computer stopped answering](#a-run-says-the-computer-stopped-answering) |
@@ -344,9 +344,12 @@ its network as none and no member holds `fetch`. ...
 
 **Cause.** Before docket gets the task, Tack reads what the team says it can do. The run stops there
 when the team has no network and no member that reads the web while the run needs the web (the profile's
-network is on, or the person turned it on for the run), or when the profile is a Planner and no member of
-the team can propose items. Otherwise the team would start, find it cannot, and stop to ask a person for
-something only its own setup can give. Nothing was sent and no token was spent.
+network is on, or the person turned it on for the run), when the profile is a Planner and no member of
+the team can propose items, when the run changes the repository and the team delivers a report or records,
+when the profile names a way of working the team does not have or cannot run in full, or when the team says
+one of its needs is not met (a service it still has to be given, or an agent that is not signed in on the
+runner). Otherwise the team would start, find it cannot, and stop to ask a person for something only its
+own setup can give. Nothing was sent and no token was spent.
 
 **What to do.** Make the change the reason names, with docket's own commands, on the runner's machine:
 
@@ -356,6 +359,12 @@ something only its own setup can give. Nothing was sent and no token was spent.
   commands, steps and MCP servers to every host, which is more than reading the web needs. If the run does
   not need the web, turn the network off in the profile instead.
 - Proposals: declare the team's `tack_proposals` record set and let a role write it, then apply the team.
+- The repository: point the profile at a team that works in the repository, or give the card's role a Planner
+  or Researcher profile, which change nothing in it.
+- A way of working: name one of the team's own in the profile, or give the team the member it lacks and apply
+  it. The reason names the roles that are missing.
+- A need: the reason carries the fix the team or the runner gave. For an agent that is not signed in, run its
+  sign-in command on the runner's computer, then start the run again.
 
 Then start the run again. A Researcher is not refused for proposals: it runs, and is told how to propose
 only when its team can.

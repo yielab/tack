@@ -7,15 +7,16 @@ use std::collections::BTreeSet;
 use chrono::Utc;
 use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamDecides, TeamMember, TeamNetwork, TeamPause, TeamQueue,
-    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
+    SignInReport, SignInState, TeamDecides, TeamDelivers, TeamMember, TeamMethod, TeamNeed,
+    TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck,
+    TeamStepKind, TeamViolation, WorksIn,
 };
 
 use super::{
     client::Client,
     wire::{
-        MemberReach, PodList, PodMember, PodNetwork, PodReport, PodRow, PodStep, RecordList,
-        StatusAnswer,
+        MemberReach, PodList, PodMember, PodMethod, PodNeed, PodNetwork, PodReport, PodRow,
+        PodStep, RecordList, StatusAnswer,
     },
 };
 
@@ -252,15 +253,92 @@ fn steps(raw: Vec<serde_json::Value>) -> Option<Vec<TeamStep>> {
         })
 }
 
+/// What a team says it delivers, in Tack's words; `None` for a word Tack has none for.
+fn delivers(word: &str) -> Option<TeamDelivers> {
+    Some(match word {
+        "branch" => TeamDelivers::Branch,
+        "report" => TeamDelivers::Report,
+        "records" => TeamDelivers::Records,
+        _ => return None,
+    })
+}
+
+/// Every entry of a list docket sent, each read on its own; one that cannot be read makes the
+/// whole list absent, since a list with an entry missing would read as a different one.
+fn all<T: serde::de::DeserializeOwned>(raw: Vec<serde_json::Value>, what: &str) -> Option<Vec<T>> {
+    raw.into_iter()
+        .map(|value| serde_json::from_value(value).ok())
+        .collect::<Option<Vec<_>>>()
+        .or_else(|| {
+            tracing::warn!("docket's {what} could not be read");
+            None
+        })
+}
+
+/// What a team's report says of its contract (`podContract`): what it delivers, the methods a task
+/// may name and what its work still needs. All three are absent from a report of a docket that
+/// does not list the feature, whatever the report holds: the keys are read only when announced.
+#[derive(Default)]
+pub(super) struct Contract {
+    pub delivers: Option<TeamDelivers>,
+    pub methods: Option<Vec<TeamMethod>>,
+    pub needs: Option<Vec<TeamNeed>>,
+}
+
+pub(super) fn contract(report: &mut PodReport, listed: bool) -> Contract {
+    if !listed {
+        return Contract::default();
+    }
+    Contract {
+        delivers: report.delivers.as_deref().and_then(delivers),
+        methods: report
+            .methods
+            .take()
+            .and_then(|raw| all::<PodMethod>(raw, "methods"))
+            .map(|methods| {
+                methods
+                    .into_iter()
+                    .map(|method| TeamMethod {
+                        name: method.name,
+                        source: method.source,
+                        default: method.default,
+                        missing_roles: method.missing_roles,
+                    })
+                    .collect()
+            }),
+        needs: report
+            .needs
+            .take()
+            .and_then(|raw| all::<PodNeed>(raw, "needs"))
+            .map(|needs| {
+                needs
+                    .into_iter()
+                    .map(|need| TeamNeed {
+                        kind: need.kind,
+                        name: need.name,
+                        fix: need.fix,
+                        satisfied: need.satisfied,
+                    })
+                    .collect()
+            }),
+    }
+}
+
 /// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
 /// where it works, who is in it, how it decides, what it holds and what it keeps.
-async fn team(client: &Client, row: &PodRow, pause_listed: bool) -> Result<TeamReport, String> {
+async fn team(
+    client: &Client,
+    row: &PodRow,
+    pause_listed: bool,
+    contract_listed: bool,
+) -> Result<TeamReport, String> {
     let name = &row.name;
     let reply = client.pod(name).await?;
     if reply.status != 200 {
         return Err(reply.error());
     }
-    let report: PodReport = reply.read()?;
+    let mut report: PodReport = reply.read()?;
+    let contract = contract(&mut report, contract_listed);
     let works_in = works_in(row, &report);
     let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
         Some((sets, shared)) => (Some(sets), shared),
@@ -270,7 +348,7 @@ async fn team(client: &Client, row: &PodRow, pause_listed: bool) -> Result<TeamR
     let paused = pause_listed.then(|| paused(row, &report)).flatten();
     let mut team = TeamReport {
         name: name.clone(),
-        profile: report.profile.name,
+        profile: Some(report.profile.name),
         violations: report
             .profile
             .violations
@@ -301,6 +379,9 @@ async fn team(client: &Client, row: &PodRow, pause_listed: bool) -> Result<TeamR
         proposals_shared_across_tasks,
         paused,
         folder: report.work_dir.filter(|dir| !dir.is_empty()),
+        delivers: contract.delivers,
+        methods: contract.methods,
+        needs: contract.needs,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson
@@ -318,16 +399,17 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
     }
     let list: PodList = reply.read()?;
     let pause_listed = client.has_feature(super::POD_PAUSE).await;
+    let contract_listed = client.has_feature(super::POD_CONTRACT).await;
     let mut teams = Vec::new();
     for pod in &list.pods {
-        teams.push(team(client, pod, pause_listed).await?);
+        teams.push(team(client, pod, pause_listed, contract_listed).await?);
     }
     Ok(teams)
 }
 
 /// A team that needs a person during a run: attended, or with a violation.
 fn capped(team: &TeamReport) -> bool {
-    team.profile != LIGHTS_OUT || !team.violations.is_empty()
+    team.profile.as_deref() != Some(LIGHTS_OUT) || !team.violations.is_empty()
 }
 
 pub(super) async fn probe(

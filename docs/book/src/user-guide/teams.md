@@ -7,6 +7,9 @@ answers the six questions you ask of any team, whether you have one or five. The
 
 Teams come from docket. A profile whose agent is Claude Code, Codex or opencode is a single agent, not a team:
 it appears under **Profiles with no team**, and the questions below still have an answer for it, a shorter one.
+Tack counts such an agent as a team of one: it delivers a branch, has one way of working (the agent's own loop),
+and needs only what the runner's check says, that it is signed in and, where the agent will not choose one, that
+a model is named.
 How a profile chooses its agent and team is in [Automating a Project](automation.md#teams); how docket is
 installed is in [Installing and Operating Runners](../admin-guide/runners.md).
 
@@ -41,8 +44,10 @@ time is a dashed box of its own. Where a failed check sends the work back, and h
 done: written, reviewed by another member, checked by a command.
 
 A profile can also name a different way of working for each kind of card, for example one for bugs and one for
-features. That is set in the profile's definition in the [project file](import-export.md). Tack does not yet
-check that the team has that way of working, or the members it needs, so read the team's steps first.
+features. That is set in the profile's definition in the [project file](import-export.md). When the team says
+which ways of working it has, saving a profile that names another is refused, naming the ones it has; a way of
+working whose steps the team has no member for is saved with a warning, and a run of it is refused until the team
+has the member. A profile that runs a single agent has one way of working, its own loop, and cannot name another.
 
 What the team did with a particular task is on the task's Execution tab: each step, who did it, what it was
 given, and how long it took. See [Reviewing a Run](reviewing-runs.md).
@@ -88,8 +93,10 @@ A card goes to a team through a profile, and a profile through a role:
    the role's name, or by itself, if **When** starts tasks by itself.
 
 If the team cannot do what the run needs, Tack says so before sending anything, with the reason and the change
-that fixes it: for example, "The team saas-research cannot reach the web and this run needs it", or "The team
-saas-plan cannot propose items and a Planner delivers nothing else". The run reads **Not started**, not
+that fixes it: for example, "The team saas-research cannot reach the web and this run needs it", "The team
+saas-plan cannot propose items and a Planner delivers nothing else", "The team saas-research delivers a report
+and this run changes the repository", "The method secure-build would skip steps on the team saas-build: no member
+plays security-vetter", or "codex is not signed in on the runner". The run reads **Not started**, not
 **Failed**: nothing was sent and nothing was used. Tack checks only what the team reported. A fact it did not
 report is never a reason to refuse.
 

@@ -25,8 +25,9 @@ use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamMember,
-    TeamMisfit, TeamNeeds, Usage, WorkspaceId as DomainWorkspaceId, team_misfits,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamDelivers,
+    TeamFacts, TeamMember, TeamMisfit, TeamNeeds, Usage, WorkspaceId as DomainWorkspaceId,
+    team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
 
@@ -77,6 +78,10 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 
 /// The feature of `GET /health` under which a team's `paused` is sent.
 const POD_PAUSE: &str = "podPause";
+
+/// The feature of `GET /health` under which a team's report carries `delivers`, `methods` and
+/// `needs`.
+const POD_CONTRACT: &str = "podContract";
 
 /// The feature of `GET /health` under which a pod declares the hosts its `fetch` reads.
 const POD_FETCH: &str = "podFetch";
@@ -170,8 +175,13 @@ fn proposers(members: Option<&[TeamMember]>) -> Option<Vec<String>> {
 /// Why a run did not go to `pod`, one sentence per need the team cannot meet, each with the change
 /// in docket that meets it. With `podFetch` a pod reads the web through its own `fetch` hosts, which
 /// opens no more than reading; the whole network, which also opens `bash`, steps and MCP servers to
-/// every host, comes second.
-fn misfit_sentence(pod: &str, misfits: &[TeamMisfit], pod_fetch: bool) -> String {
+/// every host, comes second. `facts` is what the team said, for the sentences that quote it.
+fn misfit_sentence(
+    pod: &str,
+    misfits: &[TeamMisfit],
+    pod_fetch: bool,
+    facts: &TeamFacts<'_>,
+) -> String {
     let lines: Vec<String> = misfits
         .iter()
         .map(|misfit| match misfit {
@@ -193,6 +203,41 @@ fn misfit_sentence(pod: &str, misfits: &[TeamMisfit], pod_fetch: bool) -> String
                 "The team {pod} cannot propose items and a Planner delivers nothing else: no \
                  member can write the record set `tack_proposals`. Declare it in the team's \
                  `records/tack_proposals.yaml`, let a role write it and apply the team."
+            ),
+            TeamMisfit::NoRepository => format!(
+                "The team {pod} delivers {} and this run changes the repository. Point the \
+                 profile at a team that works in the repository, or give the run a Planner or \
+                 Researcher profile.",
+                match facts.delivers {
+                    Some(TeamDelivers::Records) => "records",
+                    _ => "a report",
+                }
+            ),
+            TeamMisfit::UnknownMethod { name } => format!(
+                "The team {pod} has no method named {name}; it offers {}. Name one of those in \
+                 the profile's `pipeline_by_type`, or add the recipe with \
+                 `docket init --recipe {name}`.",
+                facts
+                    .methods
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|method| method.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TeamMisfit::StepsSkipped { method, roles } => format!(
+                "The method {method} would skip steps on the team {pod}: no member plays {}. Add \
+                 the role to the team and apply it, or name another method.",
+                roles.join(", ")
+            ),
+            TeamMisfit::NeedsUnmet { name } => format!(
+                "The team {pod} still needs {name}: {}",
+                facts
+                    .needs
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|need| need.name == *name)
+                    .map_or("docket gave no fix", |need| need.fix.as_str())
             ),
         })
         .collect();
@@ -1677,26 +1722,38 @@ impl HarnessAdapter for DocketAdapter {
         let in_repository = in_repository(team.as_ref());
         // What the team says it can do, read now and not from the last probe: a need it cannot
         // meet ends the run here, before the team spends a token to ask a person for it.
-        let (network, members) = match team {
-            Some(report) => (
-                probe::network(report.network.as_ref()),
-                report
-                    .members
-                    .map(|members| members.into_iter().map(probe::member).collect::<Vec<_>>()),
-            ),
-            None => (None, None),
+        let (network, members, contract) = match team {
+            Some(mut report) => {
+                let listed = self.client.has_feature(POD_CONTRACT).await;
+                let contract = probe::contract(&mut report, listed);
+                (
+                    probe::network(report.network.as_ref()),
+                    report
+                        .members
+                        .map(|members| members.into_iter().map(probe::member).collect::<Vec<_>>()),
+                    contract,
+                )
+            }
+            None => (None, None, probe::Contract::default()),
+        };
+        let facts = TeamFacts {
+            network,
+            members: members.as_deref(),
+            delivers: contract.delivers,
+            methods: contract.methods.as_deref(),
+            needs: contract.needs.as_deref(),
         };
         let misfits = team_misfits(
-            network,
-            members.as_deref(),
-            TeamNeeds::of(
+            facts,
+            &TeamNeeds::of(
                 super::profile_kind(request),
                 request.permission_policy.network,
+                task::method(request),
             ),
         );
         if !misfits.is_empty() {
             let pod_fetch = self.client.has_feature(POD_FETCH).await;
-            return Err(rejected(misfit_sentence(&pod, &misfits, pod_fetch)));
+            return Err(rejected(misfit_sentence(&pod, &misfits, pod_fetch, &facts)));
         }
         // The roles that propose, named in the task so no other role calls the tool; a team whose
         // members say nothing of it is told as before, naming none.

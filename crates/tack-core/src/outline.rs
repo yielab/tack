@@ -26,6 +26,7 @@ use crate::workflow::{Transition, WorkflowConfig};
 
 pub mod bundle;
 mod csv;
+pub mod missing;
 pub use self::csv::{CsvOutline, items_from_csv, items_to_csv};
 
 /// The most items one outline may create. Large enough for any real plan,
@@ -58,8 +59,37 @@ pub struct Outline {
     /// The project's automation settings; only the keys the file names change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub automation: Option<BundleAutomation>,
+    /// The teams the file expects its profiles to name. Descriptive: an import creates nothing
+    /// from it, and lists the ones no computer reports.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub teams: Vec<BundleTeam>,
     #[serde(default)]
     pub items: Vec<OutlineItem>,
+}
+
+/// The shapes a team can have, as a project file writes them.
+pub const TEAM_SHAPES: [&str; 4] = ["build", "respond", "operate", "routine"];
+
+/// What a team hands back, as a project file writes it.
+pub const TEAM_DELIVERS: [&str; 3] = ["branch", "report", "records"];
+
+/// A team a project file expects, described and never created: the agent that runs it keeps its
+/// own teams, and an import only compares this with what the computers report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleTeam {
+    /// The name the agent knows the team by; the one a profile's `tool_policy.docket.team` gives.
+    pub name: String,
+    /// build, respond, operate or routine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    /// branch, report or records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivers: Option<String>,
+    /// The methods a task may name on this team, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub methods: Vec<String>,
 }
 
 /// The workflow a project file asks for: a preset or its own statuses, never both.

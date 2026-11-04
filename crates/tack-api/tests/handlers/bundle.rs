@@ -14,6 +14,11 @@ use tower::ServiceExt;
 
 /// An app whose board has its built-in profiles and templates, as a started server does.
 pub(crate) async fn app() -> Router {
+    app_and_repo().await.0
+}
+
+/// [`app`], with the repository it runs on, for a test that plants what a runner reports.
+pub(crate) async fn app_and_repo() -> (Router, tack_db::Repository) {
     let repo = tack_test_support::setup_test_db().await;
     tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
@@ -27,6 +32,7 @@ pub(crate) async fn app() -> Router {
         database_url: "sqlite::memory:".to_string(),
         ..AppConfig::default()
     };
+    let handle = repo.clone();
     let state = AppState {
         notifications: crate::common::inbox(&repo),
         repo,
@@ -37,7 +43,7 @@ pub(crate) async fn app() -> Router {
         local_runner: None,
         tasks: Default::default(),
     };
-    common::with_default_host(build_router(state))
+    (common::with_default_host(build_router(state)), handle)
 }
 
 pub(crate) const MY_SAAS: &str = include_str!("../fixtures/bundles/my-saas.yaml");
@@ -364,4 +370,220 @@ async fn the_export_is_the_import() {
     )
     .await;
     assert_eq!(csv.0, StatusCode::BAD_REQUEST);
+}
+
+/// A runner that reports `claude-code` signed in, and nothing else.
+async fn claude_only(repo: &tack_db::Repository) {
+    let snapshot = json!({"harnesses": [{
+        "harness_kind": "claude-code", "installed_version": "2", "probe_error": null,
+        "probed_at": "2026-11-03T12:00:00Z",
+    }]})
+    .to_string();
+    tack_test_support::seed::agent_runner_reporting(repo, "ru1", &snapshot).await;
+}
+
+/// The preview lists what the file expects and no computer reports, each with its fix, and an
+/// import creates nothing from it.
+#[tokio::test]
+async fn the_preview_lists_the_team_and_the_agent_no_computer_reports_with_their_fixes() {
+    let (app, repo) = app_and_repo().await;
+    claude_only(&repo).await;
+    let file = r#"
+project: { name: Business }
+teams:
+  - { name: biz-respond, shape: respond, delivers: report, methods: [research-review] }
+profiles:
+  - { name: Coder, tool_policy: { agent: claude-code } }
+  - { name: Support, tool_policy: { agent: codex } }
+roles:
+  - { name: Support, profile: Support }
+"#;
+    let (status, out) = import(&app, "/api/projects/outline?dry_run=true", file).await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(
+        out["missing"],
+        json!([
+            {
+                "kind": "team", "name": "biz-respond", "shape": "respond",
+                "fix": "docket init biz-respond --blueprint respond --recipe research-review"
+            },
+            {
+                "kind": "harness", "name": "codex",
+                "fix": "No computer reports codex. Install it on a computer that runs a runner, then run `tack runner doctor` there to check it."
+            },
+        ]),
+        "{out}"
+    );
+    // The same list comes with a real import, and the import wrote no team anywhere.
+    let (status, made) = import(&app, "/api/projects/outline", file).await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    assert_eq!(made["missing"], out["missing"], "{made}");
+    // A file that expects nothing of the kind has an empty list.
+    let (_, plain) = import(
+        &app,
+        "/api/projects/outline?dry_run=true",
+        "project: { name: Plain }\n",
+    )
+    .await;
+    assert_eq!(plain["missing"], json!([]), "{plain}");
+}
+
+/// A team a runner reports is not missing, and a file naming only reported things lists nothing.
+#[tokio::test]
+async fn a_reported_team_and_a_reported_agent_are_not_missing() {
+    let (app, repo) = app_and_repo().await;
+    let snapshot = json!({"harnesses": [
+        {"harness_kind": "docket", "installed_version": "0.3", "probe_error": null,
+         "probed_at": "2026-11-03T12:00:00Z",
+         "teams": [{"name": "biz-respond", "profile": "attended", "violations": []}]},
+    ]})
+    .to_string();
+    tack_test_support::seed::agent_runner_reporting(&repo, "ru1", &snapshot).await;
+    let file = r#"
+project: { name: Business }
+teams: [{ name: biz-respond, shape: respond }]
+profiles:
+  - { name: Support, tool_policy: { agent: docket, docket: { team: biz-respond } } }
+"#;
+    let (status, out) = import(&app, "/api/projects/outline?dry_run=true", file).await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["missing"], json!([]), "{out}");
+}
+
+/// "Digital business" imports on a board whose runners report no docket at all, brings six
+/// departments that name no agent, and its export imports to the same export again.
+#[tokio::test]
+async fn digital_business_imports_with_no_docket_and_exports_round_trip() {
+    let (app, repo) = app_and_repo().await;
+    claude_only(&repo).await;
+    let templates = get(&app, "/api/templates").await;
+    let template = templates
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Digital business")
+        .expect("the built-in template");
+    let teams: Vec<&str> = template["teams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["shape"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        teams,
+        ["build", "respond", "operate", "routine"],
+        "{template}"
+    );
+
+    let (status, project) = common::send(
+        &app,
+        "POST",
+        &format!(
+            "/api/projects/from-template/{}",
+            template["id"].as_str().unwrap()
+        ),
+        json!({"name": "Acme"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{project}");
+    let pid = project["id"].as_str().unwrap();
+    let roles = get(&app, &format!("/api/projects/{pid}/roles")).await;
+    let names: Vec<&str> = roles
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    for department in [
+        "Software",
+        "Operations",
+        "Support",
+        "Growth",
+        "Finance",
+        "Insight",
+    ] {
+        assert!(names.contains(&department), "{names:?}");
+    }
+    let profiles = get(&app, "/api/agent-profiles").await;
+    let departments: Vec<&Value> = profiles["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| {
+            p["name"]
+                .as_str()
+                .is_some_and(|n| n.ends_with(" analyst") || n == "Software engineer")
+        })
+        .collect();
+    assert_eq!(departments.len(), 6, "{profiles}");
+    for profile in departments {
+        assert!(profile["tool_policy"].get("agent").is_none(), "{profile}");
+        assert!(profile["tool_policy"].get("docket").is_none(), "{profile}");
+    }
+
+    let uri = format!("/api/projects/{pid}/export?scope=bundle&format=yaml");
+    let (status, first) = call(&app, Method::GET, &uri, "").await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let (status, copy) = import(&app, "/api/projects/outline", &first).await;
+    assert_eq!(status, StatusCode::OK, "{copy}");
+    assert_eq!(
+        copy["missing"],
+        json!([]),
+        "a department names no agent, so nothing is missing: {copy}"
+    );
+    let copy_id = copy["project"]["id"].as_str().unwrap();
+    let (_, second) = call(
+        &app,
+        Method::GET,
+        &format!("/api/projects/{copy_id}/export?scope=bundle&format=yaml"),
+        "",
+    )
+    .await;
+    assert_eq!(first, second);
+}
+
+/// A project saved as a template keeps the teams its profiles name, as the runners describe them.
+#[tokio::test]
+async fn a_project_saved_as_a_template_keeps_the_teams_its_profiles_name() {
+    let (app, repo) = app_and_repo().await;
+    let snapshot = json!({"harnesses": [
+        {"harness_kind": "docket", "installed_version": "0.3", "probe_error": null,
+         "probed_at": "2026-11-03T12:00:00Z",
+         "teams": [{
+            "name": "biz-respond", "profile": "attended", "violations": [],
+            "shape": "respond", "delivers": "report",
+            "methods": [{"name": "research-review", "source": "recipe", "default": true}],
+         }]},
+    ]})
+    .to_string();
+    tack_test_support::seed::agent_runner_reporting(&repo, "ru1", &snapshot).await;
+    let file = r#"
+project: { name: Business }
+profiles:
+  - { name: Support, tool_policy: { agent: docket, docket: { team: biz-respond } } }
+roles:
+  - { name: Support, profile: Support }
+"#;
+    let (_, made) = import(&app, "/api/projects/outline", file).await;
+    let (status, saved) = common::send(
+        &app,
+        "POST",
+        &format!(
+            "/api/projects/{}/save-as-template",
+            made["project"]["id"].as_str().unwrap()
+        ),
+        json!({"name": "Mine"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(
+        saved["teams"],
+        json!([{
+            "name": "biz-respond", "shape": "respond", "delivers": "report",
+            "methods": ["research-review"],
+        }]),
+        "{saved}"
+    );
 }

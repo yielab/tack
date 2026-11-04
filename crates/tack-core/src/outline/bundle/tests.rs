@@ -142,6 +142,26 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Warning("profiles: \"Planner\" is built in"),
         ),
         (
+            "teams: [{ name: Bad_Team }]",
+            Problem("teams: \"Bad_Team\": the name must match"),
+        ),
+        (
+            "teams: [{ name: saas, shape: department }]",
+            Problem("teams: \"saas\" has shape \"department\""),
+        ),
+        (
+            "teams: [{ name: saas, delivers: pdf }]",
+            Problem("teams: \"saas\" delivers \"pdf\""),
+        ),
+        (
+            "teams: [{ name: saas, methods: [Not_A_Method] }]",
+            Problem("teams: \"saas\": method \"Not_A_Method\""),
+        ),
+        (
+            "teams: [{ name: saas }, { name: saas }]",
+            Problem("teams: \"saas\" appears more than once"),
+        ),
+        (
             "roles: [{ name: R, profile: Ghost }]",
             Problem("roles: \"R\" names profile \"Ghost\""),
         ),
@@ -438,6 +458,7 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
         item_fields: &values,
         dependencies: &dependencies,
         fleets: &[],
+        reported_teams: &[],
     });
     assert_eq!(outline.items[0].reference.as_deref(), Some("1"));
     assert_eq!(outline.items[0].title, "Iniciativa");
@@ -503,6 +524,7 @@ fn the_install_setting_round_trips_through_the_file() {
             item_fields: &[],
             dependencies: &[],
             fleets: &[],
+            reported_teams: &[],
         });
         let text = serde_saphyr::to_string(&outline).expect("yaml");
         let read: Outline = serde_saphyr::from_str(&text).expect("the export parses");
@@ -510,4 +532,93 @@ fn the_install_setting_round_trips_through_the_file() {
         let prepare = plan.automation.and_then(|a| a.prepare);
         assert_eq!(prepare.as_deref(), stored, "{text}");
     }
+}
+
+#[test]
+fn teams_are_described_and_an_import_creates_nothing_from_them() {
+    let outline = yaml(
+        "teams:\n  - { name: saas-research, shape: respond, delivers: report, methods: [research-review] }\n",
+    );
+    assert_eq!(outline.teams.len(), 1);
+    assert_eq!(outline.teams[0].shape.as_deref(), Some("respond"));
+    let plan = Owned::empty()
+        .check(&outline)
+        .expect("a file with teams checks clean");
+    assert!(
+        plan.sections.is_empty(),
+        "no section creates or updates anything for teams"
+    );
+    // The bundle still refuses a key it does not know, inside a team too.
+    let unknown: Result<Outline, _> = serde_saphyr::from_str("teams: [{ name: saas, colour: red }]");
+    assert!(unknown.is_err());
+}
+
+#[test]
+fn the_export_writes_the_teams_its_profiles_name_with_what_the_computers_report() {
+    let mut board = Owned::empty();
+    let project = synthetic_project();
+    board.workflow = project.workflow.clone();
+    let named = |name: &str, team: Option<&str>| {
+        let mut row = profile_row(name, false);
+        row.id = format!("ap_{name}");
+        row.tool_policy = match team {
+            Some(team) => serde_json::json!({"agent": "docket", "docket": {"team": team}}),
+            None => serde_json::json!({}),
+        };
+        row
+    };
+    let profiles = [
+        named("Research", Some("saas-research")),
+        named("Support", Some("saas-support")),
+        named("Plain", None),
+    ];
+    let roles: Vec<Role> = profiles
+        .iter()
+        .map(|profile| Role {
+            id: Uuid::new_v4(),
+            project_id: project.id,
+            name: profile.name.clone(),
+            color: "#f59e0b".into(),
+            icon: None,
+            agent_profile_id: Some(profile.id.clone()),
+            created_at: Utc::now(),
+        })
+        .collect();
+    let reported = [BundleTeam {
+        name: "saas-research".to_owned(),
+        shape: Some("respond".to_owned()),
+        delivers: Some("report".to_owned()),
+        methods: vec!["research-review".to_owned()],
+    }];
+    let outline = to_bundle(&Parts {
+        project: &project,
+        fields: &[],
+        profiles: &profiles,
+        roles: &roles,
+        sprints: &[],
+        autonomy: None,
+        auto_start: BundleAutoStart::default(),
+        items: &[],
+        item_roles: &[],
+        item_fields: &[],
+        dependencies: &[],
+        fleets: &[],
+        reported_teams: &reported,
+    });
+    let names: Vec<&str> = outline
+        .teams
+        .iter()
+        .map(|team| team.name.as_str())
+        .collect();
+    assert_eq!(names, ["saas-research", "saas-support"]);
+    assert_eq!(outline.teams[0].methods, ["research-review"]);
+    assert_eq!(
+        outline.teams[1].shape, None,
+        "a team nobody reports is written by name alone"
+    );
+    // And the export reads back and checks clean.
+    let text = serde_saphyr::to_string(&outline).expect("yaml");
+    let read: Outline = serde_saphyr::from_str(&text).expect("the export parses");
+    assert_eq!(read.teams, outline.teams);
+    board.check(&read).expect("the export checks clean");
 }

@@ -819,6 +819,26 @@ pub async fn agent_profile_for_team(repo: &Repository, profile_id: &str, name: &
     .expect("seed agent_profiles");
 }
 
+/// Plants an agent profile of `kind` with exactly this `tool_policy`.
+pub async fn agent_profile_with_policy(
+    repo: &Repository,
+    profile_id: &str,
+    name: &str,
+    kind: &str,
+    tool_policy: &serde_json::Value,
+) {
+    sqlx::query(
+        "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, kind, created_at, updated_at) VALUES (?, ?, 'x', ?, '{}', ?, 'now', 'now')",
+    )
+    .bind(profile_id)
+    .bind(name)
+    .bind(tool_policy.to_string())
+    .bind(kind)
+    .execute(repo.pool())
+    .await
+    .expect("seed agent_profiles");
+}
+
 /// Plants an agent profile of `kind` naming the docket `team`, whose role reaches the network
 /// when `network` says so.
 pub async fn agent_profile_of_kind_for_team(

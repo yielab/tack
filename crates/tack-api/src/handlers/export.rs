@@ -217,6 +217,7 @@ async fn bundle_response(
         }),
         merge_on_done: Some(s.merge_on_done),
     });
+    let reported_teams = crate::handlers::teams::reported_bundle_teams(state).await?;
     let outline = to_bundle(&Parts {
         project,
         fields: &fields,
@@ -234,6 +235,7 @@ async fn bundle_response(
         item_fields: &item_fields,
         dependencies: &dependencies,
         fleets: &fleets,
+        reported_teams: &reported_teams,
     });
     let name = project.name.replace(' ', "-");
     let (content_type, extension, text) = if format == "yaml" {

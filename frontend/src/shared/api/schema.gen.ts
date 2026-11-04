@@ -3721,6 +3721,11 @@ export interface components {
             tool_policy: unknown;
             /** @description Read only: whether its tools or its network flag reach the network, derived from `tool_policy`. */
             readonly uses_network: boolean;
+            /**
+             * @description Only on the answer to a save: what was saved that deserves a second look, such as a
+             *     method the team names no member for.
+             */
+            warnings?: string[];
         };
         /**
          * @description A project's `agents_on_board` setting: the level, and the two caps on creates that apply at
@@ -4177,6 +4182,20 @@ export interface components {
             /** @description The most items the status holds at once. */
             wip_limit?: number | null;
         };
+        /**
+         * @description A team a project file expects, described and never created: the agent that runs it keeps its
+         *     own teams, and an import only compares this with what the computers report.
+         */
+        BundleTeam: {
+            /** @description branch, report or records. */
+            delivers?: string | null;
+            /** @description The methods a task may name on this team, by name. */
+            methods?: string[];
+            /** @description The name the agent knows the team by; the one a profile's `tool_policy.docket.team` gives. */
+            name: string;
+            /** @description build, respond, operate or routine. */
+            shape?: string | null;
+        };
         /** @description The workflow a project file asks for: a preset or its own statuses, never both. */
         BundleWorkflow: {
             /** @description scrum, kanban, simple, construction, legal, research or event. */
@@ -4587,6 +4606,11 @@ export interface components {
             name: string;
             /** Format: int32 */
             protocol_version: number;
+            /**
+             * @description What the profile was saved with that deserves a second look, such as a method the team
+             *     names no member for.
+             */
+            warnings?: string[];
         };
         CreateProject: {
             code_origin?: null | components["schemas"]["CodeOrigin"];
@@ -4611,6 +4635,7 @@ export interface components {
             profiles?: components["schemas"]["BundleProfile"][];
             project_type: components["schemas"]["ProjectType"];
             roles?: components["schemas"]["BundleRole"][];
+            teams?: components["schemas"]["BundleTeam"][];
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
         };
@@ -5547,6 +5572,24 @@ export interface components {
         };
         /** @enum {string} */
         MetricOp: "lte" | "gte" | "eq";
+        /** @description One gap between a project file and what the computers report. */
+        Missing: {
+            /**
+             * @description What the operator does to close the gap: docket's command for a team, the sentence that
+             *     installs an agent for a harness.
+             */
+            fix: string;
+            kind: components["schemas"]["MissingKind"];
+            /** @description The team's name, or the agent's. */
+            name: string;
+            /** @description A team's shape, when the file says it. */
+            shape?: string | null;
+        };
+        /**
+         * @description What kind of thing is missing.
+         * @enum {string}
+         */
+        MissingKind: "team" | "harness";
         /** @description Dollars per million tokens of one model. */
         ModelPrice: {
             /** Format: double */
@@ -5744,6 +5787,11 @@ export interface components {
             roles?: components["schemas"]["BundleRole"][];
             /** @description Sprints, by name. */
             sprints?: components["schemas"]["BundleSprint"][];
+            /**
+             * @description The teams the file expects its profiles to name. Descriptive: an import creates nothing
+             *     from it, and lists the ones no computer reports.
+             */
+            teams?: components["schemas"]["BundleTeam"][];
         };
         OutlineItem: {
             assignee?: string | null;
@@ -5811,6 +5859,12 @@ export interface components {
             dry_run: boolean;
             /** @description The items in written order: parents before their children. */
             items: components["schemas"]["OutlineResultItem"][];
+            /**
+             * @description What the file expects that no computer reports: a team (with docket's command that makes
+             *     it) or an agent (with how to install it). Nothing is created from it; empty for a CSV and
+             *     for a file that names no team and no agent.
+             */
+            missing: components["schemas"]["Missing"][];
             project?: null | components["schemas"]["Project"];
             /** @description What each section of a project file does, in the file's order; empty for a CSV. */
             sections: components["schemas"]["SectionSummary"][];
@@ -5975,6 +6029,8 @@ export interface components {
             project_type: components["schemas"]["ProjectType"];
             /** @description The roles a project made from the template starts with. */
             roles: components["schemas"]["BundleRole"][];
+            /** @description The teams the template expects its profiles to name; described, never created. */
+            teams: components["schemas"]["BundleTeam"][];
             /** Format: date-time */
             updated_at: string;
             vocabulary: components["schemas"]["HashMap"];
@@ -6680,6 +6736,11 @@ export interface components {
          * @enum {string}
          */
         TeamDecides: "to_the_end" | "asks_a_person";
+        /**
+         * @description What a team hands back when a task ends.
+         * @enum {string}
+         */
+        TeamDelivers: "branch" | "report" | "records";
         TeamDigest: {
             /** Format: int64 */
             blocked: number;
@@ -6773,13 +6834,59 @@ export interface components {
              */
             writes_project?: boolean | null;
         };
+        /** @description One way of working a task that a team offers. */
+        TeamMethod: {
+            /** @description Whether a task that names no method goes through this one. */
+            default: boolean;
+            /**
+             * @description The roles the method has a step for and the team has no member for: those steps would be
+             *     skipped. Empty when the team can run every step.
+             */
+            missing_roles?: string[];
+            /** @description The name a task gives to choose it. */
+            name: string;
+            /** @description Where the team has it from, in the harness's own word, shown as data. */
+            source: string;
+        };
         /**
          * @description A need of a profile that the team it names says it cannot meet. A run that has one ends before
          *     the team gets the task, because the team would stop and ask a person for what only its own
          *     setup can give.
-         * @enum {string}
          */
-        TeamMisfit: "no_web" | "no_proposals";
+        TeamMisfit: "no_web" | "no_proposals" | "no_repository" | {
+            /** @description The task names a method the team does not offer. */
+            unknown_method: {
+                name: string;
+            };
+        } | {
+            /**
+             * @description The task names a method the team offers but lacks the members for: those steps would be
+             *     skipped.
+             */
+            steps_skipped: {
+                method: string;
+                roles: string[];
+            };
+        } | {
+            /** @description The team says one of its needs is not met. */
+            needs_unmet: {
+                name: string;
+            };
+        };
+        /** @description One thing a team's work still needs, and how to give it. */
+        TeamNeed: {
+            /** @description What the operator does to meet it. */
+            fix: string;
+            /**
+             * @description What sort of need it is, in the harness's own word, shown as data; [`NEED_SIGN_IN`] and
+             *     [`NEED_MODEL`] are the two Tack's runner reports.
+             */
+            kind: string;
+            /** @description What is needed, as the team names it. */
+            name: string;
+            /** @description Whether it is met now. */
+            satisfied: boolean;
+        };
         /**
          * @description How far a team's agents can reach over the network.
          * @enum {string}
@@ -6840,6 +6947,7 @@ export interface components {
          */
         TeamReport: {
             decides?: null | components["schemas"]["TeamDecides"];
+            delivers?: null | components["schemas"]["TeamDelivers"];
             /**
              * @description The folder a team that works in one writes in, as a path on the computer that runs it.
              *     Absent for a team in a repository, or when the harness did not say; no field may carry a
@@ -6851,10 +6959,25 @@ export interface components {
              *     harness did not say; no field may carry a harness's own key name.
              */
             members?: components["schemas"]["TeamMember"][] | null;
+            /**
+             * @description Every method a task may name, each with the roles the team lacks. Absent means the harness
+             *     did not say (an empty list is not a team without methods); no field may carry a harness's
+             *     own key name.
+             */
+            methods?: components["schemas"]["TeamMethod"][] | null;
             name: string;
+            /**
+             * @description What the team's work still needs, each satisfied or not. Absent means the harness did not
+             *     say, which is not the same as needing nothing; no field may carry a harness's own key name.
+             */
+            needs?: components["schemas"]["TeamNeed"][] | null;
             network?: null | components["schemas"]["TeamNetwork"];
             paused?: null | components["schemas"]["TeamPause"];
-            profile: string;
+            /**
+             * @description How closely a person supervises the team, as the harness names it (`attended`,
+             *     `lights-out`). Absent for a team of one, which has no such setting.
+             */
+            profile?: string | null;
             /**
              * @description Whether what the members propose is kept for every task of the team together (`true`: a
              *     name used in one task cannot be used again in another until the team's list of proposals

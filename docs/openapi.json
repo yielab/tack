@@ -9211,6 +9211,13 @@
             "type": "boolean",
             "description": "Read only: whether its tools or its network flag reach the network, derived from `tool_policy`.",
             "readOnly": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only on the answer to a save: what was saved that deserves a second look, such as a\nmethod the team names no member for."
           }
         }
       },
@@ -10543,6 +10550,41 @@
         },
         "additionalProperties": false
       },
+      "BundleTeam": {
+        "type": "object",
+        "description": "A team a project file expects, described and never created: the agent that runs it keeps its\nown teams, and an import only compares this with what the computers report.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "delivers": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "branch, report or records."
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The methods a task may name on this team, by name."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name the agent knows the team by; the one a profile's `tool_policy.docket.team` gives."
+          },
+          "shape": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "build, respond, operate or routine."
+          }
+        },
+        "additionalProperties": false
+      },
       "BundleWorkflow": {
         "type": "object",
         "description": "The workflow a project file asks for: a preset or its own statuses, never both.",
@@ -11598,6 +11640,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the profile was saved with that deserves a second look, such as a method the team\nnames no member for."
           }
         }
       },
@@ -11735,6 +11784,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/BundleRole"
+            }
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleTeam"
             }
           },
           "vocabulary": {
@@ -14188,6 +14243,43 @@
           "eq"
         ]
       },
+      "Missing": {
+        "type": "object",
+        "description": "One gap between a project file and what the computers report.",
+        "required": [
+          "kind",
+          "name",
+          "fix"
+        ],
+        "properties": {
+          "fix": {
+            "type": "string",
+            "description": "What the operator does to close the gap: docket's command for a team, the sentence that\ninstalls an agent for a harness."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MissingKind"
+          },
+          "name": {
+            "type": "string",
+            "description": "The team's name, or the agent's."
+          },
+          "shape": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A team's shape, when the file says it."
+          }
+        }
+      },
+      "MissingKind": {
+        "type": "string",
+        "description": "What kind of thing is missing.",
+        "enum": [
+          "team",
+          "harness"
+        ]
+      },
       "ModelPrice": {
         "type": "object",
         "description": "Dollars per million tokens of one model.",
@@ -14779,6 +14871,13 @@
               "$ref": "#/components/schemas/BundleSprint"
             },
             "description": "Sprints, by name."
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleTeam"
+            },
+            "description": "The teams the file expects its profiles to name. Descriptive: an import creates nothing\nfrom it, and lists the ones no computer reports."
           }
         },
         "additionalProperties": false
@@ -14959,6 +15058,7 @@
           "dependencies",
           "items",
           "sections",
+          "missing",
           "warnings"
         ],
         "properties": {
@@ -14981,6 +15081,13 @@
               "$ref": "#/components/schemas/OutlineResultItem"
             },
             "description": "The items in written order: parents before their children."
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Missing"
+            },
+            "description": "What the file expects that no computer reports: a team (with docket's command that makes\nit) or an agent (with how to install it). Nothing is created from it; empty for a CSV and\nfor a file that names no team and no agent."
           },
           "project": {
             "oneOf": [
@@ -15417,6 +15524,7 @@
           "default_boards",
           "roles",
           "profiles",
+          "teams",
           "is_builtin",
           "created_at",
           "updated_at"
@@ -15481,6 +15589,13 @@
               "$ref": "#/components/schemas/BundleRole"
             },
             "description": "The roles a project made from the template starts with."
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleTeam"
+            },
+            "description": "The teams the template expects its profiles to name; described, never created."
           },
           "updated_at": {
             "type": "string",
@@ -17379,6 +17494,15 @@
           "asks_a_person"
         ]
       },
+      "TeamDelivers": {
+        "type": "string",
+        "description": "What a team hands back when a task ends.",
+        "enum": [
+          "branch",
+          "report",
+          "records"
+        ]
+      },
       "TeamDigest": {
         "type": "object",
         "required": [
@@ -17605,13 +17729,159 @@
           }
         }
       },
+      "TeamMethod": {
+        "type": "object",
+        "description": "One way of working a task that a team offers.",
+        "required": [
+          "name",
+          "source",
+          "default"
+        ],
+        "properties": {
+          "default": {
+            "type": "boolean",
+            "description": "Whether a task that names no method goes through this one."
+          },
+          "missing_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The roles the method has a step for and the team has no member for: those steps would be\nskipped. Empty when the team can run every step."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name a task gives to choose it."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the team has it from, in the harness's own word, shown as data."
+          }
+        }
+      },
       "TeamMisfit": {
-        "type": "string",
-        "description": "A need of a profile that the team it names says it cannot meet. A run that has one ends before\nthe team gets the task, because the team would stop and ask a person for what only its own\nsetup can give.",
-        "enum": [
-          "no_web",
-          "no_proposals"
-        ]
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "The run reaches the web, and the team has no network and no member that reads the web.",
+            "enum": [
+              "no_web"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The run proposes items, and no member of the team can.",
+            "enum": [
+              "no_proposals"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The run changes the repository, and the team delivers a report or records.",
+            "enum": [
+              "no_repository"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "The task names a method the team does not offer.",
+            "required": [
+              "unknown_method"
+            ],
+            "properties": {
+              "unknown_method": {
+                "type": "object",
+                "description": "The task names a method the team does not offer.",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The task names a method the team offers but lacks the members for: those steps would be\nskipped.",
+            "required": [
+              "steps_skipped"
+            ],
+            "properties": {
+              "steps_skipped": {
+                "type": "object",
+                "description": "The task names a method the team offers but lacks the members for: those steps would be\nskipped.",
+                "required": [
+                  "method",
+                  "roles"
+                ],
+                "properties": {
+                  "method": {
+                    "type": "string"
+                  },
+                  "roles": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The team says one of its needs is not met.",
+            "required": [
+              "needs_unmet"
+            ],
+            "properties": {
+              "needs_unmet": {
+                "type": "object",
+                "description": "The team says one of its needs is not met.",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "A need of a profile that the team it names says it cannot meet. A run that has one ends before\nthe team gets the task, because the team would stop and ask a person for what only its own\nsetup can give."
+      },
+      "TeamNeed": {
+        "type": "object",
+        "description": "One thing a team's work still needs, and how to give it.",
+        "required": [
+          "kind",
+          "name",
+          "fix",
+          "satisfied"
+        ],
+        "properties": {
+          "fix": {
+            "type": "string",
+            "description": "What the operator does to meet it."
+          },
+          "kind": {
+            "type": "string",
+            "description": "What sort of need it is, in the harness's own word, shown as data; [`NEED_SIGN_IN`] and\n[`NEED_MODEL`] are the two Tack's runner reports."
+          },
+          "name": {
+            "type": "string",
+            "description": "What is needed, as the team names it."
+          },
+          "satisfied": {
+            "type": "boolean",
+            "description": "Whether it is met now."
+          }
+        }
       },
       "TeamNetwork": {
         "type": "string",
@@ -17724,8 +17994,7 @@
         "type": "object",
         "description": "One team a harness runs.\n\nEvery optional field below is in Tack's own words, filled by the harness's adapter from what\nits agent reports. Absent means the harness did not say, which is never the same as \"none\":\na screen shows what was reported and nothing it had to guess. No field may carry a harness's\nown key name; a harness's own labels arrive only as data (`shape`).",
         "required": [
-          "name",
-          "profile"
+          "name"
         ],
         "properties": {
           "decides": {
@@ -17736,6 +18005,17 @@
               {
                 "$ref": "#/components/schemas/TeamDecides",
                 "description": "Whether the team runs to the end alone or stops for a person. Absent means the harness did\nnot say; no field may carry a harness's own key name."
+              }
+            ]
+          },
+          "delivers": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamDelivers",
+                "description": "What the team hands back when a task ends. Absent means the harness did not say, which is\nnot the same as a branch; no field may carry a harness's own key name."
               }
             ]
           },
@@ -17756,8 +18036,28 @@
             },
             "description": "Who does the work: one entry per member, with the model it runs on. Absent means the\nharness did not say; no field may carry a harness's own key name."
           },
+          "methods": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamMethod"
+            },
+            "description": "Every method a task may name, each with the roles the team lacks. Absent means the harness\ndid not say (an empty list is not a team without methods); no field may carry a harness's\nown key name."
+          },
           "name": {
             "type": "string"
+          },
+          "needs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamNeed"
+            },
+            "description": "What the team's work still needs, each satisfied or not. Absent means the harness did not\nsay, which is not the same as needing nothing; no field may carry a harness's own key name."
           },
           "network": {
             "oneOf": [
@@ -17782,7 +18082,11 @@
             ]
           },
           "profile": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How closely a person supervises the team, as the harness names it (`attended`,\n`lights-out`). Absent for a team of one, which has no such setting."
           },
           "proposals_shared_across_tasks": {
             "type": [

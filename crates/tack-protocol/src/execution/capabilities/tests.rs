@@ -176,22 +176,36 @@ fn member(can_propose: Option<bool>, reads_web: Option<bool>) -> TeamMember {
     }
 }
 
+fn facts<'a>(network: Option<TeamNetwork>, members: Option<&'a [TeamMember]>) -> TeamFacts<'a> {
+    TeamFacts {
+        network,
+        members,
+        ..TeamFacts::default()
+    }
+}
+
 #[test]
 fn a_team_with_no_network_and_no_member_that_reads_the_web_cannot_serve_a_run_that_needs_it() {
-    let web = TeamNeeds::of("researcher", true);
+    let web = TeamNeeds::of("researcher", true, None);
     let closed = Some(TeamNetwork::Closed);
     let none_read = [member(None, Some(false)), member(None, Some(false))];
     assert_eq!(
-        team_misfits(closed, Some(&none_read), web),
+        team_misfits(facts(closed, Some(&none_read)), &web),
         [TeamMisfit::NoWeb]
     );
     // One member that reads the web, a network that is not closed, or a run that does not
     // need the web is enough.
     let one_reads = [member(None, Some(false)), member(None, Some(true))];
-    assert!(team_misfits(closed, Some(&one_reads), web).is_empty());
-    assert!(team_misfits(Some(TeamNetwork::Open), Some(&none_read), web).is_empty());
-    assert!(team_misfits(Some(TeamNetwork::Limited), Some(&none_read), web).is_empty());
-    assert!(team_misfits(closed, Some(&none_read), TeamNeeds::of("researcher", false)).is_empty());
+    assert!(team_misfits(facts(closed, Some(&one_reads)), &web).is_empty());
+    assert!(team_misfits(facts(Some(TeamNetwork::Open), Some(&none_read)), &web).is_empty());
+    assert!(team_misfits(facts(Some(TeamNetwork::Limited), Some(&none_read)), &web).is_empty());
+    assert!(
+        team_misfits(
+            facts(closed, Some(&none_read)),
+            &TeamNeeds::of("researcher", false, None)
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -199,31 +213,259 @@ fn only_what_the_harness_said_is_a_misfit() {
     let needs = TeamNeeds {
         web: true,
         proposals: true,
+        ..TeamNeeds::default()
     };
     let unsaid = [member(None, None)];
     assert_eq!(
-        team_misfits(None, Some(&[member(Some(false), Some(false))]), needs),
+        team_misfits(
+            facts(None, Some(&[member(Some(false), Some(false))])),
+            &needs
+        ),
         [TeamMisfit::NoProposals],
         "a network the harness did not report is not a closed one"
     );
-    assert!(team_misfits(Some(TeamNetwork::Closed), Some(&unsaid), needs).is_empty());
-    assert!(team_misfits(Some(TeamNetwork::Closed), None, needs).is_empty());
-    assert!(team_misfits(Some(TeamNetwork::Closed), Some(&[]), needs).is_empty());
+    let closed = Some(TeamNetwork::Closed);
+    assert!(team_misfits(facts(closed, Some(&unsaid)), &needs).is_empty());
+    assert!(team_misfits(facts(closed, None), &needs).is_empty());
+    assert!(team_misfits(facts(closed, Some(&[])), &needs).is_empty());
 }
 
 #[test]
 fn a_planner_needs_a_member_that_can_propose_and_a_researcher_does_not() {
     let none_can = [member(Some(false), None), member(Some(false), None)];
     let one_can = [member(Some(false), None), member(Some(true), None)];
-    let planner = TeamNeeds::of("planner", false);
+    let planner = TeamNeeds::of("planner", false, None);
     assert_eq!(
-        team_misfits(None, Some(&none_can), planner),
+        team_misfits(facts(None, Some(&none_can)), &planner),
         [TeamMisfit::NoProposals]
     );
-    assert!(team_misfits(None, Some(&one_can), planner).is_empty());
-    assert!(team_misfits(None, Some(&none_can), TeamNeeds::of("researcher", false)).is_empty());
+    assert!(team_misfits(facts(None, Some(&one_can)), &planner).is_empty());
+    assert!(
+        team_misfits(
+            facts(None, Some(&none_can)),
+            &TeamNeeds::of("researcher", false, None)
+        )
+        .is_empty()
+    );
     assert_eq!(
         serde_json::to_value([TeamMisfit::NoWeb, TeamMisfit::NoProposals]).expect("serialize"),
         serde_json::json!(["no_web", "no_proposals"])
     );
+}
+
+fn method(name: &str, missing_roles: &[&str]) -> TeamMethod {
+    TeamMethod {
+        name: name.to_owned(),
+        source: "recipe".to_owned(),
+        default: false,
+        missing_roles: missing_roles
+            .iter()
+            .map(|role| (*role).to_owned())
+            .collect(),
+    }
+}
+
+fn need(kind: &str, name: &str, satisfied: bool) -> TeamNeed {
+    TeamNeed {
+        kind: kind.to_owned(),
+        name: name.to_owned(),
+        fix: "do it".to_owned(),
+        satisfied,
+    }
+}
+
+#[test]
+fn a_run_that_changes_the_repository_does_not_fit_a_team_that_delivers_a_report_or_records() {
+    let code = TeamNeeds::of("implementer", false, None);
+    assert!(code.repository);
+    for delivers in [TeamDelivers::Report, TeamDelivers::Records] {
+        let team = TeamFacts {
+            delivers: Some(delivers),
+            ..TeamFacts::default()
+        };
+        assert_eq!(team_misfits(team, &code), [TeamMisfit::NoRepository]);
+        // A Planner and a Researcher change nothing in the repository.
+        for kind in ["planner", "researcher"] {
+            assert!(team_misfits(team, &TeamNeeds::of(kind, false, None)).is_empty());
+        }
+    }
+    let branch = TeamFacts {
+        delivers: Some(TeamDelivers::Branch),
+        ..TeamFacts::default()
+    };
+    assert!(team_misfits(branch, &code).is_empty());
+}
+
+#[test]
+fn a_method_the_team_lacks_or_cannot_run_in_full_is_a_misfit_with_its_reason() {
+    let methods = [
+        method("tdd", &[]),
+        method("secure-build", &["security-vetter"]),
+    ];
+    let team = TeamFacts {
+        methods: Some(&methods),
+        ..TeamFacts::default()
+    };
+    let naming = |name| TeamNeeds::of("implementer", false, Some(name));
+    assert_eq!(
+        team_misfits(team, &naming("review")),
+        [TeamMisfit::UnknownMethod {
+            name: "review".to_owned()
+        }]
+    );
+    assert_eq!(
+        team_misfits(team, &naming("secure-build")),
+        [TeamMisfit::StepsSkipped {
+            method: "secure-build".to_owned(),
+            roles: vec!["security-vetter".to_owned()],
+        }]
+    );
+    assert!(team_misfits(team, &naming("tdd")).is_empty());
+    assert_eq!(
+        serde_json::to_value(TeamMisfit::UnknownMethod {
+            name: "review".to_owned()
+        })
+        .expect("serialize"),
+        serde_json::json!({"unknown_method": {"name": "review"}})
+    );
+}
+
+#[test]
+fn each_need_the_team_says_is_unmet_is_one_misfit() {
+    let needs = [
+        need("service", "smtp", false),
+        need("secret", "api key", true),
+        need("service", "calendar", false),
+        need(NEED_MODEL, "a model", false),
+    ];
+    let team = TeamFacts {
+        needs: Some(&needs),
+        ..TeamFacts::default()
+    };
+    assert_eq!(
+        team_misfits(team, &TeamNeeds::default()),
+        [
+            TeamMisfit::NeedsUnmet {
+                name: "smtp".to_owned()
+            },
+            TeamMisfit::NeedsUnmet {
+                name: "calendar".to_owned()
+            },
+        ],
+        "a model is met by the run naming one, which is checked per run"
+    );
+}
+
+#[test]
+fn an_absent_contract_is_never_a_misfit() {
+    let everything = TeamNeeds::of("implementer", true, Some("tdd"));
+    let nothing_said = TeamFacts::default();
+    assert!(team_misfits(nothing_said, &everything).is_empty());
+    // A reported but empty list says nothing either, as an empty member list does.
+    let empty = TeamFacts {
+        methods: Some(&[]),
+        needs: Some(&[]),
+        ..TeamFacts::default()
+    };
+    assert!(team_misfits(empty, &everything).is_empty());
+}
+
+fn local(sign_in: Option<(SignInState, Option<&str>)>) -> HarnessCapability {
+    serde_json::from_value(serde_json::json!({
+        "harness_kind": "codex",
+        "installed_version": "1",
+        "probe_error": null,
+        "probed_at": "2026-08-06T12:00:00Z",
+        "sign_in": sign_in.map(|(state, command)| serde_json::json!({
+            "state": state, "detail": "d", "command": command,
+        })),
+    }))
+    .expect("capability")
+}
+
+#[test]
+fn a_local_agent_is_a_team_of_one_that_delivers_a_branch() {
+    let signed_out = local(Some((SignInState::SignedOut, Some("codex login"))));
+    let team = TeamReport::of_agent("codex", &signed_out);
+    assert!(team.is_of_agent("codex"));
+    assert_eq!(team.delivers, Some(TeamDelivers::Branch));
+    let methods = team.methods.as_deref().expect("one method");
+    assert_eq!(methods.len(), 1);
+    assert!(methods[0].default && methods[0].missing_roles.is_empty());
+    let needs = team.needs.as_deref().expect("a sign-in need");
+    assert_eq!(needs.len(), 1);
+    assert!(!needs[0].satisfied);
+    assert_eq!(needs[0].kind, NEED_SIGN_IN);
+    assert!(needs[0].fix.contains("codex login"), "{}", needs[0].fix);
+    assert_eq!(team.members.as_deref().map(<[_]>::len), Some(1));
+    // Not said by a local agent: its supervision, where it works, its network.
+    assert!(team.profile.is_none() && team.works_in.is_none() && team.network.is_none());
+    assert_eq!(
+        team.misfits(&TeamNeeds::of("implementer", false, None)),
+        [TeamMisfit::NeedsUnmet {
+            name: "signed in".to_owned()
+        }]
+    );
+    // Signed in, the same need is met and nothing is refused.
+    let signed_in = TeamReport::of_agent("codex", &local(Some((SignInState::SignedIn, None))));
+    assert_eq!(
+        signed_in.needs.as_deref().map(|n| n[0].satisfied),
+        Some(true)
+    );
+    assert!(
+        signed_in
+            .misfits(&TeamNeeds::of("implementer", true, None))
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_local_agent_whose_sign_in_was_not_read_reports_no_needs() {
+    for sign_in in [None, Some((SignInState::Unknown, None))] {
+        let team = TeamReport::of_agent("codex", &local(sign_in));
+        assert!(team.needs.is_none());
+        assert!(
+            team.misfits(&TeamNeeds::of("implementer", false, None))
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn a_harness_that_wants_a_model_named_says_so_as_a_need_no_team_level_refusal_counts() {
+    let mut capability = local(Some((SignInState::SignedIn, None)));
+    capability.requires_model = true;
+    capability.requires_model_reason = Some("name a model".to_owned());
+    let team = TeamReport::of_agent("codex", &capability);
+    let needs = team.needs.as_deref().expect("needs");
+    assert_eq!(needs.len(), 2);
+    assert!(needs.iter().any(|n| n.kind == NEED_MODEL && !n.satisfied));
+    assert!(
+        team.misfits(&TeamNeeds::of("implementer", false, None))
+            .is_empty()
+    );
+    // A default model the agent names meets it.
+    capability.default_model = Some("gpt".to_owned());
+    assert_eq!(
+        TeamReport::of_agent("codex", &capability)
+            .needs
+            .map(|n| n.len()),
+        Some(1)
+    );
+}
+
+#[test]
+fn the_team_of_one_round_trips_and_a_docket_team_is_not_one() {
+    let team = TeamReport::of_agent("codex", &local(Some((SignInState::SignedIn, None))));
+    let wire = serde_json::to_value(&team).expect("serialize");
+    assert!(wire.get("profile").is_none(), "absent, not null: {wire}");
+    assert_eq!(wire["delivers"], "branch");
+    let back: TeamReport = serde_json::from_value(wire).expect("parse back");
+    assert_eq!(back, team);
+    // A report from before the contract has none of the three keys.
+    let old: TeamReport =
+        serde_json::from_value(serde_json::json!({"name": "saas", "profile": "attended"}))
+            .expect("an older report");
+    assert!(old.delivers.is_none() && old.methods.is_none() && old.needs.is_none());
+    assert!(!old.is_of_agent("saas"));
 }

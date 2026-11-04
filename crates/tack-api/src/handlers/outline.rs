@@ -26,6 +26,7 @@ use tack_core::models::{
 use tack_core::outline::bundle::{
     Board, Plan, ProfileRow, SectionSummary, Upsert, check, workflow_of,
 };
+use tack_core::outline::missing::{Missing, missing};
 use tack_core::outline::{
     BundleAutomation, BundleProfile, Outline, OutlineError, PlannedParent, items_from_csv,
     parse_due_date, parse_project_type,
@@ -80,6 +81,10 @@ pub struct OutlineResult {
     pub items: Vec<OutlineResultItem>,
     /// What each section of a project file does, in the file's order; empty for a CSV.
     pub sections: Vec<SectionSummary>,
+    /// What the file expects that no computer reports: a team (with docket's command that makes
+    /// it) or an agent (with how to install it). Nothing is created from it; empty for a CSV and
+    /// for a file that names no team and no agent.
+    pub missing: Vec<Missing>,
     /// What was read but not used as written: an unknown status or priority,
     /// a column with no field, a project block an add ignores.
     pub warnings: Vec<String>,
@@ -101,6 +106,26 @@ struct Read {
     outline: Outline,
     skipped: usize,
     warnings: Vec<String>,
+}
+
+/// What `outline` expects of teams and agents that no active runner reports.
+async fn missing_of(state: &AppState, outline: &Outline) -> ApiResult<Vec<Missing>> {
+    if outline.teams.is_empty() && outline.profiles.is_empty() && outline.automation.is_none() {
+        return Ok(Vec::new());
+    }
+    let (mut teams, mut harnesses) = (
+        std::collections::BTreeSet::new(),
+        std::collections::BTreeSet::new(),
+    );
+    for harness in crate::handlers::teams::reported_harnesses(state).await? {
+        for team in harness.capability.teams.unwrap_or_default() {
+            if !team.is_of_agent(&harness.kind) {
+                teams.insert(team.name);
+            }
+        }
+        harnesses.insert(harness.kind);
+    }
+    Ok(missing(outline, &teams, &harnesses))
 }
 
 fn refused(e: OutlineError) -> ApiError {
@@ -360,6 +385,7 @@ async fn create_new(
         auto_start: false,
     };
     let plan = check(&read.outline, &board).map_err(refused)?;
+    let missing = missing_of(state, &read.outline).await?;
     let strangers: Vec<String> = plan
         .items
         .items
@@ -375,14 +401,18 @@ async fn create_new(
         }));
     }
     if dry_run {
-        return Ok((None, preview(plan, read, &source)));
+        let result = OutlineResult {
+            missing,
+            ..preview(plan, read, &source)
+        };
+        return Ok((None, result));
     }
 
     let project = state.repo.create_project(state.workspace_id, spec).await?;
     match write(state, &project, true, &board, plan, read, source).await {
         Ok(result) => {
             let project = state.repo.get_project(project.id).await?.unwrap_or(project);
-            Ok((Some(project), result))
+            Ok((Some(project), OutlineResult { missing, ..result }))
         }
         Err(e) => {
             // Items are one transaction; the rows of the other sections go
@@ -452,6 +482,7 @@ async fn into_existing_project(
         auto_start: project.auto_start_enabled,
     };
     let plan = check(&read.outline, &board).map_err(refused)?;
+    let missing = missing_of(state, &read.outline).await?;
 
     let mut belongs: HashMap<Uuid, bool> = HashMap::new();
     let mut strangers = Vec::new();
@@ -481,10 +512,14 @@ async fn into_existing_project(
         }));
     }
     if dry_run {
-        return Ok(Json(preview(plan, read, &source)));
+        return Ok(Json(OutlineResult {
+            missing,
+            ..preview(plan, read, &source)
+        }));
     }
 
     let result = write(state, &project, false, &board, plan, read, source).await?;
+    let result = OutlineResult { missing, ..result };
     for item in &result.items {
         if let Some(item_id) = item.id {
             websocket::broadcast_event(
@@ -943,6 +978,7 @@ async fn write(
             })
             .collect(),
         sections,
+        missing: Vec::new(),
         warnings,
     })
 }
@@ -977,6 +1013,7 @@ fn preview(plan: Plan, read: Read, source: &ItemSource) -> OutlineResult {
         } else {
             plan.sections
         },
+        missing: Vec::new(),
         warnings,
     }
 }

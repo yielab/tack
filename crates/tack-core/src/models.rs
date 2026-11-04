@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::outline::{BundleAutomation, BundleProfile, BundleRole};
+use crate::outline::{BundleAutomation, BundleProfile, BundleRole, BundleTeam};
 use crate::vocabulary::VocabularyMap;
 use crate::workflow::WorkflowConfig;
 
@@ -984,6 +984,8 @@ pub struct ProjectTemplate {
     pub profiles: Vec<BundleProfile>,
     /// The automation settings a project made from the template starts with.
     pub automation: Option<BundleAutomation>,
+    /// The teams the template expects its profiles to name; described, never created.
+    pub teams: Vec<BundleTeam>,
     pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -1017,6 +1019,8 @@ pub struct CreateProjectTemplate {
     pub profiles: Vec<BundleProfile>,
     #[serde(default)]
     pub automation: Option<BundleAutomation>,
+    #[serde(default)]
+    pub teams: Vec<BundleTeam>,
 }
 
 // ─── Custom Fields ───────────────────────────────────────────

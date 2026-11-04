@@ -227,6 +227,7 @@ pub(crate) async fn build_project_from_template(
         roles: template.roles.clone(),
         sprints: Vec::new(),
         automation: template.automation.clone(),
+        teams: template.teams.clone(),
         items: Vec::new(),
     };
     // The first workspace of the board (made when there is none) owns it.
@@ -463,6 +464,12 @@ pub async fn save_project_as_template(
                 }),
                 merge_on_done: Some(s.merge_on_done),
             });
+    let reported_teams = crate::handlers::teams::reported_bundle_teams(&state)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, project_id = %project_id, "Failed to read the reported teams");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let bundle = to_bundle(&Parts {
         project: &project,
         fields: &[],
@@ -480,6 +487,7 @@ pub async fn save_project_as_template(
         item_fields: &[],
         dependencies: &[],
         fleets: &fleets,
+        reported_teams: &reported_teams,
     });
 
     let template_data = CreateProjectTemplate {
@@ -501,6 +509,7 @@ pub async fn save_project_as_template(
         roles: bundle.roles,
         profiles: bundle.profiles,
         automation: bundle.automation,
+        teams: bundle.teams,
     };
 
     repo::templates::create_template(&state.repo, template_data)

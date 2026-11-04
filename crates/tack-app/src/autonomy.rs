@@ -148,7 +148,7 @@ pub fn kind_is(harness: &HarnessCapability, kind: &str) -> bool {
 /// A team that needs a person during a run: its profile is not lights-out, or it
 /// reports a violation of the one it names.
 pub fn is_attended(team: &TeamReport) -> bool {
-    team.profile != "lights-out" || !team.violations.is_empty()
+    team.profile.as_deref() != Some("lights-out") || !team.violations.is_empty()
 }
 
 /// The most autonomy the team that ran an attempt allows: the named team's as the

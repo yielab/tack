@@ -242,6 +242,7 @@ that docket exists; the variant is the captures with those keys taken out.
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
 | `pod-capabilities` | `GET /pods/<pod>` | 200 | captured |
+| `pod-contract` | `GET /pods/<pod>` | 200 | constructed |
 | `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |
@@ -328,6 +329,10 @@ which docket claims and settles `failed` before any hop (`task-failed-base-ref-f
 `post-task-prepare` is the one request that carries `prepare` to a team with a codebase.
 `task-failed-approval-expired` stays `constructed` on purpose: docket's own deadline for an approval is
 hours, and the script waits for nothing.
+
+`pod-contract` is `pod-attended` with the three keys of `podContract` (`delivers`, `methods`, `needs`).
+It is the one constructed file whose keys the source does not list, because docket has not shipped the
+feature: they are the keys Tack asked for. `pod-folder` and `pod-attended` stay as the case without it.
 
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.

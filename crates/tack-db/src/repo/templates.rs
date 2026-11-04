@@ -3,7 +3,7 @@ use crate::{StoreError, decode};
 use serde_json::json;
 use sqlx::FromRow;
 use tack_core::models::*;
-use tack_core::outline::{BundleAutomation, BundleAutonomy, BundleProfile, BundleRole};
+use tack_core::outline::{BundleAutomation, BundleAutonomy, BundleProfile, BundleRole, BundleTeam};
 use tack_core::workflow::WorkflowConfig;
 use tracing::instrument;
 use uuid::Uuid;
@@ -21,6 +21,7 @@ struct TemplateRow {
     roles: String,
     profiles: String,
     automation: Option<String>,
+    teams: String,
     is_builtin: i32,
     created_at: String,
     updated_at: String,
@@ -41,6 +42,7 @@ impl TemplateRow {
             roles: decode::json(TABLE, "roles", &self.roles)?,
             profiles: decode::json(TABLE, "profiles", &self.profiles)?,
             automation: decode::optional_json(TABLE, "automation", self.automation.as_deref())?,
+            teams: decode::json(TABLE, "teams", &self.teams)?,
             is_builtin: self.is_builtin != 0,
             created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
             updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
@@ -77,8 +79,8 @@ pub async fn create_template(
 
     sqlx::query(
         "INSERT INTO project_templates
-         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
     )
     .bind(id.to_string())
     .bind(&data.name)
@@ -95,6 +97,7 @@ pub async fn create_template(
             .as_ref()
             .and_then(|a| serde_json::to_string(a).ok()),
     )
+    .bind(serde_json::to_string(&data.teams).unwrap_or_else(|_| "[]".to_string()))
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
     .execute(repo.pool())
@@ -107,7 +110,7 @@ pub async fn create_template(
 #[instrument(skip(repo))]
 pub async fn get_template(repo: &Repository, id: Uuid) -> Result<ProjectTemplate, StoreError> {
     let row = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
+        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
@@ -129,7 +132,7 @@ pub async fn list_templates(
         let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
              ORDER BY is_builtin DESC, name ASC"
@@ -139,7 +142,7 @@ pub async fn list_templates(
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
@@ -176,6 +179,8 @@ struct BuiltinSpec {
     roles: Vec<BundleRole>,
     profiles: Vec<BundleProfile>,
     automation: Option<BundleAutomation>,
+    /// The teams the template's profiles are expected to name when pointed at docket.
+    teams: Vec<BundleTeam>,
 }
 
 impl BuiltinSpec {
@@ -190,6 +195,7 @@ impl BuiltinSpec {
             roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
+            teams: Vec::new(),
         }
     }
 }
@@ -289,12 +295,123 @@ fn content_writer() -> BundleProfile {
     )
 }
 
+/// A profile of the Digital business template: it names no agent and no team, so it runs on
+/// whichever agent the project uses, and its work reaches the repository (a report is a file).
+fn department(
+    name: &str,
+    kind: &str,
+    network: bool,
+    delivers: &str,
+    instructions: &str,
+) -> BundleProfile {
+    BundleProfile {
+        tool_policy: if network {
+            json!({"network": true})
+        } else {
+            json!({})
+        },
+        delivers: Some(delivers.to_string()),
+        ..builtin_profile(name, kind, instructions)
+    }
+}
+
+/// A team the Digital business template expects once its profiles are pointed at docket.
+fn expected_team(name: &str, shape: &str, delivers: &str, methods: &[&str]) -> BundleTeam {
+    BundleTeam {
+        name: name.to_string(),
+        shape: Some(shape.to_string()),
+        delivers: Some(delivers.to_string()),
+        methods: methods.iter().map(|method| method.to_string()).collect(),
+    }
+}
+
 fn builtin_choice(name: &str, options: &[&str]) -> CustomFieldDefinition {
     builtin_field(
         name,
         CustomFieldType::Select,
         Some(options.iter().map(|o| o.to_string()).collect()),
     )
+}
+
+/// The Digital business template: six departments as roles, each with a profile that names no
+/// agent, and the folder teams docket would run them with.
+fn digital_business() -> BuiltinSpec {
+    BuiltinSpec {
+        name: "Digital business",
+        description: "A digital business as departments: Software, Operations, Support, Growth, Finance and Insight, each a role with a profile that names no agent, so it runs on whichever agent the project uses and delivers into the repository (a report is a file). The teams listed under it are what docket would run them with: a department gets a team of its own only when its work has a different shape or a different gate.",
+        project_type: ProjectType::Custom,
+        workflow: None,
+        custom_fields: Vec::new(),
+        roles: vec![
+            builtin_role("Software", "#3b82f6", "Software engineer"),
+            builtin_role("Operations", "#6b7280", "Operations analyst"),
+            builtin_role("Support", "#10b981", "Support analyst"),
+            builtin_role("Growth", "#f59e0b", "Growth analyst"),
+            builtin_role("Finance", "#8b5cf6", "Finance analyst"),
+            builtin_role("Insight", "#ec4899", "Insight analyst"),
+        ],
+        profiles: vec![
+            department(
+                "Software engineer",
+                "implementer",
+                false,
+                "a change on a branch",
+                "Implement the change on a branch; run the project's checks before you finish.",
+            ),
+            department(
+                "Operations analyst",
+                "researcher",
+                false,
+                "a report in the repository",
+                "Check deployment, backups and monitoring. Write what you found as a report file in the repository; change nothing else.",
+            ),
+            department(
+                "Support analyst",
+                "researcher",
+                true,
+                "a drafted reply in the repository",
+                "Read the request and draft the reply as a file in the repository. Send nothing yourself.",
+            ),
+            department(
+                "Growth analyst",
+                "researcher",
+                true,
+                "a campaign draft in the repository",
+                "Draft campaigns and measure them; write them as files in the repository. Publish nothing yourself.",
+            ),
+            department(
+                "Finance analyst",
+                "researcher",
+                false,
+                "a report in the repository",
+                "Reconcile the figures you are given and write the result as a report file in the repository; move no money.",
+            ),
+            department(
+                "Insight analyst",
+                "researcher",
+                true,
+                "a report in the repository",
+                "Answer the question from the data and sources you can reach; write the answer as a report file in the repository.",
+            ),
+        ],
+        automation: level_three(),
+        teams: vec![
+            expected_team(
+                "business-build",
+                "build",
+                "branch",
+                &["tdd", "cross-family-review"],
+            ),
+            expected_team(
+                "business-respond",
+                "respond",
+                "report",
+                &["research-review"],
+            ),
+            expected_team("business-operate", "operate", "report", &[]),
+            expected_team("business-routine", "routine", "records", &[]),
+        ],
+    }
 }
 
 /// Seed the built-in project templates if they don't exist yet.
@@ -350,6 +467,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
             roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
+            teams: Vec::new(),
         },
         BuiltinSpec {
             name: "Steel Frame Build",
@@ -365,6 +483,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
             roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
+            teams: Vec::new(),
         },
         BuiltinSpec {
             name: "SIP Panel Build",
@@ -380,6 +499,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
             roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
+            teams: Vec::new(),
         },
         BuiltinSpec::base(
             "Personal Tasks",
@@ -451,6 +571,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
                 ops_review(),
             ],
             automation: level_three(),
+            teams: Vec::new(),
         },
         BuiltinSpec {
             name: "Library or CLI",
@@ -496,6 +617,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
                 ops_review(),
             ],
             automation: level_three(),
+            teams: Vec::new(),
         },
         BuiltinSpec {
             name: "Static content site",
@@ -522,7 +644,9 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
                 ops_review(),
             ],
             automation: level_three(),
+            teams: Vec::new(),
         },
+        digital_business(),
     ];
 
     for spec in &specs {
@@ -571,8 +695,8 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
 
         sqlx::query(
             "INSERT INTO project_templates
-             (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
+             (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
         )
         .bind(id.to_string())
         .bind(spec.name)
@@ -589,6 +713,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
                 .as_ref()
                 .and_then(|a| serde_json::to_string(a).ok()),
         )
+        .bind(serde_json::to_string(&spec.teams).unwrap_or_else(|_| "[]".to_string()))
         .bind(now.to_rfc3339())
         .bind(now.to_rfc3339())
         .execute(repo.pool())

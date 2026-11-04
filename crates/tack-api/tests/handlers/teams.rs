@@ -435,3 +435,244 @@ async fn an_agent_credential_reads_a_teams_activity_limited_to_its_projects() {
     let (status, _, got) = activity(proposer).await;
     assert_eq!(status, 403, "{got}");
 }
+
+/// What a runner reports of a local agent: the agent's own report, with the team of one the
+/// runner fills from it.
+fn local_agent(kind: &str, signed_in: bool) -> Value {
+    let mut harness = json!({
+        "harness_kind": kind, "installed_version": "1", "probe_error": null,
+        "probed_at": "2026-11-03T12:00:00Z",
+        "sign_in": {
+            "state": if signed_in { "signed_in" } else { "signed_out" },
+            "detail": "d", "command": format!("{kind} login"),
+        },
+    });
+    let capability: tack_protocol::execution::HarnessCapability =
+        serde_json::from_value(harness.clone()).expect("a capability");
+    harness["teams"] = json!([tack_protocol::execution::TeamReport::of_agent(
+        kind,
+        &capability
+    )]);
+    harness
+}
+
+/// A local agent is a team of one: listed beside the pods, with the profiles that run on it, and
+/// a profile whose agent is not signed in is listed with the need that is not met.
+#[tokio::test]
+async fn a_local_agent_is_a_team_of_one_with_the_profiles_that_run_on_it() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    seed::agent_runner_reporting(
+        repo,
+        "ru1",
+        &snapshot(json!([
+            local_agent("claude-code", true),
+            local_agent("codex", false),
+            harness(
+                "docket",
+                "2026-11-03T12:00:00Z",
+                Some(json!([
+                    {"name": "writers", "profile": "lights-out", "violations": []}
+                ]))
+            ),
+        ])),
+    )
+    .await;
+    seed::agent_profile_with_policy(
+        repo,
+        "p1",
+        "Coder",
+        "implementer",
+        &json!({"agent": "claude-code"}),
+    )
+    .await;
+    seed::agent_profile_with_policy(repo, "p2", "Bare", "implementer", &json!({})).await;
+    seed::agent_profile_with_policy(
+        repo,
+        "p3",
+        "Codex coder",
+        "implementer",
+        &json!({"agent": "codex"}),
+    )
+    .await;
+    // Not reported: opencode has no runner, and docket reports no team of one.
+    seed::agent_profile_with_policy(
+        repo,
+        "p4",
+        "Open",
+        "implementer",
+        &json!({"agent": "opencode"}),
+    )
+    .await;
+    seed::agent_profile_with_policy(
+        repo,
+        "p5",
+        "Docket default",
+        "implementer",
+        &json!({"agent": "docket"}),
+    )
+    .await;
+
+    let (_, got) = common::send(
+        &b.app,
+        "GET",
+        "/api/teams",
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    let teams = got["teams"].as_array().unwrap();
+    let names: Vec<(&str, Option<&str>)> = teams
+        .iter()
+        .map(|t| (t["name"].as_str().unwrap(), t["harness"].as_str()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("claude-code", Some("claude-code")),
+            ("codex", Some("codex")),
+            ("writers", Some("docket")),
+        ],
+        "a profile that runs where no team of one is reported adds no team: {got}"
+    );
+    let claude = &teams[0];
+    assert_eq!(claude["reported"], true, "{got}");
+    assert_eq!(claude["report"]["delivers"], "branch", "{got}");
+    assert!(claude["report"].get("profile").is_none(), "{got}");
+    assert_eq!(claude["report"]["methods"][0]["name"], "agent", "{got}");
+    // A profile naming no agent runs on Claude Code.
+    assert_eq!(
+        claude["profiles"],
+        json!([
+            {"id": "p2", "name": "Bare", "misfits": []},
+            {"id": "p1", "name": "Coder", "misfits": []},
+        ]),
+        "{got}"
+    );
+    assert_eq!(
+        teams[1]["profiles"],
+        json!([{"id": "p3", "name": "Codex coder", "misfits": [{"needs_unmet": {"name": "signed in"}}]}]),
+        "{got}"
+    );
+    assert_eq!(teams[2]["profiles"], json!([]), "{got}");
+}
+
+async fn save_profile(b: &crate::handlers::autonomy::Board, tool_policy: Value) -> (u16, Value) {
+    let (status, body) = common::send(
+        &b.app,
+        "POST",
+        "/api/agent-profiles",
+        json!({"name": format!("P{}", uuid::Uuid::new_v4().simple()), "instructions": "x", "tool_policy": tool_policy}),
+        &operator_headers(),
+    )
+    .await;
+    (status.as_u16(), body)
+}
+
+/// Saving a profile checks its methods against what runs it: a name outside the team's catalogue
+/// is refused naming the catalogue, a method the team lacks a member for is saved with a warning,
+/// and a local agent, which has one method, takes none.
+#[tokio::test]
+async fn a_profile_save_checks_its_methods_against_the_team_that_runs_it() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    seed::agent_runner_reporting(
+        repo,
+        "ru1",
+        &snapshot(json!([
+            local_agent("claude-code", true),
+            harness(
+                "docket",
+                "2026-11-03T12:00:00Z",
+                Some(json!([
+                    {"name": "saas", "profile": "attended", "violations": [], "methods": [
+                        {"name": "tdd", "source": "recipe", "default": true},
+                        {"name": "secure-build", "source": "recipe", "default": false,
+                         "missing_roles": ["security-vetter"]},
+                    ]},
+                    {"name": "plain", "profile": "attended", "violations": []},
+                ]))
+            ),
+        ])),
+    )
+    .await;
+    let on = |team: &str, method: &str| json!({"agent": "docket", "docket": {"team": team, "pipeline_by_type": {"bug": method}}});
+
+    let (status, ok) = save_profile(&b, on("saas", "tdd")).await;
+    assert_eq!(status, 200, "{ok}");
+    assert!(ok.get("warnings").is_none(), "{ok}");
+
+    let (status, warned) = save_profile(&b, on("saas", "secure-build")).await;
+    assert_eq!(status, 200, "{warned}");
+    let warning = warned["warnings"][0].as_str().unwrap_or_default();
+    assert!(
+        warning.contains("secure-build") && warning.contains("security-vetter"),
+        "{warned}"
+    );
+
+    let (status, refused) = save_profile(&b, on("saas", "review")).await;
+    assert_eq!(status, 400, "{refused}");
+    let message = refused["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("no method named review") && message.contains("offers tdd, secure-build"),
+        "{refused}"
+    );
+
+    // A team that reports no catalogue, or that nobody reports, is not second-guessed.
+    for team in ["plain", "ghosts"] {
+        let (status, body) = save_profile(&b, on(team, "anything")).await;
+        assert_eq!(status, 200, "{team}: {body}");
+    }
+
+    // A local agent has one method, its own loop.
+    let (status, local) = save_profile(
+        &b,
+        json!({"agent": "claude-code", "docket": {"pipeline_by_type": {"bug": "tdd"}}}),
+    )
+    .await;
+    assert_eq!(status, 400, "{local}");
+    assert!(
+        local["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("its own loop"),
+        "{local}"
+    );
+    // An empty map names nothing; a map of anything but names is refused.
+    let (status, body) = save_profile(
+        &b,
+        json!({"agent": "claude-code", "docket": {"pipeline_by_type": {}}}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = save_profile(
+        &b,
+        json!({"agent": "docket", "docket": {"pipeline_by_type": {"bug": 3}}}),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+
+    // The update answers with the same warning.
+    let (_, created) = save_profile(&b, on("saas", "tdd")).await;
+    let id = created["agent_profile_id"].as_str().unwrap();
+    let (status, updated) = common::send(
+        &b.app,
+        "PATCH",
+        &format!("/api/agent-profiles/{id}"),
+        json!({"tool_policy": on("saas", "secure-build")}),
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, 200, "{updated}");
+    assert!(
+        updated["warnings"][0]
+            .as_str()
+            .unwrap_or_default()
+            .contains("security-vetter"),
+        "{updated}"
+    );
+}
