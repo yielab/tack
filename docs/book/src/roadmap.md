@@ -40,7 +40,20 @@ The screen shows the count, a drawer, a toast and the tab's title; the desktop a
 notification; and a webhook receives each one signed, retried, with its id. Phase 10's webhook
 (`item.*`, `sprint.*`, `item.due_soon`) is replaced by it. Six cards in three rounds.
 
-What remains besides it are two dependency cards:
+**Phase 89 — the board orchestrates and a team declares what it accepts** ([ADR 0036](https://github.com/yielab/tack/blob/develop/docs/adr/0036-the-board-orchestrates-and-a-team-declares-what-it-accepts.md),
+proposed 2026-11-03; plan in `docs/plans/phase-89.md`). One owner per concept: the board decides what
+is done and by whom, the team decides how. A team's report gains its contract (what it delivers, the
+methods it can run and the roles each lacks, what its work still needs) and a card is refused before
+sending when the team cannot do what it needs — not only the web and proposals of today but the
+repository, the method and the needs. One routing function serves every screen; a parent card reads
+how many children are done and tells the inbox when the last one finishes, moving nothing. Each
+limit — run, step, team — is shown with who applies it, and a team paused on its budget is resumed
+from the board. A business structure is a template: roles as departments and the teams it expects,
+compared with what docket reports; "Digital business" is the first, and the repository's teams are
+applied through the runner with the person approving docket's commands. Four additive asks go to
+docket, each probed as a feature. Seven cards in five rounds.
+
+What remains besides them are two dependency cards:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
   Run the desktop workflow on the branch first.

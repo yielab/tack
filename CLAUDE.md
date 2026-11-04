@@ -116,6 +116,13 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   `GET /api/notifications` + `/live` socket, sidebar count and drawer, desktop notifications, and a
   `Channel` trait whose first implementation is the webhook with retries. Replaces Phase 10's webhook
   (`item.*`, `sprint.*`, `item.due_soon`, `DueSoonSink`) with nothing kept. Cards A; B ∥ C ∥ D; E ∥ F.
+- **Proposed 2026-11-03:** Phase 89 (`docs/plans/phase-89.md`, ADR 0036) — the board orchestrates, a team
+  declares what it accepts: one owner per concept; `TeamReport` gains a contract (`delivers`, `methods[]` with
+  missing roles, `needs[]`) and the fit check grows from two facts to five; one router (`GET
+  /api/projects/{id}/routing`) for every screen; a parent shows its children's progress and moves nothing;
+  each limit shown with its owner and **Resume team**; a business structure is a template (`teams:` descriptive,
+  "Digital business") and the repository's teams are applied through the runner. Four additive asks to docket
+  (`podShape`, `podContract`, `pipelineChecked`, `podResume`), each probed. Cards A ∥ C; D; E; F; G.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
