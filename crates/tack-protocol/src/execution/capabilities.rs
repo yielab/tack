@@ -71,6 +71,11 @@ pub struct Concurrency {
 /// `additional`, so an older runner or reader that does not know it loses nothing.
 const API_VERSION_KEY: &str = "api_version";
 
+/// The key under which a harness lists the features of its API that the board uses and that it
+/// answers to (docket's `features`), by name. Rides in `additional` like [`API_VERSION_KEY`]; absent
+/// means none is listed, or the runner is older than the key.
+const API_FEATURES_KEY: &str = "api_features";
+
 /// The key under which an agent reports what it itself can do, per feature, in the shape of the
 /// runner's own `features`. It rides in `additional` beside `decisions`, so a runner or reader that
 /// does not know it loses nothing; absent means the agent did not say.
@@ -142,6 +147,20 @@ impl HarnessCapability {
         if let Ok(value) = serde_json::to_value(features) {
             self.additional.insert(FEATURES_KEY.to_owned(), value);
         }
+    }
+
+    /// Whether the harness lists `feature` among those of its API the runner checked.
+    pub fn lists_api_feature(&self, feature: &str) -> bool {
+        self.additional
+            .get(API_FEATURES_KEY)
+            .and_then(|listed| listed.as_array())
+            .is_some_and(|listed| listed.iter().any(|name| name.as_str() == Some(feature)))
+    }
+
+    /// Records which of the API's features the harness lists; see [`Self::lists_api_feature`].
+    pub fn set_api_features(&mut self, features: &[&str]) {
+        self.additional
+            .insert(API_FEATURES_KEY.to_owned(), serde_json::json!(features));
     }
 
     /// Records the API version the harness answers; see [`Self::api_version`].

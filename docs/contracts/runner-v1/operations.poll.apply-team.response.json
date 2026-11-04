@@ -1,0 +1,14 @@
+{
+  "protocol_version": 1,
+  "operations": [
+    {
+      "operation_id": "op_01J00000000000000000000002",
+      "operation": "apply-team",
+      "harness": "docket",
+      "team": "saas-support",
+      "shape": "respond",
+      "directory": "/home/example/saas",
+      "accept": "3f9a1c7e2b40"
+    }
+  ]
+}

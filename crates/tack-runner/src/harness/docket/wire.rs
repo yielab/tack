@@ -629,3 +629,24 @@ pub(super) struct RequestedSchema {
 pub(super) struct Affordances {
     pub accepts_text: bool,
 }
+
+/// What `POST /pods/<pod>/apply` answers when the folder would run commands on this machine
+/// (`409`) and when it was applied (`200`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ApplyAnswer {
+    /// The code to send back as `accept` once a person has read `runs`. Absent from an answer
+    /// that is not a request for one (a folder that changed since the code was given).
+    pub review_code: Option<String>,
+    /// What the folder would run, one entry each.
+    #[serde(default)]
+    pub runs: Vec<ApplyRun>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ApplyRun {
+    pub kind: String,
+    pub name: String,
+    /// The exact text the person is asked to allow.
+    pub runs: String,
+}

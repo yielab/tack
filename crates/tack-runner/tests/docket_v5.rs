@@ -5901,7 +5901,7 @@ async fn an_operation_the_board_hands_out_is_done_and_its_result_sent_back() {
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 18] = [
+const CLIENT_ROUTES: [&str; 19] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -5910,6 +5910,7 @@ const CLIENT_ROUTES: [&str; 18] = [
     "GET /pods/<pod>/records/<set>",
     "POST /pods",
     "POST /pods/<pod>/resume",
+    "POST /pods/<pod>/apply",
     "POST /tasks/<pod>",
     "GET /tasks/<pod>",
     "GET /tasks/<pod>/<id>",
@@ -5928,8 +5929,13 @@ const NOT_IN_CLIENT: [&str; 0] = [];
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
 /// that stays running, and `current` and `updatedSince` need one. `retry` was captured against a
 /// live docket for Card L (`docs/closed-cycles/plans/phase-87.md`) and moved out of this list.
-/// `resume` waits for a docket that serves it (`podResume`).
-const CONSTRUCTED_ONLY: [&str; 2] = ["GET /tasks/<pod>", "POST /pods/<pod>/resume"];
+/// `resume` waits for a docket that serves it (`podResume`). `apply` answers from docket's source:
+/// the capture script has no team folder to apply.
+const CONSTRUCTED_ONLY: [&str; 3] = [
+    "GET /tasks/<pod>",
+    "POST /pods/<pod>/resume",
+    "POST /pods/<pod>/apply",
+];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {

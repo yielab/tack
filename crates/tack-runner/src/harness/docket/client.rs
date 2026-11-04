@@ -170,11 +170,37 @@ impl Client {
             .await
     }
 
-    /// `POST /pods` with `ensure`: `200` when the pod exists, `201` when made.
-    pub async fn ensure_pod(&self, pod: &str, location: &str) -> Result<Reply, String> {
-        // No shape is named: docket's own default is the code team, whatever it calls it.
-        let body = json!({"name": pod, "location": location, "ensure": true});
+    /// `POST /pods` with `ensure`: `200` when the pod exists, `201` when made. Without a `shape`
+    /// none is named and docket defaults it to the code team, whatever it calls it; with one, the
+    /// pod is made from that blueprint, which only a docket that lists `podShape` guarantees.
+    pub async fn ensure_pod(
+        &self,
+        pod: &str,
+        location: &str,
+        shape: Option<&str>,
+    ) -> Result<Reply, String> {
+        let mut body = json!({"name": pod, "location": location, "ensure": true});
+        if let Some(shape) = shape {
+            body["blueprint"] = json!(shape);
+        }
         self.send(Method::POST, &["pods"], &[], Some(body)).await
+    }
+
+    /// `POST /pods/<pod>/apply`: applies a folder on this machine to the pod. A folder that would
+    /// run commands is refused with `409` and a `reviewCode` until the same call carries it as
+    /// `accept`.
+    pub async fn apply_pod(
+        &self,
+        pod: &str,
+        directory: &str,
+        accept: Option<&str>,
+    ) -> Result<Reply, String> {
+        let mut body = json!({"directory": directory});
+        if let Some(code) = accept {
+            body["accept"] = json!(code);
+        }
+        self.send(Method::POST, &["pods", pod, "apply"], &[], Some(body))
+            .await
     }
 
     /// `GET /pods/<pod>/records`: the record sets the team declares.

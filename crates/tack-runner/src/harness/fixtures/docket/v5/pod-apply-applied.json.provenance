@@ -1,0 +1,11 @@
+constructed
+route: POST /pods/<pod>/apply
+status: 200
+tack-sends: yes
+optional-keys: accept
+built-from: the answer docket writes when the directory was applied: `ok` true, `project`, one item per thing the directory declares (kind, name, action, note) and `dryRun`
+source: src/docket/interfaces/http/routes/pod_apply.py (the final branch) and src/docket/teams/apply/model.py (`ApplyItem`) at the checkout a268257b, read and not run
+request: {"directory":"/scratch/repo/.docket/teams/saas-dev","accept":"3f9a1c7e2b40"}
+docket: docket 0.3.0b1 (API 6), source checkout a268257b, read and not run
+date: 2026-11-04
+note: not captured, because the apply needs a directory of a team; the values are made up. The request is the call after a person read the commands: `accept` carries the `reviewCode` of pod-apply-needs-code.

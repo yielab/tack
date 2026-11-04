@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "operation_id": "op_01J00000000000000000000002",
+  "outcome": {
+    "state": "needs_review",
+    "code": "3f9a1c7e2b40",
+    "commands": ["allow-commands allowCommands: pytest, ruff"]
+  }
+}

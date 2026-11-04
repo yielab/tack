@@ -4962,6 +4962,83 @@
         }
       }
     },
+    "/api/projects/{id}/teams/apply": {
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "POST /api/projects/{id}/teams/apply",
+        "description": "Making teams on a person's computer is a person's call, so the route is the operator's alone\n(`agent_access`).",
+        "operationId": "apply_teams",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTeamsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "How each team went, in the order asked: applied, waiting for a person to read the commands docket listed, or refused with the reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeamApplyResult"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No team named, a name or shape docket does not know, or the project's code is not a folder on a computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No active runner reports a docket that lists `podShape`; the sentence says what to do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/boards": {
       "get": {
         "tags": [
@@ -9490,6 +9567,20 @@
               "minimum": 0
             },
             "description": "The positions to apply; absent means everything that waits."
+          }
+        }
+      },
+      "ApplyTeamsRequest": {
+        "type": "object",
+        "required": [
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamToApply"
+            }
           }
         }
       },
@@ -17708,6 +17799,69 @@
           }
         }
       },
+      "TeamApplyResult": {
+        "type": "object",
+        "required": [
+          "team",
+          "state"
+        ],
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it was refused."
+          },
+          "review": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamApplyReview",
+                "description": "Present with `needs_review`."
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/TeamApplyState"
+          },
+          "team": {
+            "type": "string"
+          }
+        }
+      },
+      "TeamApplyReview": {
+        "type": "object",
+        "description": "What docket asks a person to read before it applies the folder.",
+        "required": [
+          "code",
+          "commands"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code to send back as `accept`; it changes when the folder does."
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the folder would run on the computer, one line each, as docket listed it."
+          }
+        }
+      },
+      "TeamApplyState": {
+        "type": "string",
+        "description": "How applying one team went.",
+        "enum": [
+          "applied",
+          "needs_review",
+          "refused"
+        ]
+      },
       "TeamBudget": {
         "type": "object",
         "description": "What a team may spend: the harness applies it, Tack shows it.",
@@ -18593,6 +18747,31 @@
                 "$ref": "#/components/schemas/WaitsOn"
               }
             ]
+          }
+        }
+      },
+      "TeamToApply": {
+        "type": "object",
+        "description": "One team to apply: a row of the import preview's `missing` list, or one of the file's `teams`.",
+        "required": [
+          "name",
+          "shape"
+        ],
+        "properties": {
+          "accept": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The code docket gave for the commands the folder would run, once a person has read them:\nthe answer to an earlier `needs_review` for this team."
+          },
+          "name": {
+            "type": "string",
+            "description": "The team's name, which is also the name of its folder under `.docket/teams/`."
+          },
+          "shape": {
+            "type": "string",
+            "description": "The shape the team is made from: `build`, `respond`, `operate` or `routine`."
           }
         }
       },

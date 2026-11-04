@@ -32,7 +32,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use async_trait::async_trait;
 use tack_protocol::execution::{
     CapabilitySupport, ExecutionRequestSnapshot, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, TeamActivity, TeamReport,
+    HarnessKind as DomainHarnessKind, OperationOutcome, TeamActivity, TeamReport,
 };
 use thiserror::Error;
 
@@ -232,8 +232,8 @@ pub(crate) fn local_prompt(work: &crate::client::ClaimedWork) -> String {
 pub async fn do_team_operation(
     adapters: &AdapterRegistry,
     operation: tack_protocol::execution::TeamOperation,
-) -> tack_protocol::execution::OperationOutcome {
-    use tack_protocol::execution::{OperationOutcome, TeamOperation};
+) -> OperationOutcome {
+    use tack_protocol::execution::TeamOperation;
     match operation {
         TeamOperation::ResumeTeam { harness, team } => {
             match adapters.resume_team(harness.as_str(), &team).await {
@@ -242,6 +242,23 @@ pub async fn do_team_operation(
                 },
                 Err(reason) => OperationOutcome::Refused { reason },
             }
+        }
+        TeamOperation::ApplyTeam {
+            harness,
+            team,
+            shape,
+            directory,
+            accept,
+        } => {
+            adapters
+                .apply_team(
+                    harness.as_str(),
+                    &team,
+                    &shape,
+                    &directory,
+                    accept.as_deref(),
+                )
+                .await
         }
     }
 }
@@ -293,6 +310,21 @@ pub trait HarnessProbe: Send + Sync {
     /// that has no such thing, or does not offer it, says so and where to do it instead.
     async fn resume_team(&self, _team: &str) -> Result<Option<TeamReport>, String> {
         Err("this agent has no team to resume".to_owned())
+    }
+
+    /// Makes the team of a project's repository from `shape` and applies its folder inside the
+    /// checkout `directory`; a folder that runs commands asks for a review first, and is applied
+    /// when `accept` is the code of that review.
+    async fn apply_team(
+        &self,
+        _team: &str,
+        _shape: &str,
+        _directory: &str,
+        _accept: Option<&str>,
+    ) -> OperationOutcome {
+        OperationOutcome::Refused {
+            reason: "this agent has no teams to apply".to_owned(),
+        }
     }
 }
 
@@ -574,6 +606,24 @@ impl AdapterRegistry {
         match self.probes.get(kind) {
             Some(probe) => probe.resume_team(team).await,
             None => Err(format!("this runner does not run {kind}")),
+        }
+    }
+
+    /// [`HarnessProbe::apply_team`] of the harness `kind`, or the sentence saying this runner
+    /// runs no such harness.
+    pub async fn apply_team(
+        &self,
+        kind: &str,
+        team: &str,
+        shape: &str,
+        directory: &str,
+        accept: Option<&str>,
+    ) -> OperationOutcome {
+        match self.probes.get(kind) {
+            Some(probe) => probe.apply_team(team, shape, directory, accept).await,
+            None => OperationOutcome::Refused {
+                reason: format!("this runner does not run {kind}"),
+            },
         }
     }
 

@@ -77,6 +77,8 @@ mod rework;
 mod routing;
 #[path = "handlers/run_summary_facts.rs"]
 mod run_summary_facts;
+#[path = "handlers/team_apply.rs"]
+mod team_apply;
 #[path = "handlers/teams.rs"]
 mod teams;
 #[path = "handlers/templates.rs"]

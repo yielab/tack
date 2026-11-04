@@ -15,6 +15,19 @@ use super::types::{HarnessKind, ProtocolVersion, RunnerId};
 pub enum TeamOperation {
     /// Lets a team that stopped on its budget claim tasks again.
     ResumeTeam { harness: HarnessKind, team: String },
+    /// Makes the team of a project's repository from its shape and applies the team's folder
+    /// (`.docket/teams/<team>`) inside the project's checkout on the runner's computer. A folder
+    /// that would run commands there is refused with a review until the call carries `accept`, the
+    /// code a person gave after reading it.
+    ApplyTeam {
+        harness: HarnessKind,
+        team: String,
+        shape: String,
+        /// The project's checkout on the runner's computer.
+        directory: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accept: Option<String>,
+    },
 }
 
 /// An operation with the identity its result is sent back under.
@@ -47,6 +60,13 @@ pub enum OperationOutcome {
     Done {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         team: Option<Box<TeamReport>>,
+    },
+    /// The harness will run commands on the computer and wants a person to read them first. The
+    /// same operation is sent again carrying `code` as `accept` once a person agrees.
+    NeedsReview {
+        code: String,
+        /// What it would run, one line each, as the harness listed it.
+        commands: Vec<String>,
     },
     /// The runner did not do it, with the sentence a person reads.
     Refused { reason: String },

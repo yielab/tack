@@ -1519,6 +1519,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/teams/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * POST /api/projects/{id}/teams/apply
+         * @description Making teams on a person's computer is a person's call, so the route is the operator's alone
+         *     (`agent_access`).
+         */
+        post: operations["apply_teams"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/boards": {
         parameters: {
             query?: never;
@@ -3952,6 +3973,9 @@ export interface components {
             edits?: components["schemas"]["OperationEdit"][];
             /** @description The positions to apply; absent means everything that waits. */
             operations?: number[] | null;
+        };
+        ApplyTeamsRequest: {
+            teams: components["schemas"]["TeamToApply"][];
         };
         ArtifactListResponse: {
             data: components["schemas"]["ArtifactSummary"][];
@@ -6933,6 +6957,25 @@ export interface components {
             tasks: components["schemas"]["ActivityTask"][];
             team: string;
         };
+        TeamApplyResult: {
+            /** @description Why it was refused. */
+            message?: string | null;
+            review?: null | components["schemas"]["TeamApplyReview"];
+            state: components["schemas"]["TeamApplyState"];
+            team: string;
+        };
+        /** @description What docket asks a person to read before it applies the folder. */
+        TeamApplyReview: {
+            /** @description The code to send back as `accept`; it changes when the folder does. */
+            code: string;
+            /** @description What the folder would run on the computer, one line each, as docket listed it. */
+            commands: string[];
+        };
+        /**
+         * @description How applying one team went.
+         * @enum {string}
+         */
+        TeamApplyState: "applied" | "needs_review" | "refused";
         /** @description What a team may spend: the harness applies it, Tack shows it. */
         TeamBudget: {
             /**
@@ -7282,6 +7325,18 @@ export interface components {
             /** @description The task's name in the team's own agent. */
             task: string;
             waits_on?: null | components["schemas"]["WaitsOn"];
+        };
+        /** @description One team to apply: a row of the import preview's `missing` list, or one of the file's `teams`. */
+        TeamToApply: {
+            /**
+             * @description The code docket gave for the commands the folder would run, once a person has read them:
+             *     the answer to an earlier `needs_review` for this team.
+             */
+            accept?: string | null;
+            /** @description The team's name, which is also the name of its folder under `.docket/teams/`. */
+            name: string;
+            /** @description The shape the team is made from: `build`, `respond`, `operate` or `routine`. */
+            shape: string;
         };
         /** @description One thing that makes a team need a person during a run, and how to fix it. */
         TeamViolation: {
@@ -11311,6 +11366,60 @@ export interface operations {
             };
             /** @description No such project */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    apply_teams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyTeamsRequest"];
+            };
+        };
+        responses: {
+            /** @description How each team went, in the order asked: applied, waiting for a person to read the commands docket listed, or refused with the reason */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamApplyResult"][];
+                };
+            };
+            /** @description No team named, a name or shape docket does not know, or the project's code is not a folder on a computer */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No such project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No active runner reports a docket that lists `podShape`; the sentence says what to do */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

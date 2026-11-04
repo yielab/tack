@@ -145,6 +145,8 @@ export interface HarnessCapability {
   installed_version: string;
   /** The API version the harness answers, `"5"`; only a harness with a versioned API (docket) sets it. */
   api_version?: string;
+  /** The features of that API the board uses and the harness lists (docket's `podShape`); absent on an older runner. */
+  api_features?: string[];
   probe_error: string | null;
   probed_at: string;
   /** Whether a request must name a model for this harness (true) or it may use its own
