@@ -3,9 +3,9 @@
   "error": "the directory changed what runs on this machine since that code",
   "runs": [
     {
-      "kind": "allow-commands",
-      "name": "allowCommands",
-      "runs": "pytest, ruff, make deploy"
+      "kind": "fetch-domains",
+      "name": "fetchDomains",
+      "runs": "docs.python.org"
     }
   ]
 }

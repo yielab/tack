@@ -164,6 +164,10 @@
       "value": null,
       "source": "default"
     },
+    "budgetWindow": {
+      "value": "none",
+      "source": "default"
+    },
     "maxReworkCycles": {
       "value": 1,
       "source": "default"
@@ -225,7 +229,7 @@
       "source": "default"
     },
     "network": {
-      "value": "open",
+      "value": "none",
       "source": "default"
     },
     "profile": {
@@ -296,9 +300,151 @@
     "enforced": true
   },
   "fetchDomains": [],
+  "needs": [],
+  "delivers": [
+    "report",
+    "records"
+  ],
+  "methods": [
+    {
+      "name": "capture",
+      "source": "pod:capture",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "anti-tautology",
+      "source": "recipe:anti-tautology",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "cross-family-review",
+      "source": "recipe:cross-family-review",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "explore-then-edit",
+      "source": "recipe:explore-then-edit",
+      "missingRoles": [
+        "researcher",
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "frugal",
+      "source": "recipe:frugal",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "intake",
+      "source": "recipe:intake",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "mutation",
+      "source": "recipe:mutation",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "parallel-explore",
+      "source": "recipe:parallel-explore",
+      "missingRoles": [
+        "researcher",
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "reflexion",
+      "source": "recipe:reflexion",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "research-review",
+      "source": "recipe:research-review",
+      "missingRoles": [
+        "researcher"
+      ],
+      "default": false
+    },
+    {
+      "name": "secure-build",
+      "source": "recipe:secure-build",
+      "missingRoles": [
+        "implementer",
+        "security-vetter"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-first",
+      "source": "recipe:spec-first",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-writer",
+      "source": "recipe:spec-writer",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "strong-plan-cheap-edit",
+      "source": "recipe:strong-plan-cheap-edit",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "tdd",
+      "source": "recipe:tdd",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "web-research",
+      "source": "recipe:web-research",
+      "missingRoles": [
+        "researcher"
+      ],
+      "default": false
+    }
+  ],
+  "budget": {
+    "tokens": null,
+    "used": 0,
+    "window": "none",
+    "windowStart": null
+  },
   "workDir": "/scratch/notes",
-  "configSource": "/home/ox/.local/lib/docket/venv/lib/python3.11/site-packages/docket/templates/recipes/records",
-  "configDigest": "684915f612aace312c3d9a9d74a3308217cbce2ed03e75f2d952cdf0c92d16a3",
+  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
+  "configDigest": "47a1b2a9254590b2a4072945c6749176cd70f3ca098dd54170ffd7e63c9022cc",
   "drift": "no",
   "profile": {
     "name": "attended",

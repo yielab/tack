@@ -176,6 +176,10 @@
       "value": null,
       "source": "default"
     },
+    "budgetWindow": {
+      "value": "none",
+      "source": "default"
+    },
     "maxReworkCycles": {
       "value": 1,
       "source": "default"
@@ -237,7 +241,7 @@
       "source": "default"
     },
     "network": {
-      "value": "open",
+      "value": "none",
       "source": "default"
     },
     "profile": {
@@ -308,9 +312,151 @@
     "enforced": true
   },
   "fetchDomains": [],
+  "needs": [],
+  "delivers": [
+    "report",
+    "records"
+  ],
+  "methods": [
+    {
+      "name": "capture",
+      "source": "pod:capture",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "anti-tautology",
+      "source": "recipe:anti-tautology",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "cross-family-review",
+      "source": "recipe:cross-family-review",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "explore-then-edit",
+      "source": "recipe:explore-then-edit",
+      "missingRoles": [
+        "researcher",
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "frugal",
+      "source": "recipe:frugal",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "intake",
+      "source": "recipe:intake",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "mutation",
+      "source": "recipe:mutation",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "parallel-explore",
+      "source": "recipe:parallel-explore",
+      "missingRoles": [
+        "researcher",
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "reflexion",
+      "source": "recipe:reflexion",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "research-review",
+      "source": "recipe:research-review",
+      "missingRoles": [
+        "researcher"
+      ],
+      "default": false
+    },
+    {
+      "name": "secure-build",
+      "source": "recipe:secure-build",
+      "missingRoles": [
+        "implementer",
+        "security-vetter"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-first",
+      "source": "recipe:spec-first",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-writer",
+      "source": "recipe:spec-writer",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "strong-plan-cheap-edit",
+      "source": "recipe:strong-plan-cheap-edit",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "tdd",
+      "source": "recipe:tdd",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "web-research",
+      "source": "recipe:web-research",
+      "missingRoles": [
+        "researcher"
+      ],
+      "default": false
+    }
+  ],
+  "budget": {
+    "tokens": null,
+    "used": 0,
+    "window": "none",
+    "windowStart": null
+  },
   "workDir": "/scratch/notes",
   "configSource": "/scratch/plan-team",
-  "configDigest": "238291ddd1fb160d2332d5554883cf4acf297230303152843427fa58e1b5bb90",
+  "configDigest": "553b91da9c40e1a7878a1d6201b3a3dede46288a0b5c80ccfff9210fae59200d",
   "drift": "no",
   "profile": {
     "name": "attended",

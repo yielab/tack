@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "project": "saas-team",
+  "items": [
+    {
+      "kind": "setting",
+      "name": "fetchDomains",
+      "action": "skip",
+      "note": ""
+    }
+  ],
+  "dryRun": false
+}

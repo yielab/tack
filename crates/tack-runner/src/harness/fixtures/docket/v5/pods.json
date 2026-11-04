@@ -22,6 +22,12 @@
         "done": 0,
         "cancelled": 0
       },
+      "budget": {
+        "tokens": null,
+        "used": 0,
+        "window": "none",
+        "windowStart": null
+      },
       "paused": false
     },
     {
@@ -45,6 +51,12 @@
         "failed": 0,
         "done": 0,
         "cancelled": 0
+      },
+      "budget": {
+        "tokens": null,
+        "used": 0,
+        "window": "none",
+        "windowStart": null
       },
       "paused": false
     }

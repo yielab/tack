@@ -1,17 +1,12 @@
 {
   "ok": false,
   "error": "this directory runs commands on this machine; pass accept",
-  "reviewCode": "3f9a1c7e2b40",
+  "reviewCode": "0000000000000000",
   "runs": [
     {
-      "kind": "allow-commands",
-      "name": "allowCommands",
-      "runs": "pytest, ruff"
-    },
-    {
-      "kind": "network",
-      "name": "network",
-      "runs": "open"
+      "kind": "fetch-domains",
+      "name": "fetchDomains",
+      "runs": "docs.python.org"
     }
   ]
 }

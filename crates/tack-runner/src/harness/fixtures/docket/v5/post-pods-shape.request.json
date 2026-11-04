@@ -1,0 +1,5 @@
+{
+  "name": "saas-team",
+  "blueprint": "respond",
+  "ensure": true
+}

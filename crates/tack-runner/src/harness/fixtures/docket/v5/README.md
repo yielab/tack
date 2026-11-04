@@ -4,7 +4,7 @@ The files in this directory are **captures from a real docket**, plus the answer
 marked `constructed`. Captured from `docket 0.3.0b1` (operator API version `6`, with the
 escalation record, the task as fields, the prompt manifest, the two-level home, the four
 blueprints, `workspaceKind`, `blueprint`, `pipeline.steps`, and the team's contract, budget, resume
-and shape), source checkout `1d180651`, on 2026-11-04. The directory keeps the name `v5` from the
+and shape), source checkout `2462c872`, on 2026-11-04. The directory keeps the name `v5` from the
 first capture; the answers say `apiVersion: "6"`.
 
 `scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a

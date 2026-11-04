@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "directory is required: pod 'saas-team' works in a folder and has no repository to read .docket/ from"
+}

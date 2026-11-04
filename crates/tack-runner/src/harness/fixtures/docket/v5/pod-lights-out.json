@@ -75,6 +75,10 @@
       "value": null,
       "source": "default"
     },
+    "budgetWindow": {
+      "value": "none",
+      "source": "default"
+    },
     "maxReworkCycles": {
       "value": 1,
       "source": "default"
@@ -136,7 +140,7 @@
       "source": "default"
     },
     "network": {
-      "value": "open",
+      "value": "none",
       "source": "default"
     },
     "profile": {
@@ -191,6 +195,135 @@
     "enforced": false
   },
   "fetchDomains": [],
+  "needs": [],
+  "delivers": [
+    "branch"
+  ],
+  "methods": [
+    {
+      "name": "anti-tautology",
+      "source": "recipe:anti-tautology",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "cross-family-review",
+      "source": "recipe:cross-family-review",
+      "missingRoles": [
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "explore-then-edit",
+      "source": "recipe:explore-then-edit",
+      "missingRoles": [
+        "researcher",
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "frugal",
+      "source": "recipe:frugal",
+      "missingRoles": [
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "intake",
+      "source": "recipe:intake",
+      "missingRoles": [
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "mutation",
+      "source": "recipe:mutation",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "parallel-explore",
+      "source": "recipe:parallel-explore",
+      "missingRoles": [
+        "researcher"
+      ],
+      "default": false
+    },
+    {
+      "name": "reflexion",
+      "source": "recipe:reflexion",
+      "missingRoles": [
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "research-review",
+      "source": "recipe:research-review",
+      "missingRoles": [
+        "researcher",
+        "analyst",
+        "writer",
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "secure-build",
+      "source": "recipe:secure-build",
+      "missingRoles": [
+        "security-vetter"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-first",
+      "source": "recipe:spec-first",
+      "missingRoles": [
+        "writer",
+        "reviewer"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-writer",
+      "source": "recipe:spec-writer",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "strong-plan-cheap-edit",
+      "source": "recipe:strong-plan-cheap-edit",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "tdd",
+      "source": "recipe:tdd",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "web-research",
+      "source": "recipe:web-research",
+      "missingRoles": [
+        "researcher",
+        "analyst",
+        "writer"
+      ],
+      "default": false
+    }
+  ],
+  "budget": {
+    "tokens": null,
+    "used": 0,
+    "window": "none",
+    "windowStart": null
+  },
   "configSource": "",
   "configDigest": "",
   "drift": "",
