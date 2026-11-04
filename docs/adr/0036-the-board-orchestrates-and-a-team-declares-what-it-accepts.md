@@ -68,6 +68,23 @@ at apply time), which is most of the contract, printed where Tack cannot read it
 decide which team fits which card live in `onboarding-lab/skill/references/rules.md`, and the product
 checks none of them. A card sent with the wrong method ends `Succeeded` without review.
 
+## Note, 2026-11-04: what the real docket sent
+
+The decisions stand. Built and checked against a real docket 0.3.0-beta.1 (the fake's fixtures are its
+recorded answers), four things differed from the proposal and Tack follows docket:
+
+- **`delivers` is a list** (`["report", "records"]`), not one value; Tack keeps the first entry for the
+  fit check, and the record sets are the team's `records`.
+- **A method can fail to load** (`error`, with no missing roles): it is a team's method that is broken,
+  refused before sending and warned at profile save.
+- **A budget's window is `none`, `day` or `week`.** `resume` clears the pause, not the spent budget: the
+  team is paused again until the budget is raised (`docket pod set budgetTokens`, which also resumes it).
+- **`location` on creation is the folder a `respond`, `operate` or `routine` team works in.** The board
+  sends it only for `build` (the project's checkout), so a team applied from the repository never works
+  inside the checkout beside its own configuration.
+- **`pipelineChecked` refuses at claim**, after the task is accepted (`failureKind: pipeline`), not at
+  enqueue: the run reads "Not started" with docket's reason.
+
 ## Open questions for the maintainer
 
 1. **Does saving a profile with a method the team lacks refuse or warn?** Proposed: refuse an
