@@ -164,6 +164,12 @@ impl Client {
         self.send(Method::GET, &["pods", pod], &[], None).await
     }
 
+    /// `POST /pods/<pod>/resume`, no body: the team claims tasks again (`podResume`).
+    pub async fn resume_pod(&self, pod: &str) -> Result<Reply, String> {
+        self.send(Method::POST, &["pods", pod, "resume"], &[], None)
+            .await
+    }
+
     /// `POST /pods` with `ensure`: `200` when the pod exists, `201` when made.
     pub async fn ensure_pod(&self, pod: &str, location: &str) -> Result<Reply, String> {
         // No shape is named: docket's own default is the code team, whatever it calls it.

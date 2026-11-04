@@ -26,8 +26,8 @@ use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamDelivers,
-    TeamFacts, TeamMember, TeamMisfit, TeamNeeds, Usage, WorkspaceId as DomainWorkspaceId,
-    team_misfits,
+    TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
+    WorkspaceId as DomainWorkspaceId, team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
 
@@ -82,6 +82,10 @@ const POD_PAUSE: &str = "podPause";
 /// The feature of `GET /health` under which a team's report carries `delivers`, `methods` and
 /// `needs`.
 const POD_CONTRACT: &str = "podContract";
+
+/// The feature of `GET /health` under which a paused team can be resumed over HTTP and its report
+/// carries `budget`.
+const POD_RESUME: &str = "podResume";
 
 /// The feature of `GET /health` under which a pod declares the hosts its `fetch` reads.
 const POD_FETCH: &str = "podFetch";
@@ -1636,6 +1640,10 @@ impl HarnessProbe for DocketAdapter {
     async fn activity(&self) -> Option<Vec<TeamActivity>> {
         let mut cursors = self.activity.lock().await;
         Some(activity::read(&self.client, &mut cursors, Utc::now()).await)
+    }
+
+    async fn resume_team(&self, team: &str) -> Result<Option<TeamReport>, String> {
+        probe::resume(&self.client, team).await
     }
 }
 

@@ -7,16 +7,16 @@ use std::collections::BTreeSet;
 use chrono::Utc;
 use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamDecides, TeamDelivers, TeamMember, TeamMethod, TeamNeed,
-    TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck,
-    TeamStepKind, TeamViolation, WorksIn,
+    SignInReport, SignInState, TeamBudget, TeamDecides, TeamDelivers, TeamMember, TeamMethod,
+    TeamNeed, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep,
+    TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
 };
 
 use super::{
     client::Client,
     wire::{
-        MemberReach, PodList, PodMember, PodMethod, PodNeed, PodNetwork, PodReport, PodRow,
-        PodStep, RecordList, StatusAnswer,
+        MemberReach, PodBudget, PodList, PodMember, PodMethod, PodNeed, PodNetwork, PodReport,
+        PodRow, PodStep, RecordList, StatusAnswer,
     },
 };
 
@@ -324,6 +324,27 @@ pub(super) fn contract(report: &mut PodReport, listed: bool) -> Contract {
     }
 }
 
+/// What a team may spend and has spent (`podResume`). Absent from a report of a docket that does
+/// not list the feature, whatever the report holds, and when the key cannot be read.
+fn budget(report: &mut PodReport, listed: bool) -> Option<TeamBudget> {
+    if !listed {
+        return None;
+    }
+    let raw = report.budget.take()?;
+    match serde_json::from_value::<PodBudget>(raw) {
+        Ok(budget) => Some(TeamBudget {
+            tokens: budget.tokens,
+            used: budget.used,
+            window: budget.window,
+            window_start: budget.window_start,
+        }),
+        Err(why) => {
+            tracing::warn!(%why, "docket's budget could not be read");
+            None
+        }
+    }
+}
+
 /// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
 /// where it works, who is in it, how it decides, what it holds and what it keeps.
 async fn team(
@@ -331,6 +352,7 @@ async fn team(
     row: &PodRow,
     pause_listed: bool,
     contract_listed: bool,
+    resume_listed: bool,
 ) -> Result<TeamReport, String> {
     let name = &row.name;
     let reply = client.pod(name).await?;
@@ -339,6 +361,7 @@ async fn team(
     }
     let mut report: PodReport = reply.read()?;
     let contract = contract(&mut report, contract_listed);
+    let budget = budget(&mut report, resume_listed);
     let works_in = works_in(row, &report);
     let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
         Some((sets, shared)) => (Some(sets), shared),
@@ -382,6 +405,7 @@ async fn team(
         delivers: contract.delivers,
         methods: contract.methods,
         needs: contract.needs,
+        budget,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson
@@ -400,11 +424,43 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
     let list: PodList = reply.read()?;
     let pause_listed = client.has_feature(super::POD_PAUSE).await;
     let contract_listed = client.has_feature(super::POD_CONTRACT).await;
+    let resume_listed = client.has_feature(super::POD_RESUME).await;
     let mut teams = Vec::new();
     for pod in &list.pods {
-        teams.push(team(client, pod, pause_listed, contract_listed).await?);
+        teams.push(team(client, pod, pause_listed, contract_listed, resume_listed).await?);
     }
     Ok(teams)
+}
+
+/// Lets a paused team claim tasks again (`POST /pods/<pod>/resume`) and reads its report
+/// afterwards, or says in a person's words why docket did not. A docket that does not list
+/// `podResume` is not asked: it has no such route, and the sentence says where the operator
+/// resumes the team instead.
+pub(super) async fn resume(client: &Client, name: &str) -> Result<Option<TeamReport>, String> {
+    if !client.has_feature(super::POD_RESUME).await {
+        return Err(format!(
+            "This docket cannot resume a team from the board. Run `docket run --pod {name} --resume` on the runner's computer."
+        ));
+    }
+    let reply = client.resume_pod(name).await?;
+    match reply.status {
+        200 | 204 => {}
+        404 => return Err(format!("docket has no team named {name}")),
+        _ => return Err(reply.error()),
+    }
+    let reply = client.pods().await?;
+    if reply.status != 200 {
+        return Err(reply.error());
+    }
+    let list: PodList = reply.read()?;
+    let Some(row) = list.pods.iter().find(|pod| pod.name == name) else {
+        return Ok(None);
+    };
+    let pause_listed = client.has_feature(super::POD_PAUSE).await;
+    let contract_listed = client.has_feature(super::POD_CONTRACT).await;
+    team(client, row, pause_listed, contract_listed, true)
+        .await
+        .map(Some)
 }
 
 /// A team that needs a person during a run: attended, or with a violation.

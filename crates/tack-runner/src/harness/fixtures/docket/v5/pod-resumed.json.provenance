@@ -1,0 +1,8 @@
+constructed
+route: POST /pods/<pod>/resume
+status: 200
+tack-sends: yes
+built-from: the answer Tack asked of docket's session on 2026-11-03 for `POST /pods/<pod>/resume` (ADR 0036 "What is asked of docket"): the team's name and that it is no longer paused
+docket: not shipped; API 6, additive, announced in `features` as `podResume`
+date: 2026-11-04
+note: not captured, because no docket serves this route yet. Tack reads only the status of this answer, then asks for the team's report, so the body is the least that says what happened. It replaces this file with a capture the day docket ships the feature.

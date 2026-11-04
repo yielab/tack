@@ -1,0 +1,18 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "operation_id": "op_01J00000000000000000000001",
+  "outcome": {
+    "state": "done",
+    "team": {
+      "name": "saas-dev",
+      "violations": [],
+      "budget": {
+        "tokens": 2000000,
+        "used": 120000,
+        "window": "day",
+        "window_start": "2026-01-01T00:00:00Z"
+      }
+    }
+  }
+}

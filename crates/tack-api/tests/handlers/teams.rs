@@ -676,3 +676,91 @@ async fn a_profile_save_checks_its_methods_against_the_team_that_runs_it() {
         "{updated}"
     );
 }
+
+/// `POST /api/teams/{harness}/{name}/resume`: the runner that reports the team is asked, and what
+/// the agent answers is what the person gets. A team no runner of that agent reports is not asked.
+#[tokio::test]
+async fn resuming_a_team_asks_the_runner_that_reports_it_and_answers_with_its_report() {
+    use tack_protocol::execution::{OperationOutcome, TeamReport};
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    let resume = |harness: &'static str, team: &'static str| {
+        let (app, headers) = (&b.app, operator_headers());
+        async move {
+            common::send(
+                app,
+                "POST",
+                &format!("/api/teams/{harness}/{team}/resume"),
+                Value::Null,
+                &headers,
+            )
+            .await
+        }
+    };
+    let (status, body) = resume("docket", "writers").await;
+    assert_eq!(status, 404, "no runner reports it: {body}");
+
+    seed::agent_runner_reporting(
+        repo,
+        "ru-resume",
+        &snapshot(json!([
+            harness(
+                "docket",
+                "2026-08-06T12:00:00Z",
+                Some(json!([{"name": "writers", "profile": "lights-out", "violations": []}]))
+            ),
+            harness(
+                "codex",
+                "2026-08-06T12:00:00Z",
+                Some(json!([{"name": "solo", "violations": []}]))
+            )
+        ])),
+    )
+    .await;
+    let (status, body) = resume("codex", "writers").await;
+    assert_eq!(status, 404, "the team is docket's: {body}");
+
+    // The runner answers its next poll: the first time with the team's report, the second with a
+    // refusal.
+    let report: TeamReport = serde_json::from_value(json!({
+        "name": "writers", "violations": [],
+        "budget": {"tokens": 2000000, "used": 1200000, "window": "day"}
+    }))
+    .unwrap();
+    let runner = tokio::spawn(async move {
+        let queue = tack_app::runner_operations::operations();
+        let mut answers = vec![
+            OperationOutcome::Done { team: Some(report) },
+            OperationOutcome::Refused {
+                reason: "docket cannot resume a team from the board".to_owned(),
+            },
+        ]
+        .into_iter();
+        while let Some(answer) = answers.next() {
+            let handed = loop {
+                let handed = queue.take("ru-resume");
+                if let Some(first) = handed.into_iter().next() {
+                    break first;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            };
+            assert!(queue.finish("ru-resume", &handed.operation_id, answer));
+        }
+    });
+    let (status, body) = resume("docket", "writers").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["runner"], "ru", "{body}");
+    assert_eq!(body["report"]["budget"]["used"], 1_200_000, "{body}");
+    let (status, body) = resume("docket", "writers").await;
+    assert_eq!(status, 409, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cannot resume a team from the board"),
+        "{body}"
+    );
+    runner.await.unwrap();
+}

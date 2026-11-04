@@ -48,7 +48,8 @@ use serde_json::{Map, Value};
 use tack_protocol::execution as wire;
 use tack_protocol::execution::{
     ActivityReport, ActivityResponse, ClaimGranted, ClaimResponse, ExecutionState, HarnessKind,
-    ProtocolErrorEnvelope, ProtocolVersion, RecoveryObservationRequest,
+    OperationOutcome, OperationPollRequest, OperationPollResponse, OperationResultRequest,
+    OperationResultResponse, ProtocolErrorEnvelope, ProtocolVersion, RecoveryObservationRequest,
     RecoveryObservationResponse, RunnerCapabilities, StableErrorCode, TeamActivity,
 };
 use tokio::task::JoinSet;
@@ -205,6 +206,46 @@ impl HttpPullProtocol {
             .send_json(
                 Method::POST,
                 "/activity",
+                Some(session.credential()),
+                &report,
+                Idempotency::Replayable,
+                None,
+            )
+            .await?;
+        typed(&value)
+    }
+
+    /// `POST /operations/poll`: what a person asked of this runner's harnesses from the board.
+    /// Each is handed out once, so a resend whose first answer was lost finds nothing.
+    pub async fn poll_operations(
+        &self,
+        session: &RunnerSession,
+        request: OperationPollRequest,
+    ) -> Result<OperationPollResponse, ProtocolClientError> {
+        let value = self
+            .send_json(
+                Method::POST,
+                "/operations/poll",
+                Some(session.credential()),
+                &request,
+                Idempotency::Replayable,
+                None,
+            )
+            .await?;
+        typed(&value)
+    }
+
+    /// `POST /operations/{id}/result`: how an operation ended, to the request that waits for it.
+    pub async fn report_operation(
+        &self,
+        session: &RunnerSession,
+        report: OperationResultRequest,
+    ) -> Result<OperationResultResponse, ProtocolClientError> {
+        let path = format!("/operations/{}/result", report.operation_id);
+        let value = self
+            .send_json(
+                Method::POST,
+                &path,
                 Some(session.credential()),
                 &report,
                 Idempotency::Replayable,
@@ -1145,6 +1186,10 @@ pub const CAPABILITY_REPROBE_INTERVAL: Duration = Duration::from_secs(300);
 /// How often the runner asks its harnesses what their teams are doing and sends what changed.
 pub const ACTIVITY_INTERVAL: Duration = Duration::from_secs(15);
 
+/// How often the runner asks the board whether a person asked something of its harnesses. A person
+/// waits for the answer, so this is short; the ask is a lookup in the board's memory.
+pub const OPERATIONS_INTERVAL: Duration = Duration::from_secs(3);
+
 /// What the teams of each harness did since the last read.
 pub type TeamActivityBatch = Vec<(HarnessKind, Vec<TeamActivity>)>;
 
@@ -1168,6 +1213,17 @@ pub struct HttpRunnerClient<A, W, C> {
     activity: Option<(
         Duration,
         Box<dyn Fn() -> Pin<Box<dyn Future<Output = TeamActivityBatch> + Send>> + Send + Sync>,
+    )>,
+    /// How often the board is asked for what a person wants done, and how one such thing is done;
+    /// `None` asks for nothing.
+    #[allow(clippy::type_complexity)] // an interval and one boxed async doer
+    operations: Option<(
+        Duration,
+        Box<
+            dyn Fn(wire::TeamOperation) -> Pin<Box<dyn Future<Output = OperationOutcome> + Send>>
+                + Send
+                + Sync,
+        >,
     )>,
     /// How often, and how, the harnesses are probed again; `None` reports once.
     #[allow(clippy::type_complexity)] // an interval and one boxed async probe
@@ -1199,6 +1255,7 @@ where
             sequence: AtomicU64::new(0),
             renewal_interval: LEASE_RENEWAL_INTERVAL,
             activity: None,
+            operations: None,
             reprobe: None,
         }
     }
@@ -1223,6 +1280,21 @@ where
         Fut: Future<Output = TeamActivityBatch> + Send + 'static,
     {
         self.activity = Some((interval, Box::new(move || Box::pin(read()))));
+        self
+    }
+
+    /// Asks the board every `interval` for what a person wants done in a harness and does each with
+    /// `run`, then reports how it went.
+    #[must_use]
+    pub fn with_operations<F, Fut>(mut self, interval: Duration, run: F) -> Self
+    where
+        F: Fn(wire::TeamOperation) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = OperationOutcome> + Send + 'static,
+    {
+        self.operations = Some((
+            interval,
+            Box::new(move |operation| Box::pin(run(operation))),
+        ));
         self
     }
 
@@ -1307,6 +1379,35 @@ where
                 tracing::warn!(%error, "the teams' activity could not be sent");
                 unsent.push((harness_kind, teams));
             }
+        }
+    }
+
+    /// Does what a person asked of a harness from the board, and tells the board how it went. The
+    /// new state of a team reaches the board's report at once.
+    async fn do_operations(&self, session: &RunnerSession, last: &mut RunnerCapabilities) {
+        let Some((_, run)) = &self.operations else {
+            return;
+        };
+        let request = OperationPollRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+        };
+        // A board without the operation answers a refusal; the runner goes on as it did.
+        let Ok(waiting) = self.protocol.poll_operations(session, request).await else {
+            return;
+        };
+        for operation in waiting.operations {
+            let outcome = run(operation.operation).await;
+            let report = OperationResultRequest {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session.runner_id.clone(),
+                operation_id: operation.operation_id,
+                outcome,
+            };
+            if let Err(error) = self.protocol.report_operation(session, report).await {
+                tracing::warn!(%error, "the result of an operation could not be sent");
+            }
+            self.refresh_capabilities(session, last).await;
         }
     }
 
@@ -1470,6 +1571,11 @@ where
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             ticker
         });
+        let mut operations_ticker = self.operations.as_ref().map(|(interval, _)| {
+            let mut ticker = tokio::time::interval(*interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            ticker
+        });
         let mut unsent = TeamActivityBatch::new();
         let mut last_sent = self.capability_report();
         loop {
@@ -1506,6 +1612,12 @@ where
                         None => std::future::pending().await,
                     }
                 } => self.send_activity(&session, &mut unsent).await,
+                () = async {
+                    match operations_ticker.as_mut() {
+                        Some(ticker) => { ticker.tick().await; }
+                        None => std::future::pending().await,
+                    }
+                } => self.do_operations(&session, &mut last_sent).await,
                 () = async {
                     match reprobe_ticker.as_mut() {
                         Some(ticker) => { ticker.tick().await; }

@@ -32,7 +32,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use async_trait::async_trait;
 use tack_protocol::execution::{
     CapabilitySupport, ExecutionRequestSnapshot, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, TeamActivity,
+    HarnessKind as DomainHarnessKind, TeamActivity, TeamReport,
 };
 use thiserror::Error;
 
@@ -227,6 +227,23 @@ pub(crate) fn local_prompt(work: &crate::client::ClaimedWork) -> String {
     prompt
 }
 
+/// Does what a person asked of a team from the board, and says how it went in the words the
+/// person reads.
+pub async fn do_team_operation(
+    adapters: &AdapterRegistry,
+    operation: tack_protocol::execution::TeamOperation,
+) -> tack_protocol::execution::OperationOutcome {
+    use tack_protocol::execution::{OperationOutcome, TeamOperation};
+    match operation {
+        TeamOperation::ResumeTeam { harness, team } => {
+            match adapters.resume_team(harness.as_str(), &team).await {
+                Ok(team) => OperationOutcome::Done { team },
+                Err(reason) => OperationOutcome::Refused { reason },
+            }
+        }
+    }
+}
+
 /// Harness discovery/capability reporting, independent of any specific
 /// claimed attempt — needed because `engine::HarnessAdapter`'s methods all
 /// take an `ExecutionSpec`/`LocalRunHandle`, which only exist once a request
@@ -267,6 +284,13 @@ pub trait HarnessProbe: Send + Sync {
     /// `activity` capability; an empty list is a team with nothing new.
     async fn activity(&self) -> Option<Vec<TeamActivity>> {
         None
+    }
+
+    /// Lets a team that stopped on its budget claim tasks again and returns its report afterwards
+    /// (`None` when the harness did not give one). `Err` is the sentence a person reads: a harness
+    /// that has no such thing, or does not offer it, says so and where to do it instead.
+    async fn resume_team(&self, _team: &str) -> Result<Option<TeamReport>, String> {
+        Err("this agent has no team to resume".to_owned())
     }
 }
 
@@ -540,6 +564,15 @@ impl AdapterRegistry {
             }
         }
         report
+    }
+
+    /// [`HarnessProbe::resume_team`] of the harness `kind`, or the sentence saying this runner
+    /// runs no such harness.
+    pub async fn resume_team(&self, kind: &str, team: &str) -> Result<Option<TeamReport>, String> {
+        match self.probes.get(kind) {
+            Some(probe) => probe.resume_team(team).await,
+            None => Err(format!("this runner does not run {kind}")),
+        }
     }
 
     /// Each probed harness's declared per-feature support, by kind.

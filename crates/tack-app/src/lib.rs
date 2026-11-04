@@ -48,6 +48,7 @@ pub mod ports;
 pub mod pull_request;
 pub mod remote_backup;
 pub mod retention;
+pub mod runner_operations;
 pub mod runs;
 pub mod scheduler_wiring;
 pub mod threads;

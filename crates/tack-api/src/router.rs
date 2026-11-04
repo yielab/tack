@@ -434,6 +434,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/digest", get(digest::get_digest))
         .route("/teams", get(teams::list_teams))
         .route("/teams/{id}/activity", get(teams::team_activity))
+        .route("/teams/{harness}/{name}/resume", post(teams::resume_team))
         .route(
             "/agent-credentials",
             get(agent_credentials::list_credentials).post(agent_credentials::issue_credential),

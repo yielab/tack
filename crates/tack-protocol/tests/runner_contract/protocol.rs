@@ -110,6 +110,14 @@ fn claim_heartbeat_event_batch_and_completion_fixtures_round_trip_through_the_st
     round_trips::<tack_protocol::execution::DecisionAnsweredElsewhereResponse>(
         "decision.answered-elsewhere.response.json",
     );
+    round_trips::<tack_protocol::execution::OperationPollRequest>("operations.poll.request.json");
+    round_trips::<tack_protocol::execution::OperationPollResponse>("operations.poll.response.json");
+    round_trips::<tack_protocol::execution::OperationResultRequest>(
+        "operations.result.request.json",
+    );
+    round_trips::<tack_protocol::execution::OperationResultResponse>(
+        "operations.result.response.json",
+    );
     round_trips::<ClaimRequest>("claim.request.json");
     assert!(matches!(
         round_trips::<ClaimResponse>("claim.response.json"),
