@@ -4,6 +4,7 @@ import type { Resource } from 'solid-js';
 import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../state/projectContext';
 import Sidebar from './Sidebar';
+import { applyNotificationMessage, closeInbox, inboxOpen } from '../state/notifications';
 import { flush } from '../../test/flush';
 
 const settle = async () => {
@@ -154,5 +155,52 @@ describe('Sidebar: Change sets', () => {
     await settle();
     expect([...c.querySelectorAll('a')].some((a) => a.textContent === 'Change sets')).toBe(true);
     expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('1');
+  });
+});
+
+describe('Sidebar: Inbox bell', () => {
+  const notice = (id: string, open: number) =>
+    applyNotificationMessage({
+      type: 'opened',
+      id,
+      project_id: 'p1',
+      kind: 'decision',
+      level: 'needs_you',
+      key: `decision:${id}`,
+      item_id: 'item-1',
+      request_id: 'req-1',
+      title: 'A run is asking a question',
+      cause: 'agent',
+      created_at: '2026-11-03T10:00:00Z',
+      open,
+    });
+
+  afterEach(() => {
+    applyNotificationMessage({ type: 'read', id: 'none', open: 0 });
+    closeInbox();
+  });
+
+  it('shows the open count on the bell and hides it at 0', async () => {
+    const c = mount([]);
+    await settle();
+    const bell = c.querySelector<HTMLButtonElement>('[data-testid="inbox-bell"]')!;
+    expect(c.querySelector('[data-testid="inbox-count"]')).toBeNull();
+    expect(bell.getAttribute('aria-label')).toBe('Inbox');
+
+    notice('n1', 2);
+    await flush();
+    expect(c.querySelector('[data-testid="inbox-count"]')!.textContent).toBe('2');
+    expect(bell.getAttribute('aria-label')).toBe('Inbox, 2 open');
+
+    applyNotificationMessage({ type: 'read', id: 'none', open: 0 });
+    await flush();
+    expect(c.querySelector('[data-testid="inbox-count"]')).toBeNull();
+  });
+
+  it('opens the inbox drawer', async () => {
+    const c = mount([]);
+    await settle();
+    c.querySelector<HTMLButtonElement>('[data-testid="inbox-bell"]')!.click();
+    expect(inboxOpen()).toBe(true);
   });
 });

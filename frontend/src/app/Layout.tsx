@@ -14,6 +14,8 @@ import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from '../shared/ui/desti
 import { useProject } from '../shared/state/projectContext';
 import { useVocab } from '../shared/vocab/useVocab';
 import { pageOf } from './pages';
+import InboxDrawer from '../features/notifications/InboxDrawer';
+import { openNotificationCount, titleWithCount, useNotifications } from '../shared/state/notifications';
 
 const ItemDetailDrawer = lazy(() => import('../features/item-detail/ItemDetailDrawer'));
 // The palette and the create dialogs open on demand, so they stay out of the entry bundle.
@@ -44,11 +46,13 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
   const projectId = () => params.id as string | undefined;
 
+  useNotifications();
+
   // The board manages its own full-height horizontal-scroll layout: the height
   // chain runs from here through WorkLayout and the board to each column.
   const fullBleed = () => location.pathname.endsWith('/board');
 
-  // document.title — "<Project> — <View> · Tack"
+  // document.title — "(n) <Project> — <View> · Tack", the count being what is open in the inbox
   createEffect(() => {
     const path = location.pathname;
     const segments = path.split('/').filter(Boolean);
@@ -64,7 +68,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
     } else {
       title = `${pageOf(path).label} · Tack`;
     }
-    document.title = title;
+    document.title = titleWithCount(title, openNotificationCount());
   });
 
   // Context-aware + New
@@ -225,6 +229,8 @@ const LayoutInner: Component<LayoutProps> = (props) => {
       <Show when={searchParams.item}>
         <ItemDetailDrawer />
       </Show>
+
+      <InboxDrawer />
 
       <ToastContainer />
     </div>

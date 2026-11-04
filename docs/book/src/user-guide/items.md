@@ -184,6 +184,15 @@ its Execution tab, over the page you are on. The decision token is asked for in 
 browser session, and the run's own field does not ask again. A card on the board whose run is asking opens
 that run the same way.
 
+The bell at the top of the sidebar opens the **Inbox**, which Tack keeps for you whether or not a page is open: what
+still needs you (a question an agent asked, a run that failed, a change set to apply) and, below it, what
+happened lately (a run that finished, an item about to fall due). The bell shows how many are open, and so does the
+browser tab's title ("(2) Board · Tack"). Each row opens what it is about; **Read** takes a row off the list and **Read all**
+clears everything unread. A question or a failure stays open until it is answered or run again, however you
+answered it. While Tack is open, a new one that needs you also appears as a notice on the page. To hear about it
+when you are in another tab, turn on **Notify me when this tab is hidden** in a project's **Settings → General**; the
+browser asks once, and the choice stays in that browser.
+
 While a run is going, the item reads itself again each time the run changes state, so whatever changed on it
 shows without a reload. It stops once every run has ended.
 

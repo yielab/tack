@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from '@solidjs/router';
 import { Button, Icons } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
+import { openNotificationCount, titleWithCount } from '../../shared/state/notifications';
 import ItemBody, { tabFromSearchParam } from './ItemBody';
 import { useItemEditor } from './useItemEditor';
 
@@ -22,7 +23,7 @@ const ItemPage: Component = () => {
   // The tab names the item, not just the project the layout names it after.
   createEffect(() => {
     const it = item();
-    if (it) document.title = `${it.title} — ${project()?.name ?? 'Tack'} · Tack`;
+    if (it) document.title = titleWithCount(`${it.title} — ${project()?.name ?? 'Tack'} · Tack`, openNotificationCount());
   });
 
   const copyLink = async () => {

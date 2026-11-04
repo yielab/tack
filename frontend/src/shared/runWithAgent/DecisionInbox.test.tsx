@@ -3,6 +3,8 @@ import { render } from 'solid-js/web';
 import { toast } from '../ui/toast';
 import { decisionTokenStore, type DecisionRecord } from '../execution';
 import DecisionInbox, { type DecisionInboxProps } from './DecisionInbox';
+import { applyNotificationMessage } from '../state/notifications';
+import type { NotificationMessage } from '../realtime/notificationsSocket';
 import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
@@ -546,33 +548,82 @@ describe('DecisionInbox — the consultation pack', () => {
   });
 
   describe('while the attempt is not over', () => {
-    afterEach(() => vi.useRealTimers());
+    const opened = (request_id: string, over: Partial<NotificationMessage> = {}) =>
+      applyNotificationMessage({
+        type: 'opened',
+        id: `n-${request_id}`,
+        project_id: 'p1',
+        kind: 'decision',
+        level: 'needs_you',
+        key: `decision:${request_id}`,
+        item_id: 'item-1',
+        request_id,
+        title: 'A run is asking a question',
+        cause: 'agent',
+        created_at: '2026-11-03T10:00:00Z',
+        open: 1,
+        ...over,
+      } as NotificationMessage);
 
-    it('a question asked after the page opened appears with no reload', async () => {
-      vi.useFakeTimers();
+    it('a question asked after the page opened appears when the inbox says one of this run opened', async () => {
       let rows: DecisionRecord[] = [];
-      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
         Promise.resolve(jsonOk({ protocol_version: 1, data: rows })),
       );
       const running = mount({ attemptState: 'running', pendingOnly: true });
-      await vi.advanceTimersByTimeAsync(10);
+      await flush();
       expect(running.textContent).not.toContain('Allow this agent');
+      const first = spy.mock.calls.length;
 
       rows = [PENDING_WITH_OPTIONS];
-      await vi.advanceTimersByTimeAsync(3100);
+      opened('exec_1');
+      await flush();
+      await flush();
       expect(running.textContent).toContain('Allow this agent');
       expect(running.querySelector('button[type="submit"]')?.textContent).toBe('Resolve');
+      expect(spy.mock.calls.length).toBeGreaterThan(first);
+    });
+
+    it('a question of another run, or a change that is not a question, reads nothing', async () => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonOk({ protocol_version: 1, data: [] })),
+      );
+      mount({ attemptState: 'running', pendingOnly: true });
+      await flush();
+      const first = spy.mock.calls.length;
+      opened('exec_other');
+      opened('exec_1', { kind: 'run_failed', key: 'run:exec_1', id: 'n-failed' });
+      await flush();
+      await flush();
+      expect(spy.mock.calls.length).toBe(first);
+    });
+
+    it('does not poll: no timer reads the list', async () => {
+      vi.useFakeTimers();
+      try {
+        const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+          Promise.resolve(jsonOk({ protocol_version: 1, data: [] })),
+        );
+        mount({ attemptState: 'running' });
+        await vi.advanceTimersByTimeAsync(10);
+        const first = spy.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(spy.mock.calls.length).toBe(first);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('a finished attempt does not read again', async () => {
-      vi.useFakeTimers();
       const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
         Promise.resolve(jsonOk({ protocol_version: 1, data: [RESOLVED] })),
       );
       mount({ attemptState: 'succeeded' });
-      await vi.advanceTimersByTimeAsync(10);
+      await flush();
       const first = spy.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(10000);
+      opened('exec_1');
+      await flush();
+      await flush();
       expect(spy.mock.calls.length).toBe(first);
     });
 

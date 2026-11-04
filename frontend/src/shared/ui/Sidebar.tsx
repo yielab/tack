@@ -7,7 +7,7 @@ import { isDarkActive, toggleTheme } from '../state/theme';
 import {
   BrandMark,
   IconSearch, IconList, IconSun, IconMoon,
-  IconChevronDown, type IconProps,
+  IconChevronDown, IconBell, type IconProps,
 } from './icons';
 import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from './destinations';
 import KbdHint from './KbdHint';
@@ -15,6 +15,7 @@ import WaitingForYou from '../runWithAgent/WaitingForYou';
 import AgentsOffline from '../agents/AgentsOffline';
 import { sidebarRequests, waitingChangeSetsOf } from '../state/waiting';
 import { changeSetsOffReason } from '../state/changeSets';
+import { openInbox, openNotificationCount } from '../state/notifications';
 import { useVocab } from '../vocab/useVocab';
 
 type Glyph = Component<IconProps>;
@@ -88,6 +89,13 @@ const SectionLabel: Component<{ label: string }> = (p) => (
     }}>{p.label}</span>
   </div>
 );
+
+// The same amber as "Needs you" on the board: one thing that waits on a person has one colour.
+const countPill = {
+  'min-width': '1.125rem', padding: '0 5px', 'border-radius': 'var(--radius-pill)', 'text-align': 'center' as const,
+  'font-size': '0.75rem', 'font-weight': 700,
+  background: 'var(--run-needs-soft)', color: 'var(--run-needs-ink)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)',
+};
 
 const Sidebar: Component = () => {
   const params = useParams();
@@ -169,6 +177,23 @@ const Sidebar: Component = () => {
           <span style={{ 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '1.375rem', color: 'var(--color-text-primary)' }}>Tack</span>
           <span style={{ 'font-size': '0.59375rem', 'font-weight': 700, 'letter-spacing': '.14em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)', 'margin-top': '3px' }}>self-hosted</span>
         </div>
+        <button
+          type="button"
+          data-testid="inbox-bell"
+          onClick={() => { openInbox(); close(); }}
+          aria-label={openNotificationCount() > 0 ? `Inbox, ${openNotificationCount()} open` : 'Inbox'}
+          title="Inbox"
+          style={{
+            'margin-left': 'auto', display: 'flex', 'align-items': 'center', gap: '5px', height: '30px',
+            padding: openNotificationCount() > 0 ? '0 8px 0 9px' : '0 9px', 'border-radius': 'var(--radius-pill)', cursor: 'pointer',
+            border: 'none', background: 'var(--color-bg-app)', color: 'var(--color-text-secondary)',
+          }}
+        >
+          <IconBell size={15} />
+          <Show when={openNotificationCount() > 0}>
+            <span data-testid="inbox-count" style={{ ...countPill }}>{openNotificationCount()}</span>
+          </Show>
+        </button>
       </div>
 
       {/* workspace pill */}
