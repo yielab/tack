@@ -3,19 +3,24 @@
 //! needs-you rows say what the store says, once.
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use tack_app::background::{Loops, STOP_GRACE};
 use tack_app::change_sets::{Mode, Proposal, propose, reject};
 use tack_app::events::{DomainEvent, EventBus, Fact, RecordedEvents, RunRef};
 use tack_app::notifications::Inbox;
-use tack_app::notifications::subscriber::{Reconciled, drain, reconcile, reconcile_memory};
+use tack_app::notifications::subscriber::{
+    Reconciled, drain, reconcile, reconcile_memory, spawn_every,
+};
 use tack_app::ports::DomainEvents;
+use tack_app::runs::answered_elsewhere::answered_elsewhere;
 use tack_core::change_set::{CreateOp, Operation, Origin};
 use tack_core::models::CreateRole;
 use tack_core::notification::{Key, Kind, Level, Notice};
 use tack_core::principal::{Capability, Principal, Scope};
 use tack_protocol::Clock;
-use tack_protocol::execution::ExecutionState;
-use tack_test_support::{FixedClock, seed};
+use tack_protocol::execution::{AttemptId, ExecutionState};
+use tack_test_support::{FixedClock, poll_until, seed};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -214,6 +219,97 @@ async fn the_reconcile_opens_what_waits_closes_what_does_not_and_does_nothing_tw
     assert_eq!(fx.keys().await, ["decision:dec-1"]);
     assert_eq!(fx.reconcile().await, Reconciled::default());
     assert_eq!(fx.keys().await, ["decision:dec-1"]);
+}
+
+#[tokio::test]
+async fn a_question_docket_closed_in_its_own_tool_stops_waiting_on_the_person() {
+    let fx = fixture().await;
+    let run = fx.asking("elsewhere", "dec-1").await;
+    assert_eq!(fx.reconcile().await.opened, 1);
+    assert_eq!(fx.keys().await, ["decision:dec-1"]);
+
+    // No fact is announced on this road: only the store knows.
+    answered_elsewhere(
+        &fx.world.repo,
+        fx.world.clock.now(),
+        &AttemptId::new(&run.attempt_id),
+        "dec-1",
+        "docket",
+    )
+    .await
+    .expect("closed");
+
+    assert_eq!(
+        fx.reconcile().await,
+        Reconciled {
+            opened: 0,
+            closed: 1
+        }
+    );
+    assert!(fx.keys().await.is_empty());
+}
+
+#[tokio::test]
+async fn what_the_notification_says_names_the_item_it_is_about() {
+    let fx = fixture().await;
+    fx.asking("named", "dec-1").await;
+    let title = fx
+        .world
+        .repo
+        .get_item(fx.item)
+        .await
+        .unwrap()
+        .unwrap()
+        .title;
+
+    fx.reconcile().await;
+
+    let open = fx.inbox.open_notifications(10).await.unwrap();
+    assert_eq!(
+        open[0].title,
+        format!("A run is asking a question: {title}"),
+        "two questions of two items no longer read the same"
+    );
+}
+
+#[tokio::test]
+async fn the_loop_reconciles_on_a_clock_so_an_ending_no_fact_announced_is_still_seen() {
+    let fx = fixture().await;
+    let run = fx.asking("clocked", "dec-1").await;
+    let mut loops = Loops::new();
+    // A pass every 20 ms: a reconcile comes every fifteenth, 300 ms, as thirty seconds in production.
+    spawn_every(
+        &mut loops,
+        fx.world.repo.clone(),
+        Arc::new(FixedClock(fx.world.clock.now())),
+        fx.inbox.clone(),
+        Arc::new(EventBus::default()),
+        Duration::from_millis(20),
+    );
+    let opened = poll_until(Duration::from_secs(5), async || {
+        (fx.keys().await == ["decision:dec-1"]).then_some(())
+    })
+    .await;
+    assert!(opened.is_some(), "the first pass opened it");
+
+    answered_elsewhere(
+        &fx.world.repo,
+        fx.world.clock.now(),
+        &AttemptId::new(&run.attempt_id),
+        "dec-1",
+        "docket",
+    )
+    .await
+    .expect("closed");
+    let closed = poll_until(Duration::from_secs(5), async || {
+        fx.keys().await.is_empty().then_some(())
+    })
+    .await;
+    loops.stop(STOP_GRACE).await;
+    assert!(
+        closed.is_some(),
+        "a pass on the clock closed it, with no event and no reconnect"
+    );
 }
 
 #[tokio::test]

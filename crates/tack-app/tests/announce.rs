@@ -10,6 +10,7 @@ use common::{RUNNER_ID, Running, running_attempt, world};
 use serde_json::{Value, json};
 use tack_app::events::{DomainEvent, Fact, RecordedEvents, RunRef};
 use tack_app::runs::announce;
+use tack_app::runs::answered_elsewhere::answered_elsewhere;
 use tack_app::runs::complete::{Completed, CompletionReport, complete};
 use tack_app::runs::create_decision::{DecisionCreated, DecisionRequest, create_decision};
 use tack_app::runs::resolve_decision::resolve_decision;
@@ -167,6 +168,46 @@ async fn an_answer_is_announced_once_with_the_person_who_gave_it() {
         )]
     );
     assert_ne!(person, runner);
+}
+
+#[tokio::test]
+async fn a_question_closed_in_the_agents_own_tool_is_announced_once_as_answered() {
+    let world = world().await;
+    let run = running_attempt(&world, "announce-elsewhere").await;
+    let project = project_of(&world).await;
+    let runner = Principal::runner(RUNNER_ID);
+    let events = RecordedEvents::default();
+    let attempt = AttemptId::new(&run.attempt_id);
+    ask(&world, &run, "dec-1").await;
+
+    for _ in 0..2 {
+        let settled =
+            answered_elsewhere(&world.repo, world.clock.now(), &attempt, "dec-1", "docket")
+                .await
+                .expect("close");
+        announce::decision_answered_elsewhere(
+            &world.repo,
+            &events,
+            &runner,
+            &attempt,
+            "dec-1",
+            &settled,
+        )
+        .await;
+    }
+
+    assert_eq!(
+        events.events(),
+        vec![DomainEvent::new(
+            project,
+            &runner,
+            Fact::DecisionResolved {
+                run: run_of(&world, &run),
+                decision_id: "dec-1".into()
+            }
+        )],
+        "the second report found it closed and said nothing"
+    );
 }
 
 #[tokio::test]

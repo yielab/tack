@@ -4,12 +4,14 @@
 //! lossy, so [`reconcile`] reads what waits on a person from the store at the start, after the
 //! bus said it dropped events, and after a write failed: it opens what has no notification and
 //! closes what no longer waits. That is also what closes a failed run that was run again under a
-//! new request, which no single fact names.
+//! new request, which no single fact names. That also repairs a question docket closed in its own
+//! tool or that expired, so the reconcile runs again every [`RECONCILE_EVERY`] passes and the
+//! inbox is never more than that far from the store.
 //!
 //! What a team waits to have approved for its memory is no board fact: the team reports it. The
 //! runner sends its report when it changes, and checks for a change every five minutes at most, so
 //! [`reconcile_memory`] reads the reports the board already holds (the snapshots of the active
-//! runners, the read behind the list of teams) every [`MEMORY_EVERY`] passes. A person learns of an
+//! runners, the read behind the list of teams) on each periodic reconcile. A person learns of an
 //! entry within the runner's check plus that pass, and the notification closes the same way.
 
 use std::collections::{BTreeMap, HashSet};
@@ -22,8 +24,8 @@ use tack_core::event::{DomainEvent, Fact, RunRef};
 use tack_core::notification::{Key, Kind, Level, Notice, closes, memory_waiting, notice};
 use tack_core::principal::Principal;
 use tack_core::run_defaults::named_team;
-use tack_db::Repository;
 use tack_db::repo::notifications::WaitingRun;
+use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use tokio::sync::{Mutex, broadcast};
 
@@ -35,9 +37,11 @@ use crate::ports::DomainEvents;
 /// How often the events are read.
 const EVERY: Duration = Duration::from_secs(2);
 
-/// How many passes lie between two reads of the teams' reports: thirty seconds, against a report
-/// the runner refreshes every five minutes.
-const MEMORY_EVERY: u32 = 15;
+/// How many passes lie between two reconciles with the store: thirty seconds. Some endings no
+/// fact announces (a question docket closed in its own tool, one that expired, a failed run run
+/// again under a new request) and a team's report is no fact at all, so the store is read on a
+/// clock as well as after a loss.
+const RECONCILE_EVERY: u32 = 15;
 
 /// How long a failed run stays news: an older failure is not opened by the reconcile, and one
 /// that is open is closed when it ages out.
@@ -56,12 +60,27 @@ async fn apply(repo: &Repository, inbox: &Inbox, event: &DomainEvent) -> Result<
     if let Some(notice) = notice(event)
         && !is_hidden(repo, &notice).await?
     {
-        inbox.open(&notice).await?;
+        inbox.open(&titled(repo, notice).await?).await?;
     }
     if let Some(key) = closes(event) {
         inbox.close(&key).await?;
     }
     Ok(())
+}
+
+/// Says which item a notice is about, so two questions of two items read differently in the inbox
+/// and in what a webhook receives. The rule in `tack_core` knows only the fact, not the store.
+async fn titled(repo: &Repository, mut notice: Notice) -> Result<Notice, AppError> {
+    if notice.kind != Kind::DueSoon
+        && let Some(item) = notice.item_id
+        && let Some(found) = queries::digest::item_titles(repo, &[item.to_string()])
+            .await?
+            .into_iter()
+            .next()
+    {
+        notice.title = format!("{}: {}", notice.title, found.title);
+    }
+    Ok(notice)
 }
 
 async fn is_hidden(repo: &Repository, notice: &Notice) -> Result<bool, AppError> {
@@ -139,7 +158,7 @@ async fn waiting(repo: &Repository, clock: &dyn Clock) -> Result<Vec<Notice>, Ap
         if let Some(notice) = notice(&DomainEvent::new(project, &tack, fact))
             && !is_hidden(repo, &notice).await?
         {
-            notices.push(notice);
+            notices.push(titled(repo, notice).await?);
         }
     }
     Ok(notices)
@@ -303,7 +322,7 @@ pub async fn reconcile(
 }
 
 /// Adds the loop to the server's loops. The first pass reconciles; after it, a pass reconciles
-/// only when the events could not be trusted.
+/// when the events could not be trusted and every [`RECONCILE_EVERY`] passes.
 pub fn spawn(
     loops: &mut Loops,
     repo: Repository,
@@ -311,12 +330,24 @@ pub fn spawn(
     inbox: Inbox,
     events: Arc<dyn DomainEvents>,
 ) {
+    spawn_every(loops, repo, clock, inbox, events, EVERY);
+}
+
+/// [`spawn`] with the pass chosen: a reconcile still comes every [`RECONCILE_EVERY`] passes.
+pub fn spawn_every(
+    loops: &mut Loops,
+    repo: Repository,
+    clock: Arc<dyn Clock>,
+    inbox: Inbox,
+    events: Arc<dyn DomainEvents>,
+    every: Duration,
+) {
     let receiver = events
         .subscribe()
         .map(|receiver| Arc::new(Mutex::new(receiver)));
     let repair = Arc::new(AtomicBool::new(true));
     let passes = Arc::new(AtomicU32::new(0));
-    loops.spawn_tick("notifications", Start::Immediately, EVERY, move || {
+    loops.spawn_tick("notifications", Start::Immediately, every, move || {
         let (repo, clock, inbox) = (repo.clone(), clock.clone(), inbox.clone());
         let (receiver, repair, passes) = (receiver.clone(), repair.clone(), passes.clone());
         async move {
@@ -325,21 +356,8 @@ pub fn spawn(
             {
                 repair.store(true, Ordering::Relaxed);
             }
-            let memory_due = passes.fetch_add(1, Ordering::Relaxed) % MEMORY_EVERY == 0;
-            if !repair.load(Ordering::Relaxed) && memory_due {
-                match reconcile_memory(&repo, &inbox).await {
-                    Ok(done) if done != Reconciled::default() => {
-                        tracing::info!(
-                            opened = done.opened,
-                            closed = done.closed,
-                            "notifications: what teams wait to learn was read"
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        tracing::warn!(%error, "notifications: the teams' memory could not be read; it will be tried again");
-                    }
-                }
+            if passes.fetch_add(1, Ordering::Relaxed) % RECONCILE_EVERY == 0 {
+                repair.store(true, Ordering::Relaxed);
             }
             if repair.swap(false, Ordering::Relaxed) {
                 match reconcile(&repo, &inbox, clock.as_ref()).await {
