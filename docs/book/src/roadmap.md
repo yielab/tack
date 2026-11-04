@@ -50,8 +50,11 @@ how many children are done and tells the inbox when the last one finishes, movin
 limit — run, step, team — is shown with who applies it, and a team paused on its budget is resumed
 from the board. A business structure is a template: roles as departments and the teams it expects,
 compared with what docket reports; "Digital business" is the first, and the repository's teams are
-applied through the runner with the person approving docket's commands. Four additive asks go to
-docket, each probed as a feature. Seven cards in five rounds.
+applied through the runner with the person approving docket's commands. Everything a person needs
+to run a project works with any agent Tack runs — a profile with no team is a team of one, filled
+from what its runner reports; docket adds members, methods, step and team limits and folder teams,
+reported and probed, never required. Four additive asks go to docket, each probed as a feature.
+Seven cards in five rounds.
 
 What remains besides them are two dependency cards:
 

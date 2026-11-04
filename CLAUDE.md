@@ -121,7 +121,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   missing roles, `needs[]`) and the fit check grows from two facts to five; one router (`GET
   /api/projects/{id}/routing`) for every screen; a parent shows its children's progress and moves nothing;
   each limit shown with its owner and **Resume team**; a business structure is a template (`teams:` descriptive,
-  "Digital business") and the repository's teams are applied through the runner. Four additive asks to docket
+  "Digital business") and the repository's teams are applied through the runner. Any agent first: a profile with
+  no team is a team of one filled from its runner's report; docket adds members, methods, step and team limits
+  and folder teams, reported and probed, never required. Four additive asks to docket
   (`podShape`, `podContract`, `pipelineChecked`, `podResume`), each probed. Cards A ∥ C; D; E; F; G.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
