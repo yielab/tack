@@ -14,7 +14,7 @@ This page is for people who use Tack every day and hit something unexpected. Eac
 | A run succeeded but there is no pull request, pack or branch | [A run succeeded, but there is no pull request, pack or branch](#a-run-succeeded-but-there-is-no-pull-request-pack-or-branch) |
 | The Start switch is greyed out, or auto-start turned itself off | [Auto-start is off, and says why](#auto-start-is-off-and-says-why) |
 | A task reached the Start column and nothing happened | [A task did not start by itself](#a-task-did-not-start-by-itself) |
-| `tack runner doctor` says "needs docket 0.2.0-beta.6" | [A runner shows "needs docket 0.2.0-beta.6"](../admin-guide/troubleshooting.md#a-runner-shows-needs-docket-020-beta6) (Administrator Guide) |
+| `tack runner doctor` says "needs docket 0.3.0-beta.1" | [A runner shows "needs docket 0.3.0-beta.1"](../admin-guide/troubleshooting.md#a-runner-shows-needs-docket-030-beta1) (Administrator Guide) |
 | The project never merges by itself, and Settings names a team | [A team is attended](../admin-guide/troubleshooting.md#a-team-is-attended) (Administrator Guide) |
 | An import says "This file cannot be imported" | [A project file was refused](#a-project-file-was-refused) |
 | An import says a section could not be written | [A section failed to write](#a-section-failed-to-write) |

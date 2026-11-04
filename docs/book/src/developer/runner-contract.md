@@ -100,9 +100,9 @@ Separately, each runner reports its own `runner_version` (a free-form string in 
 
 ## docket
 
-docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 6, which needs docket 0.2.0-beta.6.
+docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 6, which needs docket 0.3.0-beta.1.
 
-- An `apiVersion` below 6, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 6); this docket answers API N" and no task is posted.
+- An `apiVersion` below 6, or one that is not a number, is reported as "needs docket 0.3.0-beta.1 (API 6); this docket answers API N" and no task is posted.
 - Nothing in the runner starts a throwaway docket per run.
 - One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and reads the task's branch from the repository; the runner makes no checkout for it.
 - The daemon is supervised by the runner only when `[docket].binary` is set in its configuration.
@@ -129,6 +129,6 @@ Live, end-to-end proof of the real client: `crates/tack-runner/tests/bootstrap_e
 
 **Several attempts at once** is proved in `crates/tack-runner/src/harness/local_process/tests.rs`: with two slots, two claims run together, every heartbeat carries both leases, and cancelling one attempt through the heartbeat answer leaves the other running. `crates/tack-runner/tests/crash_matrix.rs` recovers two unresolved journals after a crash.
 
-**docket is proved against a fake, not a real docket.** `crates/tack-runner/tests/docket_v5.rs` drives `DocketAdapter` against `crates/tack-runner/tests/fake_docket/mod.rs`, an in-process docket that answers from recordings of a real one (`scripts/capture-docket-fixtures.sh`). It covers the version probe and the "needs docket 0.2.0-beta.6" refusal, the teams and the ceiling, the task body key by key, the default team named for the folder, the trace cursor surviving a restart, approvals and parked questions as decisions, and the task's branch coming back into the worktree. The daemon's supervision is proved in `crates/tack-runner/src/harness/docket/daemon/tests.rs`. Only the local suite below runs a real docket.
+**docket is proved against a fake, not a real docket.** `crates/tack-runner/tests/docket_v5.rs` drives `DocketAdapter` against `crates/tack-runner/tests/fake_docket/mod.rs`, an in-process docket that answers from recordings of a real one (`scripts/capture-docket-fixtures.sh`). It covers the version probe and the "needs docket 0.3.0-beta.1" refusal, the teams and the ceiling, the task body key by key, the default team named for the folder, the trace cursor surviving a restart, approvals and parked questions as decisions, and the task's branch coming back into the worktree. The daemon's supervision is proved in `crates/tack-runner/src/harness/docket/daemon/tests.rs`. Only the local suite below runs a real docket.
 
 The whole workflow through the browser is proven by hand with a local suite that is not versioned (`onboarding-lab/e2e/docket-prill-e2e.sh` in the maintainer's checkout). It builds Tack from the checkout, runs docket and prill from their own source trees against a local model, and drives a project, its runner, its settings, a bug, a feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a screenshot per step. It makes real model calls, so CI never runs it.

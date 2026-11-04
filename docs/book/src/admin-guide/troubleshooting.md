@@ -23,7 +23,7 @@ file that was refused, are in the [User Guide's troubleshooting page](../user-gu
 | The browser console shows a CORS error, or the server answers `421` or `403` | [The browser reports a CORS error, 421 or 403](#the-browser-reports-a-cors-error-421-or-403) |
 | An upload or import is rejected as too large | [An upload or import is rejected as too large](#an-upload-or-import-is-rejected-as-too-large) |
 | A run succeeded but there is no pull request, pack or branch | [A succeeded run has no pull request, pack or branch](#a-succeeded-run-has-no-pull-request-pack-or-branch) |
-| `tack runner doctor` says "needs docket 0.2.0-beta.6" | [A runner shows "needs docket 0.2.0-beta.6"](#a-runner-shows-needs-docket-020-beta6) |
+| `tack runner doctor` says "needs docket 0.3.0-beta.1" | [A runner shows "needs docket 0.3.0-beta.1"](#a-runner-shows-needs-docket-030-beta1) |
 | docket shows as absent, or the daemon is not started | [docket is absent and the daemon does not start](#docket-is-absent-and-the-daemon-does-not-start) |
 | A team is reported as attended and tasks stay at L3 | [A team is attended](#a-team-is-attended) |
 | A docket run is running and nothing moves, and the timeline says the team is paused | [A team is paused](#a-team-is-paused) |
@@ -240,21 +240,21 @@ on and found. Set the missing section as described in
 
 ---
 
-## A runner shows "needs docket 0.2.0-beta.6"
+## A runner shows "needs docket 0.3.0-beta.1"
 
 **What you see.** `tack runner doctor` prints, under `docket`:
 
 ```text
-  api:         5 (needs docket 0.2.0-beta.6 (API 6); this docket answers API 5)
+  api:         5 (needs docket 0.3.0-beta.1 (API 6); this docket answers API 5)
 ```
 
 and the runner posts no task to docket.
 
 **Cause.** Tack sends each docket run to a team over docket's HTTP API, which it checks before every
-task. It accepts version `6`, which docket 0.2.0-beta.6 provides, and any later one. An older docket
+task. It accepts version `6`, which docket 0.3.0-beta.1 provides, and any later one. An older docket
 answers a lower version, and Tack refuses it rather than guess.
 
-**What to do.** Install docket 0.2.0-beta.6 or later on the runner's machine, restart the daemon (or the
+**What to do.** Install docket 0.3.0-beta.1 or later on the runner's machine, restart the daemon (or the
 runner, if it starts the daemon), and run `tack runner doctor` again until the line reads `api:         6`
 or higher. The
 install steps are in [Installing and Operating Runners](runners.md#install-docket-and-tell-the-runner).

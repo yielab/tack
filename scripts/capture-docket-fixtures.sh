@@ -107,7 +107,7 @@ for _ in $(seq 1 60); do
 done
 [ -s "$TOKEN_FILE" ] || die "docket wrote no token; see $SCRATCH/daemon.log (DOCKET_CAPTURE_KEEP=1 keeps it)"
 API=$(jq -r '.apiVersion // empty' <<<"$STATUS" 2>/dev/null || true)
-[ "$API" = "6" ] || die "this docket answers apiVersion \"${API:-nothing}\", not \"6\": Tack's docket harness needs docket 0.2.0-beta.6 or later"
+[ "$API" = "6" ] || die "this docket answers apiVersion \"${API:-nothing}\", not \"6\": Tack's docket harness needs docket 0.3.0-beta.1 or later"
 
 TOKEN=$(tr -d '\n' <"$TOKEN_FILE")
 umask 077

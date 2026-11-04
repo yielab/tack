@@ -267,7 +267,7 @@ for a push from a runner with `push_branches = false` changes nothing and the at
 ## docket (`[docket]`)
 
 docket runs as a daemon beside the runner and the runner talks to its operator API (version 6,
-docket 0.2.0-beta.6). Naming a `binary` or a `base_url` turns docket on for this runner; neither means no
+docket 0.3.0-beta.1). Naming a `binary` or a `base_url` turns docket on for this runner; neither means no
 docket on this runner. A `docket` program on the `PATH` does not count.
 
 ```toml

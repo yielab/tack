@@ -38,7 +38,7 @@ file. It requires no account.
 - **To assign tasks to an agent:** one of Claude Code, Codex, opencode or docket installed
   on the same computer and signed in with its own tools. Tack has no agent of its own: it hands the task to that program, which
   reads and edits files, runs commands and uses whatever model you set it up with. Tack
-  holds no model key. docket needs version 0.2.0-beta.6 or later.
+  holds no model key. docket needs version 0.3.0-beta.1 or later.
 
   [Choosing an agent](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-an-agent) says
   what each one supports.

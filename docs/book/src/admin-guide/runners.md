@@ -264,9 +264,9 @@ team able to run without a person.
 
 ### Install docket and tell the runner
 
-Install docket 0.2.0-beta.6 from the [docket repository](https://github.com/yielab/docket). The
+Install docket 0.3.0-beta.1 from the [docket repository](https://github.com/yielab/docket). The
 runner speaks docket's HTTP API version 6, which that release provides, and any later version. It
-checks the version before every task. A version below 6 is reported as "needs docket 0.2.0-beta.6
+checks the version before every task. A version below 6 is reported as "needs docket 0.3.0-beta.1
 (API 6); this docket answers API N", and no task is sent to it. docket installs the project's
 dependencies in its own copy, using the project's install setting.
 

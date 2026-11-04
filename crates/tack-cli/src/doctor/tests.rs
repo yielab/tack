@@ -359,7 +359,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
         ]
     );
 
-    let mut wrong = capability("docket", "", Some("needs docket 0.2.0-beta.6"));
+    let mut wrong = capability("docket", "", Some("needs docket 0.3.0-beta.1"));
     wrong.set_api_version("4");
     wrong.teams = None;
     assert_eq!(
@@ -368,7 +368,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             &Err("not answering at http://127.0.0.1:7399/health".to_owned())
         ),
         vec![
-            "  api:         4 (needs docket 0.2.0-beta.6)",
+            "  api:         4 (needs docket 0.3.0-beta.1)",
             "  daemon:      not answering at http://127.0.0.1:7399/health",
         ]
     );

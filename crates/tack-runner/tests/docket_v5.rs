@@ -261,11 +261,11 @@ async fn probe_on_api_5_names_beta_6_and_no_task_is_posted() {
     let capability = adapter.probe().await;
     assert_eq!(
         capability.probe_error.as_deref(),
-        Some("needs docket 0.2.0-beta.6 (API 6); this docket answers API 5")
+        Some("needs docket 0.3.0-beta.1 (API 6); this docket answers API 5")
     );
     let refused = adapter.validate(&spec(&scene, "attempt-1", 1)).await;
     assert!(
-        matches!(&refused, Err(HarnessError::Rejected { reason }) if reason.contains("0.2.0-beta.6")),
+        matches!(&refused, Err(HarnessError::Rejected { reason }) if reason.contains("0.3.0-beta.1")),
         "{refused:?}"
     );
     assert!(fake.requests_to("POST", "/tasks").is_empty());
@@ -318,7 +318,7 @@ async fn a_version_below_6_or_not_a_number_is_refused_with_the_sentence() {
         assert_eq!(
             adapter.probe().await.probe_error,
             Some(format!(
-                "needs docket 0.2.0-beta.6 (API 6); this docket answers API {found}"
+                "needs docket 0.3.0-beta.1 (API 6); this docket answers API {found}"
             ))
         );
         assert!(
@@ -341,7 +341,7 @@ async fn a_docket_without_the_escalation_record_is_refused_with_the_sentence() {
     let adapter = adapter(&fake, &scene);
 
     let capability = adapter.probe().await;
-    let sentence = "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API 6 without it";
+    let sentence = "needs docket 0.3.0-beta.1 with the escalation record; this docket answers API 6 without it";
     assert_eq!(capability.probe_error.as_deref(), Some(sentence));
     assert_eq!(capability.api_version(), Some("6"));
     let refused = adapter.validate(&spec(&scene, "attempt-1", 1)).await;
