@@ -1,0 +1,25 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "a method the team cannot staff",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "pipeline": "cross-family-review",
+  "rev": 40,
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "pipeline 'cross-family-review' (recipe:cross-family-review) names roles this pod does not have: reviewer (step review)",
+  "failureKind": "pipeline",
+  "pendingApprovalIndex": null,
+  "hops": [],
+  "worktree": {
+    "dir": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo/.git"
+  },
+  "tokenBudget": 100000
+}

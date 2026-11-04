@@ -1,8 +1,10 @@
-constructed
+captured
 route: POST /pods/<pod>/resume
 status: 200
 tack-sends: yes
-built-from: the answer Tack asked of docket's session on 2026-11-03 for `POST /pods/<pod>/resume` (ADR 0036 "What is asked of docket"): the team's name and that it is no longer paused
-docket: not shipped; API 6, additive, announced in `features` as `podResume`
+note: a paused team resumed: the whole report of the team plus resumed true; the budget is still spent, so docket pauses it again at the next hop
+command: curl -X POST http://127.0.0.1:<port>/pods/saas-budget/resume (bearer token from docket's --token-file)
+docket: docket 0.3.0b1 (API 6), source checkout 2462c872
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-11-04
-note: not captured, because no docket serves this route yet. Tack reads only the status of this answer, then asks for the team's report, so the body is the least that says what happened. It replaces this file with a capture the day docket ships the feature.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid, review codes (as zeros)

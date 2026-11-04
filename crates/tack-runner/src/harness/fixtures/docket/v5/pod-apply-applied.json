@@ -1,24 +1,12 @@
 {
   "ok": true,
-  "project": "saas-dev",
+  "project": "saas-team",
   "items": [
     {
-      "kind": "role",
-      "name": "lead",
-      "action": "update",
-      "note": ""
-    },
-    {
-      "kind": "service",
-      "name": "mailbox",
+      "kind": "setting",
+      "name": "fetchDomains",
       "action": "add",
       "note": ""
-    },
-    {
-      "kind": "pipeline",
-      "name": "research-review",
-      "action": "skip",
-      "note": "unchanged"
     }
   ],
   "dryRun": false

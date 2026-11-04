@@ -1,11 +1,12 @@
-constructed
+captured
 route: POST /pods/<pod>/apply
 status: 200
+request: pod-apply-applied.request.json
 tack-sends: yes
 optional-keys: accept
-built-from: the answer docket writes when the directory was applied: `ok` true, `project`, one item per thing the directory declares (kind, name, action, note) and `dryRun`
-source: src/docket/interfaces/http/routes/pod_apply.py (the final branch) and src/docket/teams/apply/model.py (`ApplyItem`) at the checkout a268257b, read and not run
-request: {"directory":"/scratch/repo/.docket/teams/saas-dev","accept":"3f9a1c7e2b40"}
-docket: docket 0.3.0b1 (API 6), source checkout a268257b, read and not run
+note: the same call with the reviewCode as accept: 200, one item per thing the folder declares
+command: curl -X POST http://127.0.0.1:<port>/pods/saas-team/apply (bearer token from docket's --token-file) with the body in pod-apply-applied.request.json
+docket: docket 0.3.0b1 (API 6), source checkout 2462c872
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-11-04
-note: not captured, because the apply needs a directory of a team; the values are made up. The request is the call after a person read the commands: `accept` carries the `reviewCode` of pod-apply-needs-code.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid, review codes (as zeros)

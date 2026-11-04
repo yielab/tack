@@ -1,17 +1,32 @@
 {
   "ok": true,
   "created": true,
-  "project": "saas-dev",
+  "project": "saas-team",
   "blueprint": "respond",
   "members": [
     {
-      "id": "saas-dev-lead",
+      "id": "saas-team-lead",
       "role": "lead",
       "model": "anthropic/claude-haiku-5-5"
     },
     {
-      "id": "saas-dev-implementer",
-      "role": "implementer",
+      "id": "saas-team-researcher",
+      "role": "researcher",
+      "model": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "saas-team-writer",
+      "role": "writer",
+      "model": "anthropic/claude-haiku-5-5"
+    },
+    {
+      "id": "saas-team-reviewer",
+      "role": "reviewer",
+      "model": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "saas-team-actor",
+      "role": "actor",
       "model": "anthropic/claude-sonnet-5-5"
     }
   ]

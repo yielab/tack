@@ -1,15 +1,15 @@
 {
-  "pod": "saas-dev",
-  "blueprint": "build",
+  "pod": "saas-contract",
+  "blueprint": "respond",
   "members": [
     {
-      "id": "saas-dev-lead",
+      "id": "saas-contract-lead",
       "role": "lead",
       "model": {
         "value": "anthropic/claude-haiku-5-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-lead",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-contract-lead",
       "verifyCmd": "",
       "capabilities": {
         "kinds": [
@@ -33,13 +33,43 @@
       }
     },
     {
-      "id": "saas-dev-implementer",
-      "role": "implementer",
+      "id": "saas-contract-reviewer",
+      "role": "reviewer",
       "model": {
         "value": "anthropic/claude-sonnet-5-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-contract-reviewer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "skill"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-contract-researcher",
+      "role": "researcher",
+      "model": {
+        "value": "anthropic/claude-sonnet-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-contract-researcher",
       "verifyCmd": "",
       "capabilities": {
         "kinds": [
@@ -68,6 +98,103 @@
           "service"
         ]
       }
+    },
+    {
+      "id": "saas-contract-analyst",
+      "role": "analyst",
+      "model": {
+        "value": "anthropic/claude-haiku-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-contract-analyst",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-contract-writer",
+      "role": "writer",
+      "model": {
+        "value": "anthropic/claude-haiku-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-contract-writer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "write"
+        ],
+        "tools": [
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-contract-actor",
+      "role": "actor",
+      "model": {
+        "value": "anthropic/claude-sonnet-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-contract-actor",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "glob",
+          "read"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
     }
   ],
   "settings": {
@@ -75,9 +202,13 @@
       "value": null,
       "source": "default"
     },
-    "maxReworkCycles": {
-      "value": 1,
+    "budgetWindow": {
+      "value": "none",
       "source": "default"
+    },
+    "maxReworkCycles": {
+      "value": "none",
+      "source": "pipeline"
     },
     "turnTimeoutS": {
       "value": null,
@@ -104,8 +235,8 @@
       "source": "default"
     },
     "pipeline": {
-      "value": null,
-      "source": "default"
+      "value": "6798da221c6e49937c46c719b0b3e5f9142d2afc07e9e05141a08901475db363",
+      "source": "set"
     },
     "schedule": {
       "value": null,
@@ -136,7 +267,7 @@
       "source": "default"
     },
     "network": {
-      "value": "open",
+      "value": "none",
       "source": "default"
     },
     "profile": {
@@ -165,7 +296,7 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "blueprint 'build'",
+    "source": "bound pipeline (hash 6798da221c6e...)",
     "steps": [
       {
         "id": "lead",
@@ -176,64 +307,231 @@
         "rework": []
       },
       {
-        "id": "implementer",
+        "id": "research",
+        "kind": "parallel",
+        "role": null,
+        "modelClass": null,
+        "gate": null,
+        "rework": [],
+        "steps": [
+          {
+            "id": "web-a",
+            "kind": "agent",
+            "role": "researcher",
+            "modelClass": "cheap",
+            "gate": null,
+            "rework": []
+          },
+          {
+            "id": "web-b",
+            "kind": "agent",
+            "role": "researcher",
+            "modelClass": "cheap",
+            "gate": null,
+            "rework": []
+          },
+          {
+            "id": "repo",
+            "kind": "agent",
+            "role": "researcher",
+            "modelClass": "cheap",
+            "gate": null,
+            "rework": []
+          }
+        ]
+      },
+      {
+        "id": "analyst",
         "kind": "agent",
-        "role": "implementer",
-        "modelClass": "strong",
-        "gate": "mechanical",
+        "role": "analyst",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "writer",
+        "kind": "agent",
+        "role": "writer",
+        "modelClass": "cheap",
+        "gate": null,
         "rework": []
       }
     ]
   },
   "network": {
     "mode": "none",
-    "scope": "default",
-    "enforced": false
+    "scope": "global",
+    "enforced": true
   },
   "fetchDomains": [],
-  "configSource": "",
-  "configDigest": "",
-  "drift": "",
+  "needs": [
+    {
+      "kind": "fetch-hosts",
+      "name": "fetch-hosts",
+      "fix": "docket pod set fetchDomains <hosts> --pod saas-contract",
+      "satisfied": false
+    },
+    {
+      "kind": "search-host",
+      "name": "search-host",
+      "fix": "docket pod set fetchDomains 'html.duckduckgo.com' --pod saas-contract",
+      "satisfied": false
+    },
+    {
+      "kind": "isolation",
+      "name": "isolation",
+      "fix": "",
+      "satisfied": true
+    }
+  ],
+  "delivers": [
+    "report"
+  ],
+  "methods": [
+    {
+      "name": "capture-broken",
+      "source": "pod:capture-broken",
+      "missingRoles": [],
+      "error": "YAML parse error: while parsing a flow sequence\n  in \"<unicode string>\", line 1, column 6:\n    not: [valid\n         ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 1:\n    \n    ^",
+      "default": false
+    },
+    {
+      "name": "anti-tautology",
+      "source": "recipe:anti-tautology",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "cross-family-review",
+      "source": "recipe:cross-family-review",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "explore-then-edit",
+      "source": "recipe:explore-then-edit",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "frugal",
+      "source": "recipe:frugal",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "intake",
+      "source": "recipe:intake",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "mutation",
+      "source": "recipe:mutation",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "parallel-explore",
+      "source": "recipe:parallel-explore",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "reflexion",
+      "source": "recipe:reflexion",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "research-review",
+      "source": "recipe:research-review",
+      "missingRoles": [],
+      "default": false
+    },
+    {
+      "name": "secure-build",
+      "source": "recipe:secure-build",
+      "missingRoles": [
+        "implementer",
+        "security-vetter"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-first",
+      "source": "recipe:spec-first",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-writer",
+      "source": "recipe:spec-writer",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "strong-plan-cheap-edit",
+      "source": "recipe:strong-plan-cheap-edit",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "tdd",
+      "source": "recipe:tdd",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "web-research",
+      "source": "recipe:web-research",
+      "missingRoles": [],
+      "default": true
+    }
+  ],
+  "budget": {
+    "tokens": null,
+    "used": 0,
+    "window": "none",
+    "windowStart": null
+  },
+  "workDir": "/scratch/home/.docket/state/workspaces/pods/saas-contract/workdir",
+  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/web-research",
+  "configDigest": "58212bf7e4f5927ce240adf2dc6320c74701263da8f4b99e33c815802dbab5f6",
+  "drift": "no",
   "profile": {
     "name": "attended",
     "violations": []
   },
-  "pipelineSource": "blueprint 'build'",
-  "workspaceKind": "codebase",
-  "repoConfigDir": "/scratch/repo/.docket",
+  "pipelineSource": "bound pipeline (hash 6798da221c6e...)",
+  "workspaceKind": "workdir",
+  "repoConfigDir": "",
   "readOnly": [
     "/scratch/toolchain/node"
   ],
-  "paused": false,
-  "delivers": "branch",
-  "methods": [
-    {
-      "name": "pipeline",
-      "source": "pod",
-      "default": true,
-      "missingRoles": []
-    },
-    {
-      "name": "tdd",
-      "source": "recipe",
-      "default": false,
-      "missingRoles": []
-    },
-    {
-      "name": "secure-build",
-      "source": "recipe",
-      "default": false,
-      "missingRoles": [
-        "security-vetter"
-      ]
-    }
-  ],
-  "needs": [
-    {
-      "kind": "service",
-      "name": "mail",
-      "fix": "docket pod service add mail --pod saas-dev",
-      "satisfied": true
-    }
-  ]
+  "paused": false
 }

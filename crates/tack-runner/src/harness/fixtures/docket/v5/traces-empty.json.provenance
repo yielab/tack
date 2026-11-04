@@ -4,7 +4,7 @@ status: 200
 tack-sends: no
 note: a team that does not exist yet has no events, and no error
 command: curl -X GET http://127.0.0.1:<port>/traces/saas-dev (bearer token from docket's --token-file)
-docket: docket 0.3.0b1 (API 6), source checkout a268257b
+docket: docket 0.3.0b1 (API 6), source checkout 2462c872
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
-date: 2026-11-02
-redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid
+date: 2026-11-04
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid, review codes (as zeros)

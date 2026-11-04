@@ -1,0 +1,157 @@
+{
+  "pods": [
+    {
+      "name": "saas-dev",
+      "codebase": "/scratch/repo",
+      "workspaceKind": "codebase",
+      "blueprint": "build",
+      "members": 2,
+      "profile": "attended",
+      "network": {
+        "mode": "none",
+        "scope": "global",
+        "enforced": true
+      },
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingInput": 1,
+        "waitingApproval": 0,
+        "blocked": 0,
+        "failed": 5,
+        "done": 0,
+        "cancelled": 1
+      },
+      "budget": {
+        "tokens": null,
+        "used": 0,
+        "window": "none",
+        "windowStart": null
+      },
+      "paused": false
+    },
+    {
+      "name": "saas-lights",
+      "codebase": "/scratch/repo2",
+      "workspaceKind": "codebase",
+      "blueprint": "build",
+      "members": 2,
+      "profile": "lights-out",
+      "network": {
+        "mode": "none",
+        "scope": "global",
+        "enforced": true
+      },
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingInput": 0,
+        "waitingApproval": 0,
+        "blocked": 0,
+        "failed": 1,
+        "done": 0,
+        "cancelled": 0
+      },
+      "budget": {
+        "tokens": null,
+        "used": 0,
+        "window": "none",
+        "windowStart": null
+      },
+      "paused": false
+    },
+    {
+      "name": "saas-notes",
+      "codebase": "",
+      "workspaceKind": "workdir",
+      "blueprint": "routine",
+      "members": 4,
+      "profile": "attended",
+      "network": {
+        "mode": "none",
+        "scope": "global",
+        "enforced": true
+      },
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingInput": 0,
+        "waitingApproval": 0,
+        "blocked": 0,
+        "failed": 3,
+        "done": 0,
+        "cancelled": 0
+      },
+      "budget": {
+        "tokens": null,
+        "used": 0,
+        "window": "none",
+        "windowStart": null
+      },
+      "workDir": "/scratch/notes",
+      "paused": false
+    },
+    {
+      "name": "saas-contract",
+      "codebase": "",
+      "workspaceKind": "workdir",
+      "blueprint": "respond",
+      "members": 6,
+      "profile": "attended",
+      "network": {
+        "mode": "none",
+        "scope": "global",
+        "enforced": true
+      },
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingInput": 0,
+        "waitingApproval": 0,
+        "blocked": 0,
+        "failed": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "budget": {
+        "tokens": null,
+        "used": 0,
+        "window": "none",
+        "windowStart": null
+      },
+      "workDir": "/scratch/home/.docket/state/workspaces/pods/saas-contract/workdir",
+      "paused": false
+    },
+    {
+      "name": "saas-budget",
+      "codebase": "/scratch/repo",
+      "workspaceKind": "codebase",
+      "blueprint": "build",
+      "members": 2,
+      "profile": "attended",
+      "network": {
+        "mode": "none",
+        "scope": "global",
+        "enforced": true
+      },
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingInput": 0,
+        "waitingApproval": 0,
+        "blocked": 1,
+        "failed": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "budget": {
+        "tokens": 1000,
+        "used": 2500,
+        "window": "day",
+        "windowStart": "2026-01-01T00:00:00Z"
+      },
+      "paused": true,
+      "pausedReason": "budget"
+    }
+  ]
+}
