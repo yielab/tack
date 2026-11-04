@@ -1,6 +1,6 @@
 # ADR 0035: a person is told what needs them — one inbox, fed by the board's events, delivered live and through a webhook
 
-**Status: PROPOSED 2026-11-03.** To be executed by Phase 88 (`docs/plans/phase-88.md`). Builds on
+**Status: ACCEPTED 2026-11-04 and built.** Executed by Phase 88 (`docs/plans/phase-88.md`). Builds on
 ADR 0034 decision 8 (the board's facts are events on one bus; a trigger is the bus's first
 subscriber) and on decision 6 (the digest knows what waits on a person). **Replaces the outbound
 webhook of Phase 10** (`item.*`, `sprint.*`, `item.due_soon`, fired from the handlers): nothing of
