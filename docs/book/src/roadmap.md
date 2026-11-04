@@ -56,6 +56,25 @@ from what its runner reports; docket adds members, methods, step and team limits
 reported and probed, never required. Four additive asks go to docket, each probed as a feature.
 Seven cards in five rounds.
 
+**Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
+file, no ADR; from the seven runs of one research task). Two cards, one round:
+
+- **A — one rule for a run's network.** The built-in Researcher, Planner and Reviewer name
+  WebFetch (the Researcher WebSearch too) and no `network`, so a run that leaves the network to the
+  profile asks for no network and for web tools at once, and Claude Code refuses it before it
+  starts; the Run dialog starts its Web tools box off for the same reason, and opencode, which
+  reaches the network on every run, refuses every run whose box is off. One function in `tack-core`
+  gives a profile's default network for an agent: the profile's `network` flag, or, for any agent
+  but docket, its tools for that agent being `*` or naming WebFetch or WebSearch; for opencode it is
+  always on, and the dialog shows the box on and disabled with that reason. The run's creation,
+  auto-start and the Run dialog read it, the dialog from the server rather than a copy of the rule.
+  Web tools off then takes the web tools out of a Claude Code run, as the box's help already says,
+  instead of refusing the run.
+- **B — a refused run reads "Not started" on every chip.** The Execution tab's run chips read the
+  run's latest attempt only once it is loaded, and otherwise the request's own state, `failed`, so
+  the same refusal reads Not started on one chip and Failed on the next. The fallback reads the
+  run's `never_started` as the board's card does.
+
 What remains besides them are two dependency cards:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
