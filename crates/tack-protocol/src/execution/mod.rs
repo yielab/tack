@@ -9,6 +9,7 @@ mod activity;
 mod capabilities;
 mod lifecycle;
 mod messages;
+mod operations;
 mod types;
 
 // `CapabilityLimits` is exported here since it's the type of the public
@@ -18,9 +19,9 @@ pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
     EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
     ModelsReport, NEED_MODEL, NEED_SIGN_IN, RunnerCapabilities, SignInReport, SignInState,
-    TeamDecides, TeamDelivers, TeamFacts, TeamMember, TeamMethod, TeamMisfit, TeamNeed, TeamNeeds,
-    TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck,
-    TeamStepKind, TeamViolation, WorksIn, team_misfits,
+    TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember, TeamMethod, TeamMisfit, TeamNeed,
+    TeamNeeds, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep,
+    TeamStepCheck, TeamStepKind, TeamViolation, WorksIn, team_misfits,
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,
@@ -36,6 +37,10 @@ pub use messages::{
     DecisionRecommendation, DecisionUpdate, EnrollmentRequest, EnrollmentResponse,
     EventBatchRequest, EventBatchResponse, EventRecord, HeartbeatRequest, HeartbeatResponse,
     LeaseResult, RefreshRequest, RefreshResponse,
+};
+pub use operations::{
+    OperationOutcome, OperationPollRequest, OperationPollResponse, OperationResultRequest,
+    OperationResultResponse, RunnerOperation, TeamOperation,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

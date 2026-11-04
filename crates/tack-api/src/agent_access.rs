@@ -364,5 +364,10 @@ mod tests {
             classify(&Method::POST, "/api/teams/writers/activity"),
             Access::OperatorOnly
         );
+        // Letting a team spend its budget again is a person's.
+        assert_eq!(
+            classify(&Method::POST, "/api/teams/docket/writers/resume"),
+            Access::OperatorOnly
+        );
     }
 }

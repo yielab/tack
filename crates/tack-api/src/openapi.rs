@@ -390,6 +390,12 @@ impl OpenApi for RunnerProtocolApiDoc {
     fn openapi() -> utoipa::openapi::OpenApi {
         let attempt_id =
             || string_path_param("attempt_id", "Attempt ID, issued at claim time (opaque)");
+        let operation_id = || {
+            string_path_param(
+                "operation_id",
+                "Operation ID, issued when the board hands the operation out (opaque)",
+            )
+        };
         let op = |summary: &str, params: Vec<Parameter>, ok: &str| {
             json_operation(
                 RUNNER_TAG,
@@ -538,6 +544,31 @@ impl OpenApi for RunnerProtocolApiDoc {
                          path fixed by protocol.json)",
                         vec![],
                         "Activity recorded; a repeated report changes nothing",
+                    ),
+                ),
+            )
+            .path(
+                "/operations/poll",
+                PathItem::new(
+                    HttpMethod::Post,
+                    op(
+                        "Ask for what a person asked of this runner's harnesses from the board, \
+                         each handed out once (additive v1 operation; exact path fixed by \
+                         protocol.json)",
+                        vec![],
+                        "The operations waiting for the runner; empty when none",
+                    ),
+                ),
+            )
+            .path(
+                "/operations/{operation_id}/result",
+                PathItem::new(
+                    HttpMethod::Post,
+                    op(
+                        "Tell the board how an operation ended, to the request that waits for \
+                         it (additive v1 operation; exact path fixed by protocol.json)",
+                        vec![operation_id()],
+                        "Result handed to the waiting request; 404 when nothing waits",
                     ),
                 ),
             )
@@ -921,6 +952,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::agent_credentials::rotate_credential,
         handlers::agent_credentials::revoke_credential,
         handlers::teams::team_activity,
+        handlers::teams::resume_team,
         handlers::metrics::factory_metrics,
         // ── Comments ──────────────────────────────────────────────────────
         handlers::comments::create_comment,
@@ -1103,6 +1135,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         tack_core::principal::Capability,
         tack_core::principal::CredentialState,
         handlers::teams::TeamActivityEntry,
+        handlers::teams::TeamResumed,
         handlers::metrics::FactoryMetrics,
         handlers::metrics::Ratio,
         handlers::metrics::HumanMinutes,

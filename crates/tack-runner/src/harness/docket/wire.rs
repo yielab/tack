@@ -107,6 +107,23 @@ pub(super) struct PodReport {
     pub methods: Option<Vec<Value>>,
     /// What the team's work still needs (`podContract`), kept as `methods` is.
     pub needs: Option<Vec<Value>>,
+    /// What the team may spend and has (`podResume`), kept as it came and read on its own so a
+    /// budget Tack cannot read costs the budget and never the team.
+    pub budget: Option<Value>,
+}
+
+/// `budget` of a team's report.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PodBudget {
+    /// The tokens the team may spend in the window; `null` when it has no limit.
+    pub tokens: Option<u64>,
+    #[serde(default)]
+    pub used: u64,
+    /// How long a window lasts (`lifetime`, `day`).
+    pub window: String,
+    /// When the current window began; absent for one that never restarts.
+    pub window_start: Option<String>,
 }
 
 /// One entry of `methods`: its name, where the team has it from, whether a task that names none

@@ -12,7 +12,7 @@ use std::{
 use serde_json::{Value, json};
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, CapabilitySupport, ExecutionRequestSnapshot,
-    HarnessKind, RunnerId as DomainRunnerId, TaskDocument, TeamDelivers,
+    HarnessKind, RunnerId as DomainRunnerId, TaskDocument, TeamDelivers, TeamPause,
 };
 use tack_protocol::prepare::PrepareSetting;
 use tack_runner::{
@@ -645,7 +645,6 @@ async fn probe_says_whether_the_proposals_are_shared_across_tasks_only_when_the_
 /// `podPause`: the probe says a team is paused and why, only from a docket that lists the feature.
 #[tokio::test]
 async fn probe_says_a_team_is_paused_and_why_only_from_a_docket_that_lists_podpause() {
-    use tack_protocol::execution::TeamPause;
     async fn paused(fake: &FakeDocket) -> Option<TeamPause> {
         let scene = scene();
         let teams = adapter(fake, &scene).probe().await.teams.expect("teams");
@@ -1524,6 +1523,175 @@ async fn the_fake_serves_a_contract_with_the_keys_of_pod_contract() {
             .as_array()
             .unwrap()
             .contains(&json!("podContract"))
+    );
+}
+
+/// `podResume`: a team's report says what it may spend and has spent, only from a docket that
+/// lists the feature.
+#[tokio::test]
+async fn probe_reads_a_teams_budget_only_when_docket_lists_podresume() {
+    let scene = scene();
+    let without = pods_fake().await;
+    let team = adapter(&without, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    assert!(
+        team.budget.is_none(),
+        "a docket before podResume says nothing"
+    );
+
+    let listed = pods_fake().await;
+    listed.with_pod_resume();
+    listed.pause_pod(POD, "budget");
+    let team = adapter(&listed, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    let budget = team.budget.expect("budget");
+    assert_eq!(
+        (budget.tokens, budget.used, budget.window.as_str()),
+        (Some(2_000_000), 2_000_000, "day")
+    );
+    assert_eq!(budget.window_start.as_deref(), Some("2026-01-01T00:00:00Z"));
+    assert_eq!(team.paused, Some(TeamPause::Budget));
+
+    // A team with no limit says so by leaving `tokens` out; a budget Tack cannot read is absent.
+    listed.set_budget(POD, json!({"tokens": null}));
+    let team = adapter(&listed, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    assert_eq!(team.budget.expect("budget").tokens, None);
+    listed.set_budget(POD, json!({"window": 7}));
+    let team = adapter(&listed, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    assert!(team.budget.is_none());
+}
+
+#[tokio::test]
+async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_pod_budget() {
+    let fake = pods_fake().await;
+    fake.with_pod_resume();
+    fake.pause_pod(POD, "budget");
+    let (_, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
+    if let Err(why) = same_shape(&report, &fake_docket::fixture("pod-budget"), "pod-budget") {
+        panic!("{why}");
+    }
+    let (status, resumed) = ask(&fake, "POST", &format!("/pods/{POD}/resume"), None).await;
+    assert_eq!(status, 200);
+    if let Err(why) = same_shape(
+        &resumed,
+        &fake_docket::fixture("pod-resumed"),
+        "pod-resumed",
+    ) {
+        panic!("{why}");
+    }
+    let (_, health) = ask(&fake, "GET", "/health", None).await;
+    assert!(
+        health["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("podResume"))
+    );
+    let older = pods_fake().await;
+    let (status, _) = ask(&older, "POST", &format!("/pods/{POD}/resume"), None).await;
+    assert_eq!(status, 404, "a docket without the route");
+}
+
+/// Resuming a paused team sends the route once and returns the team's report after it.
+#[tokio::test]
+async fn resuming_a_team_sends_the_route_once_and_returns_its_report() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_pod_resume();
+    fake.pause_pod(POD, "budget");
+    let report = adapter(&fake, &scene)
+        .resume_team(POD)
+        .await
+        .expect("resumed")
+        .expect("the report");
+    assert_eq!(
+        fake.requests_to("POST", &format!("/pods/{POD}/resume"))
+            .len(),
+        1
+    );
+    assert_eq!(report.name, POD);
+    assert_eq!(report.paused, None);
+    assert!(report.budget.is_some());
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    assert_eq!(teams[0].paused, None, "docket no longer holds it paused");
+}
+
+/// Without the feature the route is not sent: the operator is told where to resume instead.
+#[tokio::test]
+async fn resuming_a_team_is_refused_with_its_sentence_when_docket_lacks_podresume() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.pause_pod(POD, "budget");
+    let why = adapter(&fake, &scene)
+        .resume_team(POD)
+        .await
+        .expect_err("refused");
+    assert!(
+        why.contains("cannot resume a team from the board")
+            && why.contains(&format!("docket run --pod {POD} --resume")),
+        "{why}"
+    );
+    assert!(fake.requests_to("POST", "/pods").is_empty());
+
+    // A team docket does not know is its own sentence.
+    let listed = pods_fake().await;
+    listed.with_pod_resume();
+    let why = adapter(&listed, &scene)
+        .resume_team("no-such-team")
+        .await
+        .expect_err("refused");
+    assert!(why.contains("no team named no-such-team"), "{why}");
+}
+
+/// The runner's operation reaches the harness it names and no other.
+#[tokio::test]
+async fn the_resume_operation_goes_to_the_harness_it_names() {
+    use tack_protocol::execution::{OperationOutcome, TeamOperation};
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_pod_resume();
+    fake.pause_pod(POD, "budget");
+    let mut registry = AdapterRegistry::new();
+    registry
+        .register(adapter(&fake, &scene))
+        .expect("registers");
+    let operation = |harness: &str| TeamOperation::ResumeTeam {
+        harness: HarnessKind::new(harness),
+        team: POD.to_owned(),
+    };
+    let outcome = tack_runner::harness::do_team_operation(&registry, operation("docket")).await;
+    assert!(
+        matches!(outcome, OperationOutcome::Done { team: Some(_) }),
+        "{outcome:?}"
+    );
+    let outcome = tack_runner::harness::do_team_operation(&registry, operation("codex")).await;
+    assert_eq!(
+        outcome,
+        OperationOutcome::Refused {
+            reason: "this runner does not run codex".to_owned()
+        }
+    );
+    assert_eq!(
+        fake.requests_to("POST", &format!("/pods/{POD}/resume"))
+            .len(),
+        1
     );
 }
 
@@ -5460,6 +5628,12 @@ fn tack_server() -> (String, Arc<std::sync::Mutex<Vec<(String, Value)>>>) {
                     "claim" => include_str!(
                         "../../../docs/contracts/runner-v1/claim.no-work.response.json"
                     ),
+                    "poll" => include_str!(
+                        "../../../docs/contracts/runner-v1/operations.poll.response.json"
+                    ),
+                    "result" => include_str!(
+                        "../../../docs/contracts/runner-v1/operations.result.response.json"
+                    ),
                     _ => include_str!("../../../docs/contracts/runner-v1/heartbeat.response.json"),
                 };
                 let _ = write!(
@@ -5624,11 +5798,110 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
     assert!(ended.is_ok(), "the runner stops on shutdown");
 }
 
+/// A person's request the board hands the runner reaches the team's docket and its report goes
+/// back to the board under the operation's id.
+#[tokio::test]
+async fn an_operation_the_board_hands_out_is_done_and_its_result_sent_back() {
+    use tack_runner::{
+        ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
+        RunnerProtocolClient, Shutdown, SystemClock,
+        client::{
+            HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy, RunnerEngine,
+            WorkspaceManager, workspace::git::GitWorktreeProvisioner,
+        },
+    };
+
+    let fake = pods_fake().await;
+    fake.with_pod_resume();
+    fake.pause_pod(POD, "budget");
+    let scene = scene();
+    let (base_url, requests) = tack_server();
+    let mut registry = AdapterRegistry::new();
+    registry
+        .register(adapter(&fake, &scene))
+        .expect("registers");
+    let registry = Arc::new(registry);
+    let state = common::temp_dir("docket-operations");
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        command_line: ConfigOverrides {
+            api_base_url: Some(base_url.clone()),
+            runner_id: Some("local-runner".into()),
+            state_dir: Some(state.path().to_path_buf()),
+            enrollment_credential: Some(EnrollmentCredential::new("test-only-credential")),
+            ..ConfigOverrides::default()
+        },
+        ..RunnerConfigSources::default()
+    })
+    .expect("configuration");
+    let protocol = Arc::new(
+        HttpPullProtocol::new(&base_url, Duration::from_secs(5), RetryPolicy::default())
+            .expect("protocol"),
+    );
+    let engine = RunnerEngine::new(
+        Arc::clone(&protocol),
+        AdapterRegistry::new(),
+        OwnerOnlyJournal::new(state.path().join("journal")),
+        WorkspaceManager::new(
+            state.path().join("workspaces"),
+            GitWorktreeProvisioner::default(),
+        ),
+    );
+    let client = HttpRunnerClient::new(
+        protocol,
+        engine,
+        config,
+        SystemClock,
+        report(registry.capabilities().await),
+    )
+    .with_operations(Duration::from_millis(100), {
+        let registry = Arc::clone(&registry);
+        move |operation| {
+            let registry = Arc::clone(&registry);
+            async move { tack_runner::harness::do_team_operation(&registry, operation).await }
+        }
+    });
+    let (shutdown, handle) = Shutdown::channel();
+    let serving = tokio::spawn(async move { client.serve(shutdown).await });
+
+    let result = || {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(path, _)| path.ends_with("/operations/op_01J00000000000000000000001/result"))
+            .map(|(_, body)| body.clone())
+    };
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while result().is_none() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the runner reports the operation");
+    let result = result().expect("result");
+    assert_eq!(result["outcome"]["state"], "done");
+    assert_eq!(result["outcome"]["team"]["name"], POD);
+    assert!(result["outcome"]["team"]["budget"]["used"].is_u64());
+    assert!(
+        result["outcome"]["team"].get("paused").is_none(),
+        "the report it sends is the team after the resume"
+    );
+    assert!(
+        !fake
+            .requests_to("POST", &format!("/pods/{POD}/resume"))
+            .is_empty()
+    );
+
+    handle.request();
+    let ended = tokio::time::timeout(Duration::from_secs(30), serving).await;
+    assert!(ended.is_ok(), "the runner stops on shutdown");
+}
+
 // ── The fake is the captures ──────────────────────────────────────────────────
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 17] = [
+const CLIENT_ROUTES: [&str; 18] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -5636,6 +5909,7 @@ const CLIENT_ROUTES: [&str; 17] = [
     "GET /pods/<pod>/records",
     "GET /pods/<pod>/records/<set>",
     "POST /pods",
+    "POST /pods/<pod>/resume",
     "POST /tasks/<pod>",
     "GET /tasks/<pod>",
     "GET /tasks/<pod>/<id>",
@@ -5654,7 +5928,8 @@ const NOT_IN_CLIENT: [&str; 0] = [];
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
 /// that stays running, and `current` and `updatedSince` need one. `retry` was captured against a
 /// live docket for Card L (`docs/closed-cycles/plans/phase-87.md`) and moved out of this list.
-const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
+/// `resume` waits for a docket that serves it (`podResume`).
+const CONSTRUCTED_ONLY: [&str; 2] = ["GET /tasks/<pod>", "POST /pods/<pod>/resume"];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {

@@ -38,6 +38,20 @@
       "authentication": "runner_bearer_credential",
       "request_fixture": "decision.answered-elsewhere.request.json",
       "response_fixture": "decision.answered-elsewhere.response.json"
+    },
+    "team_operations": {
+      "method": "POST",
+      "path": "/operations/poll",
+      "authentication": "runner_bearer_credential",
+      "request_fixture": "operations.poll.request.json",
+      "response_fixture": "operations.poll.response.json"
+    },
+    "team_operation_result": {
+      "method": "POST",
+      "path": "/operations/{operation_id}/result",
+      "authentication": "runner_bearer_credential",
+      "request_fixture": "operations.result.request.json",
+      "response_fixture": "operations.result.response.json"
     }
   },
   "stable_error_codes": [

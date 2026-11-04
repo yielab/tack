@@ -7428,6 +7428,173 @@
         }
       }
     },
+    "/api/runner/v1/operations/poll": {
+      "post": {
+        "tags": [
+          "runner-protocol-v1"
+        ],
+        "summary": "Ask for what a person asked of this runner's harnesses from the board, each handed out once (additive v1 operation; exact path fixed by protocol.json)",
+        "description": "Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.",
+        "requestBody": {
+          "description": "protocol_version: 1, plus this exchange's fixture-frozen fields",
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The operations waiting for the runner; empty when none",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden / runner_revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runner/v1/operations/{operation_id}/result": {
+      "post": {
+        "tags": [
+          "runner-protocol-v1"
+        ],
+        "summary": "Tell the board how an operation ended, to the request that waits for it (additive v1 operation; exact path fixed by protocol.json)",
+        "description": "Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "description": "Operation ID, issued when the board hands the operation out (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "protocol_version: 1, plus this exchange's fixture-frozen fields",
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Result handed to the waiting request; 404 when nothing waits",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden / runner_revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runner/v1/refresh": {
       "post": {
         "tags": [
@@ -8025,6 +8192,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TeamList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/teams/{harness}/{name}/resume": {
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "POST /api/teams/{harness}/{name}/resume",
+        "description": "Letting a team spend its budget again is a person's call, so the route is the operator's\nalone (`agent_access`).",
+        "operationId": "resume_team",
+        "parameters": [
+          {
+            "name": "harness",
+            "in": "path",
+            "description": "The agent that runs the team, as `GET /api/teams` names it",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The team's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent let the team claim tasks again; its report afterwards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamResumed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (no active runner reports a team of that name for that agent)"
+          },
+          "409": {
+            "description": "conflict (the agent refused, with its reason, or the runner did not answer in time)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -17486,6 +17708,42 @@
           }
         }
       },
+      "TeamBudget": {
+        "type": "object",
+        "description": "What a team may spend: the harness applies it, Tack shows it.",
+        "required": [
+          "used",
+          "window"
+        ],
+        "properties": {
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The tokens the team may spend in the span; absent when the team has no limit.",
+            "minimum": 0
+          },
+          "used": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The tokens it has spent in the span.",
+            "minimum": 0
+          },
+          "window": {
+            "type": "string",
+            "description": "How long the span lasts, in the harness's word for it (`lifetime`, `day`)."
+          },
+          "window_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the current span began; absent for a span that never restarts."
+          }
+        }
+      },
       "TeamDecides": {
         "type": "string",
         "description": "Whether a team runs to the end alone.",
@@ -17997,6 +18255,17 @@
           "name"
         ],
         "properties": {
+          "budget": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamBudget",
+                "description": "How many tokens the team may spend, how many it has, and over what span. Absent means the\nharness did not say, which is not the same as no limit; no field may carry a harness's own\nkey name."
+              }
+            ]
+          },
           "decides": {
             "oneOf": [
               {
@@ -18159,6 +18428,38 @@
                 "description": "Whether the team works in a repository or in a plain folder. Absent when the harness did\nnot say, which is not the same as a repository."
               }
             ]
+          }
+        }
+      },
+      "TeamResumed": {
+        "type": "object",
+        "description": "What a runner's harness said after it was asked to resume a team.",
+        "required": [
+          "team",
+          "harness",
+          "runner"
+        ],
+        "properties": {
+          "harness": {
+            "type": "string"
+          },
+          "report": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamReport",
+                "description": "The team as the harness reports it now; `null` when it did not say."
+              }
+            ]
+          },
+          "runner": {
+            "type": "string",
+            "description": "The runner that asked the harness."
+          },
+          "team": {
+            "type": "string"
           }
         }
       },

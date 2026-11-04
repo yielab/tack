@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "operations": [
+    {
+      "operation_id": "op_01J00000000000000000000001",
+      "operation": "resume-team",
+      "harness": "docket",
+      "team": "saas-dev"
+    }
+  ]
+}

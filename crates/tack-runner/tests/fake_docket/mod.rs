@@ -327,6 +327,8 @@ struct Pod {
     /// What the report says of `delivers`, `methods` and `needs` instead of `pod-contract`'s,
     /// as an object holding any of the three.
     contract: Option<Value>,
+    /// What the report says of `budget` instead of `pod-budget`'s.
+    budget: Option<Value>,
 }
 
 struct World {
@@ -389,6 +391,10 @@ struct World {
     /// also lists `podContract` in the features; `Some(false)` sends the keys without listing
     /// it, which a reader that waits for the feature must not read).
     pod_contract: Option<bool>,
+    /// A docket that lists `podResume`: a team's report carries `budget` and `POST
+    /// /pods/<pod>/resume` clears a pause. Without it the route answers `404`, as a docket without
+    /// the route would, and the report carries no `budget`.
+    pod_resume: bool,
     /// A docket before `budgetOutcome`: the features do not list it, and a hop's `budget` the
     /// script carries is left off the record, as a docket before the feature never wrote one.
     without_budget_outcome: bool,
@@ -448,6 +454,7 @@ impl FakeDocket {
             without_hop_times: false,
             without_pod_pause: false,
             pod_contract: None,
+            pod_resume: false,
             without_budget_outcome: false,
             without_retry_continues: false,
             pod_fetch: false,
@@ -499,6 +506,7 @@ impl FakeDocket {
                 network: None,
                 fetch: false,
                 contract: None,
+                budget: None,
             },
         );
     }
@@ -571,6 +579,24 @@ impl FakeDocket {
             .get_mut(name)
             .unwrap_or_else(|| panic!("no team {name}"))
             .contract = Some(contract);
+    }
+
+    /// A docket that lists `podResume`: a team's report says what it may spend and has spent
+    /// (`budget`, as `pod-budget` does) and a paused team can be resumed over HTTP.
+    pub fn with_pod_resume(&self) {
+        self.shared.lock().unwrap().pod_resume = true;
+    }
+
+    /// What the team's `budget` says instead of `pod-budget`'s: an object with any of `tokens`,
+    /// `used`, `window` and `windowStart`.
+    pub fn set_budget(&self, name: &str, budget: Value) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .budget = Some(budget);
     }
 
     /// A docket before `budgetOutcome`: no hop ever carries `budget`, whatever a script gives it,
@@ -1032,6 +1058,7 @@ async fn handle(
         ("GET", ["pods", pod, "records", set]) => record_rows(&state, pod, set, &query),
         ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
+        ("POST", ["pods", pod, "resume"]) => resume_pod_route(&mut state, pod),
         ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["tasks", pod]) => post_task(&mut state, pod, &parsed),
         ("GET", ["tasks", pod]) => list_tasks(&state, pod, &query),
@@ -1083,6 +1110,9 @@ fn features(state: &World) -> Value {
     }
     if state.pod_contract == Some(true) {
         listed.push("podContract");
+    }
+    if state.pod_resume {
+        listed.push("podResume");
     }
     json!(listed)
 }
@@ -1334,7 +1364,33 @@ fn pod_report(state: &World, name: &str) -> Response {
             }
         }
     }
+    if state.pod_resume {
+        let mut budget = fixture("pod-budget")["budget"].clone();
+        if let Some(said) = pod.budget.as_ref().and_then(Value::as_object) {
+            for (key, value) in said {
+                budget[key] = value.clone();
+            }
+        }
+        report["budget"] = budget;
+    }
     reply(200, report)
+}
+
+/// `POST /pods/<pod>/resume` (`podResume`): the team claims again and starts the tasks it held.
+fn resume_pod_route(state: &mut World, name: &str) -> Response {
+    if !state.pod_resume {
+        return error(404, "not found");
+    }
+    if !state.pods.contains_key(name) {
+        return refusal("pod-unknown", &[("no-such-team", name)]);
+    }
+    state.pods.get_mut(name).expect("checked").paused = None;
+    for index in 0..state.tasks.len() {
+        if state.tasks[index].pod == name && state.tasks[index].status == "pending" {
+            start_task(state, index);
+        }
+    }
+    reply(200, fixture_with("pod-resumed", &[("saas-dev", name)]))
 }
 
 /// A row of a set as docket stores it: the columns the team declared, and the system columns it
@@ -1522,6 +1578,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             network: None,
             fetch: false,
             contract: None,
+            budget: None,
         },
     );
     reply(

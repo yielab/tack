@@ -331,8 +331,10 @@ which docket claims and settles `failed` before any hop (`task-failed-base-ref-f
 hours, and the script waits for nothing.
 
 `pod-contract` is `pod-attended` with the three keys of `podContract` (`delivers`, `methods`, `needs`).
-It is the one constructed file whose keys the source does not list, because docket has not shipped the
-feature: they are the keys Tack asked for. `pod-folder` and `pod-attended` stay as the case without it.
+`pod-budget` is `pod-attended` paused on its budget, with the `budget` key of `podResume`, and `pod-resumed` is the
+answer of `POST /pods/<pod>/resume`, which Tack reads only for its status. These three are the constructed files
+whose keys the source does not list, because docket has not shipped the features: they are the keys Tack asked for.
+`pod-folder` and `pod-attended` stay as the case without them.
 
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.

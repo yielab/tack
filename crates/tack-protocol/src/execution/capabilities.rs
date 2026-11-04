@@ -234,6 +234,11 @@ pub struct TeamReport {
     /// say, which is not the same as needing nothing; no field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs: Option<Vec<TeamNeed>>,
+    /// How many tokens the team may spend, how many it has, and over what span. Absent means the
+    /// harness did not say, which is not the same as no limit; no field may carry a harness's own
+    /// key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<TeamBudget>,
 }
 
 /// The kind of a [`TeamNeed`] that a signed-in agent meets.
@@ -312,6 +317,7 @@ impl TeamReport {
                 missing_roles: Vec::new(),
             }]),
             needs: (!needs.is_empty()).then_some(needs),
+            budget: None,
         }
     }
 
@@ -504,6 +510,22 @@ pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> 
         }
     }
     misfits
+}
+
+/// What a team may spend: the harness applies it, Tack shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamBudget {
+    /// The tokens the team may spend in the span; absent when the team has no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    /// The tokens it has spent in the span.
+    pub used: u64,
+    /// How long the span lasts, in the harness's word for it (`lifetime`, `day`).
+    pub window: String,
+    /// When the current span began; absent for a span that never restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_start: Option<String>,
 }
 
 /// Why a team is paused.

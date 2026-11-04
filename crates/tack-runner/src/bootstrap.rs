@@ -93,6 +93,7 @@ pub async fn build_runtime_with_active(
     // The adapters that run attempts are also the ones that remember where each team's tasks
     // were last read, so the activity is read through these and not through a fresh discovery.
     let activity_adapters = adapters.clone();
+    let operation_adapters = adapters.clone();
     // What this runner reports is probed here and again by the client later
     // (a team added after start), so one function decides how it is built.
     let probe = {
@@ -176,7 +177,14 @@ pub async fn build_runtime_with_active(
         .with_activity(crate::client::transport::ACTIVITY_INTERVAL, move || {
             let adapters = activity_adapters.clone();
             async move { adapters.activity().await }
-        });
+        })
+        .with_operations(
+            crate::client::transport::OPERATIONS_INTERVAL,
+            move |operation| {
+                let adapters = operation_adapters.clone();
+                async move { crate::harness::do_team_operation(&adapters, operation).await }
+            },
+        );
 
     Ok(RunnerRuntime::new(
         client,

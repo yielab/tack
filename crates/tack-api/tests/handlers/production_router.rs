@@ -726,6 +726,8 @@ async fn openapi_enumerates_mounted_operator_and_runner_v1_routes() {
         "/api/runner/v1/attempts/{attempt_id}/completion",
         "/api/runner/v1/attempts/{attempt_id}/cancellation-observation",
         "/api/runner/v1/attempts/{attempt_id}/recovery-observation",
+        "/api/runner/v1/operations/poll",
+        "/api/runner/v1/operations/{operation_id}/result",
     ] {
         assert!(
             paths.contains_key(path),

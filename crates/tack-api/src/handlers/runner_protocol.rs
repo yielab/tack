@@ -1,10 +1,11 @@
 //! Runner-protocol handler modules, mounted under `/api/runner/v1` (see
 //! `docs/contracts/runner-v1/protocol.json`'s `base_path`) by `router.rs`.
 //!
-//! Only the additive `recovery-observation`, `team_activity` and `decision_answered_elsewhere`
-//! operations have an explicit path in `protocol.json`
-//! (`/attempts/{attempt_id}/recovery-observation`, `/activity` and
-//! `/attempts/{attempt_id}/decisions/answered-elsewhere`, preserved here verbatim, relative to
+//! Only the additive `recovery-observation`, `team_activity`, `decision_answered_elsewhere` and
+//! the two team-operation exchanges have an explicit path in `protocol.json`
+//! (`/attempts/{attempt_id}/recovery-observation`, `/activity`,
+//! `/attempts/{attempt_id}/decisions/answered-elsewhere`, `/operations/poll` and
+//! `/operations/{operation_id}/result`, preserved here verbatim, relative to
 //! `base_path`); every other canonical exchange in
 //! `docs/contracts/runner-v1/` fixes payload shapes, not URLs.
 //!
@@ -70,6 +71,7 @@ use tack_protocol::execution::{
     DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot, EnrollmentRequest,
     EnrollmentResponse, EventBatchRequest, EventBatchResponse, ExecutionRequestSnapshot,
     ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse, LeaseResult,
+    OperationPollRequest, OperationPollResponse, OperationResultRequest, OperationResultResponse,
     ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse, RefreshRequest,
     RefreshResponse, RunnerId, StableErrorCode,
 };
@@ -181,6 +183,11 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
         .route("/claim", post(claim))
         .route("/heartbeat", post(heartbeat))
         .route("/activity", post(submit_activity))
+        .route("/operations/poll", post(poll_operations))
+        .route(
+            "/operations/{operation_id}/result",
+            post(submit_operation_result),
+        )
         .route("/attempts/{attempt_id}/accept", post(accept_attempt))
         .route("/attempts/{attempt_id}/start", post(start_attempt))
         .route("/attempts/{attempt_id}/events", post(submit_events))
@@ -1067,6 +1074,68 @@ pub async fn submit_activity(
         report_id: report.report_id,
         accepted_at: now,
         tasks_recorded: recorded,
+    })
+}
+
+// ---------------------------------------------------------------------
+// Operations the board hands a runner (additive v1 operations).
+// ---------------------------------------------------------------------
+
+/// `POST /operations/poll`: what a person asked of this runner's harnesses from the board, each
+/// handed out once.
+pub async fn poll_operations(
+    State(state): State<RunnerProtocolState>,
+    headers: HeaderMap,
+    RawBody(body): RawBody,
+) -> HandlerResult {
+    let principal = runner_auth::authenticate(&state.repo, &headers, state.clock.now()).await?;
+    let value = parse_body(&body)?;
+    check_protocol_version(&value)?;
+    runner_auth::require_matching_runner(&value, &principal)?;
+    let _: OperationPollRequest = parse_message(value)?;
+    message_json(&OperationPollResponse {
+        protocol_version: ProtocolVersion::v1(),
+        operations: tack_app::runner_operations::operations().take(principal.runner_id.as_str()),
+    })
+}
+
+/// `POST /operations/{operation_id}/result`: how an operation ended, to the request that waits
+/// for it. Refused when nothing waits: the person gave up, or the operation was another
+/// runner's.
+pub async fn submit_operation_result(
+    State(state): State<RunnerProtocolState>,
+    headers: HeaderMap,
+    Path(operation_id): Path<String>,
+    RawBody(body): RawBody,
+) -> HandlerResult {
+    let now = state.clock.now();
+    let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
+    let value = parse_body(&body)?;
+    check_protocol_version(&value)?;
+    runner_auth::require_matching_runner(&value, &principal)?;
+    let result: OperationResultRequest = parse_message(value)?;
+    if result.operation_id != operation_id {
+        return Err(invalid_request(
+            "operation_id",
+            "operation_id in the body must match the path",
+        ));
+    }
+    if !tack_app::runner_operations::operations().finish(
+        principal.runner_id.as_str(),
+        &operation_id,
+        result.outcome,
+    ) {
+        return Err(protocol_error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "No request waits for this operation",
+            json!({"operation_id": operation_id}),
+        ));
+    }
+    message_json(&OperationResultResponse {
+        protocol_version: ProtocolVersion::v1(),
+        operation_id,
+        accepted_at: now,
     })
 }
 

@@ -894,6 +894,91 @@ async fn a_team_activity_report_replaces_the_tasks_it_names_and_is_idempotent() 
     assert_ne!(status, StatusCode::OK, "{body}");
 }
 
+/// What a person asks of a runner's harness reaches that runner once, through its poll, and the
+/// result it posts is what the waiting request gets; another runner's result, or one for a request
+/// that gave up, is refused.
+#[tokio::test]
+async fn an_operation_is_polled_once_and_its_result_reaches_the_request_that_waits() {
+    use tack_protocol::execution::{HarnessKind, OperationOutcome, TeamOperation};
+    let fx = Fixture::new().await;
+    let poll = || json!({"protocol_version": 1, "runner_id": RUNNER_ID}).to_string();
+    let (status, body) = fx.post("/operations/poll", poll()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["operations"], json!([]));
+
+    let asking = tokio::spawn(async {
+        tack_app::runner_operations::operations()
+            .ask(
+                RUNNER_ID,
+                TeamOperation::ResumeTeam {
+                    harness: HarnessKind::new("docket"),
+                    team: "saas-dev".to_owned(),
+                },
+                std::time::Duration::from_secs(10),
+            )
+            .await
+    });
+    let handed = loop {
+        let (_, body) = fx.post("/operations/poll", poll()).await;
+        if !body["operations"].as_array().unwrap().is_empty() {
+            break body["operations"][0].clone();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    };
+    assert_eq!(handed["operation"], "resume-team");
+    assert_eq!(
+        (handed["harness"].as_str(), handed["team"].as_str()),
+        (Some("docket"), Some("saas-dev"))
+    );
+    let (_, again) = fx.post("/operations/poll", poll()).await;
+    assert_eq!(again["operations"], json!([]), "handed out once");
+
+    let id = handed["operation_id"].as_str().unwrap();
+    let result = |runner: &str, id: &str| {
+        json!({
+            "protocol_version": 1, "runner_id": runner, "operation_id": id,
+            "outcome": {"state": "refused", "reason": "docket said no"},
+        })
+        .to_string()
+    };
+    let (status, body) = fx
+        .post(
+            &format!("/operations/{id}/result"),
+            result(RUNNER_ID, "op_other"),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "the path names the operation: {body}"
+    );
+    let (status, body) = fx
+        .post(
+            &format!("/operations/{id}/result"),
+            result("runner-other", id),
+        )
+        .await;
+    assert_ne!(status, StatusCode::OK, "{body}");
+    let (status, body) = fx
+        .post(&format!("/operations/{id}/result"), result(RUNNER_ID, id))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        asking.await.unwrap(),
+        Ok(OperationOutcome::Refused {
+            reason: "docket said no".to_owned()
+        })
+    );
+    let (status, body) = fx
+        .post(&format!("/operations/{id}/result"), result(RUNNER_ID, id))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "nothing waits any more: {body}"
+    );
+}
+
 // ---------------------------------------------------------------------
 // 2. Stale/expired fence writes nothing and returns `stale_lease`.
 // ---------------------------------------------------------------------

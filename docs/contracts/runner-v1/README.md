@@ -4,9 +4,10 @@ These JSON files are the language-neutral authority for `/api/runner/v1`. Rust,
 OpenAPI and frontend types consume them; feature-local DTOs are not a second authority.
 
 `protocol.json` fixes compatibility behavior, route authentication and stable error codes. It also
-names any additive v1 operation; recovery observation, team activity and a decision answered
-elsewhere are separately runner-authenticated and have paired request/response fixtures like the
-other canonical exchanges.
+names any additive v1 operation; recovery observation, team activity, a decision answered
+elsewhere and the operations the board hands a runner (a poll for them, the result of each) are
+separately runner-authenticated and have paired request/response fixtures like the other
+canonical exchanges.
 `limits.json` fixes all payload and timing bounds. `lifecycle-transitions.json` covers every
 ordered state pair: each target appears exactly once in either `allow` or `deny` for each
 source state. An idempotent replay is not a lifecycle transition and is therefore denied by

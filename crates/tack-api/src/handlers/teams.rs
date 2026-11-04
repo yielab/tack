@@ -14,8 +14,8 @@ use tack_core::outline::{BundleTeam, TEAM_SHAPES};
 use tack_core::principal::{Capability, Principal, may};
 use tack_db::queries;
 use tack_protocol::execution::{
-    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, HarnessCapability, TeamMisfit,
-    TeamNeeds, TeamReport,
+    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, HarnessCapability, HarnessKind,
+    OperationOutcome, TeamMisfit, TeamNeeds, TeamOperation, TeamReport,
 };
 
 use crate::error::{ApiError, ApiResult};
@@ -60,6 +60,7 @@ pub struct TeamList {
 
 /// One agent an active runner reports, with the runner that reports it.
 pub(crate) struct ReportedHarness {
+    pub runner_id: String,
     pub runner: String,
     pub kind: String,
     pub capability: HarnessCapability,
@@ -87,6 +88,7 @@ pub(crate) async fn reported_harnesses_in(
                 continue;
             };
             found.push(ReportedHarness {
+                runner_id: runner.id.clone(),
                 runner: runner.name.clone(),
                 kind,
                 capability,
@@ -415,4 +417,91 @@ pub async fn team_activity(
         reported_at,
         tasks,
     }))
+}
+
+/// How long a person's request to a runner's harness waits for the runner, which asks for what
+/// waits for it every few seconds.
+const RUNNER_ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// What a runner's harness said after it was asked to resume a team.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamResumed {
+    pub team: String,
+    pub harness: String,
+    /// The runner that asked the harness.
+    pub runner: String,
+    /// The team as the harness reports it now; `null` when it did not say.
+    pub report: Option<TeamReport>,
+}
+
+/// POST /api/teams/{harness}/{name}/resume
+///
+/// Letting a team spend its budget again is a person's call, so the route is the operator's
+/// alone (`agent_access`).
+#[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/teams/{harness}/{name}/resume",
+    tag = "teams",
+    params(
+        ("harness" = String, Path, description = "The agent that runs the team, as `GET /api/teams` names it"),
+        ("name" = String, Path, description = "The team's name"),
+    ),
+    responses(
+        (status = 200, description = "The agent let the team claim tasks again; its report afterwards", body = TeamResumed),
+        (status = 404, description = "not_found (no active runner reports a team of that name for that agent)"),
+        (status = 409, description = "conflict (the agent refused, with its reason, or the runner did not answer in time)", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn resume_team(
+    State(state): State<AppState>,
+    Path((harness, team)): Path<(String, String)>,
+) -> ApiResult<Json<TeamResumed>> {
+    // The newest report of the team, by the runners that run the agent.
+    let mut asked: Option<ReportedHarness> = None;
+    for reported in reported_harnesses(&state).await? {
+        let holds = reported.kind == harness
+            && reported
+                .capability
+                .teams
+                .as_ref()
+                .is_some_and(|teams| teams.iter().any(|reported| reported.name == team));
+        if holds
+            && asked
+                .as_ref()
+                .is_none_or(|seen| seen.capability.probed_at <= reported.capability.probed_at)
+        {
+            asked = Some(reported);
+        }
+    }
+    let Some(asked) = asked else {
+        return Err(ApiError::NotFound(format!(
+            "no active runner reports a team named {team} for {harness}"
+        )));
+    };
+    let outcome = tack_app::runner_operations::operations()
+        .ask(
+            &asked.runner_id,
+            TeamOperation::ResumeTeam {
+                harness: HarnessKind::new(harness.clone()),
+                team: team.clone(),
+            },
+            RUNNER_ANSWER_WITHIN,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::Conflict(format!(
+                "The runner {} did not answer in time. It may be busy or offline; try again in a moment.",
+                asked.runner
+            ))
+        })?;
+    match outcome {
+        OperationOutcome::Done { team: report } => Ok(Json(TeamResumed {
+            team,
+            harness,
+            runner: asked.runner,
+            report,
+        })),
+        OperationOutcome::Refused { reason } => Err(ApiError::Conflict(reason)),
+    }
 }
