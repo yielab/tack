@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "a conversation task needs a pipeline of one step; this one has 2",
+  "code": "conversation_needs_one_step"
+}

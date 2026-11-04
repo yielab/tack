@@ -1,0 +1,141 @@
+{
+  "escalations": [
+    {
+      "id": "esc-000000000000",
+      "task": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "e2e",
+      "step": "implement",
+      "role": "implementer",
+      "kind": "consult",
+      "causedBy": "implement",
+      "prompt": "Question 1?",
+      "options": [
+        {
+          "id": "a",
+          "label": "A",
+          "description": "a",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "b",
+          "label": "B",
+          "description": "b",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "decline",
+          "label": "Decline",
+          "description": "Refuse without choosing an option.",
+          "risks": [],
+          "estimatedTokens": null
+        }
+      ],
+      "recommendation": {
+        "optionId": "a",
+        "rationale": "because",
+        "evidenceRefs": []
+      },
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "askedAt": "2026-01-01T00:00:00Z",
+      "expiresAt": "2026-01-01T00:00:00Z",
+      "onExpiry": "block",
+      "policy": "person",
+      "level": "L3",
+      "part": {
+        "index": 1,
+        "count": 2
+      },
+      "state": "pending",
+      "resolution": null,
+      "seq": 1,
+      "affordances": {
+        "options": [
+          "a",
+          "b",
+          "decline"
+        ],
+        "acceptsText": true,
+        "resolveUrl": "/escalations/esc-000000000000"
+      }
+    },
+    {
+      "id": "esc-000000000001",
+      "task": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "e2e",
+      "step": "implement",
+      "role": "implementer",
+      "kind": "consult",
+      "causedBy": "implement",
+      "prompt": "Question 2?",
+      "options": [
+        {
+          "id": "a",
+          "label": "A",
+          "description": "a",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "b",
+          "label": "B",
+          "description": "b",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "decline",
+          "label": "Decline",
+          "description": "Refuse without choosing an option.",
+          "risks": [],
+          "estimatedTokens": null
+        }
+      ],
+      "recommendation": {
+        "optionId": "a",
+        "rationale": "because",
+        "evidenceRefs": []
+      },
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "askedAt": "2026-01-01T00:00:00Z",
+      "expiresAt": "2026-01-01T00:00:00Z",
+      "onExpiry": "block",
+      "policy": "person",
+      "level": "L3",
+      "part": {
+        "index": 2,
+        "count": 2
+      },
+      "state": "pending",
+      "resolution": null,
+      "seq": 2,
+      "affordances": {
+        "options": [
+          "a",
+          "b",
+          "decline"
+        ],
+        "acceptsText": true,
+        "resolveUrl": "/escalations/esc-000000000001"
+      }
+    }
+  ],
+  "next": 2
+}

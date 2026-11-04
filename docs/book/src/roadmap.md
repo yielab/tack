@@ -38,8 +38,10 @@ features and Tack used 16. Four cards, in two rounds (D, then A ∥ B ∥ C):
 
 - **A — a thread on a docket team continues.** When the team lists `conversation`, a thread's first turn
   is one task sent with `conversation: {maxTurns}` (the thread's cap, at most 20); each later turn
-  answers that task's `turn` escalation with `reply` and the new message; closing the thread answers
-  `close`; the team's `converse` reads `continues`. A `conversation_needs_one_step` refusal sends that
+  answers that task's `turn` escalation with `reply` and the new message; the conversation ends when
+  docket ends it (its `maxTurns`, or its `turn` escalation expiring), because no request carries the
+  board's closing of a thread to the runner, so `close` is never sent; the team's `converse` reads
+  `continues`. A turn that finds no task to answer starts a new conversation and says so. A `conversation_needs_one_step` refusal sends that
   turn as today's replay and the team reads `replays` with docket's reason. The fake answers turns as
   docket does, and also a consult in two parts (the run waits until both are answered), which Tack
   already shows but nothing proved.

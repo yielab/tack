@@ -2834,6 +2834,372 @@ async fn a_thread_on_a_team_in_a_folder_gets_the_last_steps_summary_as_each_repl
     three_turns_of_a_thread(&folder_fake().await).await;
 }
 
+// ── A thread on a team that lists `conversation` is one task that continues ────
+
+/// Turn `turn` of thread `thread`, asking `message`, as the board sends it.
+fn thread_turn(
+    scene: &Scene,
+    thread: &str,
+    turn: u32,
+    max_turns: u32,
+    message: &str,
+) -> ExecutionSpec {
+    let mut attempt = spec(scene, &format!("{thread}-attempt-{turn}"), turn);
+    attempt.work.request.metadata[tack_protocol::conversation::TURN_KEY] =
+        tack_protocol::conversation::TurnNote {
+            id: thread.to_owned(),
+            turn,
+            max_turns,
+            message: message.to_owned(),
+        }
+        .into_metadata();
+    attempt
+}
+
+fn converse_of(
+    outcome: &tack_runner::harness::HarnessOutcome,
+) -> (
+    Option<tack_protocol::conversation::ConverseMode>,
+    Option<String>,
+) {
+    let converse = outcome
+        .actual_execution
+        .capability_snapshot
+        .converse
+        .as_ref()
+        .expect("docket reports how it converses");
+    (
+        tack_protocol::conversation::ConverseMode::of(converse),
+        converse.reason.clone(),
+    )
+}
+
+/// The `hop_finished` lines a run put on the timeline.
+fn hops_shown(lines: &[(String, String)]) -> usize {
+    lines
+        .iter()
+        .filter(|(kind, _)| kind == "agent.hop_finished")
+        .count()
+}
+
+async fn three_turns_of_one_task(fake: &FakeDocket) {
+    fake.with_conversation();
+    let scene = scene();
+    let adapter = adapter(fake, &scene);
+    for turn in 1..=3_u32 {
+        let attempt = thread_turn(&scene, "thread-1", turn, 50, &format!("question {turn}"));
+        let (outcome, lines) = run_to_end(&adapter, &attempt).await;
+
+        assert_eq!(
+            outcome.terminal_state,
+            AttemptState::Succeeded,
+            "turn {turn}: {}",
+            outcome.terminal_reason
+        );
+        assert_eq!(
+            outcome.terminal_reason[tack_protocol::conversation::REPLY_REASON_KEY],
+            format!("Answer {turn}.").as_str(),
+            "turn {turn}"
+        );
+        assert_eq!(
+            converse_of(&outcome).0,
+            Some(tack_protocol::conversation::ConverseMode::Continues)
+        );
+        // Each turn's timeline holds its own step and none of the earlier turns', and the turn
+        // escalation, which asks nobody, is not a question on it.
+        assert_eq!(hops_shown(&lines), 1, "turn {turn}: {lines:?}");
+        assert!(
+            lines.iter().all(|(kind, text)| {
+                !kind.starts_with("escalation.")
+                    && kind != "agent.conversation_restarted"
+                    && !text.contains("docket asked")
+            }),
+            "turn {turn}: {lines:?}"
+        );
+
+        // One task for the whole thread: only the first turn posts one, with the thread's cap
+        // cut to docket's most.
+        let posted = fake.requests_to("POST", "/tasks/saas-dev");
+        assert_eq!(posted.len(), 1, "turn {turn}");
+        assert_eq!(posted[0].body["conversation"], json!({"maxTurns": 20}));
+        let ids = fake.task_ids();
+        assert_eq!(ids.len(), 1);
+        let task = ids[0].clone();
+        // Every later turn answers the task's `turn` escalation with `reply` and its message.
+        let replies: Vec<Value> = fake
+            .requests_to("POST", "/escalations/")
+            .into_iter()
+            .map(|sent| sent.body)
+            .collect();
+        assert_eq!(replies.len(), turn as usize - 1, "turn {turn}");
+        if let Some(last) = replies.last() {
+            assert_eq!(
+                *last,
+                json!({"optionId": "reply", "content": {"text": format!("question {turn}")},
+                       "actor": "tack"})
+            );
+        }
+        let (status, shown) = ask(fake, "GET", &format!("/tasks/saas-dev/{task}"), None).await;
+        assert_eq!(status, 200);
+        assert_eq!(shown["conversation"]["turns"], json!(turn));
+    }
+}
+
+#[tokio::test]
+async fn a_thread_on_a_team_that_lists_conversation_is_one_task_that_every_turn_answers() {
+    three_turns_of_one_task(&pods_fake().await).await;
+}
+
+#[tokio::test]
+async fn a_thread_on_a_folder_team_that_lists_conversation_is_one_task_too() {
+    three_turns_of_one_task(&folder_fake().await).await;
+}
+
+#[tokio::test]
+async fn the_threads_own_cap_below_dockets_is_the_conversations() {
+    let fake = pods_fake().await;
+    fake.with_conversation();
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    run_to_end(&adapter, &thread_turn(&scene, "thread-1", 1, 3, "hello")).await;
+    let posted = fake.requests_to("POST", "/tasks/saas-dev");
+    assert_eq!(posted[0].body["conversation"], json!({"maxTurns": 3}));
+}
+
+#[tokio::test]
+async fn the_probe_reports_continues_for_a_docket_that_lists_conversation_and_replays_for_one_that_does_not()
+ {
+    let scene = scene();
+    for (listed, mode) in [
+        (true, tack_protocol::conversation::ConverseMode::Continues),
+        (false, tack_protocol::conversation::ConverseMode::Replays),
+    ] {
+        let fake = pods_fake().await;
+        if listed {
+            fake.with_conversation();
+        }
+        let capability = adapter(&fake, &scene).probe().await;
+        let converse = capability
+            .features()
+            .expect("features")
+            .converse
+            .expect("converse");
+        assert_eq!(
+            tack_protocol::conversation::ConverseMode::of(&converse),
+            Some(mode)
+        );
+        assert!(converse.reason.is_some());
+    }
+}
+
+#[tokio::test]
+async fn without_the_feature_every_turn_is_a_new_task_with_no_conversation() {
+    let fake = pods_fake().await;
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    for turn in 1..=2_u32 {
+        let (outcome, _) = run_to_end(
+            &adapter,
+            &thread_turn(&scene, "thread-1", turn, 50, "question"),
+        )
+        .await;
+        assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+        assert_eq!(
+            converse_of(&outcome).0,
+            Some(tack_protocol::conversation::ConverseMode::Replays)
+        );
+    }
+    let posted = fake.requests_to("POST", "/tasks/saas-dev");
+    assert_eq!(posted.len(), 2);
+    assert!(
+        posted
+            .iter()
+            .all(|sent| sent.body.get("conversation").is_none())
+    );
+    assert!(fake.requests_to("POST", "/escalations/").is_empty());
+}
+
+#[tokio::test]
+async fn a_conversation_at_dockets_cap_ends_the_task_and_the_next_turn_starts_a_new_one() {
+    let fake = pods_fake().await;
+    fake.with_conversation();
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    // The cap is 2: turn 1 waits on the escalation, turn 2 reaches the cap and ends the task.
+    for turn in 1..=2_u32 {
+        let (outcome, _) =
+            run_to_end(&adapter, &thread_turn(&scene, "thread-1", turn, 2, "m")).await;
+        assert_eq!(
+            outcome.terminal_state,
+            AttemptState::Succeeded,
+            "turn {turn}"
+        );
+        assert_eq!(
+            outcome.terminal_reason[tack_protocol::conversation::REPLY_REASON_KEY],
+            format!("Answer {turn}.").as_str()
+        );
+    }
+    assert_eq!(fake.task_ids().len(), 1);
+
+    // Turn 3 finds the task done: a new conversation starts, and the turn says so.
+    let (outcome, lines) = run_to_end(&adapter, &thread_turn(&scene, "thread-1", 3, 2, "m")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(fake.task_ids().len(), 2);
+    let said: Vec<_> = lines
+        .iter()
+        .filter(|(kind, _)| kind == "agent.conversation_restarted")
+        .collect();
+    assert_eq!(said.len(), 1, "{lines:?}");
+    assert!(said[0].1.contains("no longer waiting"), "{said:?}");
+    let posted = fake.requests_to("POST", "/tasks/saas-dev");
+    assert_eq!(posted[1].body["conversation"], json!({"maxTurns": 2}));
+
+    // Turn 4 continues the new task.
+    let (outcome, lines) = run_to_end(&adapter, &thread_turn(&scene, "thread-1", 4, 50, "m")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(fake.task_ids().len(), 2);
+    assert!(
+        lines
+            .iter()
+            .all(|(kind, _)| kind != "agent.conversation_restarted")
+    );
+}
+
+#[tokio::test]
+async fn a_conversation_docket_closed_is_replaced_by_a_new_one_and_the_turn_says_so() {
+    let fake = pods_fake().await;
+    fake.with_conversation();
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    run_to_end(&adapter, &thread_turn(&scene, "thread-1", 1, 50, "m")).await;
+    // The operator ends it at docket's CLI, or its sweep does when nobody writes in time.
+    fake.close_conversation(&fake.task_ids()[0]);
+
+    let (outcome, lines) = run_to_end(&adapter, &thread_turn(&scene, "thread-1", 2, 50, "m")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(fake.task_ids().len(), 2);
+    assert!(
+        lines
+            .iter()
+            .any(|(kind, _)| kind == "agent.conversation_restarted"),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_runner_that_never_held_the_threads_task_starts_a_conversation_and_says_so() {
+    let fake = pods_fake().await;
+    fake.with_conversation();
+    let scene = scene();
+    // Turn 2 on a runner whose state has no task for this thread.
+    let (outcome, lines) = run_to_end(
+        &adapter(&fake, &scene),
+        &thread_turn(&scene, "thread-9", 2, 50, "m"),
+    )
+    .await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(fake.task_ids().len(), 1);
+    assert!(
+        lines
+            .iter()
+            .any(|(kind, text)| kind == "agent.conversation_restarted"
+                && text.contains("not known to this runner")),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_method_with_several_steps_cannot_continue_and_its_thread_replays_with_dockets_reason() {
+    let fake = pods_fake().await;
+    fake.with_conversation();
+    fake.set_pipeline_steps(POD, 3);
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let captured = fixture("post-task-conversation-needs-one-step");
+    assert_eq!(captured["code"], json!("conversation_needs_one_step"));
+
+    for turn in 1..=2_u32 {
+        let (outcome, lines) =
+            run_to_end(&adapter, &thread_turn(&scene, "thread-1", turn, 50, "m")).await;
+        assert_eq!(
+            outcome.terminal_state,
+            AttemptState::Succeeded,
+            "turn {turn}"
+        );
+        let (mode, reason) = converse_of(&outcome);
+        assert_eq!(
+            mode,
+            Some(tack_protocol::conversation::ConverseMode::Replays)
+        );
+        assert!(
+            reason.as_deref().is_some_and(|reason| reason
+                .contains("a conversation task needs a pipeline of one step; this one has 3")),
+            "{reason:?}"
+        );
+        // A team that replays has nothing to restart: no line says a conversation did.
+        assert!(
+            lines
+                .iter()
+                .all(|(kind, _)| kind != "agent.conversation_restarted"),
+            "{lines:?}"
+        );
+    }
+    // Each turn tried the conversation, was refused, and went again as a plain task.
+    let posted = fake.requests_to("POST", "/tasks/saas-dev");
+    assert_eq!(posted.len(), 4);
+    assert!(posted[0].body.get("conversation").is_some());
+    assert!(posted[1].body.get("conversation").is_none());
+    assert_eq!(fake.task_ids().len(), 2);
+    assert!(fake.requests_to("POST", "/escalations/").is_empty());
+}
+
+// ── A consult of several questions waits for every one ─────────────────────────
+
+#[tokio::test]
+async fn a_consult_of_two_questions_keeps_the_run_waiting_until_both_are_answered() {
+    let captured = fixture("escalations-consult-parts");
+    assert_eq!(
+        captured["escalations"][0]["part"],
+        json!({"index": 1, "count": 2})
+    );
+    assert_eq!(
+        captured["escalations"][1]["part"],
+        json!({"index": 2, "count": 2})
+    );
+
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::Consult {
+            question: "Which cache?".into(),
+            property: "note".into(),
+            options: vec!["redis".into(), "memcached".into()],
+        },
+        more_questions: vec!["Which queue?".into()],
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+
+    let first = parked.question().await;
+    assert_eq!(first.prompt, "Which cache?");
+    assert_eq!(first.metadata["part"], json!({"index": 1, "count": 2}));
+    parked.answer(choosing("redis", None)).await;
+
+    // Part 1 is settled and the task still waits: the second question comes, the run goes on.
+    let second = parked.question().await;
+    assert_eq!(second.prompt, "Which queue?");
+    assert_eq!(second.metadata["part"], json!({"index": 2, "count": 2}));
+    let task = fake.task_ids()[0].clone();
+    let (_, shown) = ask(&fake, "GET", &format!("/tasks/saas-dev/{task}"), None).await;
+    assert_eq!(shown["status"], json!("waiting_input"));
+    assert_eq!(answers_posted(&fake).len(), 1);
+
+    parked.answer(choosing("memcached", None)).await;
+    let (outcome, _) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(answers_posted(&fake).len(), 2);
+}
+
 /// The body posted for one run on `fake`, whose project says `npm ci` is the install.
 async fn body_posted(fake: &FakeDocket) -> (Value, tack_runner::harness::HarnessOutcome) {
     let scene = scene();
@@ -6799,6 +7165,119 @@ async fn the_fake_makes_a_team_from_a_shape_and_applies_a_folder_as_docket_does(
         (unknown.0, unknown.1),
         (404, fake_docket::fixture("pod-apply-unknown"))
     );
+}
+
+/// A conversation between its turns, its end and its close, answered with the keys of what a real
+/// docket sent.
+#[tokio::test]
+async fn the_fake_answers_a_conversation_with_the_keys_of_a_real_docket() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_conversation();
+    fake.set_repository(&scene.repository);
+    let mut seen: Vec<(&str, Value)> = Vec::new();
+    let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
+
+    // A conversation of two turns: the first waits on its escalation, the reply runs the last.
+    fake.script(Script {
+        usage: json!({"input": 20, "cached": 0, "cacheWrite": 0, "output": 4,
+                       "byModel": {"anthropic/claude-sonnet-5-5": {"input": 20, "cached": 0, "cacheWrite": 0, "output": 4}}}),
+        ..Script::default()
+    });
+    let conversation = |key: &str, turns: u32| {
+        let mut body = request_file("post-task-created");
+        body["idempotencyKey"] = json!(key);
+        body.as_object_mut().unwrap().remove("pipeline");
+        body["restrictions"] = json!({"deniedTools": ["bash"]});
+        body["conversation"] = json!({"maxTurns": turns});
+        body
+    };
+    let first = ask(
+        &fake,
+        "POST",
+        "/tasks/saas-dev",
+        Some(conversation("conversation-1", 2)),
+    )
+    .await;
+    assert_eq!(first.0, 201, "{first:?}");
+    let task = first.1["task"].as_str().unwrap().to_owned();
+    get(
+        "task-waiting-turn",
+        ask(&fake, "GET", &format!("/tasks/saas-dev/{task}"), None).await,
+    );
+    let waiting = ask(
+        &fake,
+        "GET",
+        &format!("/escalations?since=0&task={task}"),
+        None,
+    )
+    .await;
+    let turn = waiting.1["escalations"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(waiting.1["escalations"][0]["kind"], json!("turn"));
+    get("escalations-turn", waiting);
+    let replied = ask(
+        &fake,
+        "POST",
+        &format!("/escalations/{turn}"),
+        Some(json!({"optionId": "reply", "content": {"text": "And now?"}, "actor": "tack"})),
+    )
+    .await;
+    assert_eq!(replied.0, 200, "{replied:?}");
+    get("escalation-accepted-turn", replied);
+    let done = ask(&fake, "GET", &format!("/tasks/saas-dev/{task}"), None).await;
+    assert_eq!(done.1["status"], json!("done"));
+    get("task-done-turn", done);
+
+    // Closed while it waits.
+    let second = ask(
+        &fake,
+        "POST",
+        "/tasks/saas-dev",
+        Some(conversation("conversation-2", 5)),
+    )
+    .await;
+    let closing = second.1["task"].as_str().unwrap().to_owned();
+    let close_id = format!("{}-turn1", fake.escalation_id(&closing));
+    let closed = ask(
+        &fake,
+        "POST",
+        &format!("/escalations/{close_id}"),
+        Some(json!({"optionId": "close", "actor": "tack"})),
+    )
+    .await;
+    assert_eq!(closed.0, 200, "{closed:?}");
+    get("escalation-accepted-turn-close", closed);
+    let ended = ask(&fake, "GET", &format!("/tasks/saas-dev/{closing}"), None).await;
+    assert_eq!(ended.1["status"], json!("done"));
+
+    // A refused answer: reply without text.
+    let third = ask(
+        &fake,
+        "POST",
+        "/tasks/saas-dev",
+        Some(conversation("conversation-3", 5)),
+    )
+    .await;
+    let kept = third.1["task"].as_str().unwrap().to_owned();
+    let refused = ask(
+        &fake,
+        "POST",
+        &format!("/escalations/{}-turn1", fake.escalation_id(&kept)),
+        Some(json!({"optionId": "reply", "actor": "tack"})),
+    )
+    .await;
+    assert_eq!(refused.0, 422, "{refused:?}");
+
+    let mut wrong = Vec::new();
+    for (name, answer) in &seen {
+        if let Err(why) = same_shape(answer, &fake_docket::fixture(name), name) {
+            wrong.push(why);
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 #[tokio::test]

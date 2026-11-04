@@ -1,0 +1,59 @@
+{
+  "escalations": [
+    {
+      "id": "esc-000000000000",
+      "task": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "e2e",
+      "step": "implement",
+      "role": "implementer",
+      "kind": "turn",
+      "causedBy": "implement",
+      "prompt": "First answer.",
+      "options": [
+        {
+          "id": "reply",
+          "label": "Reply",
+          "description": "Send the next message of the conversation.",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "close",
+          "label": "Close",
+          "description": "End the conversation now.",
+          "risks": [],
+          "estimatedTokens": null
+        }
+      ],
+      "recommendation": null,
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "askedAt": "2026-01-01T00:00:00Z",
+      "expiresAt": "2026-01-01T00:00:00Z",
+      "onExpiry": "deny",
+      "policy": "deny",
+      "level": "L3",
+      "state": "pending",
+      "resolution": null,
+      "seq": 1,
+      "affordances": {
+        "options": [
+          "reply",
+          "close"
+        ],
+        "acceptsText": true,
+        "resolveUrl": "/escalations/esc-000000000000"
+      }
+    }
+  ],
+  "next": 1
+}

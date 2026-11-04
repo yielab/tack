@@ -232,6 +232,12 @@ pub struct Script {
     /// The task ends with no worktree whatever the team, as docket's record of a task that ran
     /// in place.
     pub no_worktree: bool,
+    /// More questions the consult asks in the same call, after the first: each is its own
+    /// escalation with its `part`, and the task waits until every one is answered.
+    pub more_questions: Vec<String>,
+    /// What a conversation task's turns answer, in order; a turn past the list answers
+    /// `Answer <n>.`
+    pub replies: Vec<String>,
 }
 
 impl Default for Script {
@@ -250,6 +256,8 @@ impl Default for Script {
             usage: json!({"input": 0, "output": 0, "byModel": {}}),
             records: Vec::new(),
             no_worktree: false,
+            more_questions: Vec::new(),
+            replies: Vec::new(),
         }
     }
 }
@@ -282,6 +290,8 @@ struct Task {
     /// The task's place in its pod's change counter, and what it looked like when it got it.
     rev: u64,
     stamped: (String, usize, bool),
+    /// The most turns of a task that continues turn by turn (`conversation.maxTurns`).
+    conversation: Option<u32>,
 }
 
 /// One escalation docket keeps: its view as `GET /escalations` sends it, and where it sits in the
@@ -427,6 +437,12 @@ struct World {
     pod_shape: bool,
     /// The teams a folder was applied to, so that the same folder applied again runs nothing new.
     applied_pods: BTreeSet<String>,
+    /// A docket that lists `conversation`: a task posted with `conversation: {maxTurns}` ends
+    /// each turn short of the last on a `turn` escalation. Off by default, as the features a
+    /// docket gains are.
+    conversation: bool,
+    /// How many steps a team's pipeline has, where it is not one: a conversation task needs one.
+    pipeline_steps: HashMap<String, usize>,
     /// What an apply asks a person to read first: the code, and what the directory would run
     /// (kind, name, text). An apply that carries no `accept` is answered `409` with the code, one
     /// that carries another code `409` without it, and one that carries this code is applied.
@@ -479,6 +495,8 @@ impl FakeDocket {
             rev: 0,
             next_channel: None,
             pod_shape: false,
+            conversation: false,
+            pipeline_steps: HashMap::new(),
             apply_review: None,
             applied_pods: BTreeSet::new(),
         }));
@@ -543,6 +561,40 @@ impl FakeDocket {
             .get_mut(name)
             .unwrap()
             .folder = true;
+    }
+
+    /// A docket that lists `conversation` (its Phase 55): a task posted with `conversation:
+    /// {maxTurns}` continues turn by turn, each turn answering a `turn` escalation.
+    pub fn with_conversation(&self) {
+        self.shared.lock().unwrap().conversation = true;
+    }
+
+    /// The team's pipeline has `steps` steps; a conversation task is refused for more than one
+    /// (`conversation_needs_one_step`).
+    pub fn set_pipeline_steps(&self, name: &str, steps: usize) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pipeline_steps
+            .insert(name.to_owned(), steps);
+    }
+
+    /// The conversation ends at docket's own CLI or its sweep, not in Tack: the task's pending
+    /// `turn` escalation is closed and the task is `done`.
+    pub fn close_conversation(&self, task: &str) {
+        let mut state = self.shared.lock().unwrap();
+        let id = state
+            .escalations
+            .iter()
+            .find(|found| found.task == task && found.view["state"] == json!("pending"))
+            .map(|found| found.view["id"].as_str().unwrap_or_default().to_owned())
+            .expect("the conversation waits on a turn");
+        let answer = resolve(
+            &mut state,
+            &id,
+            &json!({"optionId": "close", "actor": "operator"}),
+        );
+        assert_eq!(answer.status(), StatusCode::OK);
     }
 
     /// A docket before `taskCurrent`.
@@ -1118,7 +1170,7 @@ async fn handle(
 
 /// The `features` of `/health` and `/status.json`: a name is listed only when the fake serves the
 /// feature (docket's ADR 0037). The captured files also name features Tack does not use and the
-/// fake does not serve (`podMemory`, `readScope`, `conversation`); those are never listed.
+/// fake does not serve (`podMemory`, `readScope`); those are never listed.
 fn features(state: &World) -> Value {
     let mut listed = Vec::new();
     if !state.without_task_current {
@@ -1156,6 +1208,9 @@ fn features(state: &World) -> Value {
     }
     if state.pod_shape {
         listed.push("podShape");
+    }
+    if state.conversation {
+        listed.push("conversation");
     }
     json!(listed)
 }
@@ -1895,6 +1950,24 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     if let Some(refused) = check_task_body(body).or_else(|| check_autonomy(team, body)) {
         return refused;
     }
+    let mut conversation = None;
+    if state.conversation
+        && let Some(asked) = body.get("conversation")
+    {
+        let steps = state.pipeline_steps.get(pod).copied().unwrap_or(1);
+        if steps != 1 {
+            return refusal(
+                "post-task-conversation-needs-one-step",
+                &[("this one has 2", &format!("this one has {steps}"))],
+            );
+        }
+        match asked["maxTurns"].as_u64() {
+            Some(max) if (1..=20).contains(&max) => conversation = Some(max as u32),
+            _ => {
+                return error(400, "conversation.maxTurns must be an integer from 1 to 20");
+            }
+        }
+    }
     if let Some(key) = body["idempotencyKey"].as_str()
         && let Some(id) = state.idempotency.get(&(pod.to_owned(), key.to_owned()))
     {
@@ -1970,6 +2043,7 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
             .unwrap_or_else(|| "http".to_owned()),
         rev: 0,
         stamped: (String::new(), 0, false),
+        conversation,
     });
     let index = state.tasks.len() - 1;
     // A paused team claims nothing: the task waits `pending` until the team is resumed.
@@ -1994,6 +2068,9 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
 /// The team claims the task: it takes the script's gate or runs to its end.
 fn start_task(state: &mut World, index: usize) {
     state.tasks[index].status = "running".to_owned();
+    if state.tasks[index].conversation.is_some() {
+        return conversation_turn(state, index);
+    }
     match state.tasks[index].script.gate {
         Gate::None => finish(state, index),
         Gate::Consult { .. } | Gate::Wait => {
@@ -2015,7 +2092,6 @@ fn escalation_id(task: &str) -> String {
 
 /// Opens the escalation the task's gate holds, at the next `seq`.
 fn open_escalation(state: &mut World, index: usize) {
-    let seq = next_seq(state);
     let task = &state.tasks[index];
     let id = escalation_id(&task.id);
     let mut call = None;
@@ -2097,7 +2173,6 @@ fn open_escalation(state: &mut World, index: usize) {
         }
         Gate::None | Gate::Hold => return,
     };
-    view["id"] = json!(id);
     view["task"] = json!(task.id);
     view["pod"] = json!(task.pod);
     if !matches!(task.script.gate, Gate::Wait | Gate::Outward { .. }) {
@@ -2106,17 +2181,114 @@ fn open_escalation(state: &mut World, index: usize) {
             view["role"] = json!("implementer");
         }
     }
-    view["seq"] = json!(seq);
     view["state"] = json!("pending");
-    view["affordances"]["resolveUrl"] = json!(format!("/escalations/{id}"));
+    // One `consult` call asks one to five questions, one record each with its `part`.
+    let questions: Vec<String> = match &task.script.gate {
+        Gate::Consult { question, .. } => std::iter::once(question.clone())
+            .chain(task.script.more_questions.iter().cloned())
+            .collect(),
+        _ => vec![String::new()],
+    };
+    let count = questions.len();
     let (task_id, pod) = (task.id.clone(), task.pod.clone());
-    state.tasks[index].escalation = Some(id);
+    state.tasks[index].escalation = Some(id.clone());
+    for (at, question) in questions.into_iter().enumerate() {
+        let mut view = view.clone();
+        let id = if at == 0 {
+            id.clone()
+        } else {
+            format!("{id}-{}", at + 1)
+        };
+        if count > 1 {
+            view["prompt"] = json!(question);
+            view["part"] = json!({"index": at + 1, "count": count});
+        }
+        view["id"] = json!(id);
+        view["seq"] = json!(next_seq(state));
+        view["affordances"]["resolveUrl"] = json!(format!("/escalations/{id}"));
+        state.escalations.push(Escalation {
+            task: task_id.clone(),
+            pod: pod.clone(),
+            view,
+            call: call.clone(),
+        });
+    }
+}
+
+/// A turn of a task that continues turn by turn: the team's one step answers, and short of
+/// `maxTurns` the task waits on a `turn` escalation whose prompt is that answer; the last turn
+/// ends the task.
+fn conversation_turn(state: &mut World, index: usize) {
+    let (pod, id, max, answered) = {
+        let task = &state.tasks[index];
+        (
+            task.pod.clone(),
+            task.id.clone(),
+            task.conversation.expect("a conversation task"),
+            task.hops.len(),
+        )
+    };
+    let turn = answered + 1;
+    let answer = state.tasks[index]
+        .script
+        .replies
+        .get(answered)
+        .cloned()
+        .unwrap_or_else(|| format!("Answer {turn}."));
+    let started = json!({"role": "implementer", "step": "implement", "member": "fake-implementer",
+                         "model": "local/local-model", "cycle": 0});
+    trace_event(state, &pod, &id, "hop_started", started.clone());
+    let mut finished = started;
+    finished["ok"] = json!(true);
+    finished["usage"] = json!({"input": 10, "cached": 0, "cacheWrite": 0, "output": 2});
+    finished["durationMs"] = json!(5);
+    trace_event(state, &pod, &id, "hop_finished", finished);
+    // The hop of a real turn: its keys are the capture's, with this turn's answer.
+    let mut hop = fixture("task-waiting-turn")["hops"][0].clone();
+    hop["model"] = json!("local/local-model");
+    hop["output"] = json!(answer);
+    hop["artifact"]["summary"] = json!(answer);
+    hop["parked"] = json!(turn < max as usize);
+    hop["usage"] = json!({"input": 10, "cached": 0, "cacheWrite": 0, "output": 2});
+    hop["trace"] = json!({"project": pod, "session": format!("agent:{pod}:{id}"),
+                          "firstTs": timestamp(state.trace.len()),
+                          "lastTs": timestamp(state.trace.len())});
+    if state.without_hop_times {
+        let object = hop.as_object_mut().expect("a hop");
+        for key in ["startedAt", "finishedAt", "cycle"] {
+            object.remove(key);
+        }
+    }
+    state.tasks[index].hops.push(hop);
+    if turn >= max as usize {
+        return finish(state, index);
+    }
+    state.tasks[index].status = "waiting_input".to_owned();
+    state.tasks[index].gate_open = true;
+    state.tasks[index].script.reason = format!("turn {turn} of {max} answered");
+    let escalation = format!("{}-turn{turn}", escalation_id(&id));
+    let mut view = fixture("escalations-turn")["escalations"][0].clone();
+    view["id"] = json!(escalation);
+    view["task"] = json!(id);
+    view["pod"] = json!(pod);
+    view["prompt"] = json!(answer);
+    view["seq"] = json!(next_seq(state));
+    view["expiresAt"] = json!((chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339());
+    view["affordances"]["resolveUrl"] = json!(format!("/escalations/{escalation}"));
     state.escalations.push(Escalation {
-        task: task_id,
-        pod,
+        task: id.clone(),
+        pod: pod.clone(),
         view,
-        call,
+        call: None,
     });
+    state.tasks[index].escalation = Some(escalation.clone());
+    trace_event(
+        state,
+        &pod,
+        &id,
+        "escalation_asked",
+        json!({"escalation": escalation, "prompt": answer}),
+    );
 }
 
 /// Writes the `after` events, commits the file on the task's branch and sets
@@ -2232,6 +2404,7 @@ fn task_record(state: &World, task: &Task) -> Value {
     let parked =
         task.gate_open && matches!(task.status.as_str(), "waiting_input" | "waiting_approval");
     let mut record = fixture(match task.status.as_str() {
+        _ if parked && task.conversation.is_some() => "task-waiting-turn",
         _ if parked => "task-waiting-escalation",
         "failed" if task.script.failure_kind.as_deref() == Some("needs_human") => {
             "task-failed-needs-human"
@@ -2283,16 +2456,29 @@ fn task_record(state: &World, task: &Task) -> Value {
             }
         }
     }
-    if let Some(level) = body.get("autonomy") {
-        record["autonomy"] = level.clone();
+    // docket's view carries `autonomy` when one was asked.
+    match body.get("autonomy") {
+        Some(level) => record["autonomy"] = level.clone(),
+        None => {
+            record.as_object_mut().expect("record").remove("autonomy");
+        }
     }
-    if let Some(id) = &task.escalation {
-        record["escalations"] = json!([id]);
+    let opened: Vec<&Value> = state
+        .escalations
+        .iter()
+        .filter(|found| found.task == task.id)
+        .map(|found| &found.view["id"])
+        .collect();
+    if !opened.is_empty() {
+        record["escalations"] = json!(opened);
+    }
+    if let Some(max) = task.conversation {
+        record["conversation"] = json!({"maxTurns": max, "turns": task.hops.len()});
     }
     // A task docket holds at its enqueue has no worktree yet, and a folder team's never has.
     if task.folder {
         record.as_object_mut().expect("record").remove("worktree");
-    } else if !parked {
+    } else if !parked || task.conversation.is_some() {
         record["worktree"]["branch"] = json!(task.branch);
         record["worktree"]["baseCommit"] = json!(task.base_commit);
         record["worktree"]["baseRef"] = body["baseRef"].clone();
@@ -2669,7 +2855,7 @@ fn resolve(state: &mut World, id: &str, body: &Value) -> Response {
     }
     let declining = matches!(option, Some("decline" | "deny"));
     let content = object.get("content").cloned().unwrap_or(Value::Null);
-    if !declining {
+    if !declining && option != Some("close") {
         for property in view["requestedSchema"]["required"]
             .as_array()
             .into_iter()
@@ -2687,6 +2873,10 @@ fn resolve(state: &mut World, id: &str, body: &Value) -> Response {
         .iter()
         .position(|found| found.id == task)
         .expect("an escalation has its task");
+    let kind = view["kind"].as_str().unwrap_or_default().to_owned();
+    let other_parts = pending_of(state, Some(task))
+        .into_iter()
+        .any(|other| other != position);
     if declining {
         state.tasks[index].gate_open = false;
         state.tasks[index].status = "blocked".to_owned();
@@ -2697,6 +2887,18 @@ fn resolve(state: &mut World, id: &str, body: &Value) -> Response {
                 "the approval was denied"
             }
             .to_owned();
+    } else if kind == "turn" {
+        // A reply reopens the task and the next claim runs the next turn; a close ends it.
+        state.tasks[index].gate_open = false;
+        if option == Some("close") {
+            state.tasks[index].status = "done".to_owned();
+            state.tasks[index].script.reason = "conversation closed".to_owned();
+        } else {
+            state.tasks[index].status = "pending".to_owned();
+            start_task(state, index);
+        }
+    } else if kind == "consult" && other_parts {
+        // The task waits until every question of the call is answered.
     } else {
         finish(state, index);
     }
@@ -2708,9 +2910,24 @@ fn resolve(state: &mut World, id: &str, body: &Value) -> Response {
         "by": object.get("actor").and_then(Value::as_str).unwrap_or("http"),
         "channel": "http",
         "at": chrono::Utc::now().to_rfc3339(),
-        "appliedAt": null,
+        "appliedAt": (option == Some("close")).then(|| chrono::Utc::now().to_rfc3339()),
     });
     settled["affordances"]["options"] = json!([]);
     restamp(state, position);
+    if kind == "turn" {
+        let (pod, task) = (settled_pod(state, position), task.to_owned());
+        trace_event(
+            state,
+            &pod,
+            &task,
+            "escalation_resolved",
+            json!({"escalation": id, "optionId": option}),
+        );
+    }
     reply(200, state.escalations[position].view.clone())
+}
+
+/// The pod of the escalation at `position`.
+fn settled_pod(state: &World, position: usize) -> String {
+    state.escalations[position].pod.clone()
 }

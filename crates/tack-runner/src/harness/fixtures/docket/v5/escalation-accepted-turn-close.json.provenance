@@ -1,0 +1,9 @@
+constructed
+route: POST /escalations/<id>
+status: 200
+tack-sends: no
+built-from: an answer of a real run of docket on a scripted model, as scripts/compare-constructed-docket-fixtures.py reads it over HTTP
+docket: docket 0.3.0b1 (API 6), source checkout 2462c872, run on a scripted model
+date: 2026-11-04
+note: a turn answered with close: the conversation ends and appliedAt is stamped at once; Tack never sends it, docket's own CLI and sweep do; not captured by the capture script, because a conversation task would have to run on a model; the answer is one a real docket gave, with its ids, times and paths redacted as the captures are
+checked: the keys equal those of a real run of docket 0.3.0b1 (source checkout 2462c872), found by scripts/compare-constructed-docket-fixtures.py on 2026-11-04

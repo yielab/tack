@@ -15,6 +15,9 @@ pub const AGENT_ANSWER_FAILED: &str = "agent.answer_failed";
 /// The team the task was sent to is paused, so the task waits; the line says how to resume it.
 pub const AGENT_TEAM_PAUSED: &str = "agent.team_paused";
 
+/// A thread's turn found no docket task to continue, so a new conversation started.
+pub const AGENT_CONVERSATION_RESTARTED: &str = "agent.conversation_restarted";
+
 /// docket asked a person.
 pub const ESCALATION_ASKED: &str = "escalation.asked";
 /// A person answered what docket asked.

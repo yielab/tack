@@ -1,0 +1,170 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Make app.txt say fixed",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "task": {
+    "objective": "Make app.txt say fixed",
+    "doneWhen": "app.txt says fixed",
+    "acceptance": [
+      "it says fixed"
+    ],
+    "constraints": [
+      "none"
+    ],
+    "risk": "low",
+    "answers": [
+      {
+        "question": "Which file?",
+        "answer": "app.txt"
+      }
+    ],
+    "kind": "Feature",
+    "paths": [
+      "app.txt"
+    ]
+  },
+  "externalRef": "turn-1/attempt-1",
+  "idempotencyKey": "turn-1",
+  "baseRef": "main",
+  "gate": {
+    "command": "true",
+    "timeoutS": 600
+  },
+  "maxTokens": 100000,
+  "restrictions": {
+    "deniedTools": [
+      "bash"
+    ]
+  },
+  "autonomy": "L3",
+  "conversation": {
+    "maxTurns": 2,
+    "turns": 1
+  },
+  "rev": 9,
+  "status": "waiting_input",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": null,
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "turn 1 of 2 answered",
+  "pendingApprovalIndex": null,
+  "hops": [
+    {
+      "role": "implementer",
+      "member": "e2e-implementer",
+      "ok": true,
+      "output": "First answer.",
+      "error": "",
+      "attempts": 1,
+      "stepId": "implement",
+      "artifact": {
+        "summary": "First answer.",
+        "files_changed": [],
+        "diff_ref": "docket/e2e/task-00000000-0000-0000-0000-000000000000",
+        "diff": "",
+        "verdict": null,
+        "brief": null
+      },
+      "nextStep": null,
+      "parked": true,
+      "verify": {
+        "cmd": "true",
+        "exitCode": 0,
+        "durationS": 0.009,
+        "outputTail": "",
+        "label": "pass",
+        "source": "task",
+        "reasonsInvalid": false
+      },
+      "evidence": {
+        "commit": "0000000000000000000000000000000000000000",
+        "baseCommit": "0000000000000000000000000000000000000000",
+        "diffStat": {
+          "files": 0,
+          "insertions": 0,
+          "deletions": 0
+        }
+      },
+      "usage": {
+        "input": 709,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 3
+      },
+      "trace": {
+        "project": "e2e",
+        "session": "agent:e2e:task-00000000-0000-0000-0000-000000000000",
+        "firstTs": "2026-01-01T00:00:00Z",
+        "lastTs": "2026-01-01T00:00:00Z"
+      },
+      "repoFiles": null,
+      "model": "anthropic/claude-sonnet-5-5",
+      "provider": "anthropic",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
+      "promptManifest": {
+        "layers": [
+          {
+            "layer": "identity",
+            "name": "implementer",
+            "version": "1.1.0",
+            "sha256": "057997f776c62cc255dcb8c7c7166a67bfe3150e256cefeb41d2b7ac76b174eb",
+            "scope": "shipped",
+            "tokens": 232
+          },
+          {
+            "layer": "task",
+            "name": "task",
+            "version": "",
+            "sha256": "5bfda677da8bffc97fad97c8d8d9a76f230ece893ec8d96aed6d223fd602c24d",
+            "scope": "task",
+            "tokens": 95
+          },
+          {
+            "layer": "hop",
+            "name": "implementer",
+            "version": "1.0.0",
+            "sha256": "ae0f12ed58fdeeece3386467a9c4781c161ead7f37e925c07a48052b9621e379",
+            "scope": "shipped",
+            "tokens": 15
+          }
+        ],
+        "model": "anthropic/claude-sonnet-5-5",
+        "family": "anthropic",
+        "class": "any",
+        "profile": "hosted"
+      }
+    }
+  ],
+  "worktree": {
+    "dir": "/scratch/docket-home/state/workspaces/projects/e2e-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/e2e/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "baseRef": "main",
+    "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo/.git"
+  },
+  "pipelineSource": "default",
+  "gateApplied": true,
+  "usage": {
+    "input": 709,
+    "cached": 0,
+    "cacheWrite": 0,
+    "output": 3,
+    "byModel": {
+      "anthropic/claude-sonnet-5-5": {
+        "input": 709,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 3
+      }
+    }
+  },
+  "escalations": [
+    "esc-000000000000"
+  ],
+  "tokenBudget": 99288
+}

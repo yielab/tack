@@ -292,7 +292,7 @@ pub(super) struct Tokens {
 
 /// A task's `usage`: its own totals, which docket writes when the task settles, and the same
 /// per model.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct TaskUsage {
     #[serde(flatten)]
@@ -302,7 +302,7 @@ pub(super) struct TaskUsage {
 }
 
 /// `GET /tasks/<pod>/<id>`: the keys Tack reads of the task record.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct TaskView {
     pub status: String,
@@ -317,7 +317,7 @@ pub(super) struct TaskView {
     pub hops: Vec<TaskHop>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Worktree {
     pub branch: String,
@@ -326,7 +326,7 @@ pub(super) struct Worktree {
 
 /// A hop of the task record. Every key after `model` is absent from a hop recorded by an older
 /// docket, and docket adds keys in minor versions, so none is required and none is refused.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(super) struct TaskHop {
     pub role: Option<String>,
     pub model: Option<String>,
@@ -389,7 +389,7 @@ pub(super) struct BudgetOutcome {
 
 /// The prompts a hop's turn was composed from (`promptManifest`), in composition order, and the
 /// model's family and class (its `profile` is not kept).
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct PromptManifest {
     #[serde(default)]
     pub layers: Vec<PromptLayer>,
@@ -403,7 +403,7 @@ pub(super) struct PromptManifest {
 
 /// One prompt of a manifest. `sha256` is the hash of its text as the prompt's file holds it and
 /// `tokens` the compiler's estimate, not a measurement.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(super) struct PromptLayer {
     pub layer: String,
     #[serde(default)]
@@ -429,7 +429,7 @@ pub(super) struct CapabilityMissing {
 
 /// What a hop's `handoff` call said: the keys Tack reads of the hop's `artifact`. A list docket
 /// has nothing for is absent.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct HopArtifact {
     #[serde(default)]
     pub summary: Option<String>,
@@ -506,6 +506,17 @@ impl TraceEvent {
             | Self::EscalationExpired(event)
             | Self::EscalationDecided(event) => Some(&event.task),
             Self::Other => None,
+        }
+    }
+
+    /// The escalation an `escalation_*` event is about.
+    pub fn escalation(&self) -> Option<&str> {
+        match self {
+            Self::EscalationAsked(event)
+            | Self::EscalationResolved(event)
+            | Self::EscalationExpired(event)
+            | Self::EscalationDecided(event) => event.escalation.as_deref(),
+            _ => None,
         }
     }
 }
