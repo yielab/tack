@@ -8276,6 +8276,90 @@
         }
       }
     },
+    "/api/teams/{harness}/{name}/memory/{id}": {
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "POST /api/teams/{harness}/{name}/memory/{id}",
+        "description": "Deciding what a team may remember is a person's call, so the route is the operator's alone\n(`agent_access`).",
+        "operationId": "decide_team_memory",
+        "parameters": [
+          {
+            "name": "harness",
+            "in": "path",
+            "description": "The agent that runs the team, as `GET /api/teams` names it",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The team's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The memory entry's id, as the team's report lists it",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideMemoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The agent approved or refused the entry; the team's report afterwards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemoryDecided"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (no active runner reports a team of that name for that agent)"
+          },
+          "409": {
+            "description": "conflict (the agent refused, with its reason: the entry is no longer waiting, or it cannot decide from the board; or the runner did not answer in time)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation_error (a refusal without a reason)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/teams/{harness}/{name}/resume": {
       "post": {
         "tags": [
@@ -12580,6 +12664,25 @@
           "value": {}
         }
       },
+      "DecideMemoryRequest": {
+        "type": "object",
+        "description": "What a person decides about a memory entry of a team.",
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/MemoryDecision"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the entry is refused; required for a refusal, ignored for an approval."
+          }
+        }
+      },
       "DecisionAnswerSchema": {
         "type": "object",
         "description": "Schema-only mirror of the `answer` object `POST\n.../decisions/{decision_id}/resolve` both accepts (`handlers::decisions::\nvalidate_answer`) and echoes back on success. `option_id` must be a\nnon-empty string; when the decision's own `options` list is non-empty,\nresolution also requires `option_id` to be one of them (checked\nserver-side, not expressible in this schema). `text` may be omitted,\n`null`, or a string — never anything else.",
@@ -14454,6 +14557,14 @@
           }
         },
         "additionalProperties": {}
+      },
+      "MemoryDecision": {
+        "type": "string",
+        "description": "What a person decides about a memory entry that waits for them.",
+        "enum": [
+          "approve",
+          "refuse"
+        ]
       },
       "MemoryEntry": {
         "type": "object",
@@ -18244,12 +18355,48 @@
             },
             "description": "Checked or approved; the team reads them in its next task."
           },
+          "can_decide": {
+            "type": "boolean",
+            "description": "Whether a pending entry can be approved or refused from the board. When it cannot, the\nharness has its own command for it."
+          },
           "pending": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MemoryEntry"
             },
             "description": "Held back until a person decides; the team does not use them yet."
+          }
+        }
+      },
+      "TeamMemoryDecided": {
+        "type": "object",
+        "description": "What a runner's harness said after it was asked to decide a memory entry.",
+        "required": [
+          "team",
+          "harness",
+          "runner"
+        ],
+        "properties": {
+          "harness": {
+            "type": "string"
+          },
+          "report": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamReport",
+                "description": "The team as the harness reports it now, with the entry no longer waiting; `null` when it\ndid not say."
+              }
+            ]
+          },
+          "runner": {
+            "type": "string",
+            "description": "The runner that asked the harness."
+          },
+          "team": {
+            "type": "string"
           }
         }
       },

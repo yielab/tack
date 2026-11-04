@@ -15,6 +15,7 @@ export type TeamMethod = components['schemas']['TeamMethod'];
 export type TeamNeed = components['schemas']['TeamNeed'];
 export type TeamBudget = components['schemas']['TeamBudget'];
 export type TeamResumed = components['schemas']['TeamResumed'];
+export type TeamMemoryDecided = components['schemas']['TeamMemoryDecided'];
 export type TeamMemory = components['schemas']['TeamMemory'];
 export type MemoryEntry = components['schemas']['MemoryEntry'];
 
@@ -25,6 +26,13 @@ export const teamsApi = {
    *  Answers with the team as its agent reports it afterwards; a refusal carries the agent's sentence. */
   resume: (harness: string, name: string) =>
     request<TeamResumed>(`/teams/${encodeURIComponent(harness)}/${encodeURIComponent(name)}/resume`, { method: 'POST' }),
+  /** Approves or refuses one memory entry that waits for a person, through the runner that reports the team.
+   *  Answers with the team as its agent reports it afterwards; a refusal carries the agent's sentence. */
+  decideMemory: (harness: string, name: string, id: string, decision: 'approve' | 'refuse', reason?: string) =>
+    request<TeamMemoryDecided>(
+      `/teams/${encodeURIComponent(harness)}/${encodeURIComponent(name)}/memory/${encodeURIComponent(id)}`,
+      { method: 'POST', body: JSON.stringify({ decision, reason }) },
+    ),
 };
 
 /** What a team's `profile` is called on the board: its Supervision. Lights-out is the one profile that
@@ -205,7 +213,7 @@ export function resumeGate(entry: TeamEntry): { enabled: boolean; reason: string
   return { enabled: true, reason: null };
 }
 
-/** Why Approve and Refuse stay disabled: no agent offers a route to decide a memory entry yet. */
+/** Why Approve and Refuse are disabled: this agent has no way to decide a memory entry from the board. */
 export const MEMORY_DECIDE_REASON = 'docket decides this with its own command for now';
 
 /** The two commands that decide a pending memory entry of a docket team, to copy. The refusal's reason is the

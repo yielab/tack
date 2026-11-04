@@ -6,10 +6,11 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use tack_protocol::execution::{
-    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, MemoryEntry, MemoryEvidence,
-    ModelListSource, ModelsReport, SignInReport, SignInState, TeamBudget, TeamDecides,
-    TeamDelivers, TeamMember, TeamMemory, TeamMethod, TeamNeed, TeamNetwork, TeamPause, TeamQueue,
-    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
+    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, MemoryDecision, MemoryEntry,
+    MemoryEvidence, ModelListSource, ModelsReport, SignInReport, SignInState, TeamBudget,
+    TeamDecides, TeamDelivers, TeamMember, TeamMemory, TeamMethod, TeamNeed, TeamNetwork,
+    TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind,
+    TeamViolation, WorksIn,
 };
 
 use super::{
@@ -396,13 +397,14 @@ async fn memory_entries(client: &Client, name: &str, status: &str) -> Option<Vec
 /// What a team has learnt and what waits for a person (`memoryStatus`). Absent from a docket that
 /// does not list the feature, and when either list cannot be read: the team's report never fails
 /// for its memory.
-async fn memory(client: &Client, name: &str, listed: bool) -> Option<TeamMemory> {
-    if !listed {
+async fn memory(client: &Client, name: &str, listed: Listed) -> Option<TeamMemory> {
+    if !listed.memory {
         return None;
     }
     Some(TeamMemory {
         pending: memory_entries(client, name, "pending").await?,
         accepted: memory_entries(client, name, "accepted").await?,
+        can_decide: listed.memory_decide,
     })
 }
 
@@ -413,6 +415,7 @@ struct Listed {
     contract: bool,
     resume: bool,
     memory: bool,
+    memory_decide: bool,
 }
 
 impl Listed {
@@ -422,6 +425,7 @@ impl Listed {
             contract: client.has_feature(super::POD_CONTRACT).await,
             resume: client.has_feature(super::POD_RESUME).await,
             memory: client.has_feature(super::MEMORY_STATUS).await,
+            memory_decide: client.has_feature(super::MEMORY_DECIDE).await,
         }
     }
 }
@@ -437,7 +441,7 @@ async fn team(client: &Client, row: &PodRow, listed: Listed) -> Result<TeamRepor
     let mut report: PodReport = reply.read()?;
     let contract = contract(&mut report, listed.contract);
     let budget = budget(&mut report, listed.resume);
-    let memory = memory(client, name, listed.memory).await;
+    let memory = memory(client, name, listed).await;
     let works_in = works_in(row, &report);
     let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
         Some((sets, shared)) => (Some(sets), shared),
@@ -523,6 +527,23 @@ pub(super) async fn resume(client: &Client, name: &str) -> Result<Option<TeamRep
         404 => return Err(format!("docket has no team named {name}")),
         _ => return Err(reply.error()),
     }
+    report_of(
+        client,
+        name,
+        Listed {
+            resume: true,
+            ..Listed::of(client).await
+        },
+    )
+    .await
+}
+
+/// The team's report as docket gives it now, or `None` when the list no longer holds the team.
+async fn report_of(
+    client: &Client,
+    name: &str,
+    listed: Listed,
+) -> Result<Option<TeamReport>, String> {
     let reply = client.pods().await?;
     if reply.status != 200 {
         return Err(reply.error());
@@ -531,11 +552,57 @@ pub(super) async fn resume(client: &Client, name: &str) -> Result<Option<TeamRep
     let Some(row) = list.pods.iter().find(|pod| pod.name == name) else {
         return Ok(None);
     };
-    let listed = Listed {
-        resume: true,
-        ..Listed::of(client).await
-    };
     team(client, row, listed).await.map(Some)
+}
+
+/// Approves or refuses one pending memory entry of a team (`POST /pods/<pod>/memory/<id>`) and
+/// reads the team's report afterwards, or says in a person's words why docket did not. A docket
+/// that does not list `memoryDecide` is not asked: it has no such route, and the sentence says
+/// which command decides the entry instead.
+pub(super) async fn decide_memory(
+    client: &Client,
+    name: &str,
+    entry: &str,
+    decision: MemoryDecision,
+    reason: Option<&str>,
+) -> Result<Option<TeamReport>, String> {
+    let (word, command) = match decision {
+        MemoryDecision::Approve => (
+            "approve",
+            format!("docket pod memory approve {entry} --pod {name}"),
+        ),
+        MemoryDecision::Refuse => (
+            "refuse",
+            format!("docket pod memory refuse {entry} --pod {name} --reason \"<why>\""),
+        ),
+    };
+    if !client.has_feature(super::MEMORY_DECIDE).await {
+        return Err(format!(
+            "This docket cannot decide a memory entry from the board. Run `{command}` on the runner's computer."
+        ));
+    }
+    let reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
+    if decision == MemoryDecision::Refuse && reason.is_none() {
+        return Err("A refusal needs a reason.".to_owned());
+    }
+    let reply = client.decide_memory(name, entry, word, reason).await?;
+    match reply.status {
+        200 => {}
+        404 => {
+            return Err(format!(
+                "docket has no team named {name}, or the team has no entry {entry}"
+            ));
+        }
+        409 => return Err("That entry is no longer waiting.".to_owned()),
+        403 => {
+            return Err(
+                "docket refused: the token the runner holds may only read. Give it the full token."
+                    .to_owned(),
+            );
+        }
+        _ => return Err(reply.error()),
+    }
+    report_of(client, name, Listed::of(client).await).await
 }
 
 /// A team that needs a person during a run: attended, or with a violation.

@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "reason must be a string"
+}

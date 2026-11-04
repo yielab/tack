@@ -92,6 +92,10 @@ const POD_RESUME: &str = "podResume";
 /// pending and accepted entries can be read apart.
 const MEMORY_STATUS: &str = "memoryStatus";
 
+/// The feature of `GET /health` under which `POST /pods/<pod>/memory/<id>` approves or refuses a
+/// pending memory entry.
+const MEMORY_DECIDE: &str = "memoryDecide";
+
 /// The feature of `GET /health` under which a pod declares the hosts its `fetch` reads.
 const POD_FETCH: &str = "podFetch";
 
@@ -1712,6 +1716,16 @@ impl HarnessProbe for DocketAdapter {
 
     async fn resume_team(&self, team: &str) -> Result<Option<TeamReport>, String> {
         probe::resume(&self.client, team).await
+    }
+
+    async fn decide_memory(
+        &self,
+        team: &str,
+        entry: &str,
+        decision: tack_protocol::execution::MemoryDecision,
+        reason: Option<&str>,
+    ) -> Result<Option<TeamReport>, String> {
+        probe::decide_memory(&self.client, team, entry, decision, reason).await
     }
 
     async fn apply_team(

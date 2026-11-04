@@ -9,12 +9,31 @@ use serde::{Deserialize, Serialize};
 use super::capabilities::TeamReport;
 use super::types::{HarnessKind, ProtocolVersion, RunnerId};
 
+/// What a person decides about a memory entry that waits for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryDecision {
+    Approve,
+    Refuse,
+}
+
 /// One thing the board asks of a harness's team.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 pub enum TeamOperation {
     /// Lets a team that stopped on its budget claim tasks again.
     ResumeTeam { harness: HarnessKind, team: String },
+    /// Approves or refuses one memory entry that waits for a person. A refusal carries the reason a
+    /// person gave. The harness answers with the team's report afterwards.
+    DecideMemory {
+        harness: HarnessKind,
+        team: String,
+        entry: String,
+        decision: MemoryDecision,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     /// Makes the team of a project's repository from its shape and applies the team's folder
     /// (`.docket/teams/<team>`) inside the project's checkout on the runner's computer. A folder
     /// that would run commands there is refused with a review until the call carries `accept`, the

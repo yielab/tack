@@ -80,11 +80,11 @@ interface Project {
 
 const PROJECT_ID = '11111111-1111-1111-1111-111111111111';
 
-function mockApi(teams: unknown[], profiles: unknown[] = PROFILES, project?: Project, extra?: (url: string, method: string) => Response | undefined) {
+function mockApi(teams: unknown[], profiles: unknown[] = PROFILES, project?: Project, extra?: (url: string, method: string, body?: unknown) => Response | undefined) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     const method = (init as RequestInit | undefined)?.method ?? 'GET';
-    const answered = extra?.(url, method);
+    const answered = extra?.(url, method, (init as RequestInit | undefined)?.body);
     if (answered) return Promise.resolve(answered);
     if (project && url.endsWith('/api/projects')) return Promise.resolve(new Response(JSON.stringify([{ id: PROJECT_ID, name: 'Shop', default_profile_id: 'ap_i' }]), { status: 200 }));
     if (project && url.endsWith(`/api/projects/${PROJECT_ID}/autonomy`)) return Promise.resolve(new Response(JSON.stringify(project.autonomy), { status: 200 }));
@@ -729,6 +729,113 @@ describe('TeamsPanel sheet', () => {
       expect(approve.getAttribute('aria-describedby')).toBe(reason.id);
       expect(refuse.getAttribute('aria-describedby')).toBe(reason.id);
       expect(waiting.querySelectorAll('li[data-testid^="team-memory-entry-"]')).toHaveLength(2);
+    });
+
+    describe('deciding from the board', () => {
+      const DECIDABLE = {
+        ...WITH_MEMORY,
+        report: { ...WITH_MEMORY.report, memory: { ...WITH_MEMORY.report.memory, can_decide: true } },
+      };
+      const entryBox = (c: HTMLElement, id: string) => memory(c).querySelector<HTMLElement>(`[data-testid="team-memory-entry-${id}"]`)!;
+      const button = (c: HTMLElement, id: string, label: string) => entryBox(c, id).querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+      /** What the team reports once `mem-p` is decided: it is in neither list of the waiting ones any more. */
+      const after = (status: 'accepted' | 'refused') => ({
+        ...DECIDABLE.report,
+        memory: {
+          ...DECIDABLE.report.memory,
+          pending: DECIDABLE.report.memory.pending.filter((e) => e.id !== 'mem-p'),
+          accepted: status === 'accepted' ? [...DECIDABLE.report.memory.accepted, entry('mem-p', 'docs/')] : DECIDABLE.report.memory.accepted,
+        },
+      });
+
+      it('enables Approve and Refuse when the team can be decided, and drops the reason line', async () => {
+        mockApi([DECIDABLE]);
+        const c = mount([runner([DOCKET])]);
+        await flush();
+        await flush();
+        expect(button(c, 'mem-p', 'Approve docs/').disabled).toBe(false);
+        expect(button(c, 'mem-p', 'Refuse docs/').disabled).toBe(false);
+        expect(entryBox(c, 'mem-p').querySelector('[data-testid="team-memory-decide-reason"]')).toBeNull();
+      });
+
+      it('keeps them disabled with their reason when the team cannot be decided', async () => {
+        mockApi([WITH_MEMORY]);
+        const c = mount([runner([DOCKET])]);
+        await flush();
+        await flush();
+        expect(button(c, 'mem-p', 'Approve docs/').disabled).toBe(true);
+        expect(button(c, 'mem-p', 'Refuse docs/').disabled).toBe(true);
+        expect(entryBox(c, 'mem-p').querySelector('[data-testid="team-memory-decide-reason"]')!.textContent).toBe('docket decides this with its own command for now');
+      });
+
+      it('approves through the board and the entry leaves what it waits to learn', async () => {
+        const posted: unknown[] = [];
+        mockApi([DECIDABLE], PROFILES, undefined, (url, method, body) => {
+          if (!url.endsWith('/api/teams/docket/saas-code/memory/mem-p')) return undefined;
+          expect(method).toBe('POST');
+          posted.push(JSON.parse(String(body)));
+          return new Response(JSON.stringify({ team: 'saas-code', harness: 'docket', runner: 'This computer', report: after('accepted') }), { status: 200 });
+        });
+        const c = mount([runner([DOCKET])]);
+        await flush();
+        await flush();
+        button(c, 'mem-p', 'Approve docs/').click();
+        await flush();
+        await flush();
+        expect(posted).toEqual([{ decision: 'approve' }]);
+        const waiting = memory(c).querySelector('[data-testid="team-memory-waiting"]')!;
+        expect(waiting.querySelector('[data-testid="team-memory-entry-mem-p"]')).toBeNull();
+        expect(waiting.querySelectorAll('li[data-testid^="team-memory-entry-"]')).toHaveLength(1);
+        expect(memory(c).querySelector('[data-testid="team-memory-learnt"] [data-testid="team-memory-entry-mem-p"]')).not.toBeNull();
+      });
+
+      it('asks for a reason before refusing, and sends it', async () => {
+        const posted: unknown[] = [];
+        mockApi([DECIDABLE], PROFILES, undefined, (url, _method, body) => {
+          if (!url.endsWith('/api/teams/docket/saas-code/memory/mem-p')) return undefined;
+          posted.push(JSON.parse(String(body)));
+          return new Response(JSON.stringify({ team: 'saas-code', harness: 'docket', runner: 'This computer', report: after('refused') }), { status: 200 });
+        });
+        const c = mount([runner([DOCKET])]);
+        await flush();
+        await flush();
+        button(c, 'mem-p', 'Refuse docs/').click();
+        await flush();
+        const form = entryBox(c, 'mem-p').querySelector<HTMLFormElement>('[data-testid="team-memory-refuse-form"]')!;
+        const confirm = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+        const input = form.querySelector<HTMLInputElement>('input')!;
+        expect(confirm.disabled).toBe(true);
+        expect(posted).toEqual([]);
+        input.value = '   ';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await flush();
+        expect(confirm.disabled).toBe(true);
+        input.value = 'CI rebuilds it';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await flush();
+        expect(confirm.disabled).toBe(false);
+        confirm.click();
+        await flush();
+        await flush();
+        expect(posted).toEqual([{ decision: 'refuse', reason: 'CI rebuilds it' }]);
+        expect(memory(c).querySelector('[data-testid="team-memory-entry-mem-p"]')).toBeNull();
+      });
+
+      it('shows what the agent said when it refuses to decide, and leaves the entry waiting', async () => {
+        mockApi([DECIDABLE], PROFILES, undefined, (url) =>
+          url.endsWith('/api/teams/docket/saas-code/memory/mem-p')
+            ? new Response(JSON.stringify({ error: { code: 'conflict', message: 'That entry is no longer waiting.' } }), { status: 409 })
+            : undefined,
+        );
+        const c = mount([runner([DOCKET])]);
+        await flush();
+        await flush();
+        button(c, 'mem-p', 'Approve docs/').click();
+        await flush();
+        await flush();
+        expect(entryBox(c, 'mem-p').querySelector('[data-testid="team-memory-refused"]')!.textContent).toContain('no longer waiting');
+        expect(button(c, 'mem-p', 'Approve docs/').disabled).toBe(false);
+      });
     });
 
     it('says plainly when nothing was learnt and nothing waits', async () => {

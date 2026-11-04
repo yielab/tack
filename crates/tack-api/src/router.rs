@@ -435,6 +435,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/teams", get(teams::list_teams))
         .route("/teams/{id}/activity", get(teams::team_activity))
         .route("/teams/{harness}/{name}/resume", post(teams::resume_team))
+        .route(
+            "/teams/{harness}/{name}/memory/{id}",
+            post(teams::decide_team_memory),
+        )
         .route("/projects/{id}/teams/apply", post(team_apply::apply_teams))
         .route(
             "/agent-credentials",

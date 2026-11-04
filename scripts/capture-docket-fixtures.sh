@@ -198,6 +198,7 @@ rec() {
     /pods/*/records) route=/pods/'<pod>'/records ;;
     /pods/*/apply) route=/pods/'<pod>'/apply ;;
     /pods/*/resume) route=/pods/'<pod>'/resume ;;
+    /pods/*/memory/*) route=/pods/'<pod>'/memory/'<id>' ;;
     /pods/*/memory) route=/pods/'<pod>'/memory ;;
     /pods/*) route=/pods/'<pod>' ;;
     /tasks/*/*/cancel) route=/tasks/'<pod>'/'<id>'/cancel ;;
@@ -783,6 +784,64 @@ rec pod-memory-default GET /pods/saas-dev/memory no "no status: accepted, as doc
 rec pod-memory-none GET '/pods/saas-lights/memory?status=pending' no "a team that has learnt nothing: an empty list, not an error"; expect 200 pod-memory-none
 rec pod-memory-bad-status GET '/pods/saas-dev/memory?status=waiting' no "a status docket does not have: 400 naming the three"; expect 400 pod-memory-bad-status
 rec pod-memory-unknown GET '/pods/no-such-team/memory?status=pending' no "a team docket does not know: 404"; expect 404 pod-memory-unknown
+
+# ── Deciding what a team waits to learn, and entries with every kind of evidence: no model ─────
+# `memoryDecide`: POST /pods/<pod>/memory/<id> approves or refuses a pending entry. The two
+# entries `saas-dev` holds pending are decided here, after every read of them above.
+PENDING_IDS=$(curl -s -m 30 -K "$CURL_AUTH" "$BASE/pods/saas-dev/memory?status=pending" | jq -r '.entries[].id')
+APPROVE_ID=$(sed -n 1p <<<"$PENDING_IDS")
+REFUSE_ID=$(sed -n 2p <<<"$PENDING_IDS")
+[ -n "$APPROVE_ID" ] && [ -n "$REFUSE_ID" ] || die "the team does not hold two pending entries: $PENDING_IDS"
+OPTIONAL_KEYS=reason rec pod-memory-approved POST "/pods/saas-dev/memory/$APPROVE_ID" yes "a pending entry approved: 200 and the one entry as the list gives it, not wrapped in entries, now accepted" \
+  --body '{"decision":"approve"}'; expect 200 pod-memory-approved
+OPTIONAL_KEYS=reason rec pod-memory-decide-settled POST "/pods/saas-dev/memory/$APPROVE_ID" yes "the same entry again: it is not pending any more, 409, and it is left as it was" \
+  --body '{"decision":"approve"}'; expect 409 pod-memory-decide-settled
+OPTIONAL_KEYS=reason rec pod-memory-refused-by-http POST "/pods/saas-dev/memory/$REFUSE_ID" yes "a pending entry refused with a reason: 200 and the entry, now refused, its reason the one sent" \
+  --body '{"decision":"refuse","reason":"The readme is rebuilt by CI."}'; expect 200 pod-memory-refused-by-http
+rec pod-memory-decide-unknown-entry POST /pods/saas-dev/memory/mem-nothing no "an entry the team does not have: 404" --body '{"decision":"approve"}'; expect 404 pod-memory-decide-unknown-entry
+rec pod-memory-decide-unknown-pod POST /pods/no-such-team/memory/mem-nothing no "a team docket does not dispatch: 404" --body '{"decision":"approve"}'; expect 404 pod-memory-decide-unknown-pod
+rec pod-memory-decide-no-reason POST "/pods/saas-dev/memory/$REFUSE_ID" no "a refusal with no reason: 400" --body '{"decision":"refuse"}'; expect 400 pod-memory-decide-no-reason
+rec pod-memory-decide-blank-reason POST "/pods/saas-dev/memory/$REFUSE_ID" no "a refusal whose reason is blank: 400" --body '{"decision":"refuse","reason":"  "}'; expect 400 pod-memory-decide-blank-reason
+rec pod-memory-decide-bad-decision POST "/pods/saas-dev/memory/$REFUSE_ID" no "a decision that is neither approve nor refuse: 400" --body '{"decision":"keep"}'; expect 400 pod-memory-decide-bad-decision
+rec pod-memory-decide-bad-reason POST "/pods/saas-dev/memory/$REFUSE_ID" no "a reason that is not a string: 400" --body '{"decision":"refuse","reason":3}'; expect 400 pod-memory-decide-bad-reason
+rec pod-memory-decide-not-object POST "/pods/saas-dev/memory/$REFUSE_ID" no "a body that is not a JSON object: 400" --body '["approve"]'; expect 400 pod-memory-decide-not-object
+rec pod-memory-decide-invalid-json POST "/pods/saas-dev/memory/$REFUSE_ID" no "a body that is not JSON: 400" --raw 'not json'; expect 400 pod-memory-decide-invalid-json
+rec pod-memory-decide-unauthorized POST "/pods/saas-dev/memory/$REFUSE_ID" no "no bearer token: 401" --body '{"decision":"approve"}' --no-auth; expect 401 pod-memory-decide-unauthorized
+
+# Entries with every kind of evidence and every status. No task of the capture runs a command or a
+# tool, so the evidence of an entry about one cannot come from a task: this builds the team's memory
+# file with docket's own types, the way docket's own HTTP tests do (tests/integration/interfaces/
+# test_serve_pod_memory.py). That is a test-side recipe, not a product API: the entries are real in
+# shape, and docket reads and lists them as it does any other.
+cat >"$SCRATCH/build-memory.py" <<'PY'
+import sys
+from docket.kernel.home import current_home
+from docket.platform import store
+from docket.teams.memory import MemoryEntry, entry_id
+
+pod = sys.argv[1]
+
+def entry(kind, subject, note, status, reason, evidence=None, stale=False):
+    return MemoryEntry(id=entry_id(kind, subject, note), kind=kind, subject=subject, note=note, status=status,
+                       reason=reason, provenance={"task": "task-capture-built", "date": "2026-01-01", "commit": "0" * 40},
+                       stale=stale, evidence=evidence or {})
+
+entries = [
+    entry("tool", "bash make test", "The suite runs with make test.", "accepted", "exit status found in the task's trace", {"exit": 1}),
+    entry("tool", "grep", "Search the tree with grep.", "accepted", "tool call found in the task's trace", {"ok": True}),
+    entry("generated", "dist/bundle.js", "Built output, not source.", "accepted", "path present at the task commit"),
+    entry("convention", "docs/", "Every page opens with its audience.", "pending", "awaits operator approval"),
+    entry("tool", "make lint", "Lint with make lint.", "refused", "no call or exit status for this in the task's trace"),
+]
+path = current_home().pod_memory_path(pod)
+path.parent.mkdir(parents=True, exist_ok=True)
+store.write_json(path, {"entries": [e.to_dict() for e in entries]})
+PY
+guard
+"${DOCKET_ENV[@]}" "$DOCKET_PY" -I "$SCRATCH/build-memory.py" saas-notes || die "could not build the memory entries"
+rec pod-memory-evidence-accepted GET '/pods/saas-notes/memory?status=accepted' no "constructed in the throwaway home with docket's own MemoryEntry (see the capture script): a command's exit status, a tool call's ok and a path with no evidence; docket lists them as it lists any entry"; expect 200 pod-memory-evidence-accepted
+rec pod-memory-evidence-pending GET '/pods/saas-notes/memory?status=pending' no "built as above: one pending entry"; expect 200 pod-memory-evidence-pending
+rec pod-memory-evidence-refused GET '/pods/saas-notes/memory?status=refused' no "built as above: one refused entry"; expect 200 pod-memory-evidence-refused
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

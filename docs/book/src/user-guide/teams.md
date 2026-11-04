@@ -76,8 +76,11 @@ there, a command whose exit status it saw), refuses what it can see is wrong, an
 decide. The sheet shows both under **What it has learnt** (newest first, an entry whose file has since gone marked
 **Stale**) and **What it waits to learn**. Each waiting entry gives the two commands that decide it, with a **Copy**
 button: `docket pod memory approve <id> --pod <team>` and `docket pod memory refuse <id> --pod <team> --reason "<why>"`.
-**Approve** and **Refuse** are on the sheet too, greyed, saying that docket decides this with its own command for
-now. A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens the team's sheet, and it
+When your docket can decide an entry from the board, **Approve** and **Refuse** on the sheet do it: **Approve**
+makes the team use the entry from its next task, **Refuse** asks you why first (the team keeps your reason with
+the entry), and the entry leaves **What it waits to learn** at once. With an older docket the two buttons are greyed
+and say that docket decides this with its own command for now. If the entry was decided elsewhere meanwhile, the
+sheet says it is no longer waiting. A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens the team's sheet, and it
 closes once the entry is decided, however you decided it. A team's memory asks you in the projects that use that
 team: a project uses it when one of its roles, or its default profile, runs a profile that names the team, and
 the inbox then has one line for that project. A team no project uses asks nobody, and the sheet still shows its

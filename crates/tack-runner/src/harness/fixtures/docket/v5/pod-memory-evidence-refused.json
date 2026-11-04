@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "id": "mem-7216fdb3ef",
+      "kind": "tool",
+      "subject": "make lint",
+      "note": "Lint with make lint.",
+      "status": "refused",
+      "reason": "no call or exit status for this in the task's trace",
+      "provenance": {
+        "task": "task-capture-built",
+        "date": "2026-01-01",
+        "commit": "0000000000000000000000000000000000000000"
+      },
+      "stale": false,
+      "evidence": {}
+    }
+  ]
+}

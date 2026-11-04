@@ -6637,12 +6637,13 @@ async fn a_team_whose_memory_changes_is_read_again_by_the_next_probe() {
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 20] = [
+const CLIENT_ROUTES: [&str; 21] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
     "GET /pods/<pod>",
     "GET /pods/<pod>/memory",
+    "POST /pods/<pod>/memory/<id>",
     "GET /pods/<pod>/records",
     "GET /pods/<pod>/records/<set>",
     "POST /pods",
@@ -6830,6 +6831,280 @@ fn request_file(name: &str) -> Value {
         std::fs::read_to_string(fake_docket::fixtures_dir().join(format!("{name}.request.json")))
             .expect("request file");
     serde_json::from_str(&text).expect("JSON")
+}
+
+/// The first pending entry of the captured memory, and the id of the second.
+fn pending_ids() -> (String, String) {
+    let entries = &fixture("pod-memory-pending")["entries"];
+    (
+        entries[0]["id"].as_str().expect("an id").to_owned(),
+        entries[1]["id"].as_str().expect("an id").to_owned(),
+    )
+}
+
+async fn deciding_fake() -> FakeDocket {
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.with_memory_decide();
+    fake.seed_memory(POD);
+    fake
+}
+
+fn lists(report: &tack_protocol::execution::TeamReport, id: &str) -> (bool, bool) {
+    let memory = report.memory.as_ref().expect("memory");
+    (
+        memory.pending.iter().any(|entry| entry.id == id),
+        memory.accepted.iter().any(|entry| entry.id == id),
+    )
+}
+
+#[tokio::test]
+async fn the_report_says_whether_a_pending_entry_can_be_decided_from_the_board() {
+    let scene = scene();
+    for (decide, expected) in [(true, true), (false, false)] {
+        let fake = pods_fake().await;
+        fake.with_memory_status();
+        if decide {
+            fake.with_memory_decide();
+        }
+        let team = adapter(&fake, &scene)
+            .probe()
+            .await
+            .teams
+            .expect("teams")
+            .remove(0);
+        assert_eq!(team.memory.expect("memory").can_decide, expected);
+    }
+}
+
+#[tokio::test]
+async fn approving_an_entry_posts_the_decision_and_returns_the_report_without_it_waiting() {
+    use tack_protocol::execution::MemoryDecision;
+    let scene = scene();
+    let fake = deciding_fake().await;
+    let (id, _) = pending_ids();
+    let report = adapter(&fake, &scene)
+        .decide_memory(POD, &id, MemoryDecision::Approve, Some("ignored"))
+        .await
+        .expect("approved")
+        .expect("the report");
+    assert_eq!(lists(&report, &id), (false, true));
+    let posted = fake.requests_to("POST", &format!("/pods/{POD}/memory/{id}"));
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0].body["decision"], "approve");
+}
+
+#[tokio::test]
+async fn refusing_an_entry_needs_a_reason_and_sends_it() {
+    use tack_protocol::execution::MemoryDecision;
+    let scene = scene();
+    let fake = deciding_fake().await;
+    let (_, id) = pending_ids();
+    let adapter = adapter(&fake, &scene);
+    for reason in [None, Some("  ")] {
+        let refused = adapter
+            .decide_memory(POD, &id, MemoryDecision::Refuse, reason)
+            .await
+            .expect_err("a refusal without a reason");
+        assert_eq!(refused, "A refusal needs a reason.");
+    }
+    assert!(
+        fake.requests_to("POST", &format!("/pods/{POD}/memory/{id}"))
+            .is_empty(),
+        "docket is not asked without a reason"
+    );
+    let report = adapter
+        .decide_memory(POD, &id, MemoryDecision::Refuse, Some(" CI rebuilds it "))
+        .await
+        .expect("refused")
+        .expect("the report");
+    assert_eq!(
+        lists(&report, &id),
+        (false, false),
+        "refused entries are not listed"
+    );
+    let posted = fake.requests_to("POST", &format!("/pods/{POD}/memory/{id}"));
+    assert_eq!(posted[0].body["reason"], "CI rebuilds it");
+}
+
+#[tokio::test]
+async fn an_entry_that_no_longer_waits_or_does_not_exist_is_told_in_words() {
+    use tack_protocol::execution::MemoryDecision;
+    let scene = scene();
+    let fake = deciding_fake().await;
+    let (id, _) = pending_ids();
+    let adapter = adapter(&fake, &scene);
+    adapter
+        .decide_memory(POD, &id, MemoryDecision::Approve, None)
+        .await
+        .expect("approved");
+    let again = adapter
+        .decide_memory(POD, &id, MemoryDecision::Approve, None)
+        .await
+        .expect_err("it is accepted already");
+    assert_eq!(again, "That entry is no longer waiting.");
+    let unknown = adapter
+        .decide_memory(POD, "mem-nothing", MemoryDecision::Approve, None)
+        .await
+        .expect_err("no such entry");
+    assert!(unknown.contains("mem-nothing"), "{unknown}");
+    let team = adapter
+        .decide_memory("no-such-team", &id, MemoryDecision::Approve, None)
+        .await
+        .expect_err("no such team");
+    assert!(team.contains("no-such-team"), "{team}");
+}
+
+#[tokio::test]
+async fn a_docket_without_memory_decide_is_not_asked_and_the_sentence_gives_its_command() {
+    use tack_protocol::execution::MemoryDecision;
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory(POD);
+    let (id, _) = pending_ids();
+    let refused = adapter(&fake, &scene)
+        .decide_memory(POD, &id, MemoryDecision::Approve, None)
+        .await
+        .expect_err("not offered");
+    assert!(
+        refused.contains(&format!("docket pod memory approve {id} --pod {POD}")),
+        "{refused}"
+    );
+    assert!(
+        fake.requests_to("POST", &format!("/pods/{POD}/memory/{id}"))
+            .is_empty()
+    );
+}
+
+/// Entries built with docket's own types carry every kind of evidence; a path carries none.
+#[tokio::test]
+async fn probe_reads_the_evidence_of_a_command_a_tool_call_and_a_path() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_memory_status();
+    fake.seed_memory_evidence(POD);
+    let team = adapter(&fake, &scene)
+        .probe()
+        .await
+        .teams
+        .expect("teams")
+        .remove(0);
+    let memory = team.memory.expect("memory");
+    let evidence: Vec<_> = memory
+        .accepted
+        .iter()
+        .map(|entry| entry.evidence.as_ref().map(|e| (e.exit, e.ok)))
+        .collect();
+    assert_eq!(
+        evidence,
+        [Some((Some(1), None)), Some((None, Some(true))), None]
+    );
+    assert_eq!(memory.pending.len(), 1);
+}
+
+#[tokio::test]
+async fn the_fake_decides_a_teams_memory_as_the_captures_do() {
+    let fake = deciding_fake().await;
+    let (approve, refuse) = pending_ids();
+    let path = |id: &str| format!("/pods/{POD}/memory/{id}");
+    let approved = ask(
+        &fake,
+        "POST",
+        &path(&approve),
+        Some(json!({"decision": "approve"})),
+    )
+    .await;
+    assert_eq!(approved, (200, fixture("pod-memory-approved")));
+    let settled = ask(
+        &fake,
+        "POST",
+        &path(&approve),
+        Some(json!({"decision": "approve"})),
+    )
+    .await;
+    assert_eq!(settled, (409, fixture("pod-memory-decide-settled")));
+    let refused = ask(
+        &fake,
+        "POST",
+        &path(&refuse),
+        Some(json!({"decision": "refuse", "reason": "The readme is rebuilt by CI."})),
+    )
+    .await;
+    assert_eq!(refused, (200, fixture("pod-memory-refused-by-http")));
+    for (name, id, body) in [
+        (
+            "pod-memory-decide-unknown-entry",
+            "mem-nothing",
+            json!({"decision": "approve"}),
+        ),
+        (
+            "pod-memory-decide-no-reason",
+            refuse.as_str(),
+            json!({"decision": "refuse"}),
+        ),
+        (
+            "pod-memory-decide-blank-reason",
+            refuse.as_str(),
+            json!({"decision": "refuse", "reason": "  "}),
+        ),
+        (
+            "pod-memory-decide-bad-decision",
+            refuse.as_str(),
+            json!({"decision": "keep"}),
+        ),
+        (
+            "pod-memory-decide-bad-reason",
+            refuse.as_str(),
+            json!({"decision": "refuse", "reason": 3}),
+        ),
+        (
+            "pod-memory-decide-not-object",
+            refuse.as_str(),
+            json!(["approve"]),
+        ),
+    ] {
+        let answer = ask(&fake, "POST", &path(id), Some(body)).await;
+        let captured: u16 = fake_docket::provenances()
+            .into_iter()
+            .find(|found| found.name == name)
+            .and_then(|found| found.get("status").and_then(|s| s.parse().ok()))
+            .expect("the capture's status");
+        assert_eq!(answer.0, captured, "{name}");
+        assert_eq!(answer.1, fixture(name), "{name}");
+    }
+    let unknown = ask(
+        &fake,
+        "POST",
+        "/pods/no-such-team/memory/mem-nothing",
+        Some(json!({"decision": "approve"})),
+    )
+    .await;
+    assert_eq!(unknown, (404, fixture("pod-memory-decide-unknown-pod")));
+    // A request that is not JSON, and one without the token.
+    let raw = reqwest::Client::new()
+        .post(format!("{}{}", fake.base_url, path(&refuse)))
+        .bearer_auth(std::fs::read_to_string(fake.token_file()).unwrap().trim())
+        .body("not json")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(raw.status().as_u16(), 400);
+    assert_eq!(
+        raw.json::<Value>().await.unwrap(),
+        fixture("pod-memory-decide-invalid-json")
+    );
+    let anonymous = reqwest::Client::new()
+        .post(format!("{}{}", fake.base_url, path(&refuse)))
+        .json(&json!({"decision": "approve"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status().as_u16(), 401);
+    assert_eq!(
+        anonymous.json::<Value>().await.unwrap()["ok"],
+        fixture("pod-memory-decide-unauthorized")["ok"]
+    );
 }
 
 #[tokio::test]

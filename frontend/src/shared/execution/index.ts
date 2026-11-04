@@ -126,7 +126,7 @@ export { createExecutionStore } from './store';
 
 export type { Routed } from './routing';
 export { routingApi, childrenText } from './routing';
-export type { MemoryEntry, TeamBudget, TeamEntry, TeamMember, TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamReport, TeamResumed, TeamStep } from './teams';
+export type { MemoryEntry, TeamMemoryDecided, TeamBudget, TeamEntry, TeamMember, TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamReport, TeamResumed, TeamStep } from './teams';
 export { missingHarnessFix, missingTeamFix } from './missing';
 export { teamsApi, teamChoices, supervisionText, stepText, networkText, queueText, memberReachText, webText, misfitText, notSentText, unmetNeeds, deliversText, firstLine, runnableFirst, methodsByType, isTeamOfOne, podsOnly, teamProposes, pausedText, resumedText, budgetSpent, resumeGate, memoryCommands, learntNewestFirst, MEMORY_DECIDE_REASON, plainName, SHARED_PROPOSALS_TEXT } from './teams';
 

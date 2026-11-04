@@ -1,0 +1,15 @@
+{
+  "id": "mem-734a96fa7e",
+  "kind": "pitfall",
+  "subject": "README.md",
+  "note": "Edits to the readme need the docs rebuilt.",
+  "status": "accepted",
+  "reason": "approved by the operator",
+  "provenance": {
+    "task": "task-capture-memory",
+    "date": "2026-11-04",
+    "commit": "0000000000000000000000000000000000000000"
+  },
+  "stale": false,
+  "evidence": {}
+}

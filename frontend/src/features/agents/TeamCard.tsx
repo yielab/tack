@@ -23,6 +23,7 @@ import {
   type AgentCapabilityLine,
   type AgentProfileSummary,
   type TeamEntry,
+  type TeamReport,
   type TeamStep,
 } from '../../shared/execution';
 import { CapabilityGlyph, IconBranch, IconFolder } from '../../shared/runWithAgent/runDialogIcons';
@@ -175,6 +176,8 @@ export interface TeamCardProps {
   context: TeamSheetContext | null;
   /** Buttons that act on the team, drawn in the sheet's footer beside "Make a profile". */
   actions?: JSX.Element;
+  /** The team's report as its agent gave it after a person acted on it from the sheet (a memory entry decided). */
+  onReport?: (report: TeamReport | null) => void;
 }
 
 /** One of the six questions of a team's sheet, with its answer. */
@@ -504,7 +507,13 @@ const TeamCard: Component<TeamCardProps> = (props) => {
           </Show>
           <Show when={!solo()}>
             <Part id="memory" agent={agent()} value={report()?.memory}>
-              {(memory) => <TeamMemory team={entry().name} memory={memory} />}
+              {(memory) => (
+                <TeamMemory
+                  team={entry().name}
+                  memory={memory}
+                  deciding={{ harness: entry().harness ?? null, canDecide: memory.can_decide === true, onDecided: (next) => props.onReport?.(next) }}
+                />
+              )}
             </Part>
           </Show>
         </Question>

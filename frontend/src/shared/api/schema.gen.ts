@@ -3599,6 +3599,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/teams/{harness}/{name}/memory/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * POST /api/teams/{harness}/{name}/memory/{id}
+         * @description Deciding what a team may remember is a person's call, so the route is the operator's alone
+         *     (`agent_access`).
+         */
+        post: operations["decide_team_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/teams/{harness}/{name}/resume": {
         parameters: {
             query?: never;
@@ -5032,6 +5053,12 @@ export interface components {
             updated_at: string;
             value: unknown;
         };
+        /** @description What a person decides about a memory entry of a team. */
+        DecideMemoryRequest: {
+            decision: components["schemas"]["MemoryDecision"];
+            /** @description Why the entry is refused; required for a refusal, ignored for an approval. */
+            reason?: string | null;
+        };
         /**
          * @description Schema-only mirror of the `answer` object `POST
          *     .../decisions/{decision_id}/resolve` both accepts (`handlers::decisions::
@@ -5761,6 +5788,11 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * @description What a person decides about a memory entry that waits for them.
+         * @enum {string}
+         */
+        MemoryDecision: "approve" | "refuse";
         /** @description One thing a team remembers. */
         MemoryEntry: {
             evidence?: null | components["schemas"]["MemoryEvidence"];
@@ -7140,8 +7172,21 @@ export interface components {
         TeamMemory: {
             /** @description Checked or approved; the team reads them in its next task. */
             accepted: components["schemas"]["MemoryEntry"][];
+            /**
+             * @description Whether a pending entry can be approved or refused from the board. When it cannot, the
+             *     harness has its own command for it.
+             */
+            can_decide?: boolean;
             /** @description Held back until a person decides; the team does not use them yet. */
             pending: components["schemas"]["MemoryEntry"][];
+        };
+        /** @description What a runner's harness said after it was asked to decide a memory entry. */
+        TeamMemoryDecided: {
+            harness: string;
+            report?: null | components["schemas"]["TeamReport"];
+            /** @description The runner that asked the harness. */
+            runner: string;
+            team: string;
         };
         /** @description One way of working a task that a team offers. */
         TeamMethod: {
@@ -12633,6 +12678,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamList"];
+                };
+            };
+        };
+    };
+    decide_team_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent that runs the team, as `GET /api/teams` names it */
+                harness: string;
+                /** @description The team's name */
+                name: string;
+                /** @description The memory entry's id, as the team's report lists it */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description The agent approved or refused the entry; the team's report afterwards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemoryDecided"];
+                };
+            };
+            /** @description not_found (no active runner reports a team of that name for that agent) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict (the agent refused, with its reason: the entry is no longer waiting, or it cannot decide from the board; or the runner did not answer in time) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description validation_error (a refusal without a reason) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
