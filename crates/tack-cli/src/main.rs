@@ -193,12 +193,18 @@ enum Commands {
         json: bool,
     },
 
-    /// Move an item to a new status
+    /// Move an item to a new status, or under another item
     Move {
         /// Item ID
         id: String,
         /// Target status
-        status: String,
+        status: Option<String>,
+        /// Put the item under this item
+        #[arg(long, value_name = "ITEM_ID", conflicts_with = "top")]
+        under: Option<String>,
+        /// Put the item at the top, under no item
+        #[arg(long)]
+        top: bool,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
@@ -510,7 +516,13 @@ fn main() -> anyhow::Result<()> {
             json,
         } => cmd_list(&client, project, status, item_type, assignee, json),
 
-        Commands::Move { id, status, json } => cmd_move(&client, id, status, json),
+        Commands::Move {
+            id,
+            status,
+            under,
+            top,
+            json,
+        } => cmd_move(&client, id, status, under, top, json),
 
         Commands::Board { project, json } => cmd_board(&client, project, json),
 
