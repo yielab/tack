@@ -1625,3 +1625,85 @@ async fn mcp_read_thread_fences_the_messages_and_post_message_says_whether_a_tur
     );
     assert!(missing.unwrap_err().contains("body"));
 }
+
+#[tokio::test]
+async fn update_item_parent_id_patches_the_parent_for_the_operator_and_proposes_it_for_an_agent() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path(format!("/api/items/{ITEM}")))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "item": { "id": ITEM, "project_id": PROJECT }
+        })))
+        .mount(&server)
+        .await;
+    for body in [
+        json!({ "parent_id": OTHER }),
+        json!({ "parent_id": Value::Null }),
+    ] {
+        wiremock::Mock::given(wiremock::matchers::method("PATCH"))
+            .and(wiremock::matchers::path(format!("/api/items/{ITEM}")))
+            .and(wiremock::matchers::body_json(body))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "id": ITEM, "title": "T"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    for operation in [
+        json!({ "op": "parent", "item": ITEM, "parent": OTHER }),
+        json!({ "op": "parent", "item": ITEM }),
+    ] {
+        change_set_route()
+            .and(wiremock::matchers::body_json(json!({
+                "reason": format!("update_item {ITEM}"),
+                "operations": [operation],
+            })))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(proposed("waiting", &["waiting"])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let uri = server.uri();
+    let (under, top, wrong, proposed_under, proposed_top) = run_blocking(move || {
+        let operator = mock_client(&uri);
+        let agent = agent_client(&uri);
+        (
+            dispatch_tool(
+                &operator,
+                "update_item",
+                &json!({ "id": ITEM, "parent_id": OTHER }),
+            ),
+            dispatch_tool(
+                &operator,
+                "update_item",
+                &json!({ "id": ITEM, "parent_id": "" }),
+            ),
+            dispatch_tool(
+                &agent,
+                "update_item",
+                &json!({ "id": ITEM, "parent_id": 7 }),
+            ),
+            dispatch_tool(
+                &agent,
+                "update_item",
+                &json!({ "id": ITEM, "parent_id": OTHER }),
+            ),
+            dispatch_tool(
+                &agent,
+                "update_item",
+                &json!({ "id": ITEM, "parent_id": "" }),
+            ),
+        )
+    })
+    .await;
+    under.unwrap();
+    top.unwrap();
+    assert!(wrong.unwrap_err().contains("empty string for the top"));
+    proposed_under.unwrap();
+    proposed_top.unwrap();
+}

@@ -7,7 +7,7 @@ use super::changes;
 use super::projection::{
     card_fence_id, compact_item, due_timestamp, fence_card_text, fence_field, item_list, item_rows,
 };
-use super::tool::{Kind, Spec, Tool, call, opt_str, require_id, require_str, urlencode};
+use super::tool::{Kind, Spec, Tool, call, check_id, opt_str, require_id, require_str, urlencode};
 use crate::client::TackClient;
 
 pub static LIST_ITEMS: Tool = Tool {
@@ -191,8 +191,9 @@ pub static UPDATE_ITEM: Tool = Tool {
     spec: Spec {
         description: "Update fields on an item. Status changes are validated against the workflow. \
              who_does_it (an agent profile id) and depends_on (ids of items that must finish \
-             first) propose a change set. With an agent credential every change does, and \
-             title, description and assignee cannot be changed.",
+             first) propose a change set, and so does every change with an agent credential, \
+             which cannot change title, description or assignee. parent_id puts the item \
+             under another one by the tree rule, or at the top when empty.",
         input_schema: || {
             json!({
                 "type": "object",
@@ -206,6 +207,7 @@ pub static UPDATE_ITEM: Tool = Tool {
                     "due_date": { "type": "string", "description": "RFC3339 timestamp" },
                     "who_does_it": { "type": "string", "description": "An agent profile id: the profile that does this item" },
                     "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Ids of items that must finish before this one" },
+                    "parent_id": { "type": "string", "description": "The id of the item to put this one under; an empty string puts it at the top. A group never goes under work, the tree has at most five levels and no loops" },
                     "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }
                 },
                 "required": ["id"]
@@ -238,6 +240,17 @@ fn update_item(client: &TackClient, args: &Value) -> Result<Value, String> {
             body[field] = v.clone();
             touched = true;
         }
+    }
+    if let Some(parent) = args.get("parent_id").filter(|v| !v.is_null()) {
+        let parent = parent
+            .as_str()
+            .ok_or("parent_id must be an item id, or an empty string for the top")?;
+        body["parent_id"] = if parent.is_empty() {
+            Value::Null
+        } else {
+            json!(check_id("parent_id", parent.to_owned())?)
+        };
+        touched = true;
     }
     if !touched {
         return Err("update_item: provide at least one field to change".into());

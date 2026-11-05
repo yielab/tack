@@ -20,8 +20,10 @@ const OPERATIONS_HELP: &str = "Each operation is an object with an `op`: \
      `create` {title, description?, acceptance?, type?, role?, team?, profile_id?, parent?, depends_on?}; \
      `who_does_it` {item, role? | team? | profile_id?}; `priority` {item, priority}; \
      `move` {item, status}; `depend` {blocker, blocked}; `comment` {item, text}; \
-     `due` {item, due: RFC3339 or null}. An `item` is an existing item's id, or the position \
-     (from 0) of a `create` earlier in the list; `parent` must be earlier.";
+     `due` {item, due: RFC3339 or null}; `parent` {item, parent?} puts an item under `parent`, or at \
+     the top without it. An `item` is an existing item's id, or the position (from 0) of a \
+     `create` earlier in the list; a `parent` must be earlier. A group never goes under work, the \
+     tree has at most five levels and no loops.";
 
 pub static PROPOSE: Tool = Tool {
     name: "propose",
@@ -43,7 +45,7 @@ pub static PROPOSE: Tool = Tool {
                         "items": {
                             "type": "object",
                             "properties": {
-                                "op": { "type": "string", "enum": ["create", "who_does_it", "priority", "move", "depend", "comment", "due"] }
+                                "op": { "type": "string", "enum": ["create", "who_does_it", "priority", "move", "depend", "comment", "due", "parent"] }
                             },
                             "required": ["op"]
                         }
@@ -329,6 +331,16 @@ pub fn update_item(client: &TackClient, args: &Value) -> Result<Value, String> {
         operations.push(
             json!({ "op": "due", "item": item, "due": super::projection::due_timestamp(due) }),
         );
+    }
+    if let Some(parent) = present(args, "parent_id") {
+        let parent = parent
+            .as_str()
+            .ok_or("parent_id must be an item id, or an empty string for the top")?;
+        let mut operation = json!({ "op": "parent", "item": item });
+        if !parent.is_empty() {
+            operation["parent"] = existing(parent, "parent_id")?;
+        }
+        operations.push(operation);
     }
     if let Some(profile) = present(args, "who_does_it") {
         let profile = profile

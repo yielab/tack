@@ -281,7 +281,7 @@
     "name": "create_outline"
   },
   {
-    "description": "Update fields on an item. Status changes are validated against the workflow. who_does_it (an agent profile id) and depends_on (ids of items that must finish first) propose a change set. With an agent credential every change does, and title, description and assignee cannot be changed.",
+    "description": "Update fields on an item. Status changes are validated against the workflow. who_does_it (an agent profile id) and depends_on (ids of items that must finish first) propose a change set, and so does every change with an agent credential, which cannot change title, description or assignee. parent_id puts the item under another one by the tree rule, or at the top when empty.",
     "inputSchema": {
       "properties": {
         "assignee": {
@@ -302,6 +302,10 @@
           "type": "string"
         },
         "id": {
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "The id of the item to put this one under; an empty string puts it at the top. A group never goes under work, the tree has at most five levels and no loops",
           "type": "string"
         },
         "priority": {
@@ -574,7 +578,7 @@
           "type": "string"
         },
         "operations": {
-          "description": "Each operation is an object with an `op`: `create` {title, description?, acceptance?, type?, role?, team?, profile_id?, parent?, depends_on?}; `who_does_it` {item, role? | team? | profile_id?}; `priority` {item, priority}; `move` {item, status}; `depend` {blocker, blocked}; `comment` {item, text}; `due` {item, due: RFC3339 or null}. An `item` is an existing item's id, or the position (from 0) of a `create` earlier in the list; `parent` must be earlier.",
+          "description": "Each operation is an object with an `op`: `create` {title, description?, acceptance?, type?, role?, team?, profile_id?, parent?, depends_on?}; `who_does_it` {item, role? | team? | profile_id?}; `priority` {item, priority}; `move` {item, status}; `depend` {blocker, blocked}; `comment` {item, text}; `due` {item, due: RFC3339 or null}; `parent` {item, parent?} puts an item under `parent`, or at the top without it. An `item` is an existing item's id, or the position (from 0) of a `create` earlier in the list; a `parent` must be earlier. A group never goes under work, the tree has at most five levels and no loops.",
           "items": {
             "properties": {
               "op": {
@@ -585,7 +589,8 @@
                   "move",
                   "depend",
                   "comment",
-                  "due"
+                  "due",
+                  "parent"
                 ],
                 "type": "string"
               }

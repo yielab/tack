@@ -461,19 +461,50 @@ pub(crate) fn cmd_list(
     Ok(())
 }
 
+/// The request `tack move` sends: the status, the parent (an item, or `null` for the top), or both.
+fn move_body(
+    status: Option<&str>,
+    under: Option<&str>,
+    top: bool,
+) -> anyhow::Result<serde_json::Value> {
+    let mut body = json!({});
+    if let Some(status) = status {
+        body["status"] = json!(status);
+    }
+    if let Some(parent) = under {
+        body["parent_id"] = json!(parent);
+    } else if top {
+        body["parent_id"] = serde_json::Value::Null;
+    }
+    if body.as_object().is_some_and(|fields| fields.is_empty()) {
+        anyhow::bail!("give a status, --under <item> or --top");
+    }
+    Ok(body)
+}
+
 pub(crate) fn cmd_move(
     client: &TackClient,
     id: String,
-    status: String,
+    status: Option<String>,
+    under: Option<String>,
+    top: bool,
     as_json: bool,
 ) -> anyhow::Result<()> {
-    let body = json!({ "status": status });
+    let body = move_body(status.as_deref(), under.as_deref(), top)?;
     let resp = client.patch(&format!("/items/{id}"), &body)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
         return Ok(());
     }
-    println!("Moved {}: → {status}", &id[..8.min(id.len())]);
+    let short = &id[..8.min(id.len())];
+    if let Some(status) = &status {
+        println!("Moved {short}: → {status}");
+    }
+    if let Some(parent) = &under {
+        println!("Moved {short}: under {}", &parent[..8.min(parent.len())]);
+    } else if top {
+        println!("Moved {short}: to the top");
+    }
     Ok(())
 }
 
@@ -757,4 +788,34 @@ pub(crate) fn run_import(
         dry_run,
         json,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_move_sends_the_status_the_parent_or_both() {
+        assert_eq!(
+            move_body(Some("Done"), None, false).unwrap(),
+            json!({ "status": "Done" })
+        );
+        assert_eq!(
+            move_body(None, Some("abc"), false).unwrap(),
+            json!({ "parent_id": "abc" })
+        );
+        assert_eq!(
+            move_body(Some("Done"), Some("abc"), false).unwrap(),
+            json!({ "status": "Done", "parent_id": "abc" })
+        );
+    }
+
+    #[test]
+    fn top_sends_a_null_parent_and_a_move_with_nothing_to_do_is_refused() {
+        assert_eq!(
+            move_body(None, None, true).unwrap(),
+            json!({ "parent_id": null })
+        );
+        assert!(move_body(None, None, false).is_err());
+    }
 }
