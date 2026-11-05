@@ -72,178 +72,31 @@ same day except the screenshot `decision-inbox.png`, which waits for the next bi
   button's words are pinned by component tests; and the live suite's locators and the tutorial's
   screenshot of a question are updated.
 
-**Phase 93 — an item is a group or work** (2026-11-05, no plan file; ADR 0036 amended with
-decisions 10 to 13, proposed). An epic is a card in the To Do column beside the tasks it holds, and
-it never leaves that column. Auto-start can start it as if it were a task, and the Dashboard counts
-it as one. "Subtask" is a type and a position at once. The Board, the List, the Timeline and the
-Orchestration view each work out on their own what a parent is, and the List cannot move a row under
-another parent. The board also has two derivations, the web's `deriveBoard` and the server's saved
-boards, which only the CLI reads.
+**Phase 93 — an item is a group or work** (2026-11-05;
+[plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-93.md); ADR 0036 amended with
+decisions 10 to 13, proposed). An epic is a card in the To Do column beside the tasks it holds and
+never leaves it. Auto-start can start it as if it were a task, and the Dashboard counts it as one.
+"Subtask" is a type and a position at once. The Board, the List, the Timeline and the Orchestration
+view each work out on their own what a parent is, and the List cannot move a row under another
+parent. The board has two derivations, the web's and the server's saved boards, which only the CLI
+reads.
 
-The rule is one: a type has a level, an item is a group when its type is a group or it has
-children, work runs, a group is planned, and each view shows the level it is for. Nothing old stays
-beside the new: no reader for the old type words, no alias, no second board.
+One rule replaces all of it: a project's types are a catalog in which each type holds work or is
+work; an item is a group when its type holds work or when it has children; work runs and a group is
+planned; and each view shows the level it is for. Nothing old stays beside the new.
 
-There are eight cards in five rounds: A; B; C ∥ D; E; F ∥ G ∥ H. Each card writes its own lines in
-`[Unreleased]` and in the book. The full suites and `.githooks/pre-push` run once per round. The
-phase is done when the live suite passes with its locators updated by the card that changed each
-screen. The screenshots of the Board and the List wait for the next billed recording.
+There are eight cards for Sonnet agents, in five rounds: A; B; C ∥ D; E; F ∥ G ∥ H. The plan names
+each card's files, shapes, removals, docs, tests and greps.
 
-- **A — a project's types are a catalog.** A table `item_types` (project, key, name, level `group`
-  or `work`, colour token, order, and one default work type per project) replaces:
-  - the `ItemType` enum with its `Custom` variant, and `parse_item_type`;
-  - the six type words of `VOCABULARY_KEYS` and of every `vocabulary_for_type` preset (each preset
-    becomes a catalog);
-  - the web's `ITEM_TYPE_META` emojis, `typeBadgeTone`'s switch and `typeKey`'s `{custom}` branch.
-
-  `items.item_type` references the catalog. The migration builds each project's catalog from its
-  preset and from the types its items use, taking the names from its vocabulary; `epic` is a group
-  and every other type is work. It rewrites the `subtask` rows to the project's default work type,
-  and they keep their parent.
-
-  `GET/POST/PATCH/DELETE /api/projects/{id}/types` serve the catalog; a type in use is removed only
-  by merging it into another.
-
-  Every reader of a type reads the catalog:
-  - creation and update;
-  - the outline, the CSV and the project file, which gains `types:`. A word the catalog lacks is
-    added as work, and the preview lists it;
-  - the GitHub and Linear imports, which use the default work type;
-  - plan-v1 and docket's records: an entry with no type takes the default work type, no longer its
-    parent's;
-  - change sets, recurrence, triggers and threads;
-  - the autonomy domains, which refuse an unknown key;
-  - the run's `kind`, the MCP and the CLI;
-  - templates, which carry their catalog.
-
-  The User guide's vocabulary page becomes types and terms. In the Developer guide, "Hierarchy is
-  free" and the crate tour's `ItemType` section are rewritten.
-
-  Done when the tree holds no `ItemType` enum, no `{custom}` shape and no type word in the
-  vocabulary; `openapi.json` and `schema.gen.ts` are regenerated; and an upgrade test migrates a
-  database from today's `develop` with its item counts unchanged.
-- **B — one rule for the tree, and moving an item.** `tack-core/src/hierarchy.rs` holds the rule:
-  - An item is a group when its type is a group or it has children, else work (`Node`).
-  - A group holds groups and work; work holds work; a group never sits under work.
-  - The tree has at most five levels and no loop, and stays inside one project.
-  - A group takes no sprint.
-
-  `UpdateItem` gains `parent_id` (null means the top), applied through `update_item_atomically`.
-  Change sets and the MCP gain the operation `parent {item, parent}`, and the CLI gains
-  `tack edit --parent`. Every creation path checks the same rule: a person, the outline, a plan, a
-  change set and triggers. A refusal carries a stable code and names the rule, for example "A
-  group cannot sit under work: Epic X under Task Y".
-
-  Done when the rule's unit tests cover every pair of levels, and every refusal has its code.
-- **C — work runs; a group is planned.** `hierarchy::runnable(node, profile_kind)` decides:
-  - work runs with any profile;
-  - a group runs only with `planner` or `researcher`;
-  - anything else is refused before a request exists, with the code `group_not_runnable` and the
-    sentence "X is a group: run its work, or plan it".
-
-  `start_run`, auto-start, the Run dialog, change sets and the MCP read this rule. Auto-start's
-  query leaves groups out in SQL. The Run dialog gets from the server which profiles a group
-  accepts, and the others stay visible but disabled, with the reason.
-
-  A work item that a plan splits becomes a group as soon as its first child exists; its own runs
-  stay in its history.
-
-  `run_defaults::resolve` reads who does a piece of work from the item, then from its nearest
-  ancestor that names a role or profile, then from the project. `/routing` says where the answer
-  came from ("from Epic X"), and auto-start counts the inherited routing.
-
-  Done when:
-  - a test proves an epic with a role in the start status is never auto-started;
-  - a Planner run on an epic proposes children that land under it once accepted;
-  - a task that inherits its team from its epic shows it on Flow and on its page.
-- **D — the facts every screen reads.** `ItemCard` gains:
-  - `node`;
-  - `path`: the ancestors, top first, each with id, title and type;
-  - `progress`, which replaces `children_progress`. It covers every work item under the group, not
-    only its children: done of total, estimate done of total when the items carry estimates, the
-    earliest start and the latest due, the teams, the open runs, and how many need a person.
-
-  One recursive query per project in `tack-db` serves these (`queries/children.rs` becomes
-  `queries/tree.rs`), and the counting rule lives in `tack_core::children`. `GET /api/items`
-  filters with `node=work|group` and `under=<id>` (the subtree).
-
-  The saved boards are deleted: the `boards` table (dropped by a migration), `BoardGrouping`,
-  `repo/boards.rs`, `handlers/boards_multi.rs`, the `/boards` routes and the templates'
-  `default_boards`. The live socket becomes `/projects/{id}/live`, with its one caller updated.
-  `tack board` reads `GET /api/items?node=work` and groups by status, or by lane with `--by parent`.
-
-  Done when `perf_test` lists a project of 2 000 items in five levels, with `path` and `progress`
-  filled, within its current budget, and no route named `boards` remains.
-- **E — the board shows work in lanes; the pieces every screen shares.**
-
-  `shared/ui` gains three pieces:
-  - `GroupHeader`: the path, the type, a status chip that opens the status menu, a progress bar
-    (in points when the work carries estimates, else in items), the teams, how many need you, a
-    fold, Add item and Plan with agent;
-  - `Path`: the ancestors as a breadcrumb, each one a link;
-  - the type tile, coloured from the catalog, with a group drawn as a stacked tile.
-
-  On the Board:
-  - The cards are work. The columns, their counts and the WIP limits count work only.
-  - The board is in **lanes** by parent, the default when the project has groups. The other choices
-    are None, Role, Priority and Assignee; this browser remembers the choice per project.
-  - A lane's header is `GroupHeader`. Lanes are ordered needs-you first, as cards are inside a
-    column. A lane whose group is in a done status starts folded. Work with no parent goes last, in
-    "No parent".
-  - A group with nothing in it shows an empty row with Add item and Plan with agent.
-  - A card shows its parent only when the board is not in lanes.
-  - Dragging a card into another lane moves it under that lane's group. A refusal from B's rule
-    stays on screen, with its reason.
-  - A project with no groups looks as it does today.
-
-  Deleted: `deriveBoard`, `BoardState` and `boards.ts`, and `Board.tsx`'s `parentTitleOf`.
-
-  Done when component tests pin the lanes, the drag across lanes and the empty group.
-- **F — the List is the tree; the item page says what the item is.**
-
-  On the List:
-  - A group's row is drawn by its level: a stacked tile, heavier type, and a progress bar in the
-    Work column instead of a run chip.
-  - Dropping a row onto another moves it under that row. The "Re-parenting isn't supported yet"
-    toast and the comment in `types/index.ts` that excuses it are deleted.
-  - A choice shows everything, only work, or only groups.
-  - Adding a child gives it the default work type.
-
-  On the item page:
-  - The path is at the top.
-  - A group's page leads with Progress: the bar, its work by state, Add item and Plan with agent.
-    Its Run offers only the profiles C allows; the others stay disabled, with the reason.
-  - Work with children says "Split into n items" and links them.
-  - "Move to…" in the header picks a parent among those B allows.
-
-  The create dialog lists the types grouped by level, always has a Parent field, and its inline
-  `subtask` creation is deleted. `ItemHeader` and `CreateItemModal` stop filtering children
-  themselves and read D's `progress` and `under=`.
-
-  Done when component tests pin the row shapes, a move by drag and by "Move to…", and a group's Run
-  choices.
-- **G — the views of time and effort.**
-  - **Timeline:** a group is a summary bar over D's span, with its work nested under it and folding.
-    The group's own due date is a marker, and the bar turns red when its work ends after that date.
-    A summary bar cannot be dragged.
-  - **Calendar:** work by due date; a group's due date shows as a milestone chip of its own style.
-  - **Sprints:** the backlog and every sprint hold work only. The backlog is set out under compact
-    `GroupHeader`s, and a group dropped on a sprint is refused by B's rule.
-  - **Dashboard:** the counts, the points and the breakdown by type are over work, plus a Groups
-    panel with each group's bar.
-
-  Done when each view's tests pin its level.
-- **H — orchestration, search and Settings → Types.**
-  - Flow and Map read `node` and `path`, and `flow.ts`'s `hasChildren` and `parents` are deleted. A
-    group's planning run is a token marked Planning in its lane.
-  - Search and the command palette show each result's path.
-  - **Settings → Types** shows the catalog: name, level, colour and the default work type, with
-    add, rename, and merge before remove. The Vocabulary panel keeps only the other words.
-  - The autonomy domains' types become a picker from the catalog.
-  - Templates show their catalog.
-
-  Done when tests pin the Types panel, and no screen works out by itself whether an item is a
-  parent.
+- **A** — the catalog of types, replacing the `ItemType` enum and the type words of the vocabulary.
+- **B** — one rule for the tree, and moving an item under another parent.
+- **C** — a group runs only with a profile that proposes, and who does a piece of work is inherited
+  from its parent.
+- **D** — the facts every screen reads (`node`, `progress`), and the saved boards deleted.
+- **E** — the Board in lanes, and the pieces every screen shares.
+- **F** — the List as the tree, the item page, and the create dialog.
+- **G** — the Timeline, the Calendar, Sprints and the Dashboard.
+- **H** — Orchestration, search, and Settings → Types.
 
 ## Future, not planned
 
