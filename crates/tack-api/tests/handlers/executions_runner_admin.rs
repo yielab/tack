@@ -2653,6 +2653,7 @@ async fn set_run_settings(
             ..tack_core::models::UpdateItem::default()
         },
         &project.workflow,
+        &tack_core::hierarchy::Hierarchy,
         None,
     )
     .await

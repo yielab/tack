@@ -9,12 +9,14 @@ use tracing::{info, instrument};
 use uuid::Uuid;
 use validator::Validate;
 
+use tack_core::hierarchy::Hierarchy;
 use tack_core::models::{
     CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemBrief, ItemSource, Project,
-    Sprint, UpdateProject, UpsertItemBrief,
+    Sprint, UpdateItem, UpdateProject, UpsertItemBrief,
 };
 use tack_core::outline::bundle::{Parts, to_bundle};
 use tack_core::outline::{BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain};
+use tack_db::repo::items::AtomicItemUpdateOutcome;
 
 use crate::error::ApiError;
 use crate::router::AppState;
@@ -478,11 +480,23 @@ async fn run_import(
             && let (Some(&new_id), Some(&new_parent)) =
                 (item_id_map.get(&item.id), item_id_map.get(&old_parent))
         {
-            state
+            let moved = state
                 .repo
-                .set_item_parent(new_id, new_parent)
+                .update_item_atomically(
+                    new_id,
+                    UpdateItem {
+                        parent_id: Some(Some(new_parent)),
+                        ..Default::default()
+                    },
+                    &data.project.workflow,
+                    &Hierarchy,
+                    None,
+                )
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
+            if let AtomicItemUpdateOutcome::Rejected(rule) = moved {
+                return Err(anyhow::anyhow!(rule));
+            }
         }
     }
 

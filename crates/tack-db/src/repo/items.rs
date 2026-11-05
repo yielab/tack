@@ -8,6 +8,7 @@ use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::CoreError;
+use tack_core::hierarchy::{Hierarchy, ParentGate, Placement, admit_sprint, node};
 use tack_core::models::{
     CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, RunSettings, UpdateItem,
 };
@@ -17,6 +18,22 @@ use tack_core::workflow::{StatusCategory, StatusGate};
 use super::Repository;
 use super::agent_credentials::writer_name;
 use super::dependencies::insert_dependency;
+
+/// What stops an item from being written.
+#[derive(Debug, thiserror::Error)]
+pub enum ItemError {
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    /// A rule of the board, caught inside the transaction that writes the item: the tree rule.
+    #[error(transparent)]
+    Refused(#[from] CoreError),
+}
+
+impl From<sqlx::Error> for ItemError {
+    fn from(error: sqlx::Error) -> Self {
+        ItemError::Store(error.into())
+    }
+}
 
 /// The `needs_review` column of an `items` row: the latest terminal attempt of
 /// the item's latest execution request left a non-empty patch or a kept
@@ -161,7 +178,7 @@ impl Repository {
         project_id: Uuid,
         initial_status: &str,
         input: CreateItem,
-    ) -> Result<Item, StoreError> {
+    ) -> Result<Item, ItemError> {
         self.create_item_with_source(project_id, initial_status, input, ItemSource::Manual)
             .await
     }
@@ -180,9 +197,17 @@ impl Repository {
         initial_status: &str,
         input: CreateItem,
         source: ItemSource,
-    ) -> Result<Item, StoreError> {
+    ) -> Result<Item, ItemError> {
         let mut conn = self.pool().acquire().await?;
-        insert_item(&mut conn, project_id, initial_status, input, source).await
+        insert_item(
+            &mut conn,
+            project_id,
+            initial_status,
+            input,
+            source,
+            &Hierarchy,
+        )
+        .await
     }
 
     /// Write a resolved outline's items, parents first, and its dependencies
@@ -190,13 +215,14 @@ impl Repository {
     /// Returns the items in written order and how many dependencies were
     /// recorded. `source` is the outline's provenance, as for
     /// [`create_item_with_source`](Self::create_item_with_source).
-    #[instrument(skip(self, outline), fields(items = outline.items.len()))]
+    #[instrument(skip(self, outline, parent_gate), fields(items = outline.items.len()))]
     pub async fn create_outline_items(
         &self,
         project_id: Uuid,
         outline: ResolvedOutline,
         source: ItemSource,
-    ) -> Result<(Vec<Item>, usize), StoreError> {
+        parent_gate: &dyn ParentGate,
+    ) -> Result<(Vec<Item>, usize), ItemError> {
         let mut tx = self.pool().begin().await?;
         let mut created: Vec<Item> = Vec::with_capacity(outline.items.len());
         for planned in outline.items {
@@ -205,8 +231,15 @@ impl Repository {
                 PlannedParent::Planned(i) => created[i].id,
                 PlannedParent::Existing(id) => id,
             });
-            let item =
-                insert_item(&mut tx, project_id, &planned.status, input, source.clone()).await?;
+            let item = insert_item(
+                &mut tx,
+                project_id,
+                &planned.status,
+                input,
+                source.clone(),
+                parent_gate,
+            )
+            .await?;
             created.push(item);
         }
         for &(blocker, blocked) in &outline.blocks {
@@ -341,16 +374,18 @@ impl Repository {
     /// whether a status change is allowed, and the generated SQL changes every addressed column
     /// plus timestamps and version exactly once — on every path, because a counter that moved
     /// only on the common one would leave a caller's `ETag` stale.
-    #[instrument(skip(self, input, gate))]
+    #[instrument(skip(self, input, gate, parent_gate))]
     pub async fn update_item_atomically(
         &self,
         id: Uuid,
         input: UpdateItem,
         gate: &dyn StatusGate,
+        parent_gate: &dyn ParentGate,
         expected_version: Option<i64>,
     ) -> Result<AtomicItemUpdateOutcome, StoreError> {
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let outcome = update_item_in(&mut tx, id, input, gate, expected_version).await?;
+        let outcome =
+            update_item_in(&mut tx, id, input, gate, parent_gate, expected_version).await?;
         if matches!(outcome, AtomicItemUpdateOutcome::Updated { .. }) {
             tx.commit().await?;
         } else {
@@ -638,7 +673,8 @@ pub(crate) async fn insert_item(
     initial_status: &str,
     input: CreateItem,
     source: ItemSource,
-) -> Result<Item, StoreError> {
+    parent_gate: &dyn ParentGate,
+) -> Result<Item, ItemError> {
     require_row(conn, Parent::Project, project_id).await?;
     if let Some(parent_id) = input.parent_id {
         require_row(conn, Parent::Item, parent_id).await?;
@@ -656,6 +692,21 @@ pub(crate) async fn insert_item(
         }
         None => queries::item_types::default_work_key(conn, project_id).await?,
     };
+    let kind = queries::item_types::def_in(conn, project_id, &item_type).await?;
+    if let Some(parent_id) = input.parent_id {
+        let target = queries::items::target_in(conn, parent_id)
+            .await?
+            .ok_or(StoreError::not_found("item"))?;
+        let placement = Placement {
+            item: id,
+            title: input.title.clone(),
+            type_name: kind.name.clone(),
+            level: kind.level,
+            project: project_id,
+            subtree_height: 0,
+        };
+        parent_gate.admit(&placement, Some(&target))?;
+    }
     let priority = input.priority.unwrap_or_default();
     let estimate_unit = input.estimate_unit.unwrap_or_default();
     let tags = input.tags.unwrap_or_default();
@@ -732,18 +783,6 @@ pub(crate) async fn insert_item(
     })
 }
 
-impl Repository {
-    /// Point `item` at `parent` as its parent, touching nothing else of the row.
-    pub async fn set_item_parent(&self, item: Uuid, parent: Uuid) -> Result<(), crate::StoreError> {
-        sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
-            .bind(parent.to_string())
-            .bind(item.to_string())
-            .execute(self.pool())
-            .await?;
-        Ok(())
-    }
-}
-
 /// An item's run settings as stored, on the connection the caller holds.
 pub(crate) async fn run_settings_in(
     conn: &mut SqliteConnection,
@@ -757,6 +796,67 @@ pub(crate) async fn run_settings_in(
     decode::optional_json("items", "run_settings", stored.flatten().as_deref())
 }
 
+/// Asks the tree rule about the placement `input` gives the item inside the transaction that
+/// writes it: a new parent, a type of another level (against the parent it has), and a sprint
+/// (only work goes in one). The inner `Err` is the rule's refusal; nothing was written.
+async fn admit_placement(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    id: Uuid,
+    input: &UpdateItem,
+    parent_gate: &dyn ParentGate,
+) -> Result<Result<(), CoreError>, StoreError> {
+    let sprint = matches!(input.sprint_id, Some(Some(_)));
+    if input.parent_id.is_none() && input.item_type.is_none() && !sprint {
+        return Ok(Ok(()));
+    }
+    let mut placement = queries::items::placement_in(tx, id)
+        .await?
+        .ok_or(StoreError::not_found("item"))?;
+    let level_before = placement.level;
+    if let Some(key) = input.item_type.as_deref() {
+        let kind = queries::item_types::def_in(tx, placement.project, key).await?;
+        placement.type_name = kind.name;
+        placement.level = kind.level;
+    }
+    // A move, or a type of the other level, is put to the parent the item will have.
+    if input.parent_id.is_some() || placement.level != level_before {
+        let parent = match input.parent_id {
+            Some(parent) => parent,
+            None => current_parent(tx, id).await?,
+        };
+        let target = match parent {
+            Some(parent) => Some(
+                queries::items::target_in(tx, parent)
+                    .await?
+                    .ok_or(StoreError::not_found("item"))?,
+            ),
+            None => None,
+        };
+        if let Err(error) = parent_gate.admit(&placement, target.as_ref()) {
+            return Ok(Err(error));
+        }
+    }
+    if sprint {
+        let children = placement.subtree_height > 0;
+        if let Err(error) = admit_sprint(node(placement.level, children), &placement.type_name) {
+            return Ok(Err(error));
+        }
+    }
+    Ok(Ok(()))
+}
+
+async fn current_parent(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    id: Uuid,
+) -> Result<Option<Uuid>, StoreError> {
+    let parent: Option<Option<String>> =
+        sqlx::query_scalar("SELECT parent_id FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&mut **tx)
+            .await?;
+    decode::optional_uuid("items", "parent_id", parent.flatten().as_deref())
+}
+
 /// The body of [`Repository::update_item_atomically`] over a transaction the caller opened with
 /// `BEGIN IMMEDIATE` and ends: it writes only when it answers `Updated`, so any other answer
 /// leaves nothing to undo, and a caller that has more to write in the same transaction (a
@@ -766,6 +866,7 @@ pub(crate) async fn update_item_in(
     id: Uuid,
     input: UpdateItem,
     gate: &dyn StatusGate,
+    parent_gate: &dyn ParentGate,
     expected_version: Option<i64>,
 ) -> Result<AtomicItemUpdateOutcome, StoreError> {
     let now = Utc::now().to_rfc3339();
@@ -800,6 +901,9 @@ pub(crate) async fn update_item_in(
             None => AtomicItemUpdateOutcome::NotFound,
         });
     }
+    if let Err(error) = admit_placement(tx, id, &input, parent_gate).await? {
+        return Ok(AtomicItemUpdateOutcome::Rejected(error));
+    }
     let status_category = if let Some(target) = input.status.as_deref() {
         let occupied: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ? AND hidden = 0",
@@ -831,6 +935,11 @@ pub(crate) async fn update_item_in(
             fields
                 .push("item_type = ")
                 .push_bind_unseparated(item_type.as_str());
+        }
+        if let Some(parent_id) = input.parent_id.as_ref() {
+            fields
+                .push("parent_id = ")
+                .push_bind_unseparated(parent_id.map(|parent| parent.to_string()));
         }
         if let Some(status) = input.status.as_deref() {
             fields.push("status = ").push_bind_unseparated(status);

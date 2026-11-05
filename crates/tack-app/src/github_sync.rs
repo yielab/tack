@@ -573,7 +573,13 @@ async fn poll_repo(
             };
             match ctx
                 .store
-                .update_item_atomically(*item_id, input, &project.workflow, None)
+                .update_item_atomically(
+                    *item_id,
+                    input,
+                    &project.workflow,
+                    &tack_core::hierarchy::Hierarchy,
+                    None,
+                )
                 .await
             {
                 Ok(tack_db::repo::items::AtomicItemUpdateOutcome::Updated { .. }) => {

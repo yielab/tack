@@ -24,6 +24,7 @@ export const KIND_LABEL: Record<Operation['op'], string> = {
   depend: 'Dependency',
   comment: 'Comment',
   due: 'Due date',
+  parent: 'Parent',
 };
 
 /** The place in the change set's operations of each `create`, in order. */
@@ -65,6 +66,8 @@ export function summarize(op: Operation, nameOf: NameOf): string {
       return `${nameOf(op.blocked)} waits on ${nameOf(op.blocker)}`;
     case 'comment':
       return `Comment on ${nameOf(op.item)}`;
+    case 'parent':
+      return op.parent ? `Put ${nameOf(op.item)} under ${nameOf(op.parent)}` : `Put ${nameOf(op.item)} at the top`;
     case 'due':
       return op.due ? `Set the due date of ${nameOf(op.item)} to ${op.due.slice(0, 10)}` : `Clear the due date of ${nameOf(op.item)}`;
   }
@@ -83,6 +86,9 @@ export function existingItems(ops: readonly Operation[]): string[] {
     } else if (op.op === 'depend') {
       note(op.blocked);
       note(op.blocker);
+    } else if (op.op === 'parent') {
+      note(op.item);
+      note(op.parent);
     } else {
       note(op.item);
     }

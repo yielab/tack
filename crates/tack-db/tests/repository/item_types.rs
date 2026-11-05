@@ -7,6 +7,7 @@ use tack_core::models::{CreateItem, ProjectType};
 use tack_db::StoreError;
 use tack_db::queries;
 use tack_db::repo::item_types::CatalogError;
+use tack_db::repo::items::ItemError;
 use tack_test_support::{create_test_workspace, make_project, setup_test_db};
 
 fn item(title: &str, item_type: Option<&str>) -> CreateItem {
@@ -52,9 +53,9 @@ async fn an_item_without_a_type_takes_the_default_and_one_the_catalog_lacks_is_r
         .await;
     assert!(matches!(
         refused,
-        Err(StoreError::NotFound {
+        Err(ItemError::Store(StoreError::NotFound {
             entity: "item type"
-        })
+        }))
     ));
 
     let change = tack_core::models::UpdateItem {
@@ -62,7 +63,13 @@ async fn an_item_without_a_type_takes_the_default_and_one_the_catalog_lacks_is_r
         ..Default::default()
     };
     let outcome = repo
-        .update_item_atomically(plain.id, change, &project.workflow, None)
+        .update_item_atomically(
+            plain.id,
+            change,
+            &project.workflow,
+            &tack_core::hierarchy::Hierarchy,
+            None,
+        )
         .await;
     assert!(matches!(
         outcome,

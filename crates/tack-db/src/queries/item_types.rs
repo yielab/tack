@@ -104,3 +104,20 @@ pub(crate) async fn default_work_key(
         .await?
         .ok_or(StoreError::not_found("item type"))
 }
+
+/// The type `key` of the project, on the connection the caller holds.
+pub(crate) async fn def_in(
+    conn: &mut SqliteConnection,
+    project_id: Uuid,
+    key: &str,
+) -> Result<ItemTypeDef, StoreError> {
+    let row: Option<TypeRow> = sqlx::query_as(
+        "SELECT key, name, level, color, sort_order, default_work FROM item_types
+          WHERE project_id = ? AND key = ?",
+    )
+    .bind(project_id.to_string())
+    .bind(key)
+    .fetch_optional(&mut *conn)
+    .await?;
+    row.ok_or(StoreError::not_found("item type"))?.into_def()
+}

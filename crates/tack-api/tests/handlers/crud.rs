@@ -2166,6 +2166,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
                 ..Default::default()
             },
             &project.workflow,
+            &tack_core::hierarchy::Hierarchy,
             None,
         )
         .await

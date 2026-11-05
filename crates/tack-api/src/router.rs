@@ -395,6 +395,7 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{project_id}/items/tree",
             get(items::get_item_tree),
         )
+        .route("/projects/{project_id}/parents", get(items::list_parents))
         .route("/projects/{project_id}/search", get(items::search_items))
         .route("/search", get(items::search_items_global))
         .route("/items/{id}", get(items::get_item))

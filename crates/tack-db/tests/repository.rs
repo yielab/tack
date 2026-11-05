@@ -38,6 +38,8 @@ mod execution_recovery_requeue;
 mod execution_retention;
 #[path = "repository/execution_transitions_completion.rs"]
 mod execution_transitions_completion;
+#[path = "repository/hierarchy.rs"]
+mod hierarchy;
 #[path = "repository/integration.rs"]
 mod integration;
 #[path = "repository/item_types.rs"]

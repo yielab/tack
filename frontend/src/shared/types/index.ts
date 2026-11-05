@@ -56,8 +56,7 @@ export type Recurrence = Schemas['Recurrence'];
 
 // NB: the backend `CreateItem` has **no `status`** (creates land in the first
 // workflow column) and **does** accept `assignee` — both reconciled here by
-// deriving from the spec. `UpdateItem` likewise has no `parent_id` (re-parenting
-// via PATCH is not supported by the API — see List.tsx).
+// deriving from the spec.
 export type CreateItem = Schemas['CreateItem'];
 export type UpdateItem = Schemas['UpdateItem'];
 

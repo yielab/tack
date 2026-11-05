@@ -1658,6 +1658,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/parents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_parents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/roles": {
         parameters: {
             query?: never;
@@ -6101,6 +6117,11 @@ export interface components {
             item: components["schemas"]["ItemRef"];
             /** @enum {string} */
             op: "due";
+        } | {
+            item: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "parent";
+            parent?: null | components["schemas"]["ItemRef"];
         };
         /** @description An operation to put in place of a waiting one. */
         OperationEdit: {
@@ -6271,6 +6292,14 @@ export interface components {
             per_page: number;
             /** Format: int64 */
             total: number;
+        };
+        /** @description An item that can be the parent of another. */
+        ParentOption: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** @description The key of its type in the project's catalog. */
+            type: string;
         };
         PostMessage: {
             body: string;
@@ -7063,7 +7092,7 @@ export interface components {
          *     layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
          * @enum {string}
          */
-        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "type_in_use" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
+        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "type_in_use" | "group_under_work" | "parent_loop" | "tree_too_deep" | "parent_in_other_project" | "group_in_sprint" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
         StaleItem: {
             item: components["schemas"]["DigestItem"];
             /** Format: date-time */
@@ -7768,6 +7797,12 @@ export interface components {
             estimate?: number | null;
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
             item_type?: string | null;
+            /**
+             * Format: uuid
+             * @description Omitted leaves the parent untouched; JSON `null` moves the item to the top. The tree rule
+             *     (`tack_core::hierarchy`) decides whether the parent is admitted.
+             */
+            parent_id?: string | null;
             priority?: null | components["schemas"]["Priority"];
             recurrence?: null | components["schemas"]["Recurrence"];
             run_settings?: null | components["schemas"]["RunSettings"];
@@ -9819,6 +9854,15 @@ export interface operations {
             };
             /** @description If-Match did not match the current item version — nothing was written */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The tree rule refuses the parent or the sprint: group_under_work, parent_loop, tree_too_deep, parent_in_other_project, group_in_sprint */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12134,6 +12178,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description The parent breaks the tree rule: a group under work (group_under_work), a tree deeper than five levels (tree_too_deep) or a parent of another project (parent_in_other_project) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     get_item_tree: {
@@ -12155,6 +12208,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ItemNode"][];
+                };
+            };
+        };
+    };
+    list_parents: {
+        parameters: {
+            query?: {
+                /** @description An item that exists: the answer leaves out the item and everything under it. */
+                item?: string;
+                /** @description The type key of an item about to be made. */
+                type?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Project ID */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every item the tree rule admits as the parent, in tree order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParentOption"][];
+                };
+            };
+            /** @description Neither or both of item and type were given */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The project, the item or the type is not there */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

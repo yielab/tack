@@ -12,17 +12,28 @@ use validator::Validate;
 
 use tack_app::change_sets::{self, Mode, Proposal};
 use tack_app::events::{DomainEvent, Fact};
+use tack_app::parents::{self, Subject};
 use tack_core::change_set::{CreateOp, ItemRef, Operation, Origin};
 use tack_core::children;
+use tack_core::hierarchy::Hierarchy;
 use tack_core::models::{ChildrenProgress, CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
 use tack_core::principal::Principal;
 use tack_db::queries;
-use tack_db::repo::items::AtomicItemUpdateOutcome;
+use tack_db::repo::items::{AtomicItemUpdateOutcome, ItemError};
 use tack_protocol::execution::StableErrorCode;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
+
+impl From<ItemError> for ApiError {
+    fn from(error: ItemError) -> Self {
+        match error {
+            ItemError::Store(failure) => ApiError::Store(failure),
+            ItemError::Refused(rule) => ApiError::Core(rule),
+        }
+    }
+}
 
 /// A version-derived `ETag`, not a content hash: the counter changes on
 /// every write, and no body has to be hashed. Quoted per RFC 7232 so a
@@ -108,6 +119,7 @@ fn expected_version_from_if_match(
         (status = 200, description = "Item created", body = tack_core::models::ItemCard),
         (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "The parent breaks the tree rule: a group under work (group_under_work), a tree deeper than five levels (tree_too_deep) or a parent of another project (parent_in_other_project)", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn create_item(
@@ -244,6 +256,7 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
         (status = 400, description = "Invalid transition / validation error", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
         (status = 412, description = "If-Match did not match the current item version — nothing was written", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "The tree rule refuses the parent or the sprint: group_under_work, parent_loop, tree_too_deep, parent_in_other_project, group_in_sprint", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn update_item(
@@ -277,7 +290,7 @@ pub async fn update_item(
 
     let (mut item, version, old_status) = match state
         .repo
-        .update_item_atomically(id, input, &project.workflow, expected_version)
+        .update_item_atomically(id, input, &project.workflow, &Hierarchy, expected_version)
         .await?
     {
         AtomicItemUpdateOutcome::Updated {
@@ -910,4 +923,66 @@ pub async fn search_items_global(
         .search_items_global(state.workspace_id, &params.q)
         .await?;
     Ok(Json(serde_json::to_value(items).unwrap()))
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ParentsQuery {
+    /// An item that exists: the answer leaves out the item and everything under it.
+    pub item: Option<Uuid>,
+    /// The type key of an item about to be made.
+    #[serde(rename = "type")]
+    pub item_type: Option<String>,
+}
+
+/// An item that can be the parent of another.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ParentOption {
+    pub id: Uuid,
+    pub title: String,
+    /// The key of its type in the project's catalog.
+    #[serde(rename = "type")]
+    pub item_type: String,
+}
+
+#[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/parents",
+    tag = "items",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+        ParentsQuery,
+    ),
+    responses(
+        (status = 200, description = "Every item the tree rule admits as the parent, in tree order", body = Vec<ParentOption>),
+        (status = 400, description = "Neither or both of item and type were given", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "The project, the item or the type is not there", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn list_parents(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<ParentsQuery>,
+) -> ApiResult<Json<Vec<ParentOption>>> {
+    let subject = match (query.item, query.item_type) {
+        (Some(item), None) => Subject::Item(item),
+        (None, Some(key)) => Subject::NewOfType(key),
+        _ => {
+            return Err(ApiError::BadRequest(
+                "give either item (a move) or type (a new item)".into(),
+            ));
+        }
+    };
+    let choices = parents::admitted(&state.repo, project_id, subject).await?;
+    Ok(Json(
+        choices
+            .into_iter()
+            .map(|choice| ParentOption {
+                id: choice.id,
+                title: choice.title,
+                item_type: choice.item_type,
+            })
+            .collect(),
+    ))
 }
