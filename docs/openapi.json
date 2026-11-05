@@ -20251,7 +20251,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Omitted leaves the parent untouched; JSON `null` moves the item to the top. The tree rule\n(`tack_core::hierarchy`) decides whether the parent is admitted."
+            "description": "Omitted leaves the parent untouched; JSON `null` moves the item to the top. A group never\ngoes under work, the tree has at most five levels and no loops, and the parent must be in\nthe same project; a refusal is a 422 and writes nothing."
           },
           "priority": {
             "oneOf": [

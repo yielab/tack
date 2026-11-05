@@ -41,6 +41,20 @@ All edits save at once.
 
 ---
 
+## Moving an item under another
+
+An item can be moved under another at any time, and back to the top. From the command line, `tack move <item-id> --under <parent-id>` puts it under a parent and `tack move <item-id> --top` takes it out; the same move is the `parent_id` field of an item's update in the API and in the MCP server. One rule decides every move, wherever it is made:
+
+- A type that holds work (an epic, a building, a course) holds other groups and work. Work holds work. A type that holds work never goes under work: "An epic cannot go under a task."
+- An item cannot go under itself or under anything it holds: "That would put Checkout inside itself."
+- The tree has at most five levels, counting what is under the item you move: "Five levels is the most."
+- The parent must be in the same project.
+- An item that holds work is not planned into a sprint, but its items are: "An epic does not go in a sprint: its items do." Work that has items under it counts as holding work.
+
+A move that breaks the rule is refused with the sentence above and changes nothing. A project's types and what each holds are listed in [Types and words](vocabulary.md).
+
+---
+
 ## Overview tab
 
 The Overview tab is the task itself, top to bottom: its **description**, its **Done when** list, what the agent gets beyond

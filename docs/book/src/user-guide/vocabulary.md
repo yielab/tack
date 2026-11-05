@@ -13,7 +13,7 @@ A new project starts with the types of its project type. Every type has:
 | Key | The short name the files and the command line use: lowercase letters, digits, `_` and `-`. It never changes. |
 | Name | What the project calls it. Free text, and changeable at any time. |
 | Colour | One of the app's colours: accent, accent 2, danger, warning, success or neutral. |
-| Level | **Holds work** (like an epic: it has items under it) or **Work** (like a task: something a person or an agent does). A level changes only while no item uses the type. |
+| Level | **Holds work** (like an epic: it has items under it) or **Work** (like a task: something a person or an agent does). A level changes only while no item uses the type. The level decides where an item can go: a type that holds work never goes under work (see [Moving an item under another](items.md#moving-an-item-under-another)). |
 | Default | Exactly one type is the default work type: what an item becomes when it is made without a type. It is always a work type. |
 
 | Project type | Types that hold work | Types that are work (the default is first) |

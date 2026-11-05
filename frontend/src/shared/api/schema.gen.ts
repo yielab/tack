@@ -7799,8 +7799,9 @@ export interface components {
             item_type?: string | null;
             /**
              * Format: uuid
-             * @description Omitted leaves the parent untouched; JSON `null` moves the item to the top. The tree rule
-             *     (`tack_core::hierarchy`) decides whether the parent is admitted.
+             * @description Omitted leaves the parent untouched; JSON `null` moves the item to the top. A group never
+             *     goes under work, the tree has at most five levels and no loops, and the parent must be in
+             *     the same project; a refusal is a 422 and writes nothing.
              */
             parent_id?: string | null;
             priority?: null | components["schemas"]["Priority"];

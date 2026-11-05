@@ -98,9 +98,11 @@ tack add "Design login page" --project <id> --item-type task --priority high
 tack add "Send the newsletter" --project <id> --recurrence weekly
 
 tack move <item-id> "In Progress"         # move to another status
+tack move <item-id> --under <parent-id>   # put it under another item
+tack move <item-id> --top                 # take it out from under its parent
 ```
 
-`tack add` also takes `--parent`, `--assignee` and `--sprint`; `-p` and `-t` are short for `--project` and `--item-type`. `-t` takes any key of the project's types (`tack types <project>` lists them); without it the item gets the project's default work type. Priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
+`tack move` takes a status, `--under` or `--top`, and a status together with `--under` does both; a move the [tree rule](items.md#moving-an-item-under-another) refuses changes nothing. `tack add` also takes `--parent`, `--assignee` and `--sprint`; `-p` and `-t` are short for `--project` and `--item-type`. `-t` takes any key of the project's types (`tack types <project>` lists them); without it the item gets the project's default work type. Priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
 
 ### Branches
 
