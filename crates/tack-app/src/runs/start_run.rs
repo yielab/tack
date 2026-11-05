@@ -296,10 +296,13 @@ pub fn task_document(
     })
 }
 
-/// What the item's type is called in its project: the project's vocabulary word, else the type.
+/// What the item's type is called in its project: its name in the project's catalog, else the key.
 pub fn kind_of(item: &models::Item, project: &models::Project) -> String {
-    let key = item.item_type.to_string();
-    project.vocabulary.get(&key).cloned().unwrap_or(key)
+    project
+        .item_types
+        .iter()
+        .find(|t| t.key == item.item_type)
+        .map_or_else(|| item.item_type.clone(), |t| t.name.clone())
 }
 
 /// What most harnesses are told: the profile's instructions, then the item's title, description
@@ -1288,7 +1291,7 @@ pub async fn start_run(
         metadata.insert(
             "item".into(),
             json!({
-                "type": item.item_type.to_string(),
+                "type": item.item_type,
                 "priority": item.priority.to_string(),
                 "trusted": item.source.is_trusted(),
             }),

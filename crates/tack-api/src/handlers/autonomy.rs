@@ -385,7 +385,7 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
     request_body = AutonomySettings,
     responses(
         (status = 200, description = "The settings now in force", body = AutonomySettings),
-        (status = 400, description = "An unknown level, a nameless or repeated domain, a negative limit", body = crate::openapi::ErrorEnvelope),
+        (status = 400, description = "An unknown level, a nameless or repeated domain, a domain naming a type the project lacks, a negative limit", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "No such project", body = crate::openapi::ErrorEnvelope),
     ),
 )]
@@ -395,6 +395,23 @@ pub async fn put_autonomy(
     Json(input): Json<AutonomySettings>,
 ) -> ApiResult<Json<AutonomySettings>> {
     let settings = settings_of(input)?;
+    let project = state
+        .repo
+        .get_project(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
+    for domain in &settings.domains {
+        if let Some(key) = domain
+            .item_types
+            .iter()
+            .find(|key| !project.item_types.iter().any(|t| &t.key == *key))
+        {
+            return Err(ApiError::BadRequest(format!(
+                "domain \"{}\" names the type \"{key}\", which the project does not have",
+                domain.name
+            )));
+        }
+    }
     if !state
         .repo
         .put_autonomy_settings(&id.to_string(), &settings)

@@ -47,6 +47,8 @@ mod executions_runner_admin;
 mod fleet_membership;
 #[path = "handlers/item_concurrency.rs"]
 mod item_concurrency;
+#[path = "handlers/item_types.rs"]
+mod item_types;
 #[path = "handlers/local_runner.rs"]
 mod local_runner;
 #[path = "handlers/merge_button.rs"]

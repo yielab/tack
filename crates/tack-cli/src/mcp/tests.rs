@@ -756,7 +756,7 @@ async fn mcp_create_item_posts_the_defaults_and_the_optional_fields() {
     wiremock::Mock::given(wiremock::matchers::method("POST"))
         .and(wiremock::matchers::path("/api/projects/proj-1/items"))
         .and(wiremock::matchers::body_json(json!({
-            "title": "Bare", "item_type": "task", "priority": "medium",
+            "title": "Bare", "priority": "medium",
         })))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
             "id": "item-10", "title": "Bare"

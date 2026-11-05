@@ -259,3 +259,84 @@ async fn the_csv_export_round_trips_recurrence() {
     let items = items_of(&app, out["project"]["id"].as_str().unwrap()).await;
     assert_eq!(by_title(&items, "Weekly review")["recurrence"], "weekly");
 }
+
+#[tokio::test]
+async fn an_outline_word_the_project_lacks_is_listed_in_new_types_and_added_as_work() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let uri = format!("/api/projects/{pid}/outline");
+    let outline = json!({"items": [
+        {"title": "Investigate", "type": "Spike"},
+        {"title": "Fix", "type": "BUG"},
+        {"title": "Again", "type": "spike"},
+    ]});
+
+    let (status, preview) = common::send(
+        &app,
+        "POST",
+        &format!("{uri}?dry_run=true"),
+        outline.clone(),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["new_types"], json!(["Spike"]));
+    let (_, types) = common::send(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/types"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert!(
+        types
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["key"] != "spike"),
+        "a dry run writes nothing"
+    );
+
+    let (status, out) = common::send(&app, "POST", &uri, outline, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["new_types"], json!(["Spike"]));
+    let items = items_of(&app, &pid.to_string()).await;
+    assert_eq!(by_title(&items, "Investigate")["item_type"], "spike");
+    assert_eq!(by_title(&items, "Again")["item_type"], "spike");
+    assert_eq!(by_title(&items, "Fix")["item_type"], "bug");
+    let (_, types) = common::send(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/types"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    let spike = types
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["key"] == "spike")
+        .expect("the word became a type");
+    assert_eq!(
+        (spike["level"].as_str(), spike["items"].as_u64()),
+        (Some("work"), Some(2))
+    );
+}
+
+#[tokio::test]
+async fn a_csv_word_the_project_lacks_is_listed_in_new_types_too() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let csv = "title,type\nTry it,Spike\nShip it,feature\n";
+    let (status, out) = post_raw(
+        &app,
+        &format!("/api/projects/{pid}/import-csv?dry_run=true"),
+        "text/csv",
+        csv,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["new_types"], json!(["Spike"]));
+}

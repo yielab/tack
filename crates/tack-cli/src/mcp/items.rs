@@ -20,7 +20,7 @@ pub static LIST_ITEMS: Tool = Tool {
                 "properties": {
                     "project_id": { "type": "string", "description": "Project UUID" },
                     "status": { "type": "string", "description": "Filter by status column name" },
-                    "item_type": { "type": "string", "description": "Filter by item type" },
+                    "item_type": { "type": "string", "description": "Filter by item type: a key of the project's types" },
                     "assignee": { "type": "string", "description": "Filter by assignee" }
                 },
                 "required": ["project_id"]
@@ -144,7 +144,7 @@ pub static CREATE_ITEM: Tool = Tool {
                     "project_id": { "type": "string" },
                     "title": { "type": "string" },
                     "description": { "type": "string" },
-                    "item_type": { "type": "string", "description": "task (default), epic, feature, bug, subtask, requirement" },
+                    "item_type": { "type": "string", "description": "A key of the project's types (list them with the project); omitted, the project's default work type" },
                     "priority": { "type": "string", "description": "critical, high, medium (default), low" },
                     "parent_id": { "type": "string" },
                     "assignee": { "type": "string" },
@@ -168,10 +168,9 @@ fn create_item(client: &TackClient, args: &Value) -> Result<Value, String> {
     let title = require_str(args, "title")?;
     let mut body = json!({
         "title": title,
-        "item_type": opt_str(args, "item_type").unwrap_or_else(|| "task".into()),
         "priority": opt_str(args, "priority").unwrap_or_else(|| "medium".into()),
     });
-    for field in ["parent_id", "assignee", "description"] {
+    for field in ["parent_id", "assignee", "description", "item_type"] {
         if let Some(v) = opt_str(args, field) {
             body[field] = json!(v);
         }

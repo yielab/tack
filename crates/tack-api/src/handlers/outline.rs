@@ -18,6 +18,7 @@ use validator::Validate;
 
 use serde_json::Value;
 use tack_core::autonomy::{Domain, Level};
+use tack_core::item_types::preset;
 use tack_core::models::{
     CreateCustomField, CreateProject, CreateRole, CreateSprint, CustomFieldType, EstimateUnit,
     ItemSource, Project, ProjectType, SprintStatus, UpdateCustomField, UpdateProject, UpdateRole,
@@ -34,6 +35,7 @@ use tack_core::outline::{
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_db::StoreError;
 use tack_db::queries;
+use tack_db::repo::item_types::ItemTypeError;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::export::structured_body;
@@ -85,6 +87,9 @@ pub struct OutlineResult {
     /// it) or an agent (with how to install it). Nothing is created from it; empty for a CSV and
     /// for a file that names no team and no agent.
     pub missing: Vec<Missing>,
+    /// The names of the item types the items' words added to the project, as work: a word the
+    /// project's types lack is added rather than refused.
+    pub new_types: Vec<String>,
     /// What was read but not used as written: an unknown status or priority,
     /// a column with no field, a project block an add ignores.
     pub warnings: Vec<String>,
@@ -383,6 +388,8 @@ async fn create_new(
         harness_kinds: &HARNESS_KINDS,
         level: Level::L3,
         auto_start: false,
+        item_types: &preset(&spec.project_type),
+        new_project: true,
     };
     let plan = check(&read.outline, &board).map_err(refused)?;
     let missing = missing_of(state, &read.outline).await?;
@@ -480,6 +487,8 @@ async fn into_existing_project(
         harness_kinds: &HARNESS_KINDS,
         level,
         auto_start: project.auto_start_enabled,
+        item_types: &project.item_types,
+        new_project: false,
     };
     let plan = check(&read.outline, &board).map_err(refused)?;
     let missing = missing_of(state, &read.outline).await?;
@@ -756,6 +765,15 @@ async fn write(
         .map_err(at("project"))?;
     }
 
+    if let Some(types) = &plan.types {
+        repo.set_item_types(project_id, types)
+            .await
+            .map_err(|failure| match failure {
+                ItemTypeError::Store(source) => at("types")(source),
+                ItemTypeError::Refused(rule) => ApiError::Core(rule),
+            })?;
+    }
+
     let mut field_ids: HashMap<String, Uuid> = board
         .fields
         .iter()
@@ -939,6 +957,7 @@ async fn write(
     };
     let mut warnings = read.warnings;
     warnings.extend(plan.warnings);
+    let new_types = plan.new_types;
     let (items, dependencies) = repo
         .create_outline_items(project_id, plan.items, source)
         .await
@@ -979,6 +998,7 @@ async fn write(
             .collect(),
         sections,
         missing: Vec::new(),
+        new_types,
         warnings,
     })
 }
@@ -1014,6 +1034,7 @@ fn preview(plan: Plan, read: Read, source: &ItemSource) -> OutlineResult {
             plan.sections
         },
         missing: Vec::new(),
+        new_types: plan.new_types,
         warnings,
     }
 }

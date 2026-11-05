@@ -310,7 +310,7 @@ async fn get_board_view_groups_by_item_type() {
     assert_eq!(status, StatusCode::OK);
     let columns = view["columns"].as_array().unwrap();
     assert_eq!(columns.len(), 1, "empty item-type columns are omitted");
-    assert_eq!(column(&view, "bug").len(), 1);
+    assert_eq!(column(&view, "Bug").len(), 1);
 }
 
 /// Assignee grouping buckets by the free-text `assignee` field, with an

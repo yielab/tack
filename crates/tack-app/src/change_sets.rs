@@ -13,6 +13,7 @@ use tack_core::change_set::{
     Verdict, ceiling_of, decide, describe, validate,
 };
 use tack_core::event::{DomainEvent, Fact};
+use tack_core::item_types::Level;
 use tack_core::models::{DependencyType, Project};
 use tack_core::principal::Principal;
 use tack_db::Repository;
@@ -143,7 +144,14 @@ async fn board_view(
         }
     }
     let anchor_type = match anchor {
-        Some(id) => repo.get_item(id).await?.map(|item| item.item_type),
+        // Work hangs its siblings' type on them; under a group the creates take the default work type.
+        Some(id) => repo.get_item(id).await?.and_then(|item| {
+            project
+                .item_types
+                .iter()
+                .find(|t| t.key == item.item_type && t.level == Level::Work)
+                .map(|t| t.key.clone())
+        }),
         None => None,
     };
     let edges = repo
@@ -171,7 +179,7 @@ async fn board_view(
     }
     Ok(BoardView {
         workflow: project.workflow.clone(),
-        vocabulary: project.vocabulary.keys().cloned().collect(),
+        item_types: project.item_types.clone(),
         items,
         occupied: repo.item_status_counts(project.id).await?,
         edges,

@@ -32,7 +32,7 @@
           "type": "string"
         },
         "item_type": {
-          "description": "Filter by item type",
+          "description": "Filter by item type: a key of the project's types",
           "type": "string"
         },
         "project_id": {
@@ -101,7 +101,7 @@
           "type": "string"
         },
         "item_type": {
-          "description": "task (default), epic, feature, bug, subtask, requirement",
+          "description": "A key of the project's types (list them with the project); omitted, the project's default work type",
           "type": "string"
         },
         "parent_id": {
@@ -223,7 +223,7 @@
                 "type": "string"
               },
               "type": {
-                "description": "epic, feature, task (default), subtask, bug, requirement, or a custom word",
+                "description": "A key or name of the project's types; omitted, its default work type; a word the project lacks is added as a work type",
                 "type": "string"
               }
             },

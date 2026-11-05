@@ -106,7 +106,26 @@ async fn the_fixture_makes_a_whole_project() {
     let project = get(&app, &format!("/api/projects/{pid}")).await;
 
     assert_eq!(project["workflow"]["statuses"].as_array().unwrap().len(), 5);
-    assert_eq!(project["vocabulary"]["epic"], "Colección");
+    assert_eq!(
+        project["vocabulary"]["epic"],
+        Value::Null,
+        "types are not words"
+    );
+    assert_eq!(project["vocabulary"]["sprint"], "Semana");
+    let named = |key: &str| {
+        project["item_types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["key"] == key)
+            .unwrap_or_else(|| panic!("no type {key}"))
+            .clone()
+    };
+    assert_eq!(named("epic")["name"], "Colección");
+    assert_eq!(named("epic")["level"], "group");
+    assert_eq!(named("task")["name"], "Pieza");
+    assert_eq!(named("task")["default_work"], true);
+    assert_eq!(project["item_types"].as_array().unwrap().len(), 5);
     assert_eq!(project["repository"], "/home/person/Sites/my-saas");
     assert_eq!(project["push_after_run"], true);
     assert_eq!(project["auto_start_enabled"], false);
@@ -177,6 +196,17 @@ async fn the_fixture_makes_a_whole_project() {
             .unwrap_or_else(|| panic!("no item {title}"))
             .clone()
     };
+    // The file carries the catalog back out, in order, and the items name their type by key.
+    let exported: Vec<&str> = file["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(exported, ["epic", "feature", "task", "bug", "requirement"]);
+    assert_eq!(file["types"][2]["default"], true);
+    assert_eq!(file["types"][0]["level"], "group");
+    assert_eq!(item("Colección rioplatense")["type"], "epic");
     let fox = item("El zorro que no podía dormir");
     assert_eq!(fox["roles"], json!(["Contenido"]));
     assert_eq!(fox["sprint"], "Semana 42");

@@ -140,7 +140,7 @@ pub struct PlanSubtask {
     pub depends_on: Vec<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate: Option<String>,
-    /// The item type the entry becomes, when the project has it.
+    /// The item type the entry becomes, a key of the project's types; absent, the default work type.
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub item_type: Option<String>,
     /// The project role, by name, that does the entry.

@@ -154,18 +154,17 @@ async fn create_and_update_keep_one_default_work_type() {
     );
 
     // The default is read back for a hidden item.
-    let thread = repo
-        .create_thread(&tack_db::repo::threads::NewThread {
-            scope: tack_core::thread::ThreadScope::Project {
-                project: project.id,
-            },
-            profile: "p",
-            title: "t",
-            anchor_status: "backlog",
-            now: chrono::Utc::now(),
-        })
-        .await
-        .unwrap();
+    repo.create_thread(&tack_db::repo::threads::NewThread {
+        scope: tack_core::thread::ThreadScope::Project {
+            project: project.id,
+        },
+        profile: "p",
+        title: "t",
+        anchor_status: "backlog",
+        now: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
     let anchor: String =
         sqlx::query_scalar("SELECT item_type FROM items WHERE project_id = ? AND hidden = 1")
             .bind(project.id.to_string())

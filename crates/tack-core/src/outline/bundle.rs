@@ -795,7 +795,14 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
     let mut automation = outline.automation.clone();
     if let Some(auto) = automation.as_mut() {
         let mut found = Vec::new();
-        check_automation(auto, board, &profile_known, &mut problems, &mut found);
+        check_automation(
+            auto,
+            board,
+            &catalog.types,
+            &profile_known,
+            &mut problems,
+            &mut found,
+        );
         sections.push(SectionSummary {
             section: "automation".into(),
             created: 0,
@@ -873,6 +880,7 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
 fn check_automation(
     auto: &mut BundleAutomation,
     board: &Board<'_>,
+    types: &[ItemTypeDef],
     profile_known: &dyn Fn(&str) -> bool,
     problems: &mut Vec<String>,
     warnings: &mut Vec<String>,
@@ -960,6 +968,16 @@ fn check_automation(
         for domain in &mut autonomy.domains {
             let what = format!("autonomy.domains[{}].level", domain.name.trim());
             domain.level = lowered_level(&what, &domain.level, board.level, problems, warnings);
+            for key in domain
+                .item_types
+                .iter()
+                .filter(|key| !types.iter().any(|t| &t.key == *key))
+            {
+                problems.push(format!(
+                    "autonomy.domains[{}].item_types: \"{key}\" is not a type key of the project",
+                    domain.name.trim()
+                ));
+            }
         }
     }
     if let Some(start) = auto.auto_start.as_mut() {

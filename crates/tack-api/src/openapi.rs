@@ -19,8 +19,7 @@
 //!   extractor, so its request body is hand-declared.
 //! - **Undocumented on purpose.** The WebSocket upgrade
 //!   `GET /api/projects/{id}/boards/live` and the SPA fallback are omitted.
-//! - **Untagged enum variants.** `ItemType::Custom(String)`,
-//!   `EstimateUnit::Custom(String)` and `BoardGrouping::CustomField(Uuid)` are
+//! - **Untagged enum variants.** `EstimateUnit::Custom(String)` and `BoardGrouping::CustomField(Uuid)` are
 //!   externally-tagged, so they render as a `oneOf` mixing bare strings with
 //!   single-key objects — faithful to the serde output but noisier than a plain
 //!   string enum.
@@ -43,9 +42,8 @@ use tack_core::models::{
     CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
     CreateProjectTemplate, CreateRole, CreateSprint, CustomFieldDefinition, CustomFieldType,
     CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemCard, ItemRole,
-    ItemSource, ItemType, Priority, Project, ProjectTemplate, ProjectType, Role,
-    SetCustomFieldValue, Sprint, SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem,
-    UpdateProject, Workspace,
+    ItemSource, Priority, Project, ProjectTemplate, ProjectType, Role, SetCustomFieldValue, Sprint,
+    SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
 };
 use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig, WorkflowType};
 
@@ -904,6 +902,11 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::sprints::get_sprint,
         handlers::sprints::update_sprint,
         handlers::sprints::update_sprint_status,
+        // ── Item types ────────────────────────────────────────────────────
+        handlers::item_types::list_item_types,
+        handlers::item_types::create_item_type,
+        handlers::item_types::update_item_type,
+        handlers::item_types::delete_item_type,
         // ── Roles ─────────────────────────────────────────────────────────
         handlers::roles::create_role,
         handlers::roles::list_roles,
@@ -1249,7 +1252,12 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         ProjectType,
         Item,
         ItemCard,
-        ItemType,
+        tack_core::item_types::ItemTypeDef,
+        tack_core::item_types::ItemTypeUse,
+        tack_core::item_types::CreateItemType,
+        tack_core::item_types::UpdateItemType,
+        tack_core::item_types::Level,
+        tack_core::item_types::TypeColor,
         ItemSource,
         Priority,
         EstimateUnit,

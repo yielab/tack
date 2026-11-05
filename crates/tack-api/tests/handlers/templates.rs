@@ -523,6 +523,58 @@ async fn save_project_as_template_snapshots_fields_and_boards() {
 }
 
 #[tokio::test]
+async fn a_template_carries_the_types_and_a_project_from_it_has_them() {
+    let (app, pid) = setup().await;
+    common::send(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/types"),
+        json!({"key": "spike", "name": "Spike", "level": "work", "color": "accent"}),
+        &[],
+    )
+    .await;
+    common::send(
+        &app,
+        "PATCH",
+        &format!("/api/projects/{pid}/types/epic"),
+        json!({"name": "Saga"}),
+        &[],
+    )
+    .await;
+    let (_, template) = common::send(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/save-as-template"),
+        json!({"name": "With types"}),
+        &[],
+    )
+    .await;
+    let keys: Vec<&str> = template["item_types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        keys,
+        ["epic", "feature", "task", "bug", "requirement", "spike"]
+    );
+
+    let tid = template["id"].as_str().unwrap();
+    let (status, project) = common::send(
+        &app,
+        "POST",
+        &format!("/api/projects/from-template/{tid}"),
+        json!({"name": "From it"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{project}");
+    assert_eq!(project["item_types"], template["item_types"]);
+    assert_eq!(project["item_types"][0]["name"], "Saga");
+}
+
+#[tokio::test]
 async fn save_project_as_template_unknown_project_is_404() {
     let (app, _) = common::test_app().await;
     let (status, _) = common::send(
