@@ -38,10 +38,11 @@ A failed command prints its message on stderr and exits non-zero.
 
 ```sh
 tack projects                                 # list projects
+tack types <project-id>                       # a project's item types: level, colour, items using each, the default
 tack init "Kitchen Reno" --type construction  # create a project
 ```
 
-Project types: `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`, `legal`, `research`, `event`, `custom`. The type picks the starting workflow and vocabulary.
+Project types: `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`, `legal`, `research`, `event`, `custom`. The type picks the starting workflow, item types and vocabulary.
 
 ### Start from a template
 
@@ -99,7 +100,7 @@ tack add "Send the newsletter" --project <id> --recurrence weekly
 tack move <item-id> "In Progress"         # move to another status
 ```
 
-`tack add` also takes `--parent`, `--assignee` and `--sprint`; `-p` and `-t` are short for `--project` and `--item-type`. Types are `task` (the default), `epic`, `feature`, `bug`, `subtask` and `requirement`; priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
+`tack add` also takes `--parent`, `--assignee` and `--sprint`; `-p` and `-t` are short for `--project` and `--item-type`. `-t` takes any key of the project's types (`tack types <project>` lists them); without it the item gets the project's default work type. Priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
 
 ### Branches
 

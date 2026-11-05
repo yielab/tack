@@ -48,10 +48,11 @@ A few terms recur throughout this documentation:
 
 | Term | What it means |
 |------|---------------|
-| **Item** | The basic unit of work. One kind of record backs everything — a task, bug, feature, epic, building, work order, assignment — and your project's vocabulary decides how it's labeled. |
+| **Item** | The basic unit of work. One kind of record backs everything — a task, bug, feature, epic, building, work order, assignment — and your project's types decide what each is called. |
 | **Workflow** | The set of named status columns an item moves through (e.g. To Do → Doing → Done), each with a category and an optional WIP limit. See [Workflows & Statuses](user-guide/workflows.md). |
 | **Project type** | A template chosen at creation that pre-loads a matching workflow *and* vocabulary (software, construction, legal, …). Everything stays editable afterward. |
-| **Vocabulary** | Per-project label overrides that rename built-in terms to your domain — "Task" → "Work Order", "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Vocabulary](user-guide/vocabulary.md). |
+| **Type** | A kind of item a project has, with its own name, colour and level: one that holds work (an Epic, a Building) or one that is work (a Task, a Work Order). Each project owns its catalog of types. See [Types and words](user-guide/vocabulary.md). |
+| **Vocabulary** | Per-project label overrides that rename the other built-in terms to your domain — "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Types and words](user-guide/vocabulary.md). |
 | **Runner** | A small worker process that lives where your code and credentials already are, pulls work from the board, launches a coding agent, and reports back. See [Running Agents on Tasks](user-guide/running-agents.md) and the [Administrator Guide](admin-guide/runners.md). |
 | **Run** | One execution of an item by a runner. At most one attempt is active at a time, and every run stays in the item's history: what the agent did, the questions it asked, the files it produced, and what it used. |
 | **Status and Work** | A task's **Status** is its column, and only a person sets it. Its **Work** is what the agents report about its newest run (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled or Not started). A run never moves a task. See [Views](user-guide/views.md#status-and-work). |

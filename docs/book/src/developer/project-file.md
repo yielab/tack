@@ -6,11 +6,12 @@ People use the file through [Import, Export & Project Files](../user-guide/impor
 
 ## What the file is
 
-The project file is the type `tack_core::outline::Outline`, read from JSON or YAML. It is the outline of items plus seven optional sections.
+The project file is the type `tack_core::outline::Outline`, read from JSON or YAML. It is the outline of items plus eight optional sections.
 
 | Section | Holds | Defined in |
 |---|---|---|
 | `project` | Name, type, description, vocabulary, workflow. Read only when the file creates a project | `OutlineProject`, `BundleWorkflow`, `BundleStatus` |
+| `types` | The project's item types: a catalog with a level each | `BundleType` |
 | `fields` | Custom fields of the project | `BundleField` |
 | `profiles` | Agent profiles, shared by every project of the board | `BundleProfile` |
 | `roles` | Project roles and the profile each one uses | `BundleRole` |
@@ -32,13 +33,25 @@ Optional keys are omitted from an export when empty, so an export has no `null`.
 | `name` | text | Required to create a project, unless the request gives `name` |
 | `type` | text | `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`, `legal`, `research`, `event` or `custom` (default). `project_type` is also read |
 | `description` | text | |
-| `vocabulary` | map | Any of the 16 vocabulary keys; the rest keep the type's words. Exported sorted, and only the words that differ from the type's |
+| `vocabulary` | map | Any of the ten vocabulary keys (the words that are not item types); the rest keep the type's words. Exported sorted, and only the words that differ from the type's |
 | `workflow` | object | A preset or statuses, never both |
 | `workflow.preset` | text | `scrum`, `kanban`, `simple`, `construction`, `legal`, `research` or `event` |
 | `workflow.statuses` | list | In order. Each has `name`, `category` (`todo`, `in_progress` or `done`) and optional `wip_limit` |
 | `workflow.transitions` | list | Optional `{from, to}` pairs. Absent means any status can move to any other. Beside a `preset`, it replaces the preset's |
 
 On an existing project the whole `project` block is ignored with a warning: the name, workflow and vocabulary are kept.
+
+### `types`
+
+| Key | Type | Notes |
+|---|---|---|
+| `key` | text | 1 to 40 lowercase letters, digits, `_` or `-`; unique in the section. Items name their type by it |
+| `name` | text | What the project calls the type; 1 to 60 characters |
+| `level` | text | `group` (holds work, like an epic) or `work` |
+| `color` | text | `accent`, `accent2`, `danger`, `warning`, `success` or `neutral`: a token name, never a hex value |
+| `default` | bool | The default work type. A file that creates a project needs exactly one, and it is `work`. Omitted from an export unless true |
+
+A file that creates a project takes its `types` whole; a file that adds to a project adds the keys it lacks and takes the `name` and `color` of the ones it has (their `level` and the default stay, with a warning when the level differs). A file that creates a project with no `types` starts with the preset of its type. An item's `type` is read as a key or a name in any case; a word the catalog lacks is added as a work type and listed in the preview under `new_types`.
 
 ### `fields`
 
@@ -132,7 +145,7 @@ The attestation public key is never in a file.
 | `ref` | text or number | A name other items use in `parent` and `depends_on`. `id` and `key` are also read |
 | `title` | text | Required |
 | `description` | text | |
-| `type` | text | `epic`, `feature`, `task` (default), `subtask`, `bug`, `requirement`, or any other word as a custom type. `item_type` is also read |
+| `type` | text | A key or a name of the project's `types` in any case; absent, the default work type. A word the catalog lacks is added as a work type. `item_type` is also read |
 | `status` | text | A status of the workflow, any case. Unknown or absent: the first status |
 | `priority` | text | `critical` (or `urgent`), `high`, `medium` (default, or `normal`), `low` or `none` |
 | `assignee` | text | |
@@ -154,23 +167,25 @@ A `ref` wins over a title when both match. A file holds at most `MAX_OUTLINE_ITE
 `write` in `crates/tack-api/src/handlers/outline.rs` applies the checked plan in this order:
 
 1. `project`, for a new project only: its vocabulary (the type's words with the file's on top) and its workflow.
-2. `fields`, then `profiles`, then `roles`, then `sprints`, each in the file's order.
-3. `automation`.
-4. `items`, in one transaction (`Repository::create_outline_items`), with their dependencies; then each item's roles and field values.
+2. `types`, when the plan changes the catalog (`Repository::set_item_types`, one transaction), so the items that follow find their types.
+3. `fields`, then `profiles`, then `roles`, then `sprints`, each in the file's order.
+4. `automation`.
+5. `items`, in one transaction (`Repository::create_outline_items`), with their dependencies; then each item's roles and field values.
 
 ## What `check` does
 
 `tack_core::outline::bundle::check(outline, board)` collects problems from every section before it returns, so a writer fixes the whole file in one pass. It runs in this order:
 
-1. `project.vocabulary` keys against the 16 known keys, and `project.workflow` (a preset or statuses, never both; a known preset; a category per status; then `WorkflowConfig::validate`).
-2. `fields`: a known type, options for `select` and `multi_select`, no repeated or empty name.
-3. `profiles`: a profile named like a built-in is dropped with a warning and never changed. Otherwise a known `kind`, a known `tool_policy.agent`, a boolean `tool_policy.network` when present, a `docket.team` matching `^[a-z0-9][a-z0-9-]{0,63}$`, and no repeated name. An unknown `fleet` is a warning and the profile runs on any computer.
-4. `roles`: the `profile` must be in the file or on the board. No repeated name.
-5. `sprints`: status `planning` or `closed`, dates written `YYYY-MM-DD`, no repeated name.
-6. `automation`: the values of the table above; `check_automation` lowers levels and auto-start.
-7. `items`: `tack_core::outline::resolve` (references, loops, dates, `CreateItem` validation) and then `check_item` (roles, sprints and field values).
+1. `project.vocabulary` keys against the ten known keys, and `project.workflow` (a preset or statuses, never both; a known preset; a category per status; then `WorkflowConfig::validate`).
+2. `types` (before the fields): valid and unique keys, a name each, and for a new project exactly one default work type (`check_catalog`).
+3. `fields`: a known type, options for `select` and `multi_select`, no repeated or empty name.
+4. `profiles`: a profile named like a built-in is dropped with a warning and never changed. Otherwise a known `kind`, a known `tool_policy.agent`, a boolean `tool_policy.network` when present, a `docket.team` matching `^[a-z0-9][a-z0-9-]{0,63}$`, and no repeated name. An unknown `fleet` is a warning and the profile runs on any computer.
+5. `roles`: the `profile` must be in the file or on the board. No repeated name.
+6. `sprints`: status `planning` or `closed`, dates written `YYYY-MM-DD`, no repeated name.
+7. `automation`: the values of the table above; `check_automation` lowers levels and auto-start, and refuses a domain that names a type key the catalog lacks.
+8. `items`: `tack_core::outline::resolve` (references, loops, dates, `CreateItem` validation) and then `check_item` (roles, sprints and field values); each item's word is then given the key of its type, adding a work type for a word the catalog lacks.
 
-`Board` describes the project: its workflow, fields, profiles, roles, sprints, the fleets, the known agent kinds (`HARNESS_KINDS` in `handlers/runner_admin.rs`), its autonomy level (L3 for a new project) and whether auto-start is on.
+`Board` describes the project: its workflow, its type catalog (`item_types`, and `new_project`, which says whether the file's `types` replace it), fields, profiles, roles, sprints, the fleets, the known agent kinds (`HARNESS_KINDS` in `handlers/runner_admin.rs`), its autonomy level (L3 for a new project) and whether auto-start is on.
 
 ### Matching by name
 
@@ -201,6 +216,7 @@ The levels are lowered to the project's own level, which is L3 for a new project
 | Field | Meaning |
 |---|---|
 | `vocabulary` | The words to apply, or none |
+| `types` | The whole catalog the project ends with, when the file changes it; `new_types` names the work types the items' words added |
 | `fields`, `profiles`, `roles`, `sprints` | `Vec<Upsert<…>>` in the file's order |
 | `automation` | The section with levels and auto-start already lowered |
 | `items` | A `ResolvedOutline`: items in written order (parents first), `blocks` as index pairs, and warnings |
@@ -236,7 +252,7 @@ The levels are lowered to the project's own level, which is L3 for a new project
 
 `handlers/export.rs::bundle_response` gathers the rows and `tack_core::outline::bundle::to_bundle(&Parts)` builds the file. It is deterministic: exporting, importing into a new project and exporting again gives the same text. The rules:
 
-- The workflow is always written as statuses in order, never as a preset. The vocabulary carries only the words that differ from the type's.
+- The workflow is always written as statuses in order, never as a preset. The vocabulary carries only the words that differ from the type's, and `types` carries the whole catalog in order.
 - Fields sorted by name. Sprints sorted by start date, then name.
 - Only the profiles that the project's roles and its default point at, and not the built-ins. A profile's fleet is written by name.
 - Items in dependency order (parents first) with `ref` set to `1` to `n`. Only `blocks` dependencies become `depends_on`.
@@ -245,7 +261,7 @@ The levels are lowered to the project's own level, which is L3 for a new project
 
 ## Templates
 
-A template is a project file without items. Migration `091_template_bundle` adds `roles`, `profiles` and `automation` (all text, JSON) to `project_templates`, beside the existing workflow, vocabulary, custom fields and default boards; migration `106_template_teams` adds `teams` (a JSON list of the file's `teams` entries).
+A template is a project file without items. Migration `091_template_bundle` adds `roles`, `profiles` and `automation` (all text, JSON) to `project_templates`, beside the existing workflow, vocabulary, custom fields and default boards; migration `106_template_teams` adds `teams` (a JSON list of the file's `teams` entries) and migration `107_item_types` adds `item_types` (a JSON list of the file's `types` entries).
 
 - **Create a project from a template** (`build_project_from_template` in `handlers/templates.rs`): the template is turned back into an `Outline` and `create_from_bundle` runs the same code as an import. Afterwards the template's own workflow is applied again, because statuses in a file can only say `custom`.
 - **Save a project as a template** (`save_project_as_template`): `to_bundle` supplies the roles, profiles and automation that are stored.

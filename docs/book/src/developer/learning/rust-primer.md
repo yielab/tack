@@ -60,7 +60,7 @@ pub struct Item {
     pub parent_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
-    pub item_type: ItemType,
+    pub item_type: String, // a key of the project's type catalog
     pub status: String,
     pub priority: Priority,
     pub estimate: Option<f64>,
@@ -234,7 +234,7 @@ pub use items::*;   // re-export everything public from items
 `pub` controls visibility — only `pub` items are accessible outside the module. Everything else is private by default (stricter than Python, similar to `private` in Java).
 
 ```rust
-use tack_core::models::{Item, Project, ItemType};
+use tack_core::models::{Item, Project, Priority};
 use chrono::Utc;
 use uuid::Uuid;
 ```

@@ -309,24 +309,21 @@ pub fn workflow_for_type(project_type: &ProjectType) -> WorkflowConfig {
 
 To let a project file choose the preset by name (`workflow.preset: education`), add an arm to `preset_workflow` in the same file, and list the name in the project file reference ([The Project File Format](project-file.md)).
 
-### Step 5: Add a vocabulary preset
+### Step 5: Add a vocabulary preset and a type preset
 
 Open `crates/tack-core/src/vocabulary.rs` and add a case to `vocabulary_for_type`:
 
 ```rust
 ProjectType::Education => HashMap::from([
-    ("epic".into(), "Course".into()),
-    ("feature".into(), "Module".into()),
-    ("task".into(), "Lesson".into()),
-    ("subtask".into(), "Exercise".into()),
-    ("bug".into(), "Correction".into()),
     ("sprint".into(), "Week".into()),
     ("milestone".into(), "Exam".into()),
     // … other terms
 ]),
 ```
 
-At this point `POST /api/projects` with `"project_type": "education"` will auto-select the new workflow and vocabulary.
+The item types are not words: add the project type's catalog to `preset` in `crates/tack-core/src/item_types.rs` (Course and Module as groups, Lesson as the default work type, and so on). A new project type changes the list that migration `107_item_types` froze, so it is a new migration for the projects and templates that already exist, never an edit of that one.
+
+At this point `POST /api/projects` with `"project_type": "education"` will auto-select the new workflow, vocabulary and types.
 
 ---
 

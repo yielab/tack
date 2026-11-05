@@ -77,9 +77,8 @@ Smaller modules: `decision.rs` (who settled a decision), `principal.rs` (who is 
 
 The single source of truth for every domain struct. Notable types:
 
-- `Item` — the universal work unit. Fields include `item_type: ItemType`, `status: String`, `parent_id: Option<Uuid>`, `tags: Vec<String>`. The `status` field is a plain string rather than an enum because valid statuses are project-specific configuration, not compile-time constants.
-- `Project` — carries the `workflow: WorkflowConfig` and `vocabulary: VocabularyMap` inline. Both are serialised to JSON when stored in SQLite.
-- `ItemType` — an enum with `Epic`, `Feature`, `Task`, `Subtask`, `Bug`, `Requirement`, and `Custom(String)`. The `Custom` variant allows ad-hoc item types without a code change.
+- `Item` — the universal work unit. Fields include `item_type: String` (a key of the project's catalog), `status: String`, `parent_id: Option<Uuid>`, `tags: Vec<String>`. The `status` field is a plain string rather than an enum because valid statuses are project-specific configuration, not compile-time constants.
+- `Project` — carries the `workflow: WorkflowConfig` and `vocabulary: VocabularyMap` inline, both serialised to JSON when stored in SQLite, and `item_types: Vec<ItemTypeDef>`, the project's type catalog, which the store reads from the `item_types` table and serves with the project.
 - `CreateItem`, `UpdateItem`, `CreateProject`, `UpdateProject`, etc. — all DTOs used for both API deserialization and repository function parameters. Keeping them in `tack-core` means the API and CLI reference the same validated shapes.
 
 Validation constraints (length, range) are expressed via the `validator` crate's derive macros directly on the DTO structs. The API handlers call `.validate()?` before doing anything with the data.
@@ -122,18 +121,37 @@ The file also holds presets for the legal, research and event project types and 
 
 ---
 
+### `item_types.rs`
+
+A project's item types are a catalog, not an enum.
+
+```rust
+pub struct ItemTypeDef {
+    pub key: String,       // lowercase [a-z0-9_-]{1,40}; stable, never renamed
+    pub name: String,      // what the project calls it
+    pub level: Level,      // Group (holds work) | Work
+    pub color: TypeColor,  // a token name, never a hex
+    pub order: u32,
+    pub default_work: bool, // exactly one per project, and it is Work
+}
+```
+
+`preset(&ProjectType)` is the catalog a new project starts with (Software: Epic is a group; Feature, Task, Bug and Requirement are work; Construction: Building and Section are groups). Migration `107_item_types` holds a frozen copy of it, and a `tack-db` test compares the two, so changing a preset is a decision and not drift. `check_catalog` is the rule of a whole catalog: valid and unique keys, a name each, one default, and it is work. `add`, `update` and `remove` are the pure steps the store applies inside one transaction with the number of items that use the type: a level changes only while no item uses the type, and a used type is merged into another of its level before it is removed (`CoreError::TypeInUse`, `type_in_use`). `tack_db::repo::item_types` writes; `queries::item_types` reads; `tack-api`'s `handlers/item_types.rs` serves `GET/POST /api/projects/{id}/types` and `PATCH/DELETE /api/projects/{id}/types/{key}`.
+
+---
+
 ### `vocabulary.rs`
 
-`VocabularyMap` is a type alias for `HashMap<String, String>`. It maps canonical keys (like `"task"`, `"sprint"`, `"epic"`) to their display labels for a given project.
+`VocabularyMap` is a type alias for `HashMap<String, String>`. It maps the ten canonical keys that are not item types (like `"sprint"`, `"backlog"`, `"milestone"`) to their display labels for a given project. The item types are the project's catalog (`item_types.rs`).
 
 **`resolve(vocab, key)`** looks up a key in the project's vocabulary, falls back to the default vocabulary, and finally falls back to the key itself. This means partial vocabularies work fine — a construction project only needs to override the terms it cares about.
 
 **`vocabulary_for_type(project_type)`** provides preset vocabularies. The construction preset, for example, maps:
 
-- `"task"` → `"Work Order"`
 - `"sprint"` → `"Phase"`
-- `"epic"` → `"Building"`
-- `"bug"` → `"Defect"`
+- `"backlog"` → `"Pending Work"`
+- `"milestone"` → `"Inspection Point"`
+- `"release"` → `"Handover"`
 
 **`validate(vocab)`** ensures that all keys in a user-supplied vocabulary are from the recognised list (`VOCABULARY_KEYS`). Unknown keys return `Err(CoreError::InvalidVocabularyKey(...))` — this prevents typos from silently creating orphaned entries.
 
@@ -160,7 +178,7 @@ pub struct DependencyGraph {
 
 ### `error.rs`
 
-`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `Validation`).
+`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `TypeInUse`, `Validation`).
 
 Each variant has a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. The table is under `tack-api`'s `error.rs` below, so the core crate stays free of HTTP knowledge.
 
@@ -454,7 +472,7 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `SectionFailed` | `section_failed`, with a message that names the project-file section and says whether what came before stayed | 500 |
 | `Coded { code, message, field }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
 | `Core(CoreError::*NotFound*)` | `not_found` | 404 |
-| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `validation_failed` (`CoreError::code()`) | 400 |
+| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `validation_failed` (`CoreError::code()`) | 400; `type_in_use` is 409 |
 | `Store(StoreError::NotFound { entity })` | `not_found`, "`<entity>` not found" | 404 |
 | `Store(StoreError::Conflict)` | `conflict` | 409 |
 | `Store(StoreError::Corrupt { table, column })` | `internal_error`; logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" | 500 |
