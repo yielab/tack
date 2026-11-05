@@ -115,6 +115,10 @@ function mockFetch(
     profilesFailing?: { down: boolean };
     /** The project's autonomy settings: each team's line, with `works_in`. */
     autonomy?: { teams: unknown[] };
+    /** What `GET /items/{id}/run-options` answers; absent answers nothing useful, as an older server would. */
+    runOptions?: unknown[];
+    /** What `GET /projects/{id}/routing` answers. */
+    routing?: unknown[];
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -151,6 +155,8 @@ function mockFetch(
       const resolved = opts.resolved ?? { profile_id: fallback, profile_source: fallback ? 'project_default' : null };
       return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', limits: opts.limits ?? {}, limit: { tokens: null, source: 'none', enforced_by: 'measured', sentence: `Server says ${new URL(url, 'http://x').search}` }, ...resolved }), { status: 200 });
     }
+    if (url.endsWith('/run-options')) return new Response(JSON.stringify(opts.runOptions ?? {}), { status: 200 });
+    if (url.endsWith('/routing')) return new Response(JSON.stringify(opts.routing ?? []), { status: 200 });
     if (url.endsWith('/autonomy')) return new Response(JSON.stringify(opts.autonomy ?? {}), { status: 200 });
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
@@ -431,6 +437,66 @@ describe('RunWithAgentModal', () => {
     expect(document.querySelector('[data-testid="profile-source"]')?.textContent).toBe('Chosen by the role Content');
     // A profile the person picks instead is theirs, not the server's.
     (profileRadio('Reviewer')).click();
+    await flush();
+    expect(document.querySelector('[data-testid="profile-source"]')).toBeNull();
+  });
+
+  it('on_a_group_only_a_profile_that_plans_can_be_picked_and_the_button_says_plan', async () => {
+    const reason = 'Checkout is an epic: it holds work and is not run itself. Run its items, or plan it.';
+    const planner = { ...PROFILE_2, agent_profile_id: 'profile-plan', name: 'Planner' };
+    mount({}, {
+      runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, planner],
+      project: { ...PROJECT, default_profile_id: 'profile-1' },
+      runOptions: [
+        { profile_id: 'profile-1', allowed: false, reason, node: 'group' },
+        { profile_id: 'profile-plan', allowed: true, reason: null, node: 'group' },
+      ],
+    });
+    await flush();
+    await flush();
+    // The profile the server would choose cannot run an epic: its row says why, and nothing can start.
+    expect(profileRadio('Reviewer').disabled).toBe(true);
+    expect(document.querySelector('[data-testid="profile-refused"]')?.textContent).toBe(reason);
+    expect(profileRadio('Planner').disabled).toBe(false);
+    expect(submitButton()).toBeUndefined();
+    const start = document.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!;
+    expect(start.textContent).toBe('Plan with agent');
+    expect(start.disabled).toBe(true);
+    expect(document.body.textContent).toContain('Plan with agent: Fix login bug');
+    profileRadio('Planner').click();
+    await flush();
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!.disabled).toBe(false);
+  });
+
+  it('on_work_every_profile_can_be_picked_and_the_button_says_start_run', async () => {
+    mount({}, {
+      runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, PROFILE_2],
+      project: { ...PROJECT, default_profile_id: 'profile-1' },
+      runOptions: [
+        { profile_id: 'profile-1', allowed: true, reason: null, node: 'work' },
+        { profile_id: 'profile-2', allowed: true, reason: null, node: 'work' },
+      ],
+    });
+    await flush();
+    await flush();
+    expect(profileRadio('Reviewer').disabled).toBe(false);
+    expect(profileRadio('Fixer').disabled).toBe(false);
+    expect(document.querySelector('[data-testid="profile-refused"]')).toBeNull();
+    expect(document.querySelector('[data-testid="run-start"]')!.textContent).toBe('Start run');
+  });
+
+  it('a_choice_an_ancestor_made_says_whose_it_is', async () => {
+    mount({}, {
+      runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, PROFILE_2],
+      project: { ...PROJECT, default_profile_id: null },
+      resolved: { profile_id: 'profile-2', profile_source: 'role:Builder' },
+      routing: [{ item_id: 'item-1', profile_id: 'profile-2', from: { id: 'epic-1', title: 'Checkout' } }],
+    });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="profile-source"]')?.textContent).toBe('Chosen by the role Builder, from Checkout');
+    // A profile the person picks instead is not the ancestor's.
+    profileRadio('Reviewer').click();
     await flush();
     expect(document.querySelector('[data-testid="profile-source"]')).toBeNull();
   });

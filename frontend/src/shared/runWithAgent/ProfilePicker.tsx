@@ -89,6 +89,8 @@ export interface ProfilePickerProps {
   label: string;
   /** Where the chosen profile came from ("Chosen by the role Implementer"), said under its row. */
   choiceNote?: string | null;
+  /** Why a profile may not be chosen, by profile id: the row is shown disabled with the reason. */
+  refused?: ReadonlyMap<string, string>;
   /** Whether "Nobody yet" is offered (default true). */
   withNobody?: boolean;
   disabled?: boolean;
@@ -223,6 +225,7 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
     const id = `${uid}-${o.profile.agent_profile_id}`;
     const note = () => o.profile.summary || o.profile.delivers || null;
     const chosen = () => props.value === o.profile.agent_profile_id;
+    const refusal = () => props.refused?.get(o.profile.agent_profile_id);
     return (
       <div class="flex min-w-0 items-start gap-2">
         <input
@@ -231,13 +234,16 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
           name={uid}
           value={o.profile.agent_profile_id}
           checked={chosen()}
-          disabled={props.disabled}
-          aria-describedby={note() ? `${id}-note` : undefined}
+          disabled={props.disabled || !!refusal()}
+          aria-describedby={refusal() ? `${id}-refused` : note() ? `${id}-note` : undefined}
           class="mt-1"
           onClick={() => props.onChange(o.profile)}
         />
         <div class="min-w-0">
-          <label for={id} class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{o.profile.name}</label>
+          <label for={id} class="text-sm font-semibold" style={{ color: refusal() ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{o.profile.name}</label>
+          <Show when={refusal()}>
+            {(reason) => <p id={`${id}-refused`} data-testid="profile-refused" class="text-small" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{reason()}</p>}
+          </Show>
           <Show when={chosen() && props.choiceNote}>
             {(text) => <p data-testid="profile-source" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>}
           </Show>

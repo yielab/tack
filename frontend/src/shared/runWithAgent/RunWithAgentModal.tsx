@@ -10,6 +10,7 @@ import {
   fleetsApi, agentProfilesApi, runnersApi, teamsApi, listReportedHarnessKinds, teamOf, notSentText, degradedNeeds, degradedText,
   type AgentProfileSummary, type TeamEntry, type RunnerCapabilities, type RunnerSummary,
 } from '../execution';
+import { routingApi } from '../execution/routing';
 import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
@@ -21,6 +22,7 @@ import RunFlow from './RunFlow';
 import { agentKindOf, agentRank, offeredUnder, type AgentChoice } from './ProfilePicker';
 import { summarizeModels } from './models';
 import { agentSafety, LEVEL_MEANING } from '../help/texts';
+import { NO_CHOICES, runOptionsApi } from './runOptions';
 
 const LIMIT_DEBOUNCE_MS = 300;
 
@@ -98,6 +100,23 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [resolved] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
     (id) => api.briefs.agentContext(id).then((r) => ({ id: r.profile_id ?? null, source: r.profile_source ?? null }), () => null),
+  );
+  // What the server says of running this item: a group is planned, so only a profile that plans may be
+  // picked, and the others say why not.
+  const [choices] = createResource(
+    () => (props.isOpen ? props.itemId : undefined),
+    (id) => runOptionsApi.get(id).catch(() => NO_CHOICES),
+  );
+  const refused = (): ReadonlyMap<string, string> => choices()?.refused ?? NO_CHOICES.refused;
+  const planning = () => choices()?.group ?? false;
+  // The ancestor whose role or profile this item takes, when it names none of its own.
+  const [inheritedFrom] = createResource(
+    () => (props.isOpen ? { id: props.itemId, project: props.projectId } : undefined),
+    ({ id, project }) =>
+      routingApi.list(project).then(
+        (rows) => (Array.isArray(rows) ? (rows.find((r) => r.item_id === id)?.from?.title ?? null) : null),
+        () => null,
+      ),
   );
   // How many things can test what the agent delivers: the brief's acceptance checks.
   // A card with no brief has none; any other failure says nothing rather than guess.
@@ -356,6 +375,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     // With no computer answering, the field itself says so; this line would only repeat it.
     if (!form.selectorId.trim() && !silentTarget()) errors.push('Select where this runs.');
     if (!form.agentProfileId) errors.push('Choose a profile.');
+    else if (refused().get(form.agentProfileId)) errors.push(refused().get(form.agentProfileId)!);
     if (!form.harnessKind) errors.push('Select an agent.');
     else if (props.autonomy && form.harnessKind !== 'docket') errors.push(`${LEVEL_NEEDS_DOCKET}.`);
     if (!Number.isFinite(form.timeoutSeconds) || form.timeoutSeconds <= 0) errors.push('Timeout must be a positive number of seconds.');
@@ -516,7 +536,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
 
   return (
-    <Modal isOpen={props.isOpen} onClose={props.onClose} title={`Run with agent: ${props.itemTitle}`} size="lg" help={BOOK.runDialog}>
+    <Modal isOpen={props.isOpen} onClose={props.onClose} title={`${planning() ? 'Plan with agent' : 'Run with agent'}: ${props.itemTitle}`} size="lg" help={BOOK.runDialog}>
       <Show
         when={!executionOff()}
         fallback={
@@ -582,6 +602,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             profileLimit={() => agentContext()?.limits.tokens ?? null}
             limitSentence={limitLine}
             profileSource={profileSource}
+            profileFrom={() => (profileSource() ? inheritedFrom() : null)}
+            refused={refused}
+            planning={planning}
             profileTools={profileTools}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
             modelLabel={() => runModel() ?? (modelsReport().requiresModel ? 'no model chosen' : "the agent's default")}

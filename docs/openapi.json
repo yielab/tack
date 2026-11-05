@@ -2790,6 +2790,52 @@
         }
       }
     },
+    "/api/items/{id}/run-options": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "summary": "The profiles that may run an item, and why the others may not.",
+        "operationId": "get_run_options",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Each agent profile and whether it may run the item, with the reason when it may not. The rule a run is refused by",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunOption"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{id}/subtasks-from-plan": {
       "post": {
         "tags": [
@@ -15311,6 +15357,14 @@
           "harness_not_reported"
         ]
       },
+      "Node": {
+        "type": "string",
+        "description": "What an item is for the screens: a group holds items, work is done.",
+        "enum": [
+          "group",
+          "work"
+        ]
+      },
       "Notification": {
         "type": "object",
         "description": "A notice as the inbox keeps it.",
@@ -17151,6 +17205,17 @@
           "item_id"
         ],
         "properties": {
+          "from": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RoutedFrom",
+                "description": "The ancestor the choice came from (an epic whose role or profile this item takes);\n`null` when the item names its own."
+              }
+            ]
+          },
           "harness": {
             "type": [
               "string",
@@ -17192,7 +17257,7 @@
               "string",
               "null"
             ],
-            "description": "Where the choice came from: `run_settings` (chosen on the card), `role:<name>`,\n`project_default`, `implementer` (the built-in profile, when nothing else is named) or\n`ambiguous` (its roles name different profiles, so the project's default is used)."
+            "description": "Where the choice came from: `run_settings` (chosen on the card), `role:<name>`,\n`project_default`, `implementer` (the built-in profile, when nothing else is named) or\n`ambiguous` (its roles name different profiles, so the project's default is used). An\nitem with nothing of its own takes the nearest ancestor's (`from` says which)."
           },
           "team": {
             "type": [
@@ -17200,6 +17265,23 @@
               "null"
             ],
             "description": "The team the profile names; the card runs in it, or nobody takes it when no computer\nreports it. `null` for a profile that names none: the card runs in its single agent."
+          }
+        }
+      },
+      "RoutedFrom": {
+        "type": "object",
+        "description": "The ancestor an item takes its profile from.",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
           }
         }
       },
@@ -17240,6 +17322,35 @@
             "format": "int64",
             "description": "What the run's latest attempt has counted so far, live while it runs; absent before any attempt.",
             "minimum": 0
+          }
+        }
+      },
+      "RunOption": {
+        "type": "object",
+        "description": "Whether one agent profile may run an item.",
+        "required": [
+          "profile_id",
+          "allowed",
+          "node"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "description": "Any profile runs work; a group runs only with a profile that plans or researches."
+          },
+          "node": {
+            "$ref": "#/components/schemas/Node",
+            "description": "What the item is for running it: `group` (its type holds work, or items sit under it) or\n`work`."
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the profile may not run it, in a sentence; `null` when it may."
           }
         }
       },
@@ -18368,6 +18479,7 @@
           "tree_too_deep",
           "parent_in_other_project",
           "group_in_sprint",
+          "group_not_runnable",
           "misdirected_host",
           "cross_site_request",
           "unsupported_media_type",
