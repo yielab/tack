@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::iter;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
@@ -14,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::dependency::DependencyGraph;
-use crate::item_types::{ItemTypeDef, default_work_key};
+use crate::hierarchy::{Entry, Forest, admit_parent};
+use crate::item_types::{ItemTypeDef, Level, default_work_key};
 use crate::models::{DependencyType, Priority};
 use crate::principal::{Capability, Principal, may};
 use crate::workflow::{StatusGate, WorkflowConfig};
@@ -177,6 +179,12 @@ pub enum Operation {
         #[serde(default)]
         due: Option<DateTime<Utc>>,
     },
+    /// Puts an item under `parent`, or at the top when there is none.
+    Parent {
+        item: ItemRef,
+        #[serde(default)]
+        parent: Option<ItemRef>,
+    },
 }
 
 impl Operation {
@@ -190,6 +198,7 @@ impl Operation {
             Operation::Depend { .. } => "depend",
             Operation::Comment { .. } => "comment",
             Operation::Due { .. } => "due",
+            Operation::Parent { .. } => "parent",
         }
     }
 
@@ -206,6 +215,7 @@ impl Operation {
             | Operation::Move { item, .. }
             | Operation::Comment { item, .. }
             | Operation::Due { item, .. } => vec![item],
+            Operation::Parent { item, parent } => iter::once(item).chain(parent.iter()).collect(),
             Operation::Depend { blocker, blocked } => vec![blocker, blocked],
         };
         refs.into_iter()
@@ -527,6 +537,8 @@ pub struct BoardView {
     pub profiles: HashSet<String>,
     /// Team name to the profiles that name it.
     pub profiles_by_team: HashMap<String, Vec<String>>,
+    /// The parents of every item of the project, to check where the operations put items.
+    pub forest: Forest,
     /// The type key of the item the creates hang under, when it is work; a group anchor gives
     /// `None`, and the creates take the default work type.
     pub anchor_type: Option<String>,
@@ -689,6 +701,8 @@ struct Simulation<'a> {
     graph: DependencyGraph,
     /// The ids the creates of this set stand for: real for the ones already applied.
     ids: HashMap<usize, Uuid>,
+    /// The tree as the operations leave it so far.
+    forest: Forest,
 }
 
 impl Simulation<'_> {
@@ -709,6 +723,28 @@ impl Simulation<'_> {
                 }
             }
         }
+    }
+}
+
+impl Simulation<'_> {
+    /// Puts `item` under `parent` (or at the top) when the tree rule admits it, as the store will
+    /// when it applies the operation; otherwise the sentence that says why not.
+    fn put_under(&mut self, item: Uuid, parent: Option<Uuid>) -> Result<(), String> {
+        let placement = self
+            .forest
+            .placement(item)
+            .ok_or_else(|| format!("item {item} is not in this project"))?;
+        let target = match parent {
+            Some(parent) => Some(
+                self.forest
+                    .target(parent)
+                    .ok_or_else(|| format!("the parent: item {parent} is not in this project"))?,
+            ),
+            None => None,
+        };
+        admit_parent(&placement, target.as_ref()).map_err(|error| error.to_string())?;
+        self.forest.set_parent(item, parent);
+        Ok(())
     }
 }
 
@@ -751,6 +787,7 @@ pub fn validate(
         occupied: board.occupied.clone(),
         graph,
         ids: created.clone().into_iter().collect(),
+        forest: board.forest.clone(),
     };
     let initial = board.workflow.initial_status().ok();
     let mut report = |operation: usize, message: String| {
@@ -779,17 +816,17 @@ pub fn validate(
         if create.acceptance.len() > 50 {
             report(index, "at most 50 acceptance criteria".into());
         }
+        let mut parent_id = None;
         if let Some(parent) = &create.parent {
             match parent {
                 ItemRef::New(earlier) if (*earlier as usize) >= index => report(
                     index,
                     "the parent must be an earlier operation of the change set".into(),
                 ),
-                other => {
-                    if let Err(message) = sim.item(other, operations) {
-                        report(index, format!("the parent: {message}"));
-                    }
-                }
+                other => match sim.item(other, operations) {
+                    Ok(id) => parent_id = Some(id),
+                    Err(message) => report(index, format!("the parent: {message}")),
+                },
             }
         }
         let id = Uuid::new_v4();
@@ -801,7 +838,26 @@ pub fn validate(
             }
             None => report(index, "the project's workflow has no status".into()),
         }
-        resolutions.insert(index, resolve_create(create, board));
+        let resolution = resolve_create(create, board);
+        let made = resolution
+            .item_type
+            .as_deref()
+            .and_then(|key| board.item_types.iter().find(|t| t.key == key));
+        sim.forest.insert(
+            id,
+            Entry {
+                parent: None,
+                title: create.title.trim().to_owned(),
+                type_name: made.map(|t| t.name.clone()).unwrap_or_default(),
+                level: made.map_or(Level::Work, |t| t.level),
+            },
+        );
+        if let Some(parent) = parent_id
+            && let Err(reason) = sim.put_under(id, Some(parent))
+        {
+            report(index, reason);
+        }
+        resolutions.insert(index, resolution);
     }
 
     // The other operations, in order.
@@ -830,6 +886,24 @@ pub fn validate(
             Operation::Due { item, .. } => {
                 if let Err(message) = sim.item(item, operations) {
                     reasons.push(message);
+                }
+            }
+            Operation::Parent { item, parent } => {
+                let item = sim.item(item, operations);
+                let parent = parent.as_ref().map(|parent| sim.item(parent, operations));
+                match (item, parent) {
+                    (Ok(item), None) => {
+                        let _ = sim.put_under(item, None);
+                    }
+                    (Ok(item), Some(Ok(parent))) => {
+                        if let Err(reason) = sim.put_under(item, Some(parent)) {
+                            reasons.push(reason);
+                        }
+                    }
+                    (item, parent) => {
+                        reasons.extend(item.err());
+                        reasons.extend(parent.and_then(Result::err));
+                    }
                 }
             }
             Operation::Comment { item, text } => {

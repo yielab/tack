@@ -773,6 +773,10 @@ pub struct UpdateItem {
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub description: Option<Option<String>>,
     pub item_type: Option<String>,
+    /// Omitted leaves the parent untouched; JSON `null` moves the item to the top. The tree rule
+    /// (`tack_core::hierarchy`) decides whether the parent is admitted.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub parent_id: Option<Option<Uuid>>,
     #[validate(length(min = 1, max = 100, message = "status must be 1–100 characters"))]
     pub status: Option<String>,
     pub priority: Option<Priority>,
@@ -815,6 +819,7 @@ impl UpdateItem {
             title,
             description,
             item_type,
+            parent_id,
             status,
             priority,
             estimate,
@@ -830,6 +835,7 @@ impl UpdateItem {
         title.is_none()
             && description.is_none()
             && item_type.is_none()
+            && parent_id.is_none()
             && status.is_none()
             && priority.is_none()
             && estimate.is_none()

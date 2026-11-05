@@ -842,6 +842,16 @@ pub enum StableErrorCode {
     InvalidWorkflow,
     /// The item type still has items, so it cannot be deleted or change its level.
     TypeInUse,
+    /// An item whose type holds work cannot go under work.
+    GroupUnderWork,
+    /// The parent is the item itself or sits inside it.
+    ParentLoop,
+    /// The move would make the tree deeper than its most.
+    TreeTooDeep,
+    /// The parent is an item of another project.
+    ParentInOtherProject,
+    /// An item that holds work is not planned into a sprint.
+    GroupInSprint,
     /// The `Host` header does not name this server.
     MisdirectedHost,
     /// A state-changing request that a page on another site sent.
@@ -920,7 +930,13 @@ impl StableErrorCode {
             Self::PayloadTooLarge => 413,
             Self::UnsupportedMediaType => 415,
             Self::MisdirectedHost => 421,
-            Self::Unprocessable | Self::UnreadableArchive => 422,
+            Self::Unprocessable
+            | Self::UnreadableArchive
+            | Self::GroupUnderWork
+            | Self::ParentLoop
+            | Self::TreeTooDeep
+            | Self::ParentInOtherProject
+            | Self::GroupInSprint => 422,
             Self::RateLimited => 429,
             Self::InternalError | Self::SectionFailed => 500,
         }

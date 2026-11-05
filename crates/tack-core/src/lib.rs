@@ -8,6 +8,7 @@ pub mod dependency;
 pub mod digest;
 pub mod error;
 pub mod event;
+pub mod hierarchy;
 pub mod item_types;
 pub mod models;
 pub mod notification;

@@ -44,11 +44,53 @@ pub enum CoreError {
     #[error("The type '{key}' is used by {items} items; move them to another type first")]
     TypeInUse { key: String, items: u32 },
 
+    #[error("{}", group_under_work(.group, .parent))]
+    GroupUnderWork { group: String, parent: String },
+
+    #[error("That would put {title} inside itself.")]
+    ParentLoop { title: String },
+
+    #[error("Five levels is the most.")]
+    TreeTooDeep,
+
+    #[error("A parent must be in the same project.")]
+    ParentInOtherProject,
+
+    #[error("{} does not go in a sprint: its items do.", with_article(.type_name, true))]
+    GroupInSprint { type_name: String },
+
     #[error("Validation error: {0}")]
     Validation(String),
 
     #[error("Invalid workflow: {0}")]
     InvalidWorkflow(String),
+}
+
+/// "an epic", "a task": the type's name in lower case with the article it takes, capitalised when
+/// it starts a sentence.
+fn with_article(name: &str, starts_sentence: bool) -> String {
+    let name = name.to_lowercase();
+    let article = match name.chars().next() {
+        Some('a' | 'e' | 'i' | 'o' | 'u') => "an",
+        _ => "a",
+    };
+    let phrase = format!("{article} {name}");
+    if starts_sentence {
+        let mut chars = phrase.chars();
+        chars.next().map_or(phrase.clone(), |first| {
+            first.to_uppercase().chain(chars).collect()
+        })
+    } else {
+        phrase
+    }
+}
+
+fn group_under_work(group: &str, parent: &str) -> String {
+    format!(
+        "{} cannot go under {}.",
+        with_article(group, true),
+        with_article(parent, false)
+    )
 }
 
 impl CoreError {
@@ -68,6 +110,11 @@ impl CoreError {
             CoreError::EmptyWorkflow => StableErrorCode::EmptyWorkflow,
             CoreError::HasChildren(_, _) => StableErrorCode::HasChildren,
             CoreError::TypeInUse { .. } => StableErrorCode::TypeInUse,
+            CoreError::GroupUnderWork { .. } => StableErrorCode::GroupUnderWork,
+            CoreError::ParentLoop { .. } => StableErrorCode::ParentLoop,
+            CoreError::TreeTooDeep => StableErrorCode::TreeTooDeep,
+            CoreError::ParentInOtherProject => StableErrorCode::ParentInOtherProject,
+            CoreError::GroupInSprint { .. } => StableErrorCode::GroupInSprint,
             CoreError::Validation(_) => StableErrorCode::ValidationFailed,
             CoreError::InvalidWorkflow(_) => StableErrorCode::InvalidWorkflow,
         }
