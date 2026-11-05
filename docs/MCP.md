@@ -63,7 +63,7 @@ Then start the Tack server (`tack serve`) and the agent can call the tools below
 | `create_item` | write | `project_id`*, `title`*, `description`, `item_type`, `priority`, `parent_id`, `assignee`, `due_date`, `tags`, `reason` | `POST /api/projects/{id}/items` |
 | `create_project` | write | `name`*, `project_type`, `description` | `POST /api/projects` |
 | `create_outline` | write | `items`*, one of `project_id` / `project`*, `fields`, `profiles`, `roles`, `sprints`, `automation`, `dry_run`, `reason` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
-| `update_item` | write | `id`*, `title`, `description`, `priority`, `assignee`, `status`, `due_date`, `who_does_it`, `depends_on`, `reason` | `PATCH /api/items/{id}`; `POST /api/projects/{id}/change-sets` for `who_does_it`, `depends_on` |
+| `update_item` | write | `id`*, `title`, `description`, `priority`, `assignee`, `status`, `due_date`, `parent_id`, `who_does_it`, `depends_on`, `reason` | `PATCH /api/items/{id}`; `POST /api/projects/{id}/change-sets` for `who_does_it`, `depends_on` |
 | `move_item` | write | `id`*, `status`*, `reason` | `PATCH /api/items/{id}` |
 | `add_comment` | write | `item_id`*, `content`*, `author`, `reason` | `POST /api/items/{id}/comments` |
 
@@ -115,7 +115,7 @@ ids `who_does_it` takes). `list_roles` gives a project's roles and the profile e
 `propose` sends a change set: a `reason`, and `operations`, each one of `create` (a title,
 with description, acceptance, type, role, team, profile_id, parent and depends_on),
 `who_does_it` (role, team or profile_id), `priority`, `move`, `depend` (blocker, blocked),
-`comment` and `due`. An operation names an existing item by its id, or an item an earlier
+`comment`, `due` and `parent` (an item, and the item to put it under, or none for the top). An operation names an existing item by its id, or an item an earlier
 `create` makes by that operation's position, counted from 0. The set is checked whole; a set that
 cannot land is refused with every reason in one error, and nothing is kept. Otherwise the answer's
 `outcome` is `applied`, `waiting for a person (change set <id>)`, or `partly applied; the rest
@@ -156,6 +156,13 @@ set, so under one:
 - `update_item` takes `who_does_it` (an agent profile id) and `depends_on` (the ids of items that
   must finish first); they are change-set operations. With the operator's token a call that
   carries one of them proposes a change set too, and the operator's applies at once.
+- `update_item` takes `parent_id`, the id of the item to put this one under, or an empty string for
+  the top. The tree rule decides, wherever the move is made: a type that holds work never goes under
+  work, the tree has at most five levels and no loops, and the parent is in the same project. With
+  the operator's token it is a `PATCH` that a refused move answers with `422` and a code
+  (`group_under_work`, `parent_loop`, `tree_too_deep`, `parent_in_other_project`); under an agent
+  credential it is a `parent` operation, and a set with a move that breaks the rule is refused
+  whole with every reason.
 - `add_comment` ignores `author`: the comment carries the credential's name.
 - The tools whose routes belong to the operator (`create_project`, the execution, fleet and
   profile tools, `get_autonomy`) answer `403` to a credential, as the routes do.

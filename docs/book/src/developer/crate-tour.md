@@ -140,6 +140,12 @@ pub struct ItemTypeDef {
 
 ---
 
+### `hierarchy.rs`
+
+The one rule of the tree of items. `node(level, has_children)` says whether an item is a `Node::Group` (its type holds work, or it has children) or `Node::Work`. `admit_parent(&Placement, Option<&Target>)` answers whether an item may go under a parent (or to the top, which always may): the parent is in the same project (`ParentInOtherProject`), it is neither the item nor inside its subtree (`ParentLoop`), a type that holds work does not go under work (`GroupUnderWork`), and the item's whole subtree fits in `MAX_DEPTH` levels (`TreeTooDeep`). `admit_sprint` refuses a group in a sprint (`GroupInSprint`). Each refusal is a `CoreError` with its own `StableErrorCode` (`group_under_work`, `parent_loop`, `tree_too_deep`, `parent_in_other_project`, `group_in_sprint`; all `422`) and a sentence in the project's own word for the type. `ParentGate` is the seam the store asks inside the transaction that gives an item a parent, as it asks `StatusGate` about a status; `Hierarchy` is the gate that calls `admit_parent`. `Forest` holds a project's parents in memory so that `change_set::validate` can apply a set's `parent` operations, and its `create`s with a parent, one after the other without a database. The store reads `Placement` and `Target` with recursive queries in `queries/items.rs`; `tack-app`'s `parents.rs` filters a project's items through `admit_parent` for `GET /api/projects/{id}/parents?item=|type=`.
+
+---
+
 ### `vocabulary.rs`
 
 `VocabularyMap` is a type alias for `HashMap<String, String>`. It maps the ten canonical keys that are not item types (like `"sprint"`, `"backlog"`, `"milestone"`) to their display labels for a given project. The item types are the project's catalog (`item_types.rs`).
@@ -178,7 +184,7 @@ pub struct DependencyGraph {
 
 ### `error.rs`
 
-`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `TypeInUse`, `Validation`).
+`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `TypeInUse`, `GroupUnderWork`, `ParentLoop`, `TreeTooDeep`, `ParentInOtherProject`, `GroupInSprint`, `Validation`).
 
 Each variant has a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. The table is under `tack-api`'s `error.rs` below, so the core crate stays free of HTTP knowledge.
 
@@ -198,7 +204,7 @@ The merge policy as one pure function. `Level` (`L3 < L4 < L5`), `Facts` (the tr
 
 ### `change_set.rs`
 
-Change sets, the one way an agent changes a board (ADR 0034). `ChangeSet` is a list of `Operation`s (`create`, `who_does_it`, `priority`, `move`, `depend`, `comment`, `due`), each with its own `OpState` and, once applied, an `OpResult`. An operation names an item by an `ItemRef`: the position of a `create` earlier in the same set (a number in the JSON) or an id the board already has. `validate` walks the operations in the order they would apply (creates, then the rest, then the dependencies the creates ask for) against a `BoardView` the caller read from the store, with the workflow's own `admit_move` for statuses, transitions and WIP limits and the dependency graph for loops, and answers either how each operation resolves or every `Problem` at once. `decide` takes the project's `AgentsOnBoard` rung and the `ceiling_of` the credential's scopes and answers `Apply` or `Wait` per operation; an operation that needs a create that waits waits with it. `status_of` derives a set's status from its operations. All of it is pure.
+Change sets, the one way an agent changes a board (ADR 0034). `ChangeSet` is a list of `Operation`s (`create`, `who_does_it`, `priority`, `move`, `depend`, `comment`, `due`, `parent`), each with its own `OpState` and, once applied, an `OpResult`. An operation names an item by an `ItemRef`: the position of a `create` earlier in the same set (a number in the JSON) or an id the board already has. `validate` walks the operations in the order they would apply (creates, then the rest, then the dependencies the creates ask for) against a `BoardView` the caller read from the store, with the workflow's own `admit_move` for statuses, transitions and WIP limits, the dependency graph for loops and `hierarchy::admit_parent` over the board's `Forest` for where an item goes, and answers either how each operation resolves or every `Problem` at once. `decide` takes the project's `AgentsOnBoard` rung and the `ceiling_of` the credential's scopes and answers `Apply` or `Wait` per operation; an operation that needs a create that waits waits with it. `status_of` derives a set's status from its operations. All of it is pure.
 
 ---
 
@@ -325,7 +331,7 @@ One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, 
 
 ### `change_sets.rs`
 
-`propose` reads the board into a `BoardView`, validates the whole set (a set that fails is refused with every reason and kept nowhere), keeps it under its idempotency key (the same key on a project answers the first change set again), lets `decide` pick the operations that apply now and applies them with `Repository::apply_change_set`: one `BEGIN IMMEDIATE` transaction that re-reads the set, writes every operation through the same row-level functions the person's routes use (`insert_item`, `update_item_in` with the workflow as gate, `insert_dependency`) and records each operation's state and result, so a failure anywhere leaves nothing. `apply` (a person, all or some operations, with edits), `reject` and `edit_operation` finish the lifecycle. `Mode::Now` is a person's own plan: everything applies at once and the rung does not count it. A plan accepted from a run (`POST /api/items/{id}/subtasks-from-plan`) is a set of creates proposed in that mode, so the plan flow and an agent's proposal share one write path. The handlers in `tack-api` announce what changed to the WebSocket and run `after_update` for a move, as `update_item` does.
+`propose` reads the board into a `BoardView`, validates the whole set (a set that fails is refused with every reason and kept nowhere), keeps it under its idempotency key (the same key on a project answers the first change set again), lets `decide` pick the operations that apply now and applies them with `Repository::apply_change_set`: one `BEGIN IMMEDIATE` transaction that re-reads the set, writes every operation through the same row-level functions the person's routes use (`insert_item`, `update_item_in` with the workflow and the tree rule as gates, `insert_dependency`) and records each operation's state and result, so a failure anywhere leaves nothing. `apply` (a person, all or some operations, with edits), `reject` and `edit_operation` finish the lifecycle. `Mode::Now` is a person's own plan: everything applies at once and the rung does not count it. A plan accepted from a run (`POST /api/items/{id}/subtasks-from-plan`) is a set of creates proposed in that mode, so the plan flow and an agent's proposal share one write path. The handlers in `tack-api` announce what changed to the WebSocket and run `after_update` for a move, as `update_item` does.
 
 ### `threads.rs`
 
@@ -472,7 +478,7 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `SectionFailed` | `section_failed`, with a message that names the project-file section and says whether what came before stayed | 500 |
 | `Coded { code, message, field }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
 | `Core(CoreError::*NotFound*)` | `not_found` | 404 |
-| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `validation_failed` (`CoreError::code()`) | 400; `type_in_use` is 409 |
+| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `group_under_work`, `parent_loop`, `tree_too_deep`, `parent_in_other_project`, `group_in_sprint`, `validation_failed` (`CoreError::code()`) | 400; `type_in_use` is 409; the five tree codes are 422 |
 | `Store(StoreError::NotFound { entity })` | `not_found`, "`<entity>` not found" | 404 |
 | `Store(StoreError::Conflict)` | `conflict` | 409 |
 | `Store(StoreError::Corrupt { table, column })` | `internal_error`; logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" | 500 |
