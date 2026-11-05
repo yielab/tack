@@ -97,7 +97,9 @@ pub static CREATE_EXECUTION: Tool = Tool {
              execution request that assigns a Tack item to a coding-harness \
              runner or fleet. At most one of runner_id/fleet_id; omitted, the \
              server picks the agent profile (the item's role, else the project's \
-             default), its agent and where it runs. \
+             default), its agent and where it runs. An item that holds work (an epic) \
+             is run only with a planner or researcher profile; any other is refused \
+             with group_not_runnable. \
              Use list_fleets/list_agent_profiles first to \
              discover valid ids.",
         input_schema: || {

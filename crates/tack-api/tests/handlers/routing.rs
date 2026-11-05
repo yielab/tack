@@ -123,6 +123,24 @@ impl Board {
             .id
     }
 
+    /// A group of the project's own type (an epic), at the top.
+    async fn epic(&self, title: &str, status: &str) -> Uuid {
+        self.state
+            .repo
+            .create_item(
+                self.project,
+                status,
+                CreateItem {
+                    title: title.into(),
+                    item_type: Some("epic".into()),
+                    ..CreateItem::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id
+    }
+
     /// A role of the project, with `profile` as its profile when there is one, given to `item`.
     async fn role(&self, name: &str, profile: Option<&str>, item: Uuid) {
         let repo = &self.state.repo;
@@ -244,6 +262,143 @@ async fn a_card_goes_where_a_run_would_and_a_team_is_one_lane_among_others() {
         (Some("solo"), Some("run_settings"))
     );
     assert!(!routing.contains_key(&closed), "a done card is not open");
+}
+
+#[tokio::test]
+async fn a_task_with_nothing_of_its_own_takes_its_epics_choice_and_says_whose_it_is() {
+    let b = board().await;
+    b.profile("solo", json!({"agent": "claude-code"})).await;
+    b.profile(
+        "builder",
+        json!({"agent": "docket", "docket": {"team": "saas-build"}}),
+    )
+    .await;
+    let epic = b.epic("Checkout", "To Do").await;
+    b.role("Builder", Some("builder"), epic).await;
+    let inherits = b.item("Pay", "To Do", Some(epic)).await;
+    let own = b.item("Refund", "To Do", Some(epic)).await;
+    b.choose(own, "solo").await;
+    let grandchild = b.item("Receipt", "To Do", Some(inherits)).await;
+
+    let routing = b.routing().await;
+
+    let r = &routing[&inherits];
+    assert_eq!(
+        (
+            r["profile_id"].as_str(),
+            r["source"].as_str(),
+            r["team"].as_str()
+        ),
+        (Some("builder"), Some("role:Builder"), Some("saas-build")),
+        "{r}"
+    );
+    assert_eq!(
+        r["from"],
+        json!({"id": epic.to_string(), "title": "Checkout"}),
+        "{r}"
+    );
+    let r = &routing[&grandchild];
+    assert_eq!(
+        r["from"]["title"], "Checkout",
+        "the climb passes the task: {r}"
+    );
+    let r = &routing[&own];
+    assert_eq!(
+        (r["profile_id"].as_str(), &r["from"]),
+        (Some("solo"), &Value::Null),
+        "{r}"
+    );
+    assert_eq!(routing[&epic]["from"], Value::Null);
+}
+
+#[tokio::test]
+async fn only_a_profile_that_plans_may_run_a_group_and_any_profile_may_run_work() {
+    let b = board().await;
+    let epic = b.epic("Checkout", "To Do").await;
+    let task = b.item("Pay", "To Do", Some(epic)).await;
+    let leaf = b.item("Alone", "To Do", None).await;
+    let kinds: std::collections::HashMap<String, String> =
+        tack_db::queries::agent_profiles::profiles_by_name(&b.state.repo)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.id, p.kind))
+            .collect();
+
+    let on_group = b.get(&format!("/api/items/{epic}/run-options")).await;
+    let options = on_group.as_array().unwrap();
+    assert_eq!(options.len(), kinds.len());
+    for option in options {
+        let kind = &kinds[option["profile_id"].as_str().unwrap()];
+        let plans = kind == "planner" || kind == "researcher";
+        assert_eq!(option["allowed"], plans, "{kind}: {option}");
+        assert_eq!(option["node"], "group");
+        if plans {
+            assert_eq!(option["reason"], Value::Null);
+        } else {
+            assert_eq!(
+                option["reason"],
+                "Checkout is an epic: it holds work and is not run itself. Run its items, or plan it."
+            );
+        }
+    }
+    assert!(kinds.values().any(|k| k == "planner") && kinds.values().any(|k| k == "implementer"));
+
+    for item in [task, leaf] {
+        let on_work = b.get(&format!("/api/items/{item}/run-options")).await;
+        assert!(
+            on_work
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|o| o["allowed"] == true && o["node"] == "work" && o["reason"].is_null()),
+            "{on_work}"
+        );
+    }
+
+    let (status, _) = common::send(
+        &b.app,
+        "GET",
+        &format!("/api/items/{}/run-options", Uuid::new_v4()),
+        Value::Null,
+        &[("authorization", &format!("Bearer {TOKEN}"))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn accepting_the_plan_of_an_epic_puts_its_items_under_it_and_they_take_its_choice() {
+    let b = board().await;
+    b.profile("solo", json!({"agent": "claude-code"})).await;
+    let epic = b.epic("Checkout", "To Do").await;
+    b.choose(epic, "solo").await;
+
+    let (status, body) = common::send(
+        &b.app,
+        "POST",
+        &format!("/api/items/{epic}/subtasks-from-plan"),
+        json!({"artifact_id": "plan-1", "subtasks": [
+            {"title": "Pay", "acceptance": []},
+            {"title": "Refund", "acceptance": []}
+        ]}),
+        &[("authorization", &format!("Bearer {TOKEN}"))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let routing = b.routing().await;
+    for created in body["created"].as_array().unwrap() {
+        let id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+        let item = b.get(&format!("/api/items/{id}")).await;
+        assert_eq!(item["item"]["parent_id"], epic.to_string(), "{item}");
+        let r = &routing[&id];
+        assert_eq!(
+            (r["profile_id"].as_str(), r["from"]["title"].as_str()),
+            (Some("solo"), Some("Checkout")),
+            "{r}"
+        );
+    }
 }
 
 #[tokio::test]
