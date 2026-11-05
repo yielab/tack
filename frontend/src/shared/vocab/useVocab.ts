@@ -1,18 +1,9 @@
 import { useProject } from '../state/projectContext';
-import {
-  resolveLabel,
-  getItemTypeList,
-  getItemTypeMap,
-  type ItemTypeConfig,
-} from './vocab';
+import { resolveLabel } from './vocab';
 
 export interface Vocab {
   /** Translate a vocabulary key to its label (custom or default fallback). */
   t: (key: string) => string;
-  /** Item-type configs (value/label/emoji/color) with current labels. */
-  types: () => ItemTypeConfig[];
-  /** Item-type map keyed by type, with current labels. */
-  typeMap: () => Record<string, { label: string; color: string; emoji: string }>;
 }
 
 /**
@@ -24,7 +15,5 @@ export function useVocab(): Vocab {
   const { vocabulary } = useProject();
   return {
     t: (key: string) => resolveLabel(vocabulary(), key),
-    types: () => getItemTypeList(vocabulary()),
-    typeMap: () => getItemTypeMap(vocabulary()),
   };
 }

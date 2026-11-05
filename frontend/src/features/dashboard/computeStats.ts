@@ -1,6 +1,5 @@
 import type { Item, WorkflowStatus } from '../../shared/types';
 import type { ExecutionSummary } from '../../shared/execution';
-import { typeKey } from '../../shared/ui/TypeBadge';
 import { cardRun } from '../../shared/runWithAgent/cardRun';
 
 export interface DashboardStats {
@@ -39,10 +38,10 @@ export function computeDashboardStats(
     low: items.filter((i) => i.priority === 'low').length,
   };
 
-  const typeSet = new Set(items.map((i) => typeKey(i.item_type)));
+  const typeSet = new Set(items.map((i) => i.item_type));
   const byType = Array.from(typeSet).map((name) => ({
     name,
-    count: items.filter((i) => typeKey(i.item_type) === name).length,
+    count: items.filter((i) => i.item_type === name).length,
   }));
 
   const doneStatusNames = new Set(byStatus.filter((s) => s.category === 'done').map((s) => s.name));

@@ -1,12 +1,11 @@
 import { type Component, createSignal, createEffect, For } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button, TypeBadge } from '../../../shared/ui';
-import type { ItemType } from '../../../shared/types';
+import { Button } from '../../../shared/ui';
 import { useProject } from '../../../shared/state/projectContext';
-import { VOCAB_KEYS, resolveLabel, getItemTypeList } from '../../../shared/vocab/vocab';
+import { VOCAB_KEYS, resolveLabel } from '../../../shared/vocab/vocab';
 
-/** The 16-key vocabulary editor with a live preview. Saves `vocabulary` only. */
+/** The vocabulary editor: the words that are not item types (the types are the project's own catalog). Saves `vocabulary` only. */
 const VocabularyPanel: Component = () => {
   const { project, projectId, refetch } = useProject();
   const [edits, setEdits] = createSignal<Record<string, string>>({});
@@ -44,8 +43,6 @@ const VocabularyPanel: Component = () => {
     }
   };
 
-  const previewTypes = () => getItemTypeList(edits());
-
   // A customised term reads as an accent pill; a blank one shows its default
   // as a muted placeholder on the surface fill.
   const inputStyle = (custom: boolean) => ({
@@ -57,7 +54,7 @@ const VocabularyPanel: Component = () => {
   });
 
   return (
-    <div class="grid max-w-[880px] gap-[18px] md:grid-cols-[1fr_280px]">
+    <div class="grid max-w-[880px] gap-[18px]">
       <div class="flex flex-col gap-1.5">
         <p class="mb-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Rename any term to match your domain. Blank fields fall back to the default label.
@@ -107,26 +104,6 @@ const VocabularyPanel: Component = () => {
       </div>
 
       <div class="flex flex-col gap-3">
-        <div class="flex flex-col gap-2.5 rounded-[26px] bg-panel p-4">
-          <p
-            class="text-micro font-bold uppercase tracking-[.1em]"
-            style={{ color: 'var(--color-text-tertiary)' }}
-          >
-            Preview — item type labels
-          </p>
-          <div class="flex flex-wrap gap-1.5">
-            <For each={previewTypes()}>
-              {(t) => (
-                <TypeBadge
-                  type={t.value as ItemType}
-                  label={t.label}
-                  style={{ 'font-size': '0.75rem', padding: '3px 10px' }}
-                />
-              )}
-            </For>
-          </div>
-        </div>
-
         <Button
           class="self-start"
           onClick={() => void save()}

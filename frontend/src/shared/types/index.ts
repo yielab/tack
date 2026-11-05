@@ -45,7 +45,11 @@ export type ItemPage = Schemas['PaginatedItems'];
 /** Detail envelope for `GET /api/items/:id` (item + roles + dependencies). */
 export type ItemDetail = Schemas['ItemDetail'];
 
-export type ItemType = Schemas['ItemType'];
+/** An item's type is a key of its project's catalog (`Project.item_types`). */
+export type ItemTypeDef = Schemas['ItemTypeDef'];
+export type ItemTypeUse = Schemas['ItemTypeUse'];
+export type TypeColor = Schemas['TypeColor'];
+export type TypeLevel = Schemas['ItemTypeLevel'];
 export type Priority = Schemas['Priority'];
 export type EstimateUnit = Schemas['EstimateUnit'];
 export type Recurrence = Schemas['Recurrence'];

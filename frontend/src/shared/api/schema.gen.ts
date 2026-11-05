@@ -1540,6 +1540,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_item_types"];
+        put?: never;
+        post: operations["create_item_type"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/types/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_item_type"];
+        options?: never;
+        head?: never;
+        patch: operations["update_item_type"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/boards": {
         parameters: {
             query?: never;
@@ -4443,6 +4475,15 @@ export interface components {
             /** @description build, respond, operate or routine. */
             shape?: string | null;
         };
+        /** @description An item type as a project file writes it. */
+        BundleType: {
+            color: components["schemas"]["TypeColor"];
+            /** @description The default work type; exactly one in a file that gives a new project its types. */
+            default?: boolean;
+            key: string;
+            level: components["schemas"]["ItemTypeLevel"];
+            name: string;
+        };
         /** @description The workflow a project file asks for: a preset or its own statuses, never both. */
         BundleWorkflow: {
             /** @description scrum, kanban, simple, construction, legal, research or event. */
@@ -4781,7 +4822,7 @@ export interface components {
             /** Format: double */
             estimate?: number | null;
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
-            item_type?: null | components["schemas"]["ItemType"];
+            item_type?: string | null;
             /** Format: uuid */
             parent_id?: string | null;
             priority?: null | components["schemas"]["Priority"];
@@ -4790,6 +4831,12 @@ export interface components {
             sprint_id?: string | null;
             tags?: string[] | null;
             title: string;
+        };
+        CreateItemType: {
+            color: components["schemas"]["TypeColor"];
+            key: string;
+            level: components["schemas"]["ItemTypeLevel"];
+            name: string;
         };
         /**
          * @description One `create`: an entry of a plan (`docs/contracts/plan-v1`), with refs where the plan has
@@ -4809,7 +4856,7 @@ export interface components {
             /** @description A team, by name; the one profile that names it does the item. */
             team?: string | null;
             title: string;
-            /** @description The item type, when the project has it; else the type of the set's anchor, else a task. */
+            /** @description The item type, when the project has it; else the type of the set's anchor when that is work, else the default work type. */
             type?: string | null;
         };
         CreatePendingRunner: {
@@ -4884,6 +4931,8 @@ export interface components {
             custom_fields?: components["schemas"]["CustomFieldDefinition"][] | null;
             default_boards?: components["schemas"]["BoardTemplate"][] | null;
             description?: string | null;
+            /** @description The project type's preset when absent. */
+            item_types?: components["schemas"]["ItemTypeDef"][] | null;
             name: string;
             profiles?: components["schemas"]["BundleProfile"][];
             project_type: components["schemas"]["ProjectType"];
@@ -4925,7 +4974,7 @@ export interface components {
             /** @description A team, by name; the one profile that names it goes into the item's run settings. */
             team?: string | null;
             title: string;
-            /** @description The item type, when the project has it; else the parent item's. */
+            /** @description The item type, when the project has it; else the parent's when that is work, else the default work type. */
             type?: string | null;
         };
         CreateSubtasksFromPlanRequest: {
@@ -5579,7 +5628,8 @@ export interface components {
             estimate_unit: components["schemas"]["EstimateUnit"];
             /** Format: uuid */
             id: string;
-            item_type: components["schemas"]["ItemType"];
+            /** @description A key of the project's type catalog (`Project::item_types`). */
+            item_type: string;
             /** Format: uuid */
             parent_id?: string | null;
             priority: components["schemas"]["Priority"];
@@ -5713,8 +5763,27 @@ export interface components {
          * @enum {string}
          */
         ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown" | "plan" | "outline";
-        ItemType: "epic" | "feature" | "task" | "subtask" | "bug" | "requirement" | {
-            custom: string;
+        ItemTypeDef: {
+            color: components["schemas"]["TypeColor"];
+            /** @description Exactly one per project, and it is work: what an item made without a type becomes. */
+            default_work: boolean;
+            /** @description Lowercase `[a-z0-9_-]{1,40}`; stable, never renamed. */
+            key: string;
+            level: components["schemas"]["ItemTypeLevel"];
+            /** @description What the project calls it ("Epic", "Building", "Course"). */
+            name: string;
+            /** Format: int32 */
+            order: number;
+        };
+        /**
+         * @description Whether a type holds work or is work.
+         * @enum {string}
+         */
+        ItemTypeLevel: "group" | "work";
+        /** @description A type with how many items use it, as the types route lists it. */
+        ItemTypeUse: components["schemas"]["ItemTypeDef"] & {
+            /** Format: int32 */
+            items: number;
         };
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
@@ -6084,6 +6153,11 @@ export interface components {
              *     from it, and lists the ones no computer reports.
              */
             teams?: components["schemas"]["BundleTeam"][];
+            /**
+             * @description The project's item types. A new project takes exactly these; an existing one gains the
+             *     ones it lacks and takes the names and colours of the ones it has.
+             */
+            types?: components["schemas"]["BundleType"][];
         };
         OutlineItem: {
             assignee?: string | null;
@@ -6126,8 +6200,8 @@ export interface components {
             tags?: string[];
             title?: string;
             /**
-             * @description epic, feature, task (the default), subtask, bug, requirement, or any
-             *     other word as a custom type.
+             * @description A key or name of the project's types; absent, the default work type. A word the
+             *     project lacks is added as a work type.
              */
             type?: string | null;
         };
@@ -6157,6 +6231,11 @@ export interface components {
              *     for a file that names no team and no agent.
              */
             missing: components["schemas"]["Missing"][];
+            /**
+             * @description The names of the item types the items' words added to the project, as work: a word the
+             *     project's types lack is added rather than refused.
+             */
+            new_types: string[];
             project?: null | components["schemas"]["Project"];
             /** @description What each section of a project file does, in the file's order; empty for a CSV. */
             sections: components["schemas"]["SectionSummary"][];
@@ -6268,6 +6347,11 @@ export interface components {
             github_token_ref?: string | null;
             /** Format: uuid */
             id: string;
+            /**
+             * @description The project's type catalog, in display order: served with the project so no screen
+             *     fetches it twice.
+             */
+            item_types?: components["schemas"]["ItemTypeDef"][];
             name: string;
             /**
              * @description How a run installs the project's dependencies: absent detects the command from the
@@ -6315,6 +6399,8 @@ export interface components {
             /** Format: uuid */
             id: string;
             is_builtin: boolean;
+            /** @description The item types a project made from the template starts with. */
+            item_types: components["schemas"]["ItemTypeDef"][];
             name: string;
             /** @description The agent profiles those roles use. */
             profiles: components["schemas"]["BundleProfile"][];
@@ -6977,7 +7063,7 @@ export interface components {
          *     layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
          * @enum {string}
          */
-        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
+        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "type_in_use" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
         StaleItem: {
             item: components["schemas"]["DigestItem"];
             /** Format: date-time */
@@ -7616,6 +7702,11 @@ export interface components {
         };
         /** @enum {string} */
         TurnState: "pending" | "replied" | "failed";
+        /**
+         * @description A colour by the design token it draws with, never a hex value.
+         * @enum {string}
+         */
+        TypeColor: "accent" | "accent2" | "danger" | "warning" | "success" | "neutral";
         Unclaimed: {
             /** @description Whether the project starts tasks by itself; when it does not, no task is waiting for it. */
             auto_start: boolean;
@@ -7676,7 +7767,7 @@ export interface components {
              */
             estimate?: number | null;
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
-            item_type?: null | components["schemas"]["ItemType"];
+            item_type?: string | null;
             priority?: null | components["schemas"]["Priority"];
             recurrence?: null | components["schemas"]["Recurrence"];
             run_settings?: null | components["schemas"]["RunSettings"];
@@ -7687,6 +7778,18 @@ export interface components {
             status?: string | null;
             tags?: string[] | null;
             title?: string | null;
+        };
+        UpdateItemType: {
+            color?: null | components["schemas"]["TypeColor"];
+            /** @description `true` makes this the default work type; the previous one stops being it. */
+            default_work?: boolean | null;
+            level?: null | components["schemas"]["ItemTypeLevel"];
+            name?: string | null;
+            /**
+             * Format: int32
+             * @description The position among the types, from 0.
+             */
+            order?: number | null;
         };
         UpdateLocalRunner: {
             enabled: boolean;
@@ -11168,7 +11271,7 @@ export interface operations {
                     "application/json": components["schemas"]["AutonomySettings"];
                 };
             };
-            /** @description An unknown level, a nameless or repeated domain, a negative limit */
+            /** @description An unknown level, a nameless or repeated domain, a domain naming a type the project lacks, a negative limit */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -11552,6 +11655,192 @@ export interface operations {
             };
         };
     };
+    list_item_types: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project's types in display order, each with how many items use it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemTypeUse"][];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_item_type: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateItemType"];
+            };
+        };
+        responses: {
+            /** @description The type, last in order and never the default */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemTypeDef"];
+                };
+            };
+            /** @description The key or name is not valid, or the key is used */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_item_type: {
+        parameters: {
+            query?: {
+                /** @description The type the items of the deleted one move to; required while items use it. */
+                merge_into?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+                /** @description The type's key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The type is deleted and its items moved to merge_into */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The default work type, or a merge into another level, cannot be done */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project or type not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Items use the type and merge_into is not given (type_in_use) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_item_type: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+                /** @description The type's key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateItemType"];
+            };
+        };
+        responses: {
+            /** @description The type after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemTypeDef"];
+                };
+            };
+            /** @description The change breaks a rule of the catalog */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project or type not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The level cannot change while items use the type (type_in_use) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_boards: {
         parameters: {
             query?: never;
@@ -11777,7 +12066,7 @@ export interface operations {
                 /** @description Project ID */
                 project_id: string;
                 status: string | null;
-                item_type: null | components["schemas"]["ItemType"];
+                item_type: string | null;
                 priority: null | components["schemas"]["Priority"];
                 sprint_id: string | null;
                 parent_id: string | null;

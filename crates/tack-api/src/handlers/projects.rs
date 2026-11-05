@@ -134,6 +134,11 @@ pub async fn update_project(
     if let Err(e) = input.validate() {
         return ApiError::BadRequest(e.to_string()).into_response();
     }
+    if let Some(vocabulary) = &input.vocabulary
+        && let Err(rule) = tack_core::vocabulary::validate(vocabulary)
+    {
+        return ApiError::Core(rule).into_response();
+    }
     if let Some(Some(command)) = &mut input.prepare_command {
         match tack_protocol::prepare::clean_command(command) {
             Ok(clean) => *command = clean,

@@ -11,17 +11,17 @@ import {
 } from '@thisbeyond/solid-dnd';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
-import { type ItemTypeConfig } from '../../shared/vocab/vocab';
+import { useItemTypes } from '../../shared/vocab/useItemTypes';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useExecutionStore } from '../../shared/state/executionContext';
 import { useVocab } from '../../shared/vocab/useVocab';
-import type { Item } from '../../shared/types';
+import type { Item, ItemTypeDef } from '../../shared/types';
 import { Button, Badge, EmptyState, RunState, createConfirm } from '../../shared/ui';
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { IconList } from '../../shared/ui/icons';
 import { priorityColor } from '../../shared/ui/PriorityDot';
-import { typeBadgeTone } from '../../shared/ui/TypeBadge';
+import { typeTone as toneOf } from '../../shared/ui/TypeBadge';
 import type { Priority } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import {
@@ -35,7 +35,6 @@ import {
 } from './listRows';
 import { hasColumnChoice, loadDensity, loadHiddenColumns, saveDensity, saveHiddenColumns, type Density } from './listPrefs';
 
-type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
 
 // What a new item can be given; "none" is only for editing an item that has one.
 const PRIORITIES = [
@@ -80,15 +79,16 @@ export default function List() {
 
   const { items, refetch } = useProjectItems();
   const { project } = useProject();
-  const { types: vocabTypes, t } = useVocab();
-  const types = createMemo(() => vocabTypes());
+  const { t } = useVocab();
+  const itemTypes = useItemTypes();
+  const types = createMemo(() => itemTypes.list());
   const executions = useExecutionStore();
 
   const [, setSearchParams] = useSearchParams();
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
   const [creatingAt, setCreatingAt] = createSignal<{ parentId?: string } | null>(null);
   const [newItemTitle, setNewItemTitle] = createSignal('');
-  const [newItemType, setNewItemType] = createSignal<ItemType>('task');
+  const [newItemType, setNewItemType] = createSignal('');
   const [newItemPriority, setNewItemPriority] = createSignal('medium');
 
   const [sort, setSort] = createSignal<{ key: SortKey; dir: SortDir } | null>(null);
@@ -260,7 +260,7 @@ export default function List() {
   const startCreating = (parentId?: string) => {
     setCreatingAt({ parentId });
     setNewItemTitle('');
-    setNewItemType('task');
+    setNewItemType(itemTypes.defaultKey());
     setNewItemPriority('medium');
   };
   const cancelCreating = () => {
@@ -606,7 +606,7 @@ export default function List() {
 // Sortable item row — a pill on the page ground, one cell per shown column.
 function ItemRow(props: {
   item: ItemNode;
-  types: ItemTypeConfig[];
+  types: ItemTypeDef[];
   run?: CardRun;
   columns: ColDef[];
   gridColumns: string;
@@ -623,9 +623,9 @@ function ItemRow(props: {
 }) {
   const sortable = createSortable(props.item.id);
   const [showActions, setShowActions] = createSignal(false);
-  const itemType = (typeof props.item.item_type === 'string' ? props.item.item_type : 'task') as ItemType;
-  const typeConfig = () => props.types.find(t => t.value === itemType) ?? props.types[2] ?? { emoji: '📝', label: itemType };
-  const typeTone = typeBadgeTone(itemType);
+  const typeConfig = () => props.types.find((t) => t.key === props.item.item_type);
+  const typeLabel = () => typeConfig()?.name ?? props.item.item_type;
+  const typeTone = () => toneOf(typeConfig()?.color ?? 'neutral');
   const hasChildren = props.item.children.length > 0;
 
   return (
@@ -676,10 +676,10 @@ function ItemRow(props: {
                     {/* Type tile */}
                     <div
                       class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center font-heading text-sm"
-                      style={{ 'background-color': typeTone.bg, color: typeTone.fg }}
-                      title={typeConfig().label}
+                      style={{ 'background-color': typeTone().bg, color: typeTone().fg }}
+                      title={typeLabel()}
                     >
-                      {typeConfig().label.charAt(0).toUpperCase()}
+                      {typeLabel().charAt(0).toUpperCase()}
                     </div>
 
                     <Show
@@ -728,7 +728,7 @@ function ItemRow(props: {
                 </Match>
 
                 <Match when={col.key === 'item_type'}>
-                  <span class="block truncate text-small text-content">{typeConfig().label}</span>
+                  <span class="block truncate text-small text-content">{typeLabel()}</span>
                 </Match>
 
                 <Match when={col.key === 'status'}>
@@ -909,12 +909,12 @@ const pillControl =
 // Inline create form — a soft accent pill under its parent.
 function CreateForm(props: {
   level: number;
-  types: ItemTypeConfig[];
+  types: ItemTypeDef[];
   title: string;
-  type: ItemType;
+  type: string;
   priority: string;
   onTitleChange: (v: string) => void;
-  onTypeChange: (v: ItemType) => void;
+  onTypeChange: (v: string) => void;
   onPriorityChange: (v: string) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -930,11 +930,11 @@ function CreateForm(props: {
         <select
           aria-label="Type"
           value={props.type}
-          onChange={(e) => props.onTypeChange(e.currentTarget.value as ItemType)}
+          onChange={(e) => props.onTypeChange(e.currentTarget.value)}
           class={pillControl}
         >
           <For each={props.types}>
-            {(t) => <option value={t.value}>{t.emoji} {t.label}</option>}
+            {(t) => <option value={t.key}>{t.name}</option>}
           </For>
         </select>
 

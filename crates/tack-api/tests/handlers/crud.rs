@@ -208,13 +208,30 @@ async fn update_project_vocabulary_persists() {
         &app,
         "PATCH",
         &format!("/api/projects/{pid}"),
-        json!({"vocabulary": { "task": "Work Order", "sprint": "Phase" }}),
+        json!({"vocabulary": { "backlog": "Pending Work", "sprint": "Phase" }}),
         &[],
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["vocabulary"]["task"], "Work Order");
+    assert_eq!(body["vocabulary"]["backlog"], "Pending Work");
     assert_eq!(body["vocabulary"]["sprint"], "Phase");
+}
+
+#[tokio::test]
+async fn a_type_word_is_not_a_vocabulary_key() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "Vocab Project", "software").await;
+
+    let (status, body) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/projects/{pid}"),
+        json!({"vocabulary": { "task": "Work Order" }}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "invalid_vocabulary_key");
 }
 
 #[tokio::test]

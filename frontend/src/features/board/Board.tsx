@@ -19,7 +19,7 @@ import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { useAutoStart, type WaitingReason } from '../../shared/state/autoStart';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
 import { statusDotColor } from '../../shared/ui/statusDot';
-import { Avatar, AvatarStack, teamInitials, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, teamInitials, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -39,7 +39,6 @@ function shortId(id: string): string {
 
 export const ItemCard: Component<{
   item: Item;
-  typeLabel: string;
   /** Every column's status, for the "Move to…" menu. */
   statuses: string[];
   onEdit: (item: Item) => void;
@@ -259,7 +258,7 @@ export const ItemCard: Component<{
         <Show when={showsPriority(props.item.priority, props.alwaysPriority === true)}>
           <PriorityDot priority={props.item.priority as Priority} showLabel />
         </Show>
-        <TypeBadge type={props.item.item_type} label={props.typeLabel} />
+        <TypeBadge type={props.item.item_type} />
       </div>
       <Show when={props.item.recurrence}>
         <div><Badge>Repeats</Badge></div>
@@ -290,7 +289,6 @@ const BoardColumnView: Component<{
   column: BoardColumn;
   statuses: string[];
   dotColor: string;
-  typeLabelOf: (item: Item) => string;
   onItemDrop: (itemId: string, newStatus: string) => void;
   onMoveItem: (itemId: string, newStatus: string) => void;
   onAddItem: (status: string) => void;
@@ -421,7 +419,6 @@ const BoardColumnView: Component<{
           {(item) => (
             <ItemCard
               item={item()}
-              typeLabel={props.typeLabelOf(item())}
               statuses={props.statuses}
               onEdit={props.onEditItem}
               onMove={props.onMoveItem}
@@ -529,7 +526,6 @@ const Board: Component = () => {
   const categoryOf = (status: string): 'todo' | 'in_progress' | 'done' =>
     project()?.workflow.statuses.find((s) => s.name === status)?.category ?? 'todo';
   const dotColor = (status: string): string => statusDotColor(categoryOf(status));
-  const typeLabelOf = (item: Item) => vocab.t(typeKey(item.item_type));
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [selectedColumn, setSelectedColumn] = createSignal<string | null>(null);
@@ -732,7 +728,6 @@ const Board: Component = () => {
                   column={entry().column}
                   statuses={statusNames()}
                   dotColor={dotColor(entry().id)}
-                  typeLabelOf={typeLabelOf}
                   onItemDrop={handleItemDrop}
                   onMoveItem={handleMoveItem}
                   onAddItem={handleAddItem}
@@ -763,6 +758,7 @@ const Board: Component = () => {
           onSuccess={() => refetch()}
           projectId={projectId()!}
           vocabulary={vocabulary()}
+          itemTypes={project()?.item_types}
           initialStatus={selectedColumn() || undefined}
           mode={modalMode()}
           existingItem={editingItem() || undefined}

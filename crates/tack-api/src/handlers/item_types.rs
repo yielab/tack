@@ -10,17 +10,17 @@ use uuid::Uuid;
 
 use tack_core::item_types::{CreateItemType, ItemTypeDef, ItemTypeUse, UpdateItemType};
 use tack_db::queries;
-use tack_db::repo::item_types::ItemTypeError;
+use tack_db::repo::item_types::CatalogError;
 
 use crate::error::{ApiError, ApiResult};
 use crate::extract::{Json, Path, Query};
 use crate::router::AppState;
 
-impl From<ItemTypeError> for ApiError {
-    fn from(error: ItemTypeError) -> Self {
+impl From<CatalogError> for ApiError {
+    fn from(error: CatalogError) -> Self {
         match error {
-            ItemTypeError::Store(failure) => ApiError::Store(failure),
-            ItemTypeError::Refused(rule) => ApiError::Core(rule),
+            CatalogError::Store(failure) => ApiError::Store(failure),
+            CatalogError::Refused(rule) => ApiError::Core(rule),
         }
     }
 }

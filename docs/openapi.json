@@ -4500,7 +4500,7 @@
             }
           },
           "400": {
-            "description": "An unknown level, a nameless or repeated domain, a negative limit",
+            "description": "An unknown level, a nameless or repeated domain, a domain naming a type the project lacks, a negative limit",
             "content": {
               "application/json": {
                 "schema": {
@@ -5039,6 +5039,263 @@
         }
       }
     },
+    "/api/projects/{id}/types": {
+      "get": {
+        "tags": [
+          "item types"
+        ],
+        "operationId": "list_item_types",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project's types in display order, each with how many items use it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ItemTypeUse"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "item types"
+        ],
+        "operationId": "create_item_type",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateItemType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The type, last in order and never the default",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemTypeDef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The key or name is not valid, or the key is used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/types/{key}": {
+      "delete": {
+        "tags": [
+          "item types"
+        ],
+        "operationId": "delete_item_type",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The type's key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "merge_into",
+            "in": "query",
+            "description": "The type the items of the deleted one move to; required while items use it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The type is deleted and its items moved to merge_into"
+          },
+          "400": {
+            "description": "The default work type, or a merge into another level, cannot be done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or type not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Items use the type and merge_into is not given (type_in_use)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "item types"
+        ],
+        "operationId": "update_item_type",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The type's key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateItemType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The type after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemTypeDef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The change breaks a rule of the catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or type not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The level cannot change while items use the type (type_in_use)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/boards": {
       "get": {
         "tags": [
@@ -5399,13 +5656,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/ItemType"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             }
           },
@@ -10982,6 +11235,35 @@
         },
         "additionalProperties": false
       },
+      "BundleType": {
+        "type": "object",
+        "description": "An item type as a project file writes it.",
+        "required": [
+          "key",
+          "name",
+          "level",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/TypeColor"
+          },
+          "default": {
+            "type": "boolean",
+            "description": "The default work type; exactly one in a file that gives a new project its types."
+          },
+          "key": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/ItemTypeLevel"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "BundleWorkflow": {
         "type": "object",
         "description": "The workflow a project file asks for: a preset or its own statuses, never both.",
@@ -11799,13 +12081,9 @@
             ]
           },
           "item_type": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ItemType"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "parent_id": {
@@ -11852,6 +12130,29 @@
             }
           },
           "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateItemType": {
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "level",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/TypeColor"
+          },
+          "key": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/ItemTypeLevel"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -11923,7 +12224,7 @@
               "string",
               "null"
             ],
-            "description": "The item type, when the project has it; else the type of the set's anchor, else a task."
+            "description": "The item type, when the project has it; else the type of the set's anchor when that is work, else the default work type."
           }
         }
       },
@@ -12176,6 +12477,16 @@
               "null"
             ]
           },
+          "item_types": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ItemTypeDef"
+            },
+            "description": "The project type's preset when absent."
+          },
           "name": {
             "type": "string"
           },
@@ -12342,7 +12653,7 @@
               "string",
               "null"
             ],
-            "description": "The item type, when the project has it; else the parent item's."
+            "description": "The item type, when the project has it; else the parent's when that is work, else the default work type."
           }
         }
       },
@@ -14018,7 +14329,8 @@
             "format": "uuid"
           },
           "item_type": {
-            "$ref": "#/components/schemas/ItemType"
+            "type": "string",
+            "description": "A key of the project's type catalog (`Project::item_types`)."
           },
           "parent_id": {
             "type": [
@@ -14386,56 +14698,70 @@
           "outline"
         ]
       },
-      "ItemType": {
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "epic"
-            ]
+      "ItemTypeDef": {
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "level",
+          "color",
+          "order",
+          "default_work"
+        ],
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/TypeColor"
           },
-          {
-            "type": "string",
-            "enum": [
-              "feature"
-            ]
+          "default_work": {
+            "type": "boolean",
+            "description": "Exactly one per project, and it is work: what an item made without a type becomes."
           },
-          {
+          "key": {
             "type": "string",
-            "enum": [
-              "task"
-            ]
+            "description": "Lowercase `[a-z0-9_-]{1,40}`; stable, never renamed."
           },
-          {
-            "type": "string",
-            "enum": [
-              "subtask"
-            ]
+          "level": {
+            "$ref": "#/components/schemas/ItemTypeLevel"
           },
-          {
+          "name": {
             "type": "string",
-            "enum": [
-              "bug"
-            ]
+            "description": "What the project calls it (\"Epic\", \"Building\", \"Course\")."
           },
+          "order": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemTypeLevel": {
+        "type": "string",
+        "description": "Whether a type holds work or is work.",
+        "enum": [
+          "group",
+          "work"
+        ]
+      },
+      "ItemTypeUse": {
+        "allOf": [
           {
-            "type": "string",
-            "enum": [
-              "requirement"
-            ]
+            "$ref": "#/components/schemas/ItemTypeDef"
           },
           {
             "type": "object",
             "required": [
-              "custom"
+              "items"
             ],
             "properties": {
-              "custom": {
-                "type": "string"
+              "items": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
               }
             }
           }
-        ]
+        ],
+        "description": "A type with how many items use it, as the types route lists it."
       },
       "Key": {
         "type": "string",
@@ -15391,6 +15717,13 @@
               "$ref": "#/components/schemas/BundleTeam"
             },
             "description": "The teams the file expects its profiles to name. Descriptive: an import creates nothing\nfrom it, and lists the ones no computer reports."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleType"
+            },
+            "description": "The project's item types. A new project takes exactly these; an existing one gains the\nones it lacks and takes the names and colours of the ones it has."
           }
         },
         "additionalProperties": false
@@ -15509,7 +15842,7 @@
               "string",
               "null"
             ],
-            "description": "epic, feature, task (the default), subtask, bug, requirement, or any\nother word as a custom type."
+            "description": "A key or name of the project's types; absent, the default work type. A word the\nproject lacks is added as a work type."
           }
         },
         "additionalProperties": false
@@ -15543,7 +15876,7 @@
               },
               {
                 "$ref": "#/components/schemas/HashMap",
-                "description": "Any of the 16 vocabulary keys; the rest keep the type's words."
+                "description": "Any of the vocabulary keys that are not item types; the rest keep the type's words."
               }
             ]
           },
@@ -15572,6 +15905,7 @@
           "items",
           "sections",
           "missing",
+          "new_types",
           "warnings"
         ],
         "properties": {
@@ -15601,6 +15935,13 @@
               "$ref": "#/components/schemas/Missing"
             },
             "description": "What the file expects that no computer reports: a team (with docket's command that makes\nit) or an agent (with how to install it). Nothing is created from it; empty for a CSV and\nfor a file that names no team and no agent."
+          },
+          "new_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The names of the item types the items' words added to the project, as work: a word the\nproject's types lack is added rather than refused."
           },
           "project": {
             "oneOf": [
@@ -15925,6 +16266,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "item_types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemTypeDef"
+            },
+            "description": "The project's type catalog, in display order: served with the project so no screen\nfetches it twice."
+          },
           "name": {
             "type": "string"
           },
@@ -16032,6 +16380,7 @@
           "name",
           "project_type",
           "vocabulary",
+          "item_types",
           "workflow",
           "custom_fields",
           "default_boards",
@@ -16082,6 +16431,13 @@
           },
           "is_builtin": {
             "type": "boolean"
+          },
+          "item_types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemTypeDef"
+            },
+            "description": "The item types a project made from the template starts with."
           },
           "name": {
             "type": "string"
@@ -17861,6 +18217,7 @@
           "empty_workflow",
           "has_children",
           "invalid_workflow",
+          "type_in_use",
           "misdirected_host",
           "cross_site_request",
           "unsupported_media_type",
@@ -19516,6 +19873,18 @@
           "failed"
         ]
       },
+      "TypeColor": {
+        "type": "string",
+        "description": "A colour by the design token it draws with, never a hex value.",
+        "enum": [
+          "accent",
+          "accent2",
+          "danger",
+          "warning",
+          "success",
+          "neutral"
+        ]
+      },
       "Unclaimed": {
         "type": "object",
         "required": [
@@ -19721,13 +20090,9 @@
             ]
           },
           "item_type": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ItemType"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "priority": {
@@ -19796,6 +20161,54 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateItemType": {
+        "type": "object",
+        "properties": {
+          "color": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TypeColor"
+              }
+            ]
+          },
+          "default_work": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`true` makes this the default work type; the previous one stops being it."
+          },
+          "level": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ItemTypeLevel",
+                "description": "Changes only while no item uses the type."
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "order": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The position among the types, from 0.",
+            "minimum": 0
           }
         }
       },

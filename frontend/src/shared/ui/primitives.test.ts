@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { hueFromName, initialsOf } from './Avatar';
-import { typeKey, typeBadgeTone } from './TypeBadge';
+import { typeTone } from './TypeBadge';
 import { priorityColor, priorityLabel } from './PriorityDot';
 import { wipChipStyle } from './WipChip';
 
@@ -31,22 +31,14 @@ describe('initialsOf', () => {
   });
 });
 
-describe('typeKey', () => {
-  it('passes through string types', () => {
-    expect(typeKey('epic')).toBe('epic');
-  });
-  it('unwraps custom types', () => {
-    expect(typeKey({ custom: 'spike' })).toBe('spike');
-  });
-});
-
-describe('typeBadgeTone', () => {
-  it('colors epic/feature/bug distinctly and neutralizes the rest', () => {
-    expect(typeBadgeTone('epic').fg).toContain('accent-ink');
-    expect(typeBadgeTone('feature').fg).toContain('accent2');
-    expect(typeBadgeTone('bug').fg).toContain('danger');
-    expect(typeBadgeTone('task').bg).toContain('chip');
-    expect(typeBadgeTone('spike').bg).toContain('chip');
+describe('typeTone', () => {
+  it('maps each catalog colour to its own token pair', () => {
+    expect(typeTone('accent').fg).toContain('accent-ink');
+    expect(typeTone('accent2').fg).toContain('accent2');
+    expect(typeTone('danger').fg).toContain('danger');
+    expect(typeTone('warning').fg).toContain('warning');
+    expect(typeTone('success').fg).toContain('success');
+    expect(typeTone('neutral').bg).toContain('chip');
   });
 });
 

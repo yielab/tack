@@ -129,7 +129,7 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
   const notes = (c: CreatedSubtask): string[] =>
     [
       c.unknown_role ? `${c.title}: the project has no role "${c.unknown_role}", so it has none.` : null,
-      c.unknown_type ? `${c.title}: the project has no type "${c.unknown_type}", so it took the parent's type.` : null,
+      c.unknown_type ? `${c.title}: the project has no type "${c.unknown_type}", so it took the parent's type, or the default work type when the parent holds work.` : null,
       c.unresolved_team
         ? `${c.title}: no single profile names the team "${c.unresolved_team}", so nobody is set to do it.`
         : null,

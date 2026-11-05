@@ -147,7 +147,7 @@ tree, with the item it is about named by its title. Each row has a checkbox, and
 - An item's **Title**, **Description**, **Done when** lines (one per line, and they become the item's Done when
   checks), its **Type** and **Role**, and **Who does it**, which names the team that will do it once it exists;
   each field is named above it. A type the project does not have is said so under the row: the item is created
-  with its parent's type. **Waits on** lists the titles of the items it must wait for,
+  with its parent's type, or the project's default work type when its parent holds work. **Waits on** lists the titles of the items it must wait for,
   each with a × to remove it, and a menu to add another.
 - A change of who does an item, its role and team; a priority; the status to move to; the text of a
   comment; a due date. A dependency has nothing to edit: untick it to leave it out.
