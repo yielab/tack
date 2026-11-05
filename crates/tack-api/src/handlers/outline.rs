@@ -35,7 +35,7 @@ use tack_core::outline::{
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_db::StoreError;
 use tack_db::queries;
-use tack_db::repo::item_types::ItemTypeError;
+use tack_db::repo::item_types::CatalogError;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::export::structured_body;
@@ -769,8 +769,8 @@ async fn write(
         repo.set_item_types(project_id, types)
             .await
             .map_err(|failure| match failure {
-                ItemTypeError::Store(source) => at("types")(source),
-                ItemTypeError::Refused(rule) => ApiError::Core(rule),
+                CatalogError::Store(source) => at("types")(source),
+                CatalogError::Refused(rule) => ApiError::Core(rule),
             })?;
     }
 

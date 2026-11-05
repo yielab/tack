@@ -65,7 +65,7 @@ describe('sortItems', () => {
     const typed = [
       makeItem({ id: 'x', item_type: 'task' }),
       makeItem({ id: 'y', item_type: 'bug' }),
-      makeItem({ id: 'z', item_type: { custom: 'Alpha' } }),
+      makeItem({ id: 'z', item_type: 'Alpha' }),
     ];
     expect(ids(sortItems(typed, 'item_type', 'asc'))).toEqual(['z', 'y', 'x']);
   });

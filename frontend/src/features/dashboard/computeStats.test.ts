@@ -152,16 +152,25 @@ describe('Dashboard item types', () => {
     document.body.innerHTML = '';
   });
 
-  it("labels a type with the project's word for it", async () => {
+  it("names a type as the project's catalog does", async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ data: [mk({ item_type: 'epic' }), mk({ item_type: 'task' })], total: 2 }), { status: 200 })),
     );
-    const project = { id: 'p1', name: 'P', workflow: { statuses: STATUSES }, vocabulary: { epic: 'Saga' } } as unknown as Project;
+    const project = {
+      id: 'p1',
+      name: 'P',
+      workflow: { statuses: STATUSES },
+      vocabulary: {},
+      item_types: [
+        { key: 'epic', name: 'Saga', level: 'group', color: 'accent', order: 0, default_work: false },
+        { key: 'task', name: 'Task', level: 'work', color: 'neutral', order: 1, default_work: true },
+      ],
+    } as unknown as Project;
     const ctx: ProjectContextValue = {
       projectId: () => 'p1',
       project: (() => project) as unknown as Resource<Project>,
       workflow: () => project.workflow,
-      vocabulary: () => ({ epic: 'Saga' }),
+      vocabulary: () => ({}),
       refetch: () => {},
     };
     const container = document.createElement('div');

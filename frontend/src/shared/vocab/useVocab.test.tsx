@@ -73,17 +73,4 @@ describe('useVocab', () => {
     setVocab({});
     expect(c.querySelector('[data-testid="label"]')!.textContent).toBe('Sprint');
   });
-
-  it('exposes reactive item-type configs with current labels', () => {
-    const [vocab, setVocab] = createSignal<Record<string, string>>({});
-    function Types() {
-      const { types } = useVocab();
-      return <span data-testid="types">{types().map((t) => t.label).join(',')}</span>;
-    }
-    const c = renderWithVocab(vocab, () => <Types />);
-    expect(c.querySelector('[data-testid="types"]')!.textContent).toContain('Task');
-
-    setVocab({ task: 'Ticket' });
-    expect(c.querySelector('[data-testid="types"]')!.textContent).toContain('Ticket');
-  });
 });

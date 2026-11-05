@@ -1,5 +1,4 @@
 import type { Item, Priority, UpdateItem } from '../../shared/types';
-import { typeKey } from '../../shared/ui/TypeBadge';
 import { runRank, type CardRun } from '../../shared/runWithAgent/cardRun';
 
 export { runRank };
@@ -27,7 +26,7 @@ function cellValue(item: Item, key: SortKey, runOf?: (item: Item) => CardRun | u
   if (key === 'run') return runRank(runOf?.(item));
   if (key === 'priority') return PRIORITY_RANK[item.priority] ?? 99;
   if (key === 'due_date') return item.due_date ?? '￿'; // undated sorts last
-  if (key === 'item_type') return typeKey(item.item_type).toLowerCase();
+  if (key === 'item_type') return item.item_type.toLowerCase();
   return (item[key] ?? '').toString().toLowerCase();
 }
 

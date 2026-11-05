@@ -13,7 +13,7 @@ use crate::queries::item_types::{in_use_in, of_project_in};
 
 /// What stops a change to the catalog.
 #[derive(Debug, thiserror::Error)]
-pub enum ItemTypeError {
+pub enum CatalogError {
     #[error(transparent)]
     Store(#[from] StoreError),
     /// A rule of the catalog.
@@ -21,9 +21,9 @@ pub enum ItemTypeError {
     Refused(#[from] CoreError),
 }
 
-impl From<sqlx::Error> for ItemTypeError {
+impl From<sqlx::Error> for CatalogError {
     fn from(error: sqlx::Error) -> Self {
-        ItemTypeError::Store(error.into())
+        CatalogError::Store(error.into())
     }
 }
 
@@ -89,7 +89,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         types: &[ItemTypeDef],
-    ) -> Result<(), ItemTypeError> {
+    ) -> Result<(), CatalogError> {
         check_catalog(types)?;
         self.require_project(project_id).await?;
         let mut tx = self.pool().begin().await?;
@@ -119,7 +119,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         new: &CreateItemType,
-    ) -> Result<Vec<ItemTypeDef>, ItemTypeError> {
+    ) -> Result<Vec<ItemTypeDef>, CatalogError> {
         self.require_project(project_id).await?;
         let mut tx = self.pool().begin().await?;
         let before = of_project_in(&mut tx, project_id).await?;
@@ -135,7 +135,7 @@ impl Repository {
         project_id: Uuid,
         key: &str,
         patch: &UpdateItemType,
-    ) -> Result<Vec<ItemTypeDef>, ItemTypeError> {
+    ) -> Result<Vec<ItemTypeDef>, CatalogError> {
         self.require_project(project_id).await?;
         let mut tx = self.pool().begin().await?;
         let before = of_project_in(&mut tx, project_id).await?;
@@ -156,7 +156,7 @@ impl Repository {
         project_id: Uuid,
         key: &str,
         merge_into: Option<&str>,
-    ) -> Result<Vec<ItemTypeDef>, ItemTypeError> {
+    ) -> Result<Vec<ItemTypeDef>, CatalogError> {
         self.require_project(project_id).await?;
         let mut tx = self.pool().begin().await?;
         let before = of_project_in(&mut tx, project_id).await?;

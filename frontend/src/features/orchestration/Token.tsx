@@ -1,7 +1,5 @@
 import { type Component, For, Show } from 'solid-js';
-import { RunState, typeKey } from '../../shared/ui';
-import { ITEM_TYPE_META } from '../../shared/vocab/vocab';
-import { useVocab } from '../../shared/vocab/useVocab';
+import { RunState, TypeBadge } from '../../shared/ui';
 import { ageText, moveTarget, sourceText, type FlowLane, type FlowToken } from './flow';
 import { useFlowUi, type MoveSource } from './context';
 import MoveMenu, { type MoveChoice } from './MoveMenu';
@@ -33,10 +31,7 @@ export function moveChoices(source: Pick<MoveSource, 'lane' | 'inFlight' | 'stat
  */
 const Token: Component<{ token: FlowToken; source: MoveSource }> = (props) => {
   const ui = useFlowUi();
-  const vocab = useVocab();
   const t = () => props.token;
-  const typeLabel = () => vocab.typeMap()[typeKey(t().item.item_type)]?.label ?? typeKey(t().item.item_type);
-  const emoji = () => ITEM_TYPE_META[typeKey(t().item.item_type)]?.emoji ?? '📝';
   const age = () => (t().run && t().station !== 'done' ? ageText(t().summary?.waiting_since ?? t().summary?.created_at, ui.now()) : null);
   const movable = () => t().station === 'up-next' && !t().inFlight;
   const choices = () => moveChoices(props.source, ui.lanes());
@@ -70,7 +65,7 @@ const Token: Component<{ token: FlowToken; source: MoveSource }> = (props) => {
       }}
     >
       <div class="flex min-w-0 items-start gap-2">
-        <span role="img" aria-label={typeLabel()} title={typeLabel()} class="flex-none text-small leading-5">{emoji()}</span>
+        <TypeBadge type={t().item.item_type} class="flex-none" />
         <button
           type="button"
           data-testid="flow-token-open"

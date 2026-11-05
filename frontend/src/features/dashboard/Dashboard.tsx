@@ -8,7 +8,9 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { Button, EmptyState, Skeleton } from '../../shared/ui';
 import { IconOverview } from '../../shared/ui/icons';
 import { priorityColor } from '../../shared/ui/PriorityDot';
-import { typeBadgeTone } from '../../shared/ui/TypeBadge';
+import { typeTone } from '../../shared/ui/TypeBadge';
+import { useItemTypes } from '../../shared/vocab/useItemTypes';
+import type { TypeColor } from '../../shared/types';
 import type { JSX } from 'solid-js';
 import type { Priority } from '../../shared/types';
 import Card from '../../shared/ui/Card';
@@ -30,6 +32,7 @@ export default function Dashboard() {
 
   const { project } = useProject();
   const { t } = useVocab();
+  const types = useItemTypes();
   const [items] = createResource(() => api.items.list(projectId));
   const executions = useExecutionStore();
 
@@ -163,11 +166,10 @@ export default function Dashboard() {
             <For each={stats().byType}>
               {(type) => (
                 <Meter
-                  label={t(type.name)}
-                  capitalize
+                  label={types.name(type.name)}
                   value={`${type.count} (${pct(type.count)}%)`}
                   percent={pct(type.count)}
-                  color={typeBarColor(type.name)}
+                  color={typeBarColor(types.color(type.name))}
                 />
               )}
             </For>
@@ -203,9 +205,9 @@ export default function Dashboard() {
 }
 
 /** Bar colour per item type — the same hue family TypeBadge uses; neutral
- *  types fall back to the secondary text tone so the bar stays visible. */
-function typeBarColor(key: string): string {
-  const fg = typeBadgeTone(key).fg;
+ *  types fall back to the tertiary text tone so the bar stays visible. */
+function typeBarColor(color: TypeColor): string {
+  const fg = typeTone(color).fg;
   return fg === 'var(--color-text-secondary)' ? 'var(--color-text-tertiary)' : fg;
 }
 

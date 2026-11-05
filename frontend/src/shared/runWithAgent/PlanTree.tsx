@@ -3,7 +3,6 @@ import { agentProfilesApi } from '../execution';
 import type { AgentProfileSummary } from '../execution/api';
 import { api } from '../api';
 import { request } from '../api/client';
-import { getItemTypeList } from '../vocab/vocab';
 import WhoDoesIt, { type TeamEntry } from './WhoDoesIt';
 
 // The tree of proposed items, shared by the two panels that show one: the plan a run proposed
@@ -40,7 +39,7 @@ export interface Offer {
   ready?: boolean;
 }
 
-export const EMPTY_OFFER: Offer = { types: getItemTypeList(undefined), roles: [], profiles: [], teams: [], statuses: [] };
+export const EMPTY_OFFER: Offer = { types: [], roles: [], profiles: [], teams: [], statuses: [] };
 
 /** Reads what a project offers; a part that fails to load leaves its controls with only what each entry already names. */
 export async function loadOffer(projectId: string): Promise<Offer> {
@@ -51,7 +50,7 @@ export async function loadOffer(projectId: string): Promise<Offer> {
     request<{ teams: TeamEntry[] }>('/teams').then((r) => r.teams).catch(() => [] as TeamEntry[]),
   ]);
   return {
-    types: getItemTypeList(project?.vocabulary ?? undefined).map((t) => ({ value: t.value, label: t.label })),
+    types: (project?.item_types ?? []).map((t) => ({ value: t.key, label: t.name })),
     roles: roles.map((role) => ({ value: role.name, label: role.name })),
     profiles,
     teams,
@@ -282,7 +281,7 @@ const PlanTree: Component<{
         </div>
         <Show when={typeMissing()}>
           <p data-testid="plan-type-note" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            {`This project has no type "${r().type}": the item will be created with its parent's type.`}
+            {`This project has no type "${r().type}": the item will be created with its parent's type, or the default work type when the parent holds work.`}
           </p>
         </Show>
         <fieldset class="min-w-0 space-y-1">

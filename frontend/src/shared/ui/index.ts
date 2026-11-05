@@ -55,7 +55,7 @@ export { default as Avatar, AvatarStack, hueFromName, initialsOf } from './Avata
 export { teamInitials } from './teamInitials';
 export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 
-export { default as TypeBadge, typeKey, typeBadgeTone } from './TypeBadge';
+export { default as TypeBadge, typeTone } from './TypeBadge';
 export type { TypeBadgeProps } from './TypeBadge';
 
 export { default as PriorityDot, priorityColor, priorityFill, priorityLabel } from './PriorityDot';

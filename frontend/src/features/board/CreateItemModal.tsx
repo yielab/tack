@@ -4,9 +4,9 @@ import RichTextEditor from '../../shared/ui/RichTextEditor';
 import Button from '../../shared/ui/Button';
 import Field from '../../shared/ui/Field';
 import { api } from '../../shared/api';
-import type { CreateItem, Item } from '../../shared/types';
+import type { CreateItem, Item, ItemTypeDef } from '../../shared/types';
 import { toast } from '../../shared/ui/toast';
-import { getItemTypeMap, resolveLabel } from '../../shared/vocab/vocab';
+import { resolveLabel } from '../../shared/vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
 import { createConfirm } from '../../shared/ui/ConfirmDialog';
 import { priorityColor } from '../../shared/ui/PriorityDot';
@@ -37,13 +37,14 @@ export interface CreateItemModalProps {
   onSuccess: () => void;
   projectId: string;
   vocabulary?: Record<string, string>;
+  /** The project's type catalog: the choices of Type. */
+  itemTypes?: ItemTypeDef[];
   initialStatus?: string;
   mode?: 'create' | 'edit';
   existingItem?: Item;
   parentId?: string;
 }
 
-type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'none';
 
 interface SubtaskItem {
@@ -64,14 +65,17 @@ const estimateOptions = [0, 0.5, 1, 2, 3, 5, 8, 13, 21];
 
 const CreateItemModal: Component<CreateItemModalProps> = (props) => {
   const mode = () => props.mode || 'create';
-  const itemTypeConfig = createMemo(() => getItemTypeMap(props.vocabulary));
+  const typeNames = createMemo(() => new Map((props.itemTypes ?? []).map((t) => [t.key, t.name])));
+  const defaultType = () => props.itemTypes?.find((t) => t.default_work)?.key ?? '';
   // Ids that tie each heading to what it names: a <label> to its input, a
   // group's name to its row of option buttons.
   const uid = createUniqueId();
   const ids = { type: `${uid}-type`, priority: `${uid}-priority`, estimate: `${uid}-estimate`, who: `${uid}-who`, children: `${uid}-children`, tags: `${uid}-tags` };
   const [title, setTitle] = createSignal('');
   const [description, setDescription] = createSignal('');
-  const [itemType, setItemType] = createSignal<ItemType>('task');
+  // Empty until a person picks one: the project's default work type, which the server gives an item made without one.
+  const [itemType, setItemType] = createSignal('');
+  const chosenType = () => itemType() || defaultType();
   const [priority, setPriority] = createSignal<Priority>('medium');
   const [estimate, setEstimate] = createSignal<number | null>(null);
   const [tags, setTags] = createSignal<string[]>([]);
@@ -105,7 +109,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       const item = props.existingItem;
       setTitle(item.title);
       setDescription(item.description || '');
-      setItemType(typeof item.item_type === 'string' ? item.item_type as ItemType : 'task');
+      setItemType(item.item_type);
       setPriority(item.priority as Priority);
       setEstimate(item.estimate || null);
       setTags(item.tags || []);
@@ -113,7 +117,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       // Reset form for create mode
       setTitle('');
       setDescription('');
-      setItemType('task');
+      setItemType('');
       setPriority('medium');
       setEstimate(null);
       setTags([]);
@@ -153,7 +157,6 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     try {
       await api.items.create(props.projectId, {
         title,
-        item_type: 'subtask',
         priority: 'medium',
         parent_id: props.existingItem.id,
       });
@@ -205,7 +208,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         const itemData: CreateItem = {
           title: title().trim(),
           description: description().trim() || undefined,
-          item_type: itemType(),
+          item_type: itemType() || undefined,
           priority: priority(),
           estimate: estimate() || undefined,
           tags: tags(),
@@ -229,7 +232,6 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
           for (const subtask of subtasks()) {
             await api.items.create(props.projectId, {
               title: subtask.title,
-              item_type: 'subtask',
               priority: 'medium',
               parent_id: createdItem.id,
             });
@@ -298,18 +300,17 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 Type
               </span>
               <div role="group" aria-labelledby={ids.type} class="flex flex-wrap gap-1.5">
-                <For each={Object.entries(itemTypeConfig())}>
-                  {([type, config]) => (
+                <For each={props.itemTypes ?? []}>
+                  {(def) => (
                     <button
                       type="button"
-                      onClick={() => setItemType(type as ItemType)}
-                      aria-pressed={itemType() === type}
-                      class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(itemType() === type)}`}
-                      style={chipStyle(itemType() === type)}
+                      onClick={() => setItemType(def.key)}
+                      aria-pressed={chosenType() === def.key}
+                      class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(chosenType() === def.key)}`}
+                      style={chipStyle(chosenType() === def.key)}
                       disabled={loading()}
                     >
-                      <span class="mr-0.5">{config.emoji}</span>
-                      {config.label}
+                      {def.name}
                     </button>
                   )}
                 </For>
@@ -402,7 +403,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         </div>
 
         {/* Subtasks/Child Items */}
-        <Show when={(mode() === 'create' && itemType() !== 'subtask') || mode() === 'edit'}>
+        <Show when={mode() === 'create' || mode() === 'edit'}>
           <div>
             <label for={ids.children} class={`${sectionLabel} text-content-muted`}>
               {mode() === 'edit' ? 'Child Items' : 'Subtasks'}
@@ -436,7 +437,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   {(child) => (
                     <div class="flex items-center gap-2 bg-sunken px-4 py-2 rounded-full">
                       <span class="text-sm text-content-subtle">
-                        {typeof child.item_type === 'string' ? itemTypeConfig()[child.item_type as ItemType]?.emoji : '📌'}
+                        {typeNames().get(child.item_type) ?? child.item_type}
                       </span>
                       <span class="flex-1 text-content">{child.title}</span>
                       <span class="text-micro font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">

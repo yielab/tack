@@ -1,12 +1,11 @@
 import { type Component, type JSX, createResource, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
 import { api } from '../../shared/api';
 import { A } from '@solidjs/router';
-import { Icons, TypeBadge, typeKey } from '../../shared/ui';
+import { Icons, TypeBadge } from '../../shared/ui';
 import { statusDotColor } from '../../shared/ui/statusDot';
 import ItemMenu from './ItemMenu';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useProject } from '../../shared/state/projectContext';
-import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item, UpdateItem } from '../../shared/types';
 import { shortItemId } from '../../shared/shortItemId';
 import { childrenText } from '../../shared/execution';
@@ -24,7 +23,6 @@ export interface ItemHeaderProps {
 /** What an item is: type, id, creation date, an editable title and its status. */
 const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const { workflow } = useProject();
-  const vocab = useVocab();
   // The project's items name the parent and the sub-items. A screen under the board's tabs already has them;
   // the drawer sits outside those tabs, so it reads them itself rather than name nobody.
   const shared = (() => {
@@ -77,7 +75,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
     <div class="space-y-5">
       {/* Type + id */}
       <div class="flex flex-wrap items-center gap-2">
-        <TypeBadge type={props.item.item_type} label={vocab.t(typeKey(props.item.item_type))} />
+        <TypeBadge type={props.item.item_type} />
         <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)' }}>
           {shortItemId(props.item.id)}
         </span>

@@ -6,7 +6,7 @@ use tack_core::item_types::{CreateItemType, Level, TypeColor, UpdateItemType, pr
 use tack_core::models::{CreateItem, ProjectType};
 use tack_db::StoreError;
 use tack_db::queries;
-use tack_db::repo::item_types::ItemTypeError;
+use tack_db::repo::item_types::CatalogError;
 use tack_test_support::{create_test_workspace, make_project, setup_test_db};
 
 fn item(title: &str, item_type: Option<&str>) -> CreateItem {
@@ -87,10 +87,7 @@ async fn merge_then_delete_moves_every_item_in_one_step() {
     let refused = repo.delete_item_type(project.id, "bug", None).await;
     assert!(matches!(
         refused,
-        Err(ItemTypeError::Refused(CoreError::TypeInUse {
-            items: 2,
-            ..
-        }))
+        Err(CatalogError::Refused(CoreError::TypeInUse { items: 2, .. }))
     ));
     let used = queries::item_types::in_use(&repo, project.id)
         .await
@@ -174,11 +171,21 @@ async fn create_and_update_keep_one_default_work_type() {
     assert_eq!(anchor, "spike");
 
     let missing = repo
-        .update_item_type(project.id, "ghost", &UpdateItemType::default())
+        .update_item_type(
+            project.id,
+            "ghost",
+            &UpdateItemType {
+                name: None,
+                color: None,
+                order: None,
+                default_work: None,
+                level: None,
+            },
+        )
         .await;
     assert!(matches!(
         missing,
-        Err(ItemTypeError::Store(StoreError::NotFound {
+        Err(CatalogError::Store(StoreError::NotFound {
             entity: "item type"
         }))
     ));
@@ -199,7 +206,7 @@ async fn a_level_changes_only_while_no_item_uses_the_type() {
     };
     assert!(matches!(
         repo.update_item_type(project.id, "epic", &to_work).await,
-        Err(ItemTypeError::Refused(CoreError::TypeInUse { .. }))
+        Err(CatalogError::Refused(CoreError::TypeInUse { .. }))
     ));
     let to_group = UpdateItemType {
         level: Some(Level::Group),

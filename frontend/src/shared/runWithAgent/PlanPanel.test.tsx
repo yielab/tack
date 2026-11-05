@@ -33,7 +33,15 @@ const PLAN = {
 };
 
 // What the project, its roles, its profiles and GET /api/teams say, for the type and "who does it" controls.
-const PROJECT = { id: 'p1', vocabulary: {} };
+const PROJECT = {
+  id: 'p1',
+  vocabulary: {},
+  item_types: [
+    { key: 'epic', name: 'Epic', level: 'group', color: 'accent', order: 0, default_work: false },
+    { key: 'task', name: 'Task', level: 'work', color: 'neutral', order: 1, default_work: true },
+    { key: 'bug', name: 'Bug', level: 'work', color: 'danger', order: 2, default_work: false },
+  ],
+};
 const ROLES = [
   { id: 'r1', name: 'Backend' },
   { id: 'r2', name: 'Frontend' },
@@ -205,7 +213,7 @@ describe('PlanPanel', () => {
     await settle();
     const rows = container.querySelectorAll('[data-testid="plan-row"]');
     const note = rows[0].querySelector('[data-testid="plan-type-note"]')!;
-    expect(note.textContent).toBe('This project has no type "saga": the item will be created with its parent\'s type.');
+    expect(note.textContent).toBe('This project has no type "saga": the item will be created with its parent\'s type, or the default work type when the parent holds work.');
     expect(rows[1].querySelector('[data-testid="plan-type-note"]')).toBeNull();
   });
 
@@ -288,7 +296,7 @@ describe('PlanPanel', () => {
     await settle();
 
     expect(container.textContent).toContain('Add the settings table: the project has no role "QA", so it has none.');
-    expect(container.textContent).toContain('Expose settings over the API: the project has no type "spike", so it took the parent\'s type.');
+    expect(container.textContent).toContain('Expose settings over the API: the project has no type "spike", so it took the parent\'s type, or the default work type when the parent holds work.');
     expect(container.textContent).toContain('Settings page in the frontend: no single profile names the team "saas-research", so nobody is set to do it.');
   });
 

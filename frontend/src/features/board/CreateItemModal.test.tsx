@@ -27,12 +27,21 @@ function routeFetch(writes: Array<{ method: string; url: string; body: unknown }
   });
 }
 
-function mount() {
+const CONSTRUCTION = [
+  { key: 'epic', name: 'Building', level: 'group', color: 'accent', order: 0, default_work: false },
+  { key: 'feature', name: 'Section', level: 'group', color: 'accent2', order: 1, default_work: false },
+  { key: 'task', name: 'Work Order', level: 'work', color: 'neutral', order: 2, default_work: true },
+  { key: 'activity', name: 'Activity', level: 'work', color: 'success', order: 3, default_work: false },
+  { key: 'bug', name: 'Defect', level: 'work', color: 'danger', order: 4, default_work: false },
+  { key: 'requirement', name: 'Specification', level: 'work', color: 'warning', order: 5, default_work: false },
+] as const;
+
+function mount(itemTypes: readonly unknown[] = []) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const onSuccess = vi.fn();
   const dispose = render(
-    () => <CreateItemModal isOpen onClose={() => {}} onSuccess={onSuccess} projectId="p1" />,
+    () => <CreateItemModal isOpen onClose={() => {}} onSuccess={onSuccess} projectId="p1" itemTypes={itemTypes as never} />,
     container,
   );
   disposers.push(() => {
@@ -112,5 +121,37 @@ describe('CreateItemModal: who does it', () => {
     expect(document.querySelector('[data-testid="who-does-it"]')?.textContent).toContain(
       'Each task can use a different agent; this choice is for this task.',
     );
+  });
+});
+
+describe('CreateItemModal: type', () => {
+  const typeButtons = () => [...document.querySelectorAll<HTMLButtonElement>('[aria-labelledby$="-type"] button')];
+
+  it("lists_a_construction_projects_types_with_its_default_chosen", async () => {
+    routeFetch([]);
+    mount(CONSTRUCTION);
+    await settle();
+    expect(typeButtons().map((b) => b.textContent)).toEqual(['Building', 'Section', 'Work Order', 'Activity', 'Defect', 'Specification']);
+    expect(typeButtons().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)).toEqual(['Work Order']);
+  });
+
+  it("creates_the_item_with_the_key_of_the_type_chosen_and_none_when_none_was", async () => {
+    const writes: Array<{ method: string; url: string; body: unknown }> = [];
+    routeFetch(writes);
+    mount(CONSTRUCTION);
+    await settle();
+    typeButtons().find((b) => b.textContent === 'Defect')!.click();
+    await settle();
+    await fillTitleAndCreate('Cracked slab');
+    expect(writes[0].body).toMatchObject({ title: 'Cracked slab', item_type: 'bug' });
+
+    const plain: Array<{ method: string; url: string; body: unknown }> = [];
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+    routeFetch(plain);
+    mount(CONSTRUCTION);
+    await settle();
+    await fillTitleAndCreate('Pour the slab');
+    expect((plain[0].body as { item_type?: string }).item_type).toBeUndefined();
   });
 });

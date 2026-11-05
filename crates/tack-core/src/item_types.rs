@@ -13,6 +13,8 @@ use crate::models::ProjectType;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+// Named apart in the API's schemas: the notifications' `Level` already has the plain name.
+#[cfg_attr(feature = "openapi", schema(as = ItemTypeLevel))]
 pub enum Level {
     Group,
     Work,

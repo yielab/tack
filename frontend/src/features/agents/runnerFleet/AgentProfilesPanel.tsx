@@ -34,9 +34,6 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  */
 const HARNESSES = Object.keys(KNOWN_TOOLS);
 
-/** The kinds of card a method can be named for; a project's own kinds are typed. */
-const CARD_KINDS = ['epic', 'feature', 'task', 'subtask', 'bug', 'requirement'];
-
 /** What a profile can do, in the order the select lists them. A run that changes the repository needs a team that delivers one. */
 const PROFILE_KINDS: ReadonlyArray<{ value: ProfileKind; label: string; says: string }> = [
   { value: 'custom', label: 'Custom', says: 'Changes the repository, as its tools allow' },
@@ -514,15 +511,11 @@ const AgentProfilesPanel: Component = () => {
               }
             >
               <div class="space-y-2" data-testid="method-rows">
-                <datalist id={`${teamId}-kinds`}>
-                  <For each={CARD_KINDS}>{(kind) => <option value={kind} />}</For>
-                </datalist>
                 <For each={methodRows()}>
                   {(row, i) => (
                     <div class="flex flex-wrap items-center gap-2">
                       <input
                         type="text"
-                        list={`${teamId}-kinds`}
                         aria-label={`Kind of card, row ${i() + 1}`}
                         placeholder="bug"
                         value={row.type}

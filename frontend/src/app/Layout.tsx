@@ -215,6 +215,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
           onSuccess={() => setShowNewItem(false)}
           projectId={projectId()!}
           vocabulary={vocabulary()}
+          itemTypes={project()?.item_types}
         />
       </Show>
       <Show when={showNewProject()}>

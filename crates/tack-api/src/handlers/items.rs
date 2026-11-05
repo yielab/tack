@@ -667,7 +667,7 @@ pub struct CreatedSubtask {
     /// The role name the project does not have; the item has no role.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unknown_role: Option<String>,
-    /// The type the project does not have; the item has its parent's type.
+    /// The type the project does not have; the item has its parent's type when that is work, else the default work type.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unknown_type: Option<String>,
     /// The team that no profile, or more than one, names; the item's run settings name no profile.
