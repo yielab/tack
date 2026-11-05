@@ -18,6 +18,7 @@ use validator::Validate;
 
 use serde_json::Value;
 use tack_core::autonomy::{Domain, Level};
+use tack_core::hierarchy::Hierarchy;
 use tack_core::item_types::preset;
 use tack_core::models::{
     CreateCustomField, CreateProject, CreateRole, CreateSprint, CustomFieldType, EstimateUnit,
@@ -36,6 +37,7 @@ use tack_core::vocabulary::vocabulary_for_type;
 use tack_db::StoreError;
 use tack_db::queries;
 use tack_db::repo::item_types::CatalogError;
+use tack_db::repo::items::ItemError;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::export::structured_body;
@@ -959,9 +961,12 @@ async fn write(
     warnings.extend(plan.warnings);
     let new_types = plan.new_types;
     let (items, dependencies) = repo
-        .create_outline_items(project_id, plan.items, source)
+        .create_outline_items(project_id, plan.items, source, &Hierarchy)
         .await
-        .map_err(at("items"))?;
+        .map_err(|failure| match failure {
+            ItemError::Store(source) => at("items")(source),
+            ItemError::Refused(rule) => ApiError::Core(rule),
+        })?;
     for (item, (roles, fields)) in items.iter().zip(extras) {
         for role in roles.iter().map(|r| r.trim()).filter(|r| !r.is_empty()) {
             if let Some(&role_id) = role_ids.get(role) {

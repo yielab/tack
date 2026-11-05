@@ -23,6 +23,7 @@ use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::AppError;
+use crate::parents::read_tree;
 use crate::ports::DomainEvents;
 
 /// The longest reason a change set carries.
@@ -113,6 +114,10 @@ fn existing_refs(operations: &[Operation], made: impl Iterator<Item = Uuid>) -> 
             | Operation::Move { item, .. }
             | Operation::Comment { item, .. }
             | Operation::Due { item, .. } => note(item),
+            Operation::Parent { item, parent } => {
+                note(item);
+                parent.iter().for_each(&mut note);
+            }
             Operation::Depend { blocker, blocked } => {
                 note(blocker);
                 note(blocked);
@@ -191,6 +196,7 @@ async fn board_view(
             .collect(),
         profiles,
         profiles_by_team,
+        forest: read_tree(repo, project.id).await?.0,
         anchor_type,
     })
 }
@@ -344,6 +350,7 @@ pub async fn propose(
             kept.id,
             &ApplyPlan {
                 workflow: &project.workflow,
+                parent_gate: &tack_core::hierarchy::Hierarchy,
                 selected: &selected,
                 edits: &[],
                 resolutions: &resolutions,
@@ -453,6 +460,7 @@ pub async fn apply(
             id,
             &ApplyPlan {
                 workflow: &project.workflow,
+                parent_gate: &tack_core::hierarchy::Hierarchy,
                 selected: &selected,
                 edits: &application.edits,
                 resolutions: &resolutions,

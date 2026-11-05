@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (130 paths, 176 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (131 paths, 177 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -430,6 +430,7 @@ Items: the universal work unit (epics, tasks, bugs, …).
 | 400 | Invalid transition / validation error | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
 | 412 | If-Match did not match the current item version — nothing was written | `ErrorEnvelope` |
+| 422 | The tree rule refuses the parent or the sprint: group_under_work, parent_loop, tree_too_deep, parent_in_other_project, group_in_sprint | `ErrorEnvelope` |
 
 #### `GET /api/items/{id}/agent-context`
 
@@ -535,6 +536,7 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 | 200 | Item created | `ItemCard` |
 | 400 | Validation error | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
+| 422 | The parent breaks the tree rule: a group under work (group_under_work), a tree deeper than five levels (tree_too_deep) or a parent of another project (parent_in_other_project) | `ErrorEnvelope` |
 
 #### `GET /api/projects/{project_id}/items/tree`
 
@@ -545,6 +547,20 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Every item of the project, parents first, each parent with how far its children are | `ItemNode`[] |
+
+#### `GET /api/projects/{project_id}/parents`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `project_id` | path | `string` | yes | Project ID |
+| `item` | query | `string` | no | An item that exists: the answer leaves out the item and everything under it. |
+| `type` | query | `string` | no | The type key of an item about to be made. |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every item the tree rule admits as the parent, in tree order | `ParentOption`[] |
+| 400 | Neither or both of item and type were given | `ErrorEnvelope` |
+| 404 | The project, the item or the type is not there | `ErrorEnvelope` |
 
 ---
 

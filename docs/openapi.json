@@ -2565,6 +2565,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "The tree rule refuses the parent or the sprint: group_under_work, parent_loop, tree_too_deep, parent_in_other_project, group_in_sprint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -5831,6 +5841,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "The parent breaks the tree rule: a group under work (group_under_work), a tree deeper than five levels (tree_too_deep) or a parent of another project (parent_in_other_project)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -5863,6 +5883,80 @@
                   "items": {
                     "$ref": "#/components/schemas/ItemNode"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/parents": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "operationId": "list_parents",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "description": "An item that exists: the answer leaves out the item and everything under it.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "The type key of an item about to be made.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every item the tree rule admits as the parent, in tree order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ParentOption"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither or both of item and type were given",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The project, the item or the type is not there",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -15587,6 +15681,35 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "Puts an item under `parent`, or at the top when there is none.",
+            "required": [
+              "item",
+              "op"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "parent"
+                ]
+              },
+              "parent": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ItemRef"
+                  }
+                ]
+              }
+            }
           }
         ],
         "description": "One change to the board."
@@ -16040,6 +16163,28 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "ParentOption": {
+        "type": "object",
+        "description": "An item that can be the parent of another.",
+        "required": [
+          "id",
+          "title",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "The key of its type in the project's catalog."
           }
         }
       },
@@ -18218,6 +18363,11 @@
           "has_children",
           "invalid_workflow",
           "type_in_use",
+          "group_under_work",
+          "parent_loop",
+          "tree_too_deep",
+          "parent_in_other_project",
+          "group_in_sprint",
           "misdirected_host",
           "cross_site_request",
           "unsupported_media_type",
@@ -20094,6 +20244,14 @@
               "string",
               "null"
             ]
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Omitted leaves the parent untouched; JSON `null` moves the item to the top. The tree rule\n(`tack_core::hierarchy`) decides whether the parent is admitted."
           },
           "priority": {
             "oneOf": [

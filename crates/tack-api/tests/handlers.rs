@@ -45,6 +45,8 @@ mod domain_events;
 mod executions_runner_admin;
 #[path = "handlers/fleet_membership.rs"]
 mod fleet_membership;
+#[path = "handlers/hierarchy.rs"]
+mod hierarchy;
 #[path = "handlers/item_concurrency.rs"]
 mod item_concurrency;
 #[path = "handlers/item_types.rs"]

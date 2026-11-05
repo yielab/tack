@@ -44,6 +44,7 @@ pub mod merge;
 pub mod model_policy_wiring;
 pub mod notifications;
 pub mod observability;
+pub mod parents;
 pub mod ports;
 pub mod pull_request;
 pub mod remote_backup;

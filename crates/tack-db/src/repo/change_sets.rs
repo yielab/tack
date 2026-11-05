@@ -11,6 +11,7 @@ use tack_core::change_set::{
     ChangeOp, ChangeSet, ChangeSetStatus, CreateOp, ItemRef, OpResult, OpState, Operation, Origin,
     Resolution, status_of,
 };
+use tack_core::hierarchy::ParentGate;
 use tack_core::models::{
     AcceptanceCriterion, CreateItem, DependencyType, ItemSource, RunSettings, UpdateItem,
     UpsertItemBrief,
@@ -23,7 +24,9 @@ use super::Repository;
 use super::agent_credentials::writer_name;
 use super::briefs::upsert_brief_in;
 use super::dependencies::insert_dependency;
-use super::items::{AtomicItemUpdateOutcome, insert_item, run_settings_in, update_item_in};
+use super::items::{
+    AtomicItemUpdateOutcome, ItemError, insert_item, run_settings_in, update_item_in,
+};
 use crate::{StoreError, decode};
 
 const TABLE: &str = "change_sets";
@@ -109,6 +112,15 @@ pub enum ApplyError {
     Conflict(String),
 }
 
+impl From<ItemError> for ApplyError {
+    fn from(error: ItemError) -> Self {
+        match error {
+            ItemError::Store(error) => ApplyError::Store(error),
+            ItemError::Refused(rule) => ApplyError::Refused(rule),
+        }
+    }
+}
+
 impl From<sqlx::Error> for ApplyError {
     fn from(error: sqlx::Error) -> Self {
         ApplyError::Store(error.into())
@@ -118,6 +130,8 @@ impl From<sqlx::Error> for ApplyError {
 /// Everything an application needs that the store cannot decide.
 pub struct ApplyPlan<'a> {
     pub workflow: &'a WorkflowConfig,
+    /// The tree rule, asked again inside the transaction for every parent an operation sets.
+    pub parent_gate: &'a dyn ParentGate,
     /// The positions of the operations to apply.
     pub selected: &'a [usize],
     /// Operations that replace the stored ones before they apply.
@@ -396,6 +410,7 @@ impl Repository {
             tx: &mut tx,
             project: kept.project,
             writer: plan.writer,
+            parent_gate: plan.parent_gate,
         };
         // Creates first, in order; then the other operations; then the dependencies the
         // creates ask for, which may name a create that comes later in the list.
@@ -518,6 +533,7 @@ struct Run<'a, 'c> {
     tx: &'a mut sqlx::Transaction<'c, sqlx::Sqlite>,
     project: Uuid,
     writer: &'a str,
+    parent_gate: &'a dyn ParentGate,
 }
 
 impl Run<'_, '_> {
@@ -548,7 +564,7 @@ impl Run<'_, '_> {
         input: UpdateItem,
         workflow: &WorkflowConfig,
     ) -> Result<String, ApplyError> {
-        match update_item_in(self.tx, item, input, workflow, None).await? {
+        match update_item_in(self.tx, item, input, workflow, self.parent_gate, None).await? {
             AtomicItemUpdateOutcome::Updated { old_status, .. } => {
                 self.stamp(item, false).await?;
                 Ok(old_status)
@@ -576,7 +592,7 @@ impl Run<'_, '_> {
             .as_ref()
             .map(|parent| resolve(parent, ids))
             .transpose()?;
-        let project = self.project;
+        let (project, parent_gate) = (self.project, self.parent_gate);
         let item = insert_item(
             self.conn(),
             project,
@@ -590,6 +606,7 @@ impl Run<'_, '_> {
                 ..Default::default()
             },
             source.clone(),
+            parent_gate,
         )
         .await?;
         self.stamp(item.id, true).await?;
@@ -709,6 +726,19 @@ impl Run<'_, '_> {
                 let item = resolve(item, ids)?;
                 let input = UpdateItem {
                     due_date: Some(*due),
+                    ..UpdateItem::default()
+                };
+                self.update(item, input, workflow).await?;
+                touched(item)
+            }
+            Operation::Parent { item, parent } => {
+                let item = resolve(item, ids)?;
+                let parent = parent
+                    .as_ref()
+                    .map(|parent| resolve(parent, ids))
+                    .transpose()?;
+                let input = UpdateItem {
+                    parent_id: Some(parent),
                     ..UpdateItem::default()
                 };
                 self.update(item, input, workflow).await?;

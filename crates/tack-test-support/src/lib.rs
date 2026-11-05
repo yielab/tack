@@ -92,7 +92,13 @@ pub async fn update_item(
         .expect("read project")
         .expect("project exists");
     match repo
-        .update_item_atomically(id, input, &project.workflow, None)
+        .update_item_atomically(
+            id,
+            input,
+            &project.workflow,
+            &tack_core::hierarchy::Hierarchy,
+            None,
+        )
         .await
         .expect("update item")
     {

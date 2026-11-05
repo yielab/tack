@@ -65,6 +65,7 @@ async fn a_failure_in_the_third_operation_leaves_nothing() {
             set.id,
             &ApplyPlan {
                 workflow: &project.workflow,
+                parent_gate: &tack_core::hierarchy::Hierarchy,
                 selected: &[0, 1, 2],
                 edits: &[],
                 resolutions: &HashMap::from([(0, Resolution::default())]),

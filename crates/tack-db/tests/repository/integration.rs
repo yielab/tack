@@ -1018,7 +1018,12 @@ async fn outline_batch_writes_parents_and_dependencies() {
     let resolved = tack_core::outline::resolve(&items, &project.workflow).unwrap();
 
     let (created, deps) = repo
-        .create_outline_items(project.id, resolved, ItemSource::Outline)
+        .create_outline_items(
+            project.id,
+            resolved,
+            ItemSource::Outline,
+            &tack_core::hierarchy::Hierarchy,
+        )
         .await
         .unwrap();
 
@@ -1053,7 +1058,12 @@ async fn outline_batch_failing_midway_writes_nothing() {
     let resolved = tack_core::outline::resolve(&items, &project.workflow).unwrap();
 
     let result = repo
-        .create_outline_items(project.id, resolved, ItemSource::Outline)
+        .create_outline_items(
+            project.id,
+            resolved,
+            ItemSource::Outline,
+            &tack_core::hierarchy::Hierarchy,
+        )
         .await;
 
     assert!(result.is_err());
