@@ -12806,7 +12806,7 @@
               "string",
               "null"
             ],
-            "description": "The type the project does not have; the item has its parent's type."
+            "description": "The type the project does not have; the item has its parent's type when that is work, else the default work type."
           },
           "unresolved_team": {
             "type": [

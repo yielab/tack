@@ -5042,7 +5042,7 @@ export interface components {
             unknown_profile?: string | null;
             /** @description The role name the project does not have; the item has no role. */
             unknown_role?: string | null;
-            /** @description The type the project does not have; the item has its parent's type. */
+            /** @description The type the project does not have; the item has its parent's type when that is work, else the default work type. */
             unknown_type?: string | null;
             /** @description The team that no profile, or more than one, names; the item's run settings name no profile. */
             unresolved_team?: string | null;
