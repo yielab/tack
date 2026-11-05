@@ -10,7 +10,7 @@
 //!     "unsafe state is never the accidental default" rule.
 
 use crate::common::{create_test_workspace, make_project, setup_test_db};
-use tack_core::models::{CreateItem, ItemSource, ItemType, Priority, UpdateItem};
+use tack_core::models::{CreateItem, ItemSource, Priority, UpdateItem};
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ fn minimal_create_item(title: &str) -> CreateItem {
         recurrence_of: None,
         title: title.to_string(),
         description: None,
-        item_type: Some(ItemType::Task),
+        item_type: Some("task".into()),
         parent_id: None,
         priority: Some(Priority::Medium),
         estimate: None,

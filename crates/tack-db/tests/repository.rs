@@ -40,6 +40,8 @@ mod execution_retention;
 mod execution_transitions_completion;
 #[path = "repository/integration.rs"]
 mod integration;
+#[path = "repository/item_types.rs"]
+mod item_types;
 #[path = "repository/notifications.rs"]
 mod notifications;
 #[path = "repository/rate_card.rs"]

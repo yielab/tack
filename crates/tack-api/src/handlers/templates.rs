@@ -228,6 +228,11 @@ pub(crate) async fn build_project_from_template(
         sprints: Vec::new(),
         automation: template.automation.clone(),
         teams: template.teams.clone(),
+        types: template
+            .item_types
+            .iter()
+            .map(BundleType::from_def)
+            .collect(),
         items: Vec::new(),
     };
     // The first workspace of the board (made when there is none) owns it.
@@ -491,6 +496,7 @@ pub async fn save_project_as_template(
     });
 
     let template_data = CreateProjectTemplate {
+        item_types: Some(project.item_types.clone()),
         name: data.name,
         description: data.description,
         project_type: project.project_type,

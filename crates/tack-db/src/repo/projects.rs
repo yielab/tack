@@ -1,10 +1,12 @@
-use crate::{StoreError, decode};
+use crate::repo::item_types;
+use crate::{StoreError, decode, queries};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::auto_start::DROPPED_TO_L3;
 use tack_core::change_set::AgentsOnBoard;
+use tack_core::item_types::preset;
 use tack_core::models::{CreateProject, Project, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
@@ -29,6 +31,7 @@ impl Repository {
         let code_origin = input.code_origin.unwrap_or_default();
         let workspace_mode = input.workspace_mode.unwrap_or_default();
 
+        let mut tx = self.pool().begin().await?;
         sqlx::query(
             "INSERT INTO projects (id, workspace_id, name, description, project_type, vocabulary, workflow, created_at, updated_at,
                                    code_origin, repository, default_branch, workspace_mode)
@@ -47,8 +50,11 @@ impl Repository {
         .bind(&input.repository)
         .bind(&input.default_branch)
         .bind(workspace_mode.to_string())
-        .execute(self.pool())
+        .execute(&mut *tx)
         .await?;
+        let item_types = preset(&input.project_type);
+        item_types::seed(&mut tx, id, &item_types).await?;
+        tx.commit().await?;
 
         debug!(project_id = %id, name = %input.name, "Project created");
 
@@ -59,6 +65,7 @@ impl Repository {
             description: input.description,
             project_type: input.project_type,
             vocabulary,
+            item_types,
             workflow,
             default_model: None,
             // Left NULL: a fresh project has no project-level token
@@ -103,7 +110,16 @@ impl Repository {
         .fetch_optional(self.pool())
         .await?;
 
-        row.map(|r| r.into_project()).transpose()
+        match row {
+            Some(row) => Ok(Some(self.with_item_types(row.into_project()?).await?)),
+            None => Ok(None),
+        }
+    }
+
+    /// The project with its type catalog read in.
+    async fn with_item_types(&self, mut project: Project) -> Result<Project, StoreError> {
+        project.item_types = queries::item_types::of_project(self, project.id).await?;
+        Ok(project)
     }
 
     #[instrument(skip(self))]
@@ -125,7 +141,11 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        rows.into_iter().map(|r| r.into_project()).collect()
+        let mut projects = Vec::with_capacity(rows.len());
+        for row in rows {
+            projects.push(self.with_item_types(row.into_project()?).await?);
+        }
+        Ok(projects)
     }
 
     #[instrument(skip(self))]
@@ -335,6 +355,7 @@ impl ProjectRow {
             description: self.description,
             project_type: decode::variant(TABLE, "project_type", &self.project_type)?,
             vocabulary: decode::json(TABLE, "vocabulary", &self.vocabulary)?,
+            item_types: Vec::new(),
             workflow: decode::json(TABLE, "workflow", &self.workflow)?,
             default_model: self.default_model,
             github_token_ref: self.github_token_ref,

@@ -53,10 +53,8 @@ async fn wood_frame_keeps_construction_vocabulary() {
     let construction = seeded_construction_templates(&repo).await;
     let wood = find_template(&construction, "Wood Frame Build");
 
-    assert_eq!(
-        wood.vocabulary.get("task").map(String::as_str),
-        Some("Work Order")
-    );
+    let default = wood.item_types.iter().find(|t| t.default_work).unwrap();
+    assert_eq!(default.name, "Work Order");
     assert_eq!(
         wood.vocabulary.get("sprint").map(String::as_str),
         Some("Phase")
@@ -218,6 +216,7 @@ async fn a_saved_template_keeps_its_teams() {
     let made = create_template(
         &repo,
         CreateProjectTemplate {
+            item_types: None,
             name: "Mine".to_owned(),
             description: None,
             project_type: ProjectType::Custom,

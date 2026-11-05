@@ -11,6 +11,7 @@ pub mod custom_fields;
 pub mod dependencies;
 pub mod execution;
 pub mod github_links;
+pub mod item_types;
 pub mod items;
 pub mod metrics;
 pub mod notifications;
@@ -271,6 +272,22 @@ pub(crate) enum Parent {
 
 /// A row a write names must be there: `NotFound { entity }` when it is not, on whatever
 /// connection the write holds (a pooled one, or a transaction's).
+/// The type key an item names must be in its project's catalog: `NotFound { entity: "item type" }`
+/// when it is not, on whatever connection the write holds.
+pub(crate) async fn require_item_type(
+    conn: &mut sqlx::SqliteConnection,
+    project_id: Uuid,
+    key: &str,
+) -> Result<(), StoreError> {
+    let found: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM item_types WHERE project_id = ? AND key = ?")
+            .bind(project_id.to_string())
+            .bind(key)
+            .fetch_optional(&mut *conn)
+            .await?;
+    found.map(|_| ()).ok_or(StoreError::not_found("item type"))
+}
+
 pub(crate) async fn require_row(
     conn: &mut sqlx::SqliteConnection,
     parent: Parent,

@@ -25,6 +25,7 @@ pub mod execution_heartbeat_replays;
 pub mod execution_request_rows;
 pub mod execution_requests;
 pub mod github_links;
+pub mod item_types;
 pub mod items;
 pub mod migrations;
 pub mod prill_records;
