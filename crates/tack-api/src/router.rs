@@ -399,6 +399,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/projects/{project_id}/search", get(items::search_items))
         .route("/search", get(items::search_items_global))
         .route("/items/{id}", get(items::get_item))
+        .route("/items/{id}/run-options", get(routing::get_run_options))
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
         .route(

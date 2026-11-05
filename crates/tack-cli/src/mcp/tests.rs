@@ -517,6 +517,39 @@ async fn mcp_create_execution_posts_the_expected_body() {
     assert!(text.contains("exec_1"), "unexpected: {text}");
 }
 
+/// A run on an item that holds work is refused by the server with its reason, and the tool says it.
+#[tokio::test]
+async fn mcp_create_execution_says_why_a_group_is_not_run() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/api/executions"))
+        .respond_with(wiremock::ResponseTemplate::new(409).set_body_json(json!({
+            "error": {
+                "code": "group_not_runnable",
+                "message": "Checkout is an epic: it holds work and is not run itself. Run its items, or plan it.",
+                "retryable": false, "details": {}
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let line = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
+        json!({ "item_id": "epic-1" })
+    );
+    let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_str(&resp).unwrap();
+    assert_eq!(v["result"]["isError"], true, "{v}");
+    let text = v["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("is not run itself. Run its items, or plan it."),
+        "{text}"
+    );
+}
+
 /// With no profile, harness or selector the keys are absent from the posted
 /// body (not `null`), so the server resolves them.
 #[tokio::test]
