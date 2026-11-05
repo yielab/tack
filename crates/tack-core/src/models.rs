@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::item_types::ItemTypeDef;
 use crate::outline::{BundleAutomation, BundleProfile, BundleRole, BundleTeam};
 use crate::vocabulary::VocabularyMap;
 use crate::workflow::WorkflowConfig;
@@ -32,6 +33,10 @@ pub struct Project {
     pub description: Option<String>,
     pub project_type: ProjectType,
     pub vocabulary: VocabularyMap,
+    /// The project's type catalog, in display order: served with the project so no screen
+    /// fetches it twice.
+    #[serde(default)]
+    pub item_types: Vec<ItemTypeDef>,
     pub workflow: WorkflowConfig,
     /// The model a run uses when it names none and its agent is this
     /// project's `default_harness`; changing the default agent clears it.
@@ -188,7 +193,8 @@ pub struct Item {
     pub parent_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
-    pub item_type: ItemType,
+    /// A key of the project's type catalog (`Project::item_types`).
+    pub item_type: String,
     pub status: String,
     pub priority: Priority,
     pub estimate: Option<f64>,
@@ -398,33 +404,6 @@ impl std::str::FromStr for ItemSource {
             "outline" => Self::Outline,
             _ => Self::Unknown,
         })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub enum ItemType {
-    Epic,
-    Feature,
-    Task,
-    Subtask,
-    Bug,
-    Requirement,
-    Custom(String),
-}
-
-impl std::fmt::Display for ItemType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Epic => write!(f, "epic"),
-            Self::Feature => write!(f, "feature"),
-            Self::Task => write!(f, "task"),
-            Self::Subtask => write!(f, "subtask"),
-            Self::Bug => write!(f, "bug"),
-            Self::Requirement => write!(f, "requirement"),
-            Self::Custom(name) => write!(f, "{name}"),
-        }
     }
 }
 
@@ -763,7 +742,7 @@ pub struct CreateItem {
     pub title: String,
     #[validate(length(max = 50_000, message = "description too long (max 50 000 chars)"))]
     pub description: Option<String>,
-    pub item_type: Option<ItemType>,
+    pub item_type: Option<String>,
     pub parent_id: Option<Uuid>,
     pub priority: Option<Priority>,
     #[validate(range(min = 0.0, message = "estimate must be non-negative"))]
@@ -793,7 +772,7 @@ pub struct UpdateItem {
     /// Omitted leaves the description untouched; JSON `null` clears it.
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub description: Option<Option<String>>,
-    pub item_type: Option<ItemType>,
+    pub item_type: Option<String>,
     #[validate(length(min = 1, max = 100, message = "status must be 1–100 characters"))]
     pub status: Option<String>,
     pub priority: Option<Priority>,
@@ -933,7 +912,7 @@ pub struct CreateDependency {
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 pub struct ItemFilter {
     pub status: Option<String>,
-    pub item_type: Option<ItemType>,
+    pub item_type: Option<String>,
     pub priority: Option<Priority>,
     pub sprint_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,

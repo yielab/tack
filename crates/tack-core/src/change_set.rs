@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::dependency::DependencyGraph;
-use crate::models::{DependencyType, ItemType, Priority};
-use crate::outline::parse_item_type;
+use crate::item_types::{ItemTypeDef, default_work_key};
+use crate::models::{DependencyType, Priority};
 use crate::principal::{Capability, Principal, may};
 use crate::workflow::{StatusGate, WorkflowConfig};
 
@@ -120,7 +120,7 @@ pub struct CreateOp {
     /// The items that block this one.
     #[serde(default)]
     pub depends_on: Vec<ItemRef>,
-    /// The item type, when the project has it; else the type of the set's anchor, else a task.
+    /// The item type, when the project has it; else the type of the set's anchor when that is work, else the default work type.
     #[serde(default, rename = "type")]
     pub item_type: Option<String>,
     /// A project role, by name.
@@ -513,8 +513,8 @@ pub struct ExistingItem {
 #[derive(Debug, Clone)]
 pub struct BoardView {
     pub workflow: WorkflowConfig,
-    /// The item types the project's vocabulary has.
-    pub vocabulary: HashSet<String>,
+    /// The project's type catalog.
+    pub item_types: Vec<ItemTypeDef>,
     /// Only the items of this project that the operations name; any other id is not found.
     pub items: HashMap<Uuid, ExistingItem>,
     /// Items per status, over the whole project.
@@ -527,8 +527,9 @@ pub struct BoardView {
     pub profiles: HashSet<String>,
     /// Team name to the profiles that name it.
     pub profiles_by_team: HashMap<String, Vec<String>>,
-    /// The type of the item the creates hang under.
-    pub anchor_type: Option<ItemType>,
+    /// The type key of the item the creates hang under, when it is work; a group anchor gives
+    /// `None`, and the creates take the default work type.
+    pub anchor_type: Option<String>,
 }
 
 /// One reason a change set cannot be applied.
@@ -565,7 +566,7 @@ pub fn describe(problems: &[Problem]) -> String {
 /// How a `create` or `who_does_it` resolved against the project's roles, types and profiles.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Resolution {
-    pub item_type: Option<ItemType>,
+    pub item_type: Option<String>,
     pub role: Option<Uuid>,
     pub profile: Option<String>,
     pub unknown_role: Option<String>,
@@ -582,18 +583,22 @@ fn named(value: &Option<String>) -> Option<&str> {
 /// What a `create`'s item type, role and doer resolve to. A name the project lacks is reported
 /// in the resolution and the item is made without it: a plan has always been read leniently.
 fn resolve_create(create: &CreateOp, board: &BoardView) -> Resolution {
-    let fallback = board.anchor_type.clone().unwrap_or(ItemType::Task);
+    let fallback = board
+        .anchor_type
+        .as_deref()
+        .or_else(|| default_work_key(&board.item_types))
+        .unwrap_or_default()
+        .to_owned();
     let mut unknown_type = None;
     let item_type = match named(&create.item_type) {
         None => fallback,
-        Some(wanted) => match parse_item_type(wanted) {
-            Some(found)
-                if !matches!(found, ItemType::Custom(_))
-                    && board.vocabulary.contains(&found.to_string()) =>
-            {
-                found
-            }
-            _ => {
+        Some(wanted) => match board
+            .item_types
+            .iter()
+            .find(|t| t.key == wanted.to_lowercase() || t.name.eq_ignore_ascii_case(wanted))
+        {
+            Some(found) => found.key.clone(),
+            None => {
                 unknown_type = Some(wanted.to_owned());
                 fallback
             }

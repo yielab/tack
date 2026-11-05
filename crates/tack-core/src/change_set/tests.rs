@@ -1,4 +1,6 @@
 use super::*;
+use crate::item_types::preset;
+use crate::models::ProjectType;
 use crate::principal::Scope;
 use crate::workflow::simple_workflow;
 
@@ -10,7 +12,7 @@ fn board(items: &[(Uuid, &str)]) -> BoardView {
     }
     BoardView {
         workflow,
-        vocabulary: ["epic", "task", "bug"].map(String::from).into(),
+        item_types: preset(&ProjectType::Software),
         items: items
             .iter()
             .map(|(id, status)| {
@@ -75,7 +77,7 @@ fn a_clean_set_resolves_every_create() {
     let board = board(&[(existing, "To Do")]);
     let resolved = validate(&operations, &all(&operations), &board, &HashMap::new()).unwrap();
     let first = &resolved[&0];
-    assert_eq!(first.item_type, Some(ItemType::Bug));
+    assert_eq!(first.item_type.as_deref(), Some("bug"));
     assert_eq!(first.profile.as_deref(), Some("p-code"));
     assert!(first.role.is_some());
 }
@@ -95,7 +97,7 @@ fn a_create_names_what_the_project_lacks_and_is_still_valid() {
     assert_eq!(first.unknown_type.as_deref(), Some("saga"));
     assert_eq!(first.unknown_profile.as_deref(), Some("p-none"));
     assert_eq!(first.unresolved_team.as_deref(), Some("nobody"));
-    assert_eq!(first.item_type, Some(ItemType::Task));
+    assert_eq!(first.item_type.as_deref(), Some("task"));
 }
 
 #[test]

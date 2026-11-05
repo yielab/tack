@@ -840,6 +840,8 @@ pub enum StableErrorCode {
     HasChildren,
     /// A workflow's statuses or transitions contradict each other.
     InvalidWorkflow,
+    /// The item type still has items, so it cannot be deleted or change its level.
+    TypeInUse,
     /// The `Host` header does not name this server.
     MisdirectedHost,
     /// A state-changing request that a page on another site sent.
@@ -907,6 +909,7 @@ impl StableErrorCode {
             | Self::MachineRevoked
             | Self::LocalRunnerUnavailable
             | Self::FolderNotEmpty
+            | Self::TypeInUse
             | Self::IdempotencyConflict
             | Self::InvalidTransition
             | Self::StaleLease

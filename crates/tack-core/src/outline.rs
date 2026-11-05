@@ -20,7 +20,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::models::{CreateItem, ItemType, Priority, ProjectType};
+use crate::item_types::ItemTypeDef;
+use crate::models::{CreateItem, Priority, ProjectType};
 use crate::vocabulary::VocabularyMap;
 use crate::workflow::{Transition, WorkflowConfig};
 
@@ -63,8 +64,38 @@ pub struct Outline {
     /// from it, and lists the ones no computer reports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub teams: Vec<BundleTeam>,
+    /// The project's item types. A new project takes exactly these; an existing one gains the
+    /// ones it lacks and takes the names and colours of the ones it has.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<BundleType>,
     #[serde(default)]
     pub items: Vec<OutlineItem>,
+}
+
+/// An item type as a project file writes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleType {
+    pub key: String,
+    pub name: String,
+    pub level: crate::item_types::Level,
+    pub color: crate::item_types::TypeColor,
+    /// The default work type; exactly one in a file that gives a new project its types.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub default: bool,
+}
+
+impl BundleType {
+    pub fn from_def(def: &ItemTypeDef) -> Self {
+        Self {
+            key: def.key.clone(),
+            name: def.name.clone(),
+            level: def.level,
+            color: def.color,
+            default: def.default_work,
+        }
+    }
 }
 
 /// The shapes a team can have, as a project file writes them.
@@ -378,7 +409,7 @@ pub struct OutlineProject {
     pub project_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Any of the 16 vocabulary keys; the rest keep the type's words.
+    /// Any of the vocabulary keys that are not item types; the rest keep the type's words.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -409,8 +440,8 @@ pub struct OutlineItem {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// epic, feature, task (the default), subtask, bug, requirement, or any
-    /// other word as a custom type.
+    /// A key or name of the project's types; absent, the default work type. A word the
+    /// project lacks is added as a work type.
     #[serde(
         default,
         rename = "type",
@@ -555,21 +586,6 @@ pub fn parse_project_type(text: &str) -> Result<ProjectType, String> {
             text.trim()
         )
     })
-}
-
-/// Read an item type leniently: the built-in names in any case, anything
-/// else as a custom type.
-pub fn parse_item_type(text: &str) -> Option<ItemType> {
-    match text.trim().to_lowercase().as_str() {
-        "" => None,
-        "epic" => Some(ItemType::Epic),
-        "feature" => Some(ItemType::Feature),
-        "task" => Some(ItemType::Task),
-        "subtask" => Some(ItemType::Subtask),
-        "bug" => Some(ItemType::Bug),
-        "requirement" => Some(ItemType::Requirement),
-        other => Some(ItemType::Custom(other.to_string())),
-    }
 }
 
 fn parse_priority(text: &str) -> Option<Priority> {
@@ -886,7 +902,7 @@ fn item_input(
     let input = CreateItem {
         title: title.to_string(),
         description: trimmed(item.description.as_deref()).map(str::to_string),
-        item_type: item.item_type.as_deref().and_then(parse_item_type),
+        item_type: trimmed(item.item_type.as_deref()).map(str::to_string),
         parent_id: None,
         priority,
         estimate: item.estimate,

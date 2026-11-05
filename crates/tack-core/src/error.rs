@@ -41,6 +41,9 @@ pub enum CoreError {
     #[error("Cannot delete item {0}: it has {1} children")]
     HasChildren(Uuid, usize),
 
+    #[error("The type '{key}' is used by {items} items; move them to another type first")]
+    TypeInUse { key: String, items: u32 },
+
     #[error("Validation error: {0}")]
     Validation(String),
 
@@ -64,6 +67,7 @@ impl CoreError {
             CoreError::InvalidVocabularyKey(_) => StableErrorCode::InvalidVocabularyKey,
             CoreError::EmptyWorkflow => StableErrorCode::EmptyWorkflow,
             CoreError::HasChildren(_, _) => StableErrorCode::HasChildren,
+            CoreError::TypeInUse { .. } => StableErrorCode::TypeInUse,
             CoreError::Validation(_) => StableErrorCode::ValidationFailed,
             CoreError::InvalidWorkflow(_) => StableErrorCode::InvalidWorkflow,
         }
