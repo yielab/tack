@@ -521,6 +521,31 @@ fn lowered_level(
     }
 }
 
+/// The project block's words and workflow: the words to apply, with every problem found.
+fn check_project(outline: &Outline, problems: &mut Vec<String>) -> Option<VocabularyMap> {
+    let project = outline.project.as_ref()?;
+    let mut words = None;
+    if let Some(given) = &project.vocabulary {
+        let mut keys: Vec<&String> = given.keys().collect();
+        keys.sort();
+        for key in keys {
+            let one = VocabularyMap::from([(key.clone(), String::new())]);
+            if vocabulary::validate(&one).is_err() {
+                problems.push(format!(
+                    "project.vocabulary: \"{key}\" is not a vocabulary key"
+                ));
+            }
+        }
+        words = Some(given.clone());
+    }
+    if let Some(workflow) = &project.workflow
+        && let Err(found) = workflow_from(workflow)
+    {
+        problems.extend(found);
+    }
+    words
+}
+
 /// Check a whole file against the board. Either it can all be written, with
 /// the plan, or nothing is, with every problem found.
 pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError> {
@@ -529,27 +554,7 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
     let mut sections: Vec<SectionSummary> = Vec::new();
 
     // project: vocabulary and workflow
-    let mut plan_vocabulary = None;
-    if let Some(project) = &outline.project {
-        if let Some(words) = &project.vocabulary {
-            let mut keys: Vec<&String> = words.keys().collect();
-            keys.sort();
-            for key in keys {
-                let one = VocabularyMap::from([(key.clone(), String::new())]);
-                if vocabulary::validate(&one).is_err() {
-                    problems.push(format!(
-                        "project.vocabulary: \"{key}\" is not a vocabulary key"
-                    ));
-                }
-            }
-            plan_vocabulary = Some(words.clone());
-        }
-        if let Some(workflow) = &project.workflow
-            && let Err(found) = workflow_from(workflow)
-        {
-            problems.extend(found);
-        }
-    }
+    let plan_vocabulary = check_project(outline, &mut problems);
 
     // types
     let mut catalog = check_types(outline, board, &mut problems, &mut sections);

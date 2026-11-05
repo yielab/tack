@@ -136,6 +136,20 @@ fn notification_routes() -> Router<AppState> {
         )
 }
 
+/// A project's item types: the catalog Settings edits and every screen that names a type reads.
+/// Merged into `api` before `require_token`, like every other `/api/*` route.
+fn item_type_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/projects/{id}/types",
+            get(item_types::list_item_types).post(item_types::create_item_type),
+        )
+        .route(
+            "/projects/{id}/types/{key}",
+            patch(item_types::update_item_type).delete(item_types::delete_item_type),
+        )
+}
+
 /// What an agent proposes to change on a board: a project's change sets, and the person's
 /// decisions on one. Merged into `api` before `require_token`, like every other `/api/*`
 /// route; `agent_access` says which of them an agent credential may call.
@@ -410,14 +424,6 @@ pub fn build_router(state: AppState) -> Router {
             get(sprints::get_sprint).patch(sprints::update_sprint),
         )
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
-        .route(
-            "/projects/{id}/types",
-            get(item_types::list_item_types).post(item_types::create_item_type),
-        )
-        .route(
-            "/projects/{id}/types/{key}",
-            patch(item_types::update_item_type).delete(item_types::delete_item_type),
-        )
         .route("/projects/{project_id}/roles", post(roles::create_role))
         .route("/projects/{project_id}/roles", get(roles::list_roles))
         .route(
@@ -571,6 +577,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(operator_execution_routes(&state))
         .merge(change_set_routes())
         .merge(notification_routes())
+        .merge(item_type_routes())
         .merge(conversation_routes())
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .layer(middleware::from_fn(read_client))
