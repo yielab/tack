@@ -1,5 +1,7 @@
 //! Which agent profile (and so which fleet) a run gets when the caller names none.
 
+use uuid::Uuid;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     pub profile_id: String,
@@ -25,46 +27,71 @@ pub struct Resolved {
     /// The agent the resolved profile names (`tool_policy.agent`).
     pub harness: Option<String>,
     pub source: Source,
+    /// The ancestor the answer came from; `None` when it is the item's own or the project's.
+    pub from: Option<(Uuid, String)>,
 }
 
+/// What routing reads of one item: the profile chosen on it, and its roles with the profile each
+/// names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainLink {
+    pub item: Uuid,
+    pub title: String,
+    /// The profile chosen on the item itself (`run_settings.agent_profile_id`).
+    pub run_settings: Option<String>,
+    /// Its roles, by name, each with the profile it names.
+    pub roles: Vec<(String, Option<String>)>,
+}
+
+/// The profile a run gets when the caller names none. `chain` is the item, then its parent, and
+/// so on up to the top; the first link that names a profile wins, by its run settings, else by
+/// its roles when they agree. Roles that name different profiles stop the climb and give the
+/// project's default.
 pub fn resolve(
     explicit: Option<&str>,
-    run_settings: Option<&str>,
-    roles: &[(String, Option<String>)],
+    chain: &[ChainLink],
     project_default: Option<&str>,
     implementer: Option<&str>,
     profiles: &[Candidate],
 ) -> Option<Resolved> {
-    let found = |profile_id: &str, source: Source| {
+    let found = |profile_id: &str, source: Source, link: Option<usize>| {
         let candidate = profiles.iter().find(|c| c.profile_id == profile_id);
         Some(Resolved {
             profile_id: profile_id.to_owned(),
             fleet_id: candidate.and_then(|c| c.fleet_id.clone()),
             harness: candidate.and_then(|c| c.harness.clone()),
             source,
+            from: link
+                .filter(|at| *at > 0)
+                .and_then(|at| chain.get(at))
+                .map(|ancestor| (ancestor.item, ancestor.title.clone())),
         })
     };
     if let Some(id) = explicit {
-        return found(id, Source::Explicit);
+        return found(id, Source::Explicit, None);
     }
-    if let Some(id) = run_settings {
-        return found(id, Source::RunSettings);
-    }
-    let mut named = roles
-        .iter()
-        .filter_map(|(role, profile)| profile.as_deref().map(|p| (role.as_str(), p)));
-    if let Some((first_role, first)) = named.next() {
-        if named.all(|(_, other)| other == first) {
-            return found(first, Source::Role(first_role.to_owned()));
+    for (at, link) in chain.iter().enumerate() {
+        if let Some(id) = link.run_settings.as_deref() {
+            return found(id, Source::RunSettings, Some(at));
         }
-        if let Some(id) = project_default {
-            return found(id, Source::Ambiguous);
+        let mut named = link
+            .roles
+            .iter()
+            .filter_map(|(role, profile)| profile.as_deref().map(|p| (role.as_str(), p)));
+        if let Some((first_role, first)) = named.next() {
+            if named.all(|(_, other)| other == first) {
+                return found(first, Source::Role(first_role.to_owned()), Some(at));
+            }
+            if let Some(id) = project_default {
+                return found(id, Source::Ambiguous, None);
+            }
+            break;
         }
     }
     if let Some(id) = project_default {
-        return found(id, Source::ProjectDefault);
+        return found(id, Source::ProjectDefault, None);
     }
-    implementer.and_then(|id| found(id, Source::Implementer))
+    implementer.and_then(|id| found(id, Source::Implementer, None))
 }
 
 /// The team a profile names (`tool_policy.docket.team`) and the agent it runs
@@ -425,15 +452,115 @@ mod tests {
             (None, None, &[], None, None, None),
         ];
         for (i, (e, s, r, d, im, want)) in rows.into_iter().enumerate() {
-            let got = resolve(e, s, r, d, im, &c);
+            let chain = [link(1, "Checkout", s, r)];
+            let got = resolve(e, &chain, d, im, &c);
             let want = want.map(|(p, f, h, source)| Resolved {
                 profile_id: p.into(),
                 fleet_id: f.map(Into::into),
                 harness: h.map(Into::into),
                 source,
+                from: None,
             });
             assert_eq!(got, want, "row {i}");
         }
+    }
+
+    fn link(
+        n: u128,
+        title: &str,
+        run_settings: Option<&str>,
+        roles: &[(String, Option<String>)],
+    ) -> ChainLink {
+        ChainLink {
+            item: Uuid::from_u128(n),
+            title: title.into(),
+            run_settings: run_settings.map(Into::into),
+            roles: roles.to_vec(),
+        }
+    }
+
+    #[test]
+    fn an_item_with_no_profile_of_its_own_takes_its_nearest_ancestors() {
+        let c = cands();
+        let bare = link(1, "Pay", None, &[]);
+        let epic = link(2, "Checkout", None, &[role("Builder", Some("pc"))]);
+        let top = link(3, "Shop", Some("pf"), &[]);
+        let from = |n: u128, t: &str| Some((Uuid::from_u128(n), t.to_owned()));
+
+        // The parent's role names the profile; the answer says where it came from.
+        let got = resolve(
+            None,
+            &[bare.clone(), epic.clone(), top.clone()],
+            Some("pd"),
+            None,
+            &c,
+        )
+        .unwrap();
+        assert_eq!(
+            (got.profile_id.as_str(), got.source, got.from),
+            ("pc", Source::Role("Builder".into()), from(2, "Checkout"))
+        );
+
+        // The item's own choice beats the parent's, and is not "from" anyone.
+        let own = link(1, "Pay", Some("ps"), &[]);
+        let got = resolve(
+            None,
+            &[own, epic.clone(), top.clone()],
+            Some("pd"),
+            None,
+            &c,
+        )
+        .unwrap();
+        assert_eq!((got.profile_id.as_str(), got.from), ("ps", None));
+
+        // Nothing on the way up but the grandparent: the climb passes the bare parent.
+        let got = resolve(
+            None,
+            &[bare.clone(), link(2, "Checkout", None, &[]), top],
+            Some("pd"),
+            None,
+            &c,
+        )
+        .unwrap();
+        assert_eq!(
+            (got.profile_id.as_str(), got.source, got.from),
+            ("pf", Source::RunSettings, from(3, "Shop"))
+        );
+
+        // An explicit profile is nobody's.
+        let got = resolve(Some("pe"), &[bare, epic], Some("pd"), None, &c).unwrap();
+        assert_eq!((got.source, got.from), (Source::Explicit, None));
+    }
+
+    #[test]
+    fn roles_that_disagree_on_an_ancestor_stop_the_climb_at_the_project_default() {
+        let c = cands();
+        let bare = link(1, "Pay", None, &[]);
+        let split = link(
+            2,
+            "Checkout",
+            None,
+            &[role("A", Some("pc")), role("B", Some("pf"))],
+        );
+        let top = link(3, "Shop", Some("ps"), &[]);
+        let got = resolve(
+            None,
+            &[bare.clone(), split.clone(), top.clone()],
+            Some("pd"),
+            None,
+            &c,
+        )
+        .unwrap();
+        assert_eq!(
+            (got.profile_id.as_str(), got.source, got.from),
+            ("pd", Source::Ambiguous, None)
+        );
+        // With no project default the climb still stops: the grandparent is not asked.
+        let got = resolve(None, &[bare, split, top], None, Some("pi"), &c).unwrap();
+        assert_eq!(
+            (got.profile_id.as_str(), got.source),
+            ("pi", Source::Implementer)
+        );
     }
 
     #[test]

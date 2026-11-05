@@ -148,6 +148,7 @@ mod tests {
                 fleet_id: None,
                 harness: None,
                 source: Source::Implementer,
+                from: None,
             }),
             has_machine: true,
         }

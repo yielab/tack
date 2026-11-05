@@ -59,6 +59,9 @@ pub enum CoreError {
     #[error("{} does not go in a sprint: its items do.", with_article(.type_name, true))]
     GroupInSprint { type_name: String },
 
+    #[error("{} is {}: it holds work and is not run itself. Run its items, or plan it.", .title, with_article(.type_name, false))]
+    GroupNotRunnable { title: String, type_name: String },
+
     #[error("Validation error: {0}")]
     Validation(String),
 
@@ -115,6 +118,7 @@ impl CoreError {
             CoreError::TreeTooDeep => StableErrorCode::TreeTooDeep,
             CoreError::ParentInOtherProject => StableErrorCode::ParentInOtherProject,
             CoreError::GroupInSprint { .. } => StableErrorCode::GroupInSprint,
+            CoreError::GroupNotRunnable { .. } => StableErrorCode::GroupNotRunnable,
             CoreError::Validation(_) => StableErrorCode::ValidationFailed,
             CoreError::InvalidWorkflow(_) => StableErrorCode::InvalidWorkflow,
         }
