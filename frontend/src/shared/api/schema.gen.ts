@@ -918,6 +918,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items/{id}/run-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The profiles that may run an item, and why the others may not. */
+        get: operations["get_run_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{id}/subtasks-from-plan": {
         parameters: {
             query?: never;
@@ -6008,6 +6025,11 @@ export interface components {
          * @enum {string}
          */
         NobodyReason: "no_role" | "role_without_profile" | "profile_missing" | "team_not_reported" | "harness_not_reported";
+        /**
+         * @description What an item is for the screens: a group holds items, work is done.
+         * @enum {string}
+         */
+        Node: "group" | "work";
         /** @description A notice as the inbox keeps it. */
         Notification: {
             cause: string;
@@ -6631,6 +6653,7 @@ export interface components {
         };
         /** @description The profile that would do one open card, and where it would run. */
         Routed: {
+            from?: null | components["schemas"]["RoutedFrom"];
             /** @description The agent the profile runs. */
             harness?: string | null;
             /** Format: uuid */
@@ -6646,7 +6669,8 @@ export interface components {
             /**
              * @description Where the choice came from: `run_settings` (chosen on the card), `role:<name>`,
              *     `project_default`, `implementer` (the built-in profile, when nothing else is named) or
-             *     `ambiguous` (its roles name different profiles, so the project's default is used).
+             *     `ambiguous` (its roles name different profiles, so the project's default is used). An
+             *     item with nothing of its own takes the nearest ancestor's (`from` says which).
              */
             source?: string | null;
             /**
@@ -6654,6 +6678,12 @@ export interface components {
              *     reports it. `null` for a profile that names none: the card runs in its single agent.
              */
             team?: string | null;
+        };
+        /** @description The ancestor an item takes its profile from. */
+        RoutedFrom: {
+            /** Format: uuid */
+            id: string;
+            title: string;
         };
         /** @description A run's token limit, who set it and who applies it, with the one sentence every screen prints. */
         RunLimit: {
@@ -6676,6 +6706,19 @@ export interface components {
              * @description What the run's latest attempt has counted so far, live while it runs; absent before any attempt.
              */
             used?: number | null;
+        };
+        /** @description Whether one agent profile may run an item. */
+        RunOption: {
+            /** @description Any profile runs work; a group runs only with a profile that plans or researches. */
+            allowed: boolean;
+            /**
+             * @description What the item is for running it: `group` (its type holds work, or items sit under it) or
+             *     `work`.
+             */
+            node: components["schemas"]["Node"];
+            profile_id: string;
+            /** @description Why the profile may not run it, in a sentence; `null` when it may. */
+            reason?: string | null;
         };
         /**
          * @description The run dialog's Advanced values a task overrides. Every field is optional;
@@ -7092,7 +7135,7 @@ export interface components {
          *     layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
          * @enum {string}
          */
-        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "type_in_use" | "group_under_work" | "parent_loop" | "tree_too_deep" | "parent_in_other_project" | "group_in_sprint" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
+        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "type_in_use" | "group_under_work" | "parent_loop" | "tree_too_deep" | "parent_in_other_project" | "group_in_sprint" | "group_not_runnable" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
         StaleItem: {
             item: components["schemas"]["DigestItem"];
             /** Format: date-time */
@@ -10019,6 +10062,38 @@ export interface operations {
                 content?: never;
             };
             /** @description Item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_run_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Each agent profile and whether it may run the item, with the reason when it may not. The rule a run is refused by */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOption"][];
+                };
+            };
+            /** @description No such item */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -246,7 +246,7 @@ pub struct RunOption {
     pub node: Node,
 }
 
-/// GET /api/items/{id}/run-options
+/// The profiles that may run an item, and why the others may not.
 #[instrument(skip(state))]
 #[utoipa::path(
     get,

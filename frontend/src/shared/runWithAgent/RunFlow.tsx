@@ -77,6 +77,12 @@ export interface RunFlowProps {
   limitSentence?: Accessor<string | undefined>;
   /** Where the shown profile came from (`GET /items/{id}/agent-context`'s `profile_source`); null once the person picked another. */
   profileSource?: Accessor<string | null | undefined>;
+  /** Why a profile may not run this item, by profile id (`GET /items/{id}/run-options`). */
+  refused?: Accessor<ReadonlyMap<string, string>>;
+  /** The item holds work and is planned, not run: the primary button says so. */
+  planning?: Accessor<boolean>;
+  /** The ancestor the shown profile came from, while it is still the server's choice. */
+  profileFrom?: Accessor<string | null | undefined>;
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
   profileTools: Accessor<string[]>;
   harnessLabel: Accessor<string>;
@@ -107,7 +113,12 @@ const PILL = { 'background-color': 'var(--color-bg-app)', color: 'var(--color-te
 const LINK = { color: 'var(--color-accent-ink)' };
 const SUMMARY_CLASS = 'cursor-pointer font-heading text-lg';
 /** The dialog's sentence for the server's `profile_source`. */
-export function describeProfileSource(source: string | null | undefined): string | null {
+export function describeProfileSource(source: string | null | undefined, from?: string | null): string | null {
+  const said = sourceWords(source);
+  return said && from ? `${said}, from ${from}` : said;
+}
+
+function sourceWords(source: string | null | undefined): string | null {
   if (!source) return null;
   if (source.startsWith('role:')) return `Chosen by the role ${source.slice(5)}`;
   switch (source) {
@@ -244,7 +255,8 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             agents={props.agentChoices()}
             agent={props.form.harnessKind}
             onAgent={props.onAgent}
-            choiceNote={describeProfileSource(props.profileSource?.())}
+            choiceNote={describeProfileSource(props.profileSource?.(), props.profileFrom?.())}
+            refused={props.refused?.()}
             onChange={(p) => { if (!p) return; props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
           />
         </FieldShell>
@@ -500,7 +512,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               when={modelBlocked()}
               fallback={
                 <Button type="submit" data-testid="run-start" loading={props.submitting()} disabled={!props.canSubmit()} aria-describedby={props.misfit?.() ? 'run-misfit' : undefined}>
-                  Start run
+                  {props.planning?.() ? 'Plan with agent' : 'Start run'}
                 </Button>
               }
             >
