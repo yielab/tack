@@ -30,6 +30,7 @@ A **project file** is one YAML or JSON document that holds a project: its workfl
 | Section | What it describes |
 |---|---|
 | `project` | Name, type, description, the project's own words (vocabulary) and its workflow, either a preset or the statuses in order. |
+| `types` | The project's item types: key, name, level (`group` holds work, `work` is work), colour and the one default work type. |
 | `fields` | Custom fields: name, type, options, whether a value is required. |
 | `profiles` | Agent profiles: name, kind, instructions, which agent runs it, its team, its fleet and its limits. |
 | `roles` | Project roles: name, color and the profile each role uses. |
@@ -49,7 +50,6 @@ project:
   type: web
   description: Dialect-native bedtime stories, read aloud by families.
   vocabulary:
-    task: Pieza
     sprint: Semana
   workflow:
     statuses:
@@ -58,6 +58,11 @@ project:
       - { name: En curso, category: in_progress, wip_limit: 5 }
       - { name: En revisión, category: in_progress }
       - { name: Hecho, category: done }
+
+types:
+  - { key: epic, name: Colección, level: group, color: accent }
+  - { key: task, name: Pieza, level: work, color: neutral, default: true }
+  - { key: feature, name: Historia, level: work, color: success }
 
 fields:
   - { name: Dialecto, type: select, required: true, options: [rioplatense, mexicano, colombiano, chileno, peninsular] }
@@ -144,9 +149,10 @@ The preview lists each section the file carries, then the items:
 - **Section lines** read like "Roles: 2 new, 5 updated, 3 not mentioned". "New" were created, "updated" matched a name Tack already had, and "not mentioned" are names the project has that the file does not carry. Those are left alone.
 - **Warnings** appear under the section they belong to. The web preview repeats them under "Read differently than written".
 - **Items** are listed with the status each will start in, and the number of dependencies.
+- **New types** lists the type words the items use that the project does not have; each is added as a work type when you confirm.
 - **Missing** lists what the file expects and no computer reports, each with what closes the gap. A team the file's `teams` section or a profile names, and that no agent reports, comes with docket's command that makes it, for example `docket init fab-research --blueprint respond --recipe research-review`. An agent a profile runs, and that no computer has, comes with the sentence that installs it. Each fix has a **Copy** button. Nothing in this list is created by the import: run the command or install the agent, and the next preview no longer lists it.
 
-For the example above, `tack import --dry-run` prints one line per section, in the order fields, profiles, roles, sprints, automation, items, and a warning that auto-start was asked on but applied as off.
+For the example above, `tack import --dry-run` prints one line per section, in the order types, fields, profiles, roles, sprints, automation, items, and a warning that auto-start was asked on but applied as off.
 
 If the file cannot be imported, the preview shows **This file cannot be imported** and lists every problem at once, so you can fix the whole file in one pass.
 
@@ -156,6 +162,7 @@ If the file cannot be imported, the preview shows **This file cannot be imported
 - **The whole file is checked before anything is written.** Either all of it can be written or none of it is.
 - **Nothing is deleted.** Importing into an existing project adds new names and updates the names the file mentions, using only the keys it gives. Roles, fields, sprints and profiles the file does not mention stay as they are. Items in a file are always added.
 - **The `project` block is read only for a new project.** For an existing one the name, workflow and vocabulary are kept, with a warning that says where to change them: Settings.
+- **Types:** a file that creates a project gives it exactly the types it lists. A file that adds to a project adds the types it lacks and takes the names and colours of the ones it has; their levels and the default stay as the project has them. An item's `type` is a key or a name of the project's types, in any case; a word the project does not have is added as a work type, and the preview lists it as a new type.
 - **Built-in profiles are never changed.** A role may use Implementer, Reviewer, Researcher or Planner. A file that redefines one gets a warning and the built-in stays.
 - **A file cannot raise autonomy or switch auto-start on.** A level above the project's current one is applied at the project's current level, and `auto_start: enabled: true` is applied as off unless the project already has it on. Each time the preview says what was asked and what was applied. Raise it yourself from **Settings → Automation**; see [Automating a Project](automation.md).
 - **A new project starts at L3.** So a file that asks for L4 on a new project gets L3 and a warning.
@@ -166,7 +173,7 @@ The file is **refused** for:
 
 - an unknown key, or a value of the wrong kind;
 - a section entry with no name, or with a name used twice;
-- a vocabulary word that is not one of the 16 keys;
+- a vocabulary word that is not one of the ten keys, or a type key that is not 1 to 40 lowercase letters, digits, `_` or `-`, is used twice, or a new project's types without exactly one default work type;
 - a workflow that gives both a preset and statuses, neither, an unknown preset, a status category that is not `todo`, `in_progress` or `done`, a duplicate status name, or no status in one of those three categories;
 - a field of an unknown type, a select field without options, or an item value of the wrong type or outside the field's options;
 - a profile with an unknown kind, an unknown agent, or a team name that is not lowercase letters, digits and hyphens;
@@ -206,10 +213,10 @@ The export writes the same file back: items in written order, only the profiles 
 
 ### Templates
 
-A **template** is a project file without items. It gives every new project the same workflow, vocabulary, roles, profiles, automation and the teams it expects.
+A **template** is a project file without items. It gives every new project the same workflow, types, vocabulary, roles, profiles, automation and the teams it expects.
 
 - **Use one:** on the **Templates** page choose **Use Template**, or run `tack init "My site" --template web-product-with-content`. The name is matched without regard to case and `-` reads as a space, or give the template's id.
-- **Save one:** `tack template save <project> --name "My template"` stores a project's roles, profiles, automation, workflow and vocabulary.
+- **Save one:** `tack template save <project> --name "My template"` stores a project's roles, profiles, automation, workflow, types and vocabulary.
 - **Built-in templates:** **Web product with content**, **Library or CLI** and **Static content site** each bring their roles and profiles, with merging at L3. **Digital business** brings six departments (Software, Operations, Support, Growth, Finance and Insight) as roles, each with a profile that names no agent, so each runs on whichever agent the project uses and puts its work in the repository (a report is a file). It also lists the teams docket would run them with: one that builds, one that answers for Support and Growth together, one that operates and one that keeps records for Finance and Insight. A department gets a team of its own only when its work has a different shape or a different gate. The teams are described and never created: point a department's profile at docket and create the team with the command the preview prints.
 - **What the Templates page shows:** each card carries chips for what the template holds, such as "5 statuses", "3 roles", "3 profiles" and "Merges at L3". Hover a card to see its workflow columns and each role with its profile.
 
@@ -249,7 +256,7 @@ Items can come in any order; a parent is always written before its children.
 | `ref` | A name other items use in `parent` and `depends_on`. Any text or number, unique in the file. Optional. |
 | `title` | Required. |
 | `description` | Optional. |
-| `type` | `epic`, `feature`, `task` (the default), `subtask`, `bug`, `requirement`, or any other word as a custom type. |
+| `type` | A key or a name of the project's types, in any case; absent, the project's default work type. A word the project does not have is added to its types as work. |
 | `status` | A status of the project's workflow, in any case. Absent: the workflow's first status. |
 | `priority` | `critical`, `high`, `medium` (the default), `low` or `none`. |
 | `assignee` | Optional. |
@@ -425,7 +432,7 @@ One row per item, with these columns:
 | `id` | Item id |
 | `title` | Item title |
 | `description` | Description, or empty |
-| `type` | Task, bug, epic and so on |
+| `type` | The key of the item's type |
 | `status` | Current workflow status |
 | `priority` | Item priority |
 | `assignee` | Assignee, or empty |

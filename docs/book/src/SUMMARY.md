@@ -11,7 +11,7 @@
 - [Views](user-guide/views.md)
 - [Working with Items](user-guide/items.md)
 - [Workflows & Statuses](user-guide/workflows.md)
-- [Vocabulary](user-guide/vocabulary.md)
+- [Types and words](user-guide/vocabulary.md)
 - [Command Palette & Search](user-guide/command-palette.md)
 - [Appearance](user-guide/appearance.md)
 - [Running Agents on Tasks](user-guide/running-agents.md)

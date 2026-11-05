@@ -70,6 +70,9 @@ Then start the Tack server (`tack serve`) and the agent can call the tools below
 `*` = required. Read tools return a compact projection (id, title, type, status,
 priority, assignee) to keep agent context small; `get_item` returns full detail.
 
+An item's `item_type` is a key of its project's types (`GET /api/projects/{id}/types`
+lists them); left out, the item takes the project's default work type.
+
 `create_outline` creates many items in one call — in a new project (`project`:
 `{name, project_type?, description?}`) or an existing one (`project_id`) — with their
 hierarchy and dependencies. Each item takes the outline fields (`ref`, `title`,

@@ -64,7 +64,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 **tack-core** (pure, zero I/O; depends on `tack-protocol`):
 - Domain models: `Project`, `Item`, `Sprint`, `Role`, `Comment`, `Dependency`, etc.
 - Workflow engine: validates transitions, enforces WIP limits, provides presets
-- Vocabulary system: customizable term mapping per project
+- Item types and vocabulary (`item_types.rs`, `vocabulary.rs`): a project's types are a catalog it owns (key, name, colour, a level of `group` or `work`, one default work type; `preset` per project type, `check_catalog`, and the pure `add`/`update`/`remove` the store applies), and the vocabulary is the ten other words that rename the screens
 - Dependency graph: DAG with cycle detection (DFS-based)
 - Error types: typed domain errors (`CoreError`)
 - Item briefs (`brief.rs`): types, validation and Markdown rendering, as plain data

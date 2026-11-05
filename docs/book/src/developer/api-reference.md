@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (128 paths, 172 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (130 paths, 176 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -508,7 +508,7 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 |---|---|---|---|---|
 | `project_id` | path | `string` | yes | Project ID |
 | `status` | path | `['string', 'null']` | yes |  |
-| `item_type` | path | — | yes |  |
+| `item_type` | path | `['string', 'null']` | yes |  |
 | `priority` | path | — | yes |  |
 | `sprint_id` | path | `['string', 'null']` | yes |  |
 | `parent_id` | path | `['string', 'null']` | yes |  |
@@ -956,7 +956,7 @@ PUT /api/projects/:id/autonomy
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | The settings now in force | `AutonomySettings` |
-| 400 | An unknown level, a nameless or repeated domain, a negative limit | `ErrorEnvelope` |
+| 400 | An unknown level, a nameless or repeated domain, a domain naming a type the project lacks, a negative limit | `ErrorEnvelope` |
 | 404 | No such project | `ErrorEnvelope` |
 
 ---
@@ -2425,6 +2425,66 @@ Refresh reported capabilities and optionally rotate the runner's bearer credenti
 | 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |
 | 404 | not_found | `RunnerV1ErrorEnvelope` |
 | 409 | conflict / idempotency_conflict / invalid_transition / stale_lease | `RunnerV1ErrorEnvelope` |
+
+---
+
+## Item Types
+
+#### `GET /api/projects/{id}/types`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The project's types in display order, each with how many items use it | `ItemTypeUse`[] |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `POST /api/projects/{id}/types`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+**Request body:** `CreateItemType`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The type, last in order and never the default | `ItemTypeDef` |
+| 400 | The key or name is not valid, or the key is used | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `DELETE /api/projects/{id}/types/{key}`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `key` | path | `string` | yes | The type's key |
+| `merge_into` | query | `string` | no | The type the items of the deleted one move to; required while items use it. |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 204 | The type is deleted and its items moved to merge_into | — |
+| 400 | The default work type, or a merge into another level, cannot be done | `ErrorEnvelope` |
+| 404 | Project or type not found | `ErrorEnvelope` |
+| 409 | Items use the type and merge_into is not given (type_in_use) | `ErrorEnvelope` |
+
+#### `PATCH /api/projects/{id}/types/{key}`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `key` | path | `string` | yes | The type's key |
+
+**Request body:** `UpdateItemType`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The type after the change | `ItemTypeDef` |
+| 400 | The change breaks a rule of the catalog | `ErrorEnvelope` |
+| 404 | Project or type not found | `ErrorEnvelope` |
+| 409 | The level cannot change while items use the type (type_in_use) | `ErrorEnvelope` |
 
 ---
 

@@ -98,17 +98,17 @@ Each crate's boundary, in full, is in [`docs/ARCHITECTURE.md`](https://github.co
 
 Every piece of work in Tack — whether it is called a task, an epic, a bug, a work order, or an assignment — is stored as an `Item`. There is one table, one struct, one set of repository functions.
 
-The `Item` struct in `tack-core/src/models.rs` carries an `item_type` field that records what kind of thing it is (`Task`, `Epic`, `Bug`, `Feature`, `Subtask`, `Requirement`, or a `Custom(String)` for anything else). The **vocabulary** system then translates that type name into whatever label the project uses.
+The `Item` struct in `tack-core/src/models.rs` carries an `item_type` field that records what kind of thing it is: a **key of the project's type catalog**. The catalog (`tack-core/src/item_types.rs`, table `item_types`) is data of the project, not an enum. Each type has a key, a name, a colour and a **level**, `group` or `work`, and exactly one type is the project's default work type. A software project's catalog has Epic (a group) and Feature, Task, Bug and Requirement (work); a construction project's has Building and Section (groups) and Work Order, Activity, Defect and Specification (work). The **vocabulary** system translates the other ten words (`sprint`, `backlog`, …) into whatever label the project uses.
 
-Think of it like a spreadsheet: every row has the same columns. The header labels change depending on who is looking at the sheet. A construction project relabels `task` as `Work Order` and `sprint` as `Phase`, but the underlying row structure is identical.
+Think of it like a spreadsheet: every row has the same columns. The header labels change depending on who is looking at the sheet. A construction project calls its default work type `Work Order` and `sprint` `Phase`, but the underlying row structure is identical.
 
 **Benefits:**
 
 - One migration path. Adding a new field to items (say, a `story_points` column) means one migration, one struct update, one set of repository functions — not separate migrations per item type.
-- Hierarchy is free. Because every item can have a `parent_id` pointing to another item, the tree structure (epic → feature → task → subtask) falls out naturally without a separate parent-type/child-type mapping.
+- Hierarchy is one table. Because every item can have a `parent_id` pointing to another item, the tree falls out of that column without a separate parent-type/child-type mapping. A type's level is what the tree reads: a type at level `group` holds groups and work, work holds work, and an item with children is a group whatever its type (ADR 0036, decisions 10 and 11). "Subtask" is not a type; it is work under work.
 - Filtering is uniform. The same `ItemFilter` struct handles filtering by `item_type`, `status`, `priority`, `assignee`, or tag regardless of project type.
 
-The tradeoff is that the `item_type` field carries less compile-time enforcement than a proper type hierarchy. This is intentional — the flexibility outweighs the constraint for a tool meant to work across very different domains.
+The tradeoff is that the `item_type` field carries less compile-time enforcement than an enum would. This is intentional — a project names its own types, and the store checks that an item's key is in its project's catalog inside the write's transaction.
 
 ---
 

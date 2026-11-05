@@ -3,7 +3,7 @@
 `tack-plan.json` is the one format in which anything proposes items: a list of subtasks, each with
 a title, a description, optional acceptance sentences, optional `depends_on` indexes into the same
 list, an optional `S`/`M`/`L` estimate and four optional keys that say where the entry goes:
-`type` (the item type, when the project has it), `role` (a project role, by name), `team` (a team,
+`type` (a key of the project's item types; absent, the default work type), `role` (a project role, by name), `team` (a team,
 by name) and `parent` (the index of an earlier entry this one is a sub-item of). `v` stays `"1"`.
 
 The format belongs to no harness. It reaches the board in one of three ways, and the accept
