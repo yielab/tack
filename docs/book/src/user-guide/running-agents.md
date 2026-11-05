@@ -172,6 +172,18 @@ project ("Does this project have code?") or later under **Settings → Automatio
 ([Automating a Project](automation.md)). Then press **Run with agent** on a task.
 The [Tutorial](tutorial.md) walks through it with screenshots.
 
+### An epic is planned, its items are run
+
+An item that holds other items (an epic, a building, a course, or a task that has items under it) is not
+run itself: its work is. Press **Run with agent** on one and the dialog says what to do instead: **Plan with
+agent**. Only the profiles that plan or research (Planner, Researcher) can be picked; the others are
+shown disabled with the reason, "Checkout is an epic: it holds work and is not run itself. Run its items,
+or plan it." A plan or a conclusion is proposed, not applied: when you accept it, its items go under the
+epic. Any profile can run an item that holds nothing.
+
+The same rule holds everywhere a run starts: starting it by itself never starts an epic, only its work; the
+command line and an AI assistant's `create_execution` are refused with the same sentence.
+
 ### The Run with agent dialog
 
 The dialog is a pre-flight, not a form. What belongs to the computer or the project is decided and shown

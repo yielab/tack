@@ -58,8 +58,10 @@ When a run does not name a profile, Tack takes the first of these that exists:
 2. The profile of the task's role. If the task has several roles with different profiles, the project's
    default profile is used instead, and the run dialog says "More than one role has a profile, so the
    project default is used".
-3. The project's default profile.
-4. The built-in **Implementer**.
+3. The same two, read on the task's parent, then on its parent's parent, up to the top: the nearest epic
+   that names a profile decides ("Chosen by the role Content, from Checkout").
+4. The project's default profile.
+5. The built-in **Implementer**.
 
 The run dialog says which of these applied: "Chosen by the role Content", "Project default", "Saved on this
 task" or "The built-in Implementer". To use another profile for one run, choose another one under **Who does
@@ -192,7 +194,9 @@ About every thirty seconds Tack looks at the tasks in that status and starts the
 high, medium, low, none), and within the same priority in board order. A task starts only when all of these
 hold:
 
-- It has a role, or a profile chosen on the task itself (see **Who does it** below).
+- It is work, not an epic: an item that holds other items is never started by itself, only its items are
+  (see [An epic is planned, its items are run](running-agents.md#an-epic-is-planned-its-items-are-run)).
+- It has a role, or a profile chosen on the task itself, or its epic has one (see **Who does it** below).
 - It has never had a run. A task starts once; a second run is yours to start.
 - It has no unfinished blocker.
 - A profile resolves for it, as under [Teams](#teams), and an agent is named by the profile or by the
@@ -239,6 +243,11 @@ task can use a different agent; the choice is for this task.
 Choosing a profile saves it on the task. **Nobody yet** removes it, and the task goes back to the profile of
 its role or the project's default. The Automation row says where the choice came from: "chosen on this task"
 or "from the role Content". The Run with agent dialog always needs a profile, so it has no **Nobody yet**.
+
+An item with no role and no profile of its own takes the one of the nearest epic above it that has one: give
+Checkout the role Builder and every task under it is done by Builder, unless a task says otherwise. The
+choice reads "Chosen by the role Builder, from Checkout". If the roles of that epic name different
+profiles, the climb stops there and the project's default is used.
 
 ---
 

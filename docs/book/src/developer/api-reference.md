@@ -1942,7 +1942,7 @@ the Merge button. Merges the
 | 200 | Execution request created or idempotently replayed | `CreateExecutionResponse` |
 | 400 | invalid_request | `RunnerV1ErrorEnvelope` |
 | 404 | not_found (item does not exist) | `RunnerV1ErrorEnvelope` |
-| 409 | conflict / idempotency_conflict / runner_revoked | `RunnerV1ErrorEnvelope` |
+| 409 | conflict / idempotency_conflict / runner_revoked / group_not_runnable (an item that holds work is run only with a profile that plans or researches) | `RunnerV1ErrorEnvelope` |
 
 #### `GET /api/executions/{request_id}`
 

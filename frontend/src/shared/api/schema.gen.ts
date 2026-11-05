@@ -9278,7 +9278,7 @@ export interface operations {
                     "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                 };
             };
-            /** @description conflict / idempotency_conflict / runner_revoked */
+            /** @description conflict / idempotency_conflict / runner_revoked / group_not_runnable (an item that holds work is run only with a profile that plans or researches) */
             409: {
                 headers: {
                     [name: string]: unknown;
