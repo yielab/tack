@@ -1,5 +1,6 @@
+use crate::queries;
 use crate::repo::execution::state;
-use crate::repo::{Parent, require_row};
+use crate::repo::{Parent, require_item_type, require_row};
 use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
@@ -8,8 +9,7 @@ use uuid::Uuid;
 
 use tack_core::CoreError;
 use tack_core::models::{
-    CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, ItemType, RunSettings,
-    UpdateItem,
+    CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, RunSettings, UpdateItem,
 };
 use tack_core::outline::{PlannedParent, ResolvedOutline};
 use tack_core::workflow::{StatusCategory, StatusGate};
@@ -519,7 +519,7 @@ impl ItemRow {
             parent_id: decode::optional_uuid(TABLE, "parent_id", self.parent_id.as_deref())?,
             title: self.title,
             description: self.description,
-            item_type: parse_item_type(&self.item_type),
+            item_type: self.item_type,
             status: self.status,
             priority: decode::variant(TABLE, "priority", &self.priority)?,
             estimate: self.estimate,
@@ -595,18 +595,6 @@ impl ItemCardRow {
     }
 }
 
-fn parse_item_type(s: &str) -> ItemType {
-    match s {
-        "epic" => ItemType::Epic,
-        "feature" => ItemType::Feature,
-        "task" => ItemType::Task,
-        "subtask" => ItemType::Subtask,
-        "bug" => ItemType::Bug,
-        "requirement" => ItemType::Requirement,
-        other => ItemType::Custom(other.to_string()),
-    }
-}
-
 /// Build the shared `WHERE` clause (and its ordered bind values) for the item
 /// list/count queries so both stay in lockstep. Returns a clause beginning with
 /// a leading space, e.g. ` WHERE project_id = ? AND status = ?`.
@@ -620,7 +608,7 @@ fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<Str
     }
     if let Some(ref item_type) = filter.item_type {
         clause.push_str(" AND item_type = ?");
-        binds.push(item_type.to_string());
+        binds.push(item_type.clone());
     }
     if let Some(ref priority) = filter.priority {
         clause.push_str(" AND priority = ?");
@@ -661,12 +649,17 @@ pub(crate) async fn insert_item(
     let id = Uuid::new_v4();
     let now = Utc::now();
     let now_str = now.to_rfc3339();
-    let item_type = input.item_type.unwrap_or(ItemType::Task);
+    let item_type = match input.item_type {
+        Some(key) => {
+            require_item_type(conn, project_id, &key).await?;
+            key
+        }
+        None => queries::item_types::default_work_key(conn, project_id).await?,
+    };
     let priority = input.priority.unwrap_or_default();
     let estimate_unit = input.estimate_unit.unwrap_or_default();
     let tags = input.tags.unwrap_or_default();
     let tags_json = decode::to_json(&tags)?;
-    let item_type_str = item_type.to_string();
     let priority_str = priority.to_string();
     let estimate_unit_str = decode::to_json(&estimate_unit)?;
 
@@ -690,7 +683,7 @@ pub(crate) async fn insert_item(
         .bind(input.parent_id.map(|p| p.to_string()))
         .bind(&input.title)
         .bind(&input.description)
-        .bind(&item_type_str)
+        .bind(&item_type)
         .bind(initial_status)
         .bind(&priority_str)
         .bind(input.estimate)
@@ -791,6 +784,10 @@ pub(crate) async fn update_item_in(
     if let Some(Some(sprint_id)) = input.sprint_id {
         require_row(tx, Parent::Sprint, sprint_id).await?;
     }
+    if let Some(key) = input.item_type.as_deref() {
+        let project = decode::uuid("items", "project_id", &project_id)?;
+        require_item_type(tx, project, key).await?;
+    }
     // Without an addressed field there is no logical mutation and therefore no version to consume.
     if input.is_empty() {
         let item = fetch_card(tx, id).await?;
@@ -833,7 +830,7 @@ pub(crate) async fn update_item_in(
         if let Some(item_type) = input.item_type.as_ref() {
             fields
                 .push("item_type = ")
-                .push_bind_unseparated(item_type.to_string());
+                .push_bind_unseparated(item_type.as_str());
         }
         if let Some(status) = input.status.as_deref() {
             fields.push("status = ").push_bind_unseparated(status);

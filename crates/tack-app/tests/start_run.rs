@@ -110,7 +110,7 @@ async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request
         &board.repo,
         board.item_id,
         tack_core::models::UpdateItem {
-            item_type: Some(tack_core::models::ItemType::Bug),
+            item_type: Some("bug".into()),
             priority: Some(tack_core::models::Priority::High),
             ..Default::default()
         },

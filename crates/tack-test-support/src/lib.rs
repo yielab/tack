@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
 use tack_core::{
-    models::{CreateItem, CreateProject, ItemType, Priority, ProjectType},
+    models::{CreateItem, CreateProject, Priority, ProjectType},
     vocabulary,
 };
 use tack_db::{Repository, init_pool, migrations};
@@ -119,7 +119,7 @@ pub async fn make_item(
             recurrence_of: None,
             title: "Test Item".into(),
             description: None,
-            item_type: Some(ItemType::Task),
+            item_type: Some("task".into()),
             parent_id: None,
             priority: Some(Priority::Medium),
             estimate: None,

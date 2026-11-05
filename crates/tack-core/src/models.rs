@@ -954,6 +954,8 @@ pub struct ProjectTemplate {
     pub description: Option<String>,
     pub project_type: ProjectType,
     pub vocabulary: VocabularyMap,
+    /// The item types a project made from the template starts with.
+    pub item_types: Vec<ItemTypeDef>,
     pub workflow: WorkflowConfig,
     pub custom_fields: Vec<CustomFieldDefinition>,
     pub default_boards: Vec<BoardTemplate>,
@@ -989,6 +991,9 @@ pub struct CreateProjectTemplate {
     pub description: Option<String>,
     pub project_type: ProjectType,
     pub vocabulary: Option<VocabularyMap>,
+    /// The project type's preset when absent.
+    #[serde(default)]
+    pub item_types: Option<Vec<ItemTypeDef>>,
     pub workflow: Option<WorkflowConfig>,
     pub custom_fields: Option<Vec<CustomFieldDefinition>>,
     pub default_boards: Option<Vec<BoardTemplate>>,

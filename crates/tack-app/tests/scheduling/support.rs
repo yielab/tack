@@ -6,7 +6,7 @@
 //! functions directly, with no repository at all.
 
 use chrono::Utc;
-use tack_core::models::{CreateItem, ItemType, Priority as ItemPriority, ProjectType};
+use tack_core::models::{CreateItem, Priority as ItemPriority, ProjectType};
 use tack_db::Repository;
 use tack_db::repo::execution::NewAgentProfile;
 use tack_protocol::Clock;
@@ -42,7 +42,7 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
                 recurrence_of: None,
                 title: "Scheduling fixture item".into(),
                 description: None,
-                item_type: Some(ItemType::Task),
+                item_type: Some("task".into()),
                 parent_id: None,
                 priority: Some(ItemPriority::Medium),
                 estimate: None,

@@ -10,6 +10,7 @@ use tracing::instrument;
 use uuid::Uuid;
 
 use super::Repository;
+use crate::queries;
 use crate::{StoreError, decode};
 
 const TABLE: &str = "triggers";
@@ -118,13 +119,15 @@ impl Repository {
         let (id, anchor) = (Uuid::new_v4(), Uuid::new_v4());
         let now = new.now.to_rfc3339();
         let mut tx = self.pool().begin().await?;
+        let item_type = queries::item_types::default_work_key(&mut tx, new.scope.home()).await?;
         sqlx::query(
             "INSERT INTO items (id, project_id, title, item_type, status, source, hidden, created_at, updated_at)
-             VALUES (?, ?, ?, 'task', ?, 'manual', 1, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, 'manual', 1, ?, ?)",
         )
         .bind(anchor.to_string())
         .bind(new.scope.home().to_string())
         .bind(new.name)
+        .bind(&item_type)
         .bind(new.anchor_status)
         .bind(&now)
         .bind(&now)

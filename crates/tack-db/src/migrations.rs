@@ -168,6 +168,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("104_triggers", &MIGRATION_104[..]),
         ordinary("105_notifications", &MIGRATION_105[..]),
         ordinary("106_template_teams", &MIGRATION_106[..]),
+        ordinary("107_item_types", &MIGRATION_107[..]),
     ]
 }
 
@@ -2144,3 +2145,123 @@ const MIGRATION_105: [&str; 4] = [
 // 106: a project template carries the teams its profiles are expected to name, described and never created.
 const MIGRATION_106: [&str; 1] =
     ["ALTER TABLE project_templates ADD COLUMN teams TEXT NOT NULL DEFAULT '[]'"];
+
+// 107: a project's item types are a catalog (Phase 93, ADR 0036 decision 10). Each project gets the preset of
+// its type, named as its vocabulary renamed the six type words; every other type its items use is added as
+// work; a `subtask` becomes the default work type and keeps its parent; the type words leave the vocabularies.
+// `PRESET` is a frozen copy of `tack_core::item_types::preset` as of this migration, and a test compares the two,
+// so a later change to the preset is a decision and not drift.
+macro_rules! preset_107 {
+    () => {
+        "preset(project_type, key, name, level, color, sort_order, default_work) AS (VALUES
+        ('software', 'epic', 'Epic', 'group', 'accent', 0, 0),
+        ('software', 'feature', 'Feature', 'work', 'success', 1, 0),
+        ('software', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('software', 'bug', 'Bug', 'work', 'danger', 3, 0),
+        ('software', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('web', 'epic', 'Epic', 'group', 'accent', 0, 0),
+        ('web', 'feature', 'Feature', 'work', 'success', 1, 0),
+        ('web', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('web', 'bug', 'Bug', 'work', 'danger', 3, 0),
+        ('web', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('mobile', 'epic', 'Epic', 'group', 'accent', 0, 0),
+        ('mobile', 'feature', 'Feature', 'work', 'success', 1, 0),
+        ('mobile', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('mobile', 'bug', 'Bug', 'work', 'danger', 3, 0),
+        ('mobile', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('maintenance', 'epic', 'Epic', 'group', 'accent', 0, 0),
+        ('maintenance', 'feature', 'Feature', 'work', 'success', 1, 0),
+        ('maintenance', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('maintenance', 'bug', 'Bug', 'work', 'danger', 3, 0),
+        ('maintenance', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('personal', 'epic', 'Epic', 'group', 'accent', 0, 0),
+        ('personal', 'feature', 'Feature', 'work', 'success', 1, 0),
+        ('personal', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('personal', 'bug', 'Bug', 'work', 'danger', 3, 0),
+        ('personal', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('custom', 'epic', 'Epic', 'group', 'accent', 0, 0),
+        ('custom', 'feature', 'Feature', 'work', 'success', 1, 0),
+        ('custom', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('custom', 'bug', 'Bug', 'work', 'danger', 3, 0),
+        ('custom', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('legal', 'epic', 'Matter', 'group', 'accent', 0, 0),
+        ('legal', 'feature', 'Case', 'work', 'success', 1, 0),
+        ('legal', 'task', 'Filing', 'work', 'neutral', 2, 1),
+        ('legal', 'bug', 'Issue', 'work', 'danger', 3, 0),
+        ('legal', 'requirement', 'Statute', 'work', 'warning', 4, 0),
+        ('research', 'epic', 'Study', 'group', 'accent', 0, 0),
+        ('research', 'feature', 'Experiment', 'work', 'success', 1, 0),
+        ('research', 'task', 'Protocol', 'work', 'neutral', 2, 1),
+        ('research', 'bug', 'Anomaly', 'work', 'danger', 3, 0),
+        ('research', 'requirement', 'Hypothesis', 'work', 'warning', 4, 0),
+        ('event', 'epic', 'Event', 'group', 'accent', 0, 0),
+        ('event', 'feature', 'Track', 'work', 'success', 1, 0),
+        ('event', 'task', 'Task', 'work', 'neutral', 2, 1),
+        ('event', 'bug', 'Issue', 'work', 'danger', 3, 0),
+        ('event', 'requirement', 'Requirement', 'work', 'warning', 4, 0),
+        ('construction', 'epic', 'Building', 'group', 'accent', 0, 0),
+        ('construction', 'feature', 'Section', 'group', 'accent2', 1, 0),
+        ('construction', 'task', 'Work Order', 'work', 'neutral', 2, 1),
+        ('construction', 'activity', 'Activity', 'work', 'success', 3, 0),
+        ('construction', 'bug', 'Defect', 'work', 'danger', 4, 0),
+        ('construction', 'requirement', 'Specification', 'work', 'warning', 5, 0),
+        ('homework', 'epic', 'Course', 'group', 'accent', 0, 0),
+        ('homework', 'feature', 'Module', 'group', 'accent2', 1, 0),
+        ('homework', 'task', 'Assignment', 'work', 'neutral', 2, 1),
+        ('homework', 'question', 'Question', 'work', 'success', 3, 0),
+        ('homework', 'bug', 'Correction', 'work', 'danger', 4, 0),
+        ('homework', 'requirement', 'Rubric Item', 'work', 'warning', 5, 0))"
+    };
+}
+
+const MIGRATION_107: [&str; 10] = [
+    r##"CREATE TABLE item_types (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('group', 'work')),
+        color TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        default_work INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (project_id, key)
+    )"##,
+    "CREATE UNIQUE INDEX item_types_default_work ON item_types(project_id) WHERE default_work = 1",
+    concat!(
+        "WITH ",
+        preset_107!(),
+        " INSERT INTO item_types (project_id, key, name, level, color, sort_order, default_work)
+         SELECT p.id, v.key, COALESCE(NULLIF(json_extract(p.vocabulary, '$.' || v.key), ''), v.name),
+                v.level, v.color, v.sort_order, v.default_work
+           FROM projects p JOIN preset v ON v.project_type = p.project_type"
+    ),
+    r##"INSERT INTO item_types (project_id, key, name, level, color, sort_order, default_work)
+        SELECT used.project_id, used.item_type, used.item_type, 'work', 'neutral',
+               10 + ROW_NUMBER() OVER (PARTITION BY used.project_id ORDER BY used.item_type), 0
+          FROM (SELECT DISTINCT project_id, item_type FROM items) used
+         WHERE used.item_type <> 'subtask'
+           AND NOT EXISTS (SELECT 1 FROM item_types t
+                            WHERE t.project_id = used.project_id AND t.key = used.item_type)"##,
+    r##"UPDATE items
+           SET item_type = (SELECT t.key FROM item_types t
+                             WHERE t.project_id = items.project_id AND t.default_work = 1)
+         WHERE item_type = 'subtask'"##,
+    "ALTER TABLE project_templates ADD COLUMN item_types TEXT NOT NULL DEFAULT '[]'",
+    concat!(
+        "WITH ",
+        preset_107!(),
+        " UPDATE project_templates SET item_types = (
+             SELECT json_group_array(json(o)) FROM (
+                 SELECT json_object(
+                            'key', v.key,
+                            'name', COALESCE(NULLIF(json_extract(project_templates.vocabulary, '$.' || v.key), ''), v.name),
+                            'level', v.level,
+                            'color', v.color,
+                            'order', v.sort_order,
+                            'default_work', json(CASE v.default_work WHEN 1 THEN 'true' ELSE 'false' END)) AS o
+                   FROM preset v WHERE v.project_type = project_templates.project_type
+                  ORDER BY v.sort_order))"
+    ),
+    "UPDATE projects SET vocabulary = json_remove(vocabulary, '$.epic', '$.feature', '$.task', '$.subtask', '$.bug', '$.requirement')",
+    "UPDATE project_templates SET vocabulary = json_remove(vocabulary, '$.epic', '$.feature', '$.task', '$.subtask', '$.bug', '$.requirement')",
+    "UPDATE workspaces SET default_vocabulary = json_remove(default_vocabulary, '$.epic', '$.feature', '$.task', '$.subtask', '$.bug', '$.requirement')",
+];

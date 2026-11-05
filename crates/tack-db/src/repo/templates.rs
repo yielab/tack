@@ -15,6 +15,7 @@ struct TemplateRow {
     description: Option<String>,
     project_type: String,
     vocabulary: String,
+    item_types: String,
     workflow: String,
     custom_fields: String,
     default_boards: String,
@@ -36,6 +37,7 @@ impl TemplateRow {
             description: self.description,
             project_type: decode::variant(TABLE, "project_type", &self.project_type)?,
             vocabulary: decode::json(TABLE, "vocabulary", &self.vocabulary)?,
+            item_types: decode::json(TABLE, "item_types", &self.item_types)?,
             workflow: decode::json(TABLE, "workflow", &self.workflow)?,
             custom_fields: decode::json(TABLE, "custom_fields", &self.custom_fields)?,
             default_boards: decode::json(TABLE, "default_boards", &self.default_boards)?,
@@ -62,6 +64,13 @@ pub async fn create_template(
     let vocabulary = serde_json::to_string(&data.vocabulary.unwrap_or_default())
         .unwrap_or_else(|_| "{}".to_string());
 
+    let item_types = serde_json::to_string(
+        &data
+            .item_types
+            .unwrap_or_else(|| tack_core::item_types::preset(&data.project_type)),
+    )
+    .unwrap_or_else(|_| "[]".to_string());
+
     let workflow = if let Some(wf) = data.workflow {
         serde_json::to_string(&wf).unwrap_or_else(|_| "{}".to_string())
     } else {
@@ -79,14 +88,15 @@ pub async fn create_template(
 
     sqlx::query(
         "INSERT INTO project_templates
-         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+         (id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
     )
     .bind(id.to_string())
     .bind(&data.name)
     .bind(&data.description)
     .bind(project_type_str)
     .bind(&vocabulary)
+    .bind(&item_types)
     .bind(&workflow)
     .bind(&custom_fields)
     .bind(&default_boards)
@@ -110,7 +120,7 @@ pub async fn create_template(
 #[instrument(skip(repo))]
 pub async fn get_template(repo: &Repository, id: Uuid) -> Result<ProjectTemplate, StoreError> {
     let row = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
+        "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
@@ -132,7 +142,7 @@ pub async fn list_templates(
         let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
              ORDER BY is_builtin DESC, name ASC"
@@ -142,7 +152,7 @@ pub async fn list_templates(
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
@@ -695,14 +705,18 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
 
         sqlx::query(
             "INSERT INTO project_templates
-             (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
+             (id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
         )
         .bind(id.to_string())
         .bind(spec.name)
         .bind(spec.description)
         .bind(type_str.as_str())
         .bind(serde_json::to_string(&vocabulary).unwrap_or_else(|_| "{}".to_string()))
+        .bind(
+            serde_json::to_string(&tack_core::item_types::preset(&spec.project_type))
+                .unwrap_or_else(|_| "[]".to_string()),
+        )
         .bind(serde_json::to_string(&workflow).unwrap_or_else(|_| "{}".to_string()))
         .bind(serde_json::to_string(&spec.custom_fields).unwrap_or_else(|_| "[]".to_string()))
         .bind(serde_json::to_string(&default_boards).unwrap_or_else(|_| "[]".to_string()))

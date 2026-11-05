@@ -49,6 +49,7 @@ fn template_input(
     project_type: ProjectType,
 ) -> tack_core::models::CreateProjectTemplate {
     tack_core::models::CreateProjectTemplate {
+        item_types: None,
         name: name.into(),
         description: None,
         project_type,
@@ -307,7 +308,7 @@ async fn create_and_list_items() {
 
     let epic_input = CreateItem {
         description: Some("An epic".into()),
-        item_type: Some(ItemType::Epic),
+        item_type: Some("epic".into()),
         priority: Some(Priority::High),
         estimate: Some(13.0),
         tags: Some(vec!["backend".into()]),
@@ -318,11 +319,11 @@ async fn create_and_list_items() {
         .await
         .unwrap();
     assert_eq!(epic.title, "Epic One");
-    assert_eq!(epic.item_type, ItemType::Epic);
+    assert_eq!(epic.item_type, "epic");
     assert_eq!(epic.priority, Priority::High);
 
     let task_input = CreateItem {
-        item_type: Some(ItemType::Task),
+        item_type: Some("task".into()),
         parent_id: Some(epic.id),
         ..item_input("Task under epic")
     };
@@ -363,7 +364,7 @@ async fn item_tree() {
     let project = common::make_project(&repo, ws_id).await;
 
     let epic_input = CreateItem {
-        item_type: Some(ItemType::Epic),
+        item_type: Some("epic".into()),
         ..item_input("Root Epic")
     };
     let epic = repo
@@ -372,7 +373,7 @@ async fn item_tree() {
         .unwrap();
 
     let child_input = CreateItem {
-        item_type: Some(ItemType::Task),
+        item_type: Some("task".into()),
         parent_id: Some(epic.id),
         ..item_input("Child Task")
     };
@@ -537,10 +538,15 @@ async fn project_vocabulary_by_type() {
         .await
         .unwrap();
     // Construction vocabulary should use domain-specific terms
-    assert_eq!(
-        vocabulary::resolve(&construction.vocabulary, "task"),
-        "Work Order"
-    );
+    let default_name = |project: &tack_core::models::Project| {
+        project
+            .item_types
+            .iter()
+            .find(|t| t.default_work)
+            .map(|t| t.name.clone())
+            .unwrap()
+    };
+    assert_eq!(default_name(&construction), "Work Order");
     assert_eq!(
         vocabulary::resolve(&construction.vocabulary, "sprint"),
         "Phase"
@@ -551,10 +557,7 @@ async fn project_vocabulary_by_type() {
         ..project_input("Math Homework")
     };
     let homework = repo.create_project(ws_id, homework_input).await.unwrap();
-    assert_eq!(
-        vocabulary::resolve(&homework.vocabulary, "task"),
-        "Assignment"
-    );
+    assert_eq!(default_name(&homework), "Assignment");
 }
 
 // ─── Workflow Tests ──────────────────────────────────────────
@@ -595,6 +598,7 @@ async fn create_and_get_template() {
     use tack_db::repo::templates;
 
     let template_data = CreateProjectTemplate {
+        item_types: None,
         name: "My Software Template".into(),
         description: Some("A custom scrum template".into()),
         project_type: ProjectType::Software,
@@ -655,6 +659,7 @@ async fn delete_template_not_builtin() {
     let user_template = templates::create_template(
         &repo,
         CreateProjectTemplate {
+            item_types: None,
             name: "User Template".into(),
             description: None,
             project_type: ProjectType::Personal,
@@ -968,7 +973,7 @@ async fn foreign_key_rejects_orphan_item() {
                 recurrence_of: None,
                 title: "orphan".into(),
                 description: None,
-                item_type: Some(ItemType::Task),
+                item_type: Some("task".into()),
                 parent_id: None,
                 priority: None,
                 estimate: None,

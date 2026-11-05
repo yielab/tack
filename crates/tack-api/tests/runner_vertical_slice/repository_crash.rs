@@ -10,7 +10,7 @@ use tack_test_support::kept;
 
 use crate::common;
 use chrono::{DateTime, Duration, Utc};
-use tack_core::models::{CreateItem, CreateProject, ItemType, Priority, ProjectType};
+use tack_core::models::{CreateItem, CreateProject, Priority, ProjectType};
 use tack_db::{
     Repository, StoreError, queries,
     repo::execution::{
@@ -81,7 +81,7 @@ async fn fixture() -> Fixture {
                 recurrence_of: None,
                 title: "Crash-boundary work".into(),
                 description: None,
-                item_type: Some(ItemType::Task),
+                item_type: Some("task".into()),
                 parent_id: None,
                 priority: Some(Priority::Medium),
                 estimate: None,

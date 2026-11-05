@@ -5,7 +5,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::{CreateItem, ItemSource, ItemType};
+use tack_core::models::{CreateItem, ItemSource};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
@@ -228,7 +228,7 @@ pub async fn import_github(
                 recurrence_of: None,
                 title: format!("[#{num}] {title}", num = issue.number, title = issue.title),
                 description: Some(build_description(issue)),
-                item_type: Some(ItemType::Task),
+                item_type: None,
                 parent_id: None,
                 priority: None,
                 estimate: None,

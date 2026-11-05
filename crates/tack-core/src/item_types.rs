@@ -258,5 +258,170 @@ fn domain(names: (&str, &str, &str, &str, &str)) -> Vec<ItemTypeDef> {
     ]
 }
 
+/// A type with how many items use it, as the types route lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ItemTypeUse {
+    #[serde(flatten)]
+    pub def: ItemTypeDef,
+    pub items: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CreateItemType {
+    pub key: String,
+    pub name: String,
+    pub level: Level,
+    pub color: TypeColor,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpdateItemType {
+    pub name: Option<String>,
+    pub color: Option<TypeColor>,
+    /// The position among the types, from 0.
+    pub order: Option<u32>,
+    /// `true` makes this the default work type; the previous one stops being it.
+    pub default_work: Option<bool>,
+    /// Changes only while no item uses the type.
+    pub level: Option<Level>,
+}
+
+fn renumber(types: &mut [ItemTypeDef]) {
+    types.sort_by(|a, b| (a.order, &a.key).cmp(&(b.order, &b.key)));
+    for (i, def) in types.iter_mut().enumerate() {
+        def.order = i as u32;
+    }
+}
+
+/// The catalog with one more type, last in order and not the default.
+pub fn add(types: &[ItemTypeDef], new: &CreateItemType) -> Result<Vec<ItemTypeDef>, CoreError> {
+    if types.iter().any(|t| t.key == new.key) {
+        return Err(CoreError::Validation(format!(
+            "the type key '{}' is already used",
+            new.key
+        )));
+    }
+    let mut next = types.to_vec();
+    next.push(ItemTypeDef {
+        key: new.key.clone(),
+        name: new.name.trim().to_owned(),
+        level: new.level,
+        color: new.color,
+        order: u32::MAX,
+        default_work: false,
+    });
+    renumber(&mut next);
+    check_catalog(&next)?;
+    Ok(next)
+}
+
+/// The catalog after a change to the type `key`, of which `used` items use. Its level changes only
+/// while no item uses it.
+pub fn update(
+    types: &[ItemTypeDef],
+    key: &str,
+    patch: &UpdateItemType,
+    used: u32,
+) -> Result<Vec<ItemTypeDef>, CoreError> {
+    let mut next = types.to_vec();
+    let Some(at) = next.iter().position(|t| t.key == key) else {
+        return Err(CoreError::Validation(format!(
+            "no type has the key '{key}'"
+        )));
+    };
+    if let Some(name) = &patch.name {
+        check_name(name)?;
+        next[at].name = name.trim().to_owned();
+    }
+    if let Some(color) = patch.color {
+        next[at].color = color;
+    }
+    if let Some(level) = patch.level
+        && level != next[at].level
+    {
+        if used > 0 {
+            return Err(CoreError::TypeInUse {
+                key: key.to_owned(),
+                items: used,
+            });
+        }
+        next[at].level = level;
+    }
+    match patch.default_work {
+        Some(true) => next.iter_mut().for_each(|t| t.default_work = t.key == key),
+        Some(false) => next[at].default_work = false,
+        None => {}
+    }
+    if let Some(order) = patch.order {
+        // Between two types, the moved one goes before the one it lands on.
+        next[at].order = if (order as usize) < at {
+            order.saturating_mul(2).saturating_sub(1)
+        } else {
+            order.saturating_mul(2).saturating_add(1)
+        };
+        for (i, def) in next.iter_mut().enumerate() {
+            if i != at {
+                def.order = (def.order).saturating_mul(2);
+            }
+        }
+    }
+    renumber(&mut next);
+    check_catalog(&next)?;
+    Ok(next)
+}
+
+/// The catalog without the type `key`, of which `used` items use. Items move to `merge_into`,
+/// which must be another type of the same level; the default work type is not removed.
+pub fn remove(
+    types: &[ItemTypeDef],
+    key: &str,
+    merge_into: Option<&str>,
+    used: u32,
+) -> Result<Vec<ItemTypeDef>, CoreError> {
+    let Some(gone) = types.iter().find(|t| t.key == key) else {
+        return Err(CoreError::Validation(format!(
+            "no type has the key '{key}'"
+        )));
+    };
+    if gone.default_work {
+        return Err(CoreError::Validation(
+            "the default work type cannot be deleted: make another type the default first".into(),
+        ));
+    }
+    match merge_into {
+        None if used > 0 => {
+            return Err(CoreError::TypeInUse {
+                key: key.to_owned(),
+                items: used,
+            });
+        }
+        None => {}
+        Some(target) => {
+            let Some(into) = types.iter().find(|t| t.key == target) else {
+                return Err(CoreError::Validation(format!(
+                    "merge_into: no type has the key '{target}'"
+                )));
+            };
+            if target == key {
+                return Err(CoreError::Validation(
+                    "merge_into must be another type".into(),
+                ));
+            }
+            if into.level != gone.level {
+                return Err(CoreError::Validation(format!(
+                    "'{target}' is not at the same level as '{key}'; items can only move to a type of their own level"
+                )));
+            }
+        }
+    }
+    let mut next: Vec<ItemTypeDef> = types.iter().filter(|t| t.key != key).cloned().collect();
+    renumber(&mut next);
+    check_catalog(&next)?;
+    Ok(next)
+}
+
 #[cfg(test)]
 mod tests;
