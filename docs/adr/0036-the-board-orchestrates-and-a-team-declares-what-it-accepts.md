@@ -6,7 +6,8 @@ decision 5 (Tack configures no prompt, service or secret for a team), ADR 0032 (
 it is; a person always accepts a plan) and ADR 0034 (a manager works through the board). Amends
 ADR 0021's header (its decision 2 route was never built, its default pod and its gate changed) and
 ADR 0024's decision table (decision 1 was overturned by ADR 0027 decision 5). **Amended 2026-11-05
-(proposed)** with decisions 10 to 13, an item is a group or work, executed by Phase 93; decision 7's
+(proposed)** with decisions 10 to 13, an item is a group or work, executed by Phase 93
+(`docs/plans/phase-93.md`); decision 7's
 card becomes the group's lane, row and page.
 
 **The ask.** A person sets up a project with several teams — one that fixes code, one that
