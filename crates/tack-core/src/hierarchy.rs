@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::error::CoreError;
 use crate::item_types::Level;
+use crate::run_defaults::ChainLink;
 
 /// The most levels a tree has: a top-level item is the first.
 pub const MAX_DEPTH: usize = 5;
@@ -99,6 +100,51 @@ pub fn admit_sprint(node: Node, type_name: &str) -> Result<(), CoreError> {
             type_name: type_name.to_owned(),
         }),
     }
+}
+
+/// The profile kinds that propose what they find instead of changing the board: the only ones
+/// that run a group.
+pub const PLANNING_KINDS: [&str; 2] = ["planner", "researcher"];
+
+/// Whether a profile of `profile_kind` may be run on an item of this `node`: any profile runs
+/// work, and a group runs only with a profile that plans or researches (ADR 0036, decision 12).
+/// `title` and `type_name` (the name its type has in the project) are for the refusal.
+pub fn runnable(
+    node: Node,
+    profile_kind: &str,
+    title: &str,
+    type_name: &str,
+) -> Result<(), CoreError> {
+    if node == Node::Work || PLANNING_KINDS.contains(&profile_kind) {
+        return Ok(());
+    }
+    Err(CoreError::GroupNotRunnable {
+        title: title.to_owned(),
+        type_name: type_name.to_owned(),
+    })
+}
+
+/// An item's place in the tree and what routing reads of it, for [`chain`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingFact {
+    pub parent: Option<Uuid>,
+    pub link: ChainLink,
+}
+
+/// The routing chain of `item`: the item, then its parent, and so on up to the top. A parent that
+/// is not among `by_id` ends the chain, and so does a loop in the stored parents.
+pub fn chain(item: Uuid, by_id: &HashMap<Uuid, RoutingFact>) -> Vec<ChainLink> {
+    let mut links = Vec::new();
+    let mut seen = HashSet::new();
+    let mut next = Some(item);
+    while let Some(id) = next {
+        let Some(fact) = by_id.get(&id).filter(|_| seen.insert(id)) else {
+            break;
+        };
+        links.push(fact.link.clone());
+        next = fact.parent;
+    }
+    links
 }
 
 /// What a store asks, inside the transaction that gives an item a parent, to learn whether it is

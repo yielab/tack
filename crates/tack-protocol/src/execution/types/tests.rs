@@ -217,6 +217,7 @@ fn every_stable_error_code_names_its_status_and_its_wire_word() {
         (TreeTooDeep, "tree_too_deep", 422),
         (ParentInOtherProject, "parent_in_other_project", 422),
         (GroupInSprint, "group_in_sprint", 422),
+        (GroupNotRunnable, "group_not_runnable", 409),
         (MisdirectedHost, "misdirected_host", 421),
         (CrossSiteRequest, "cross_site_request", 403),
         (UnsupportedMediaType, "unsupported_media_type", 415),

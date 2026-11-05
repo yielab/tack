@@ -852,6 +852,8 @@ pub enum StableErrorCode {
     ParentInOtherProject,
     /// An item that holds work is not planned into a sprint.
     GroupInSprint,
+    /// A group holds work and is not run itself: only a profile that plans or researches runs it.
+    GroupNotRunnable,
     /// The `Host` header does not name this server.
     MisdirectedHost,
     /// A state-changing request that a page on another site sent.
@@ -920,6 +922,7 @@ impl StableErrorCode {
             | Self::LocalRunnerUnavailable
             | Self::FolderNotEmpty
             | Self::TypeInUse
+            | Self::GroupNotRunnable
             | Self::IdempotencyConflict
             | Self::InvalidTransition
             | Self::StaleLease

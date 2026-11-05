@@ -205,3 +205,72 @@ fn a_loop_already_stored_does_not_hang_the_walk() {
     assert_eq!(forest.target(a).unwrap().ancestors, vec![b]);
     assert_eq!(forest.placement(a).unwrap().subtree_height, 1);
 }
+
+#[test]
+fn work_runs_with_any_profile_and_a_group_only_with_one_that_plans() {
+    for kind in ["implementer", "reviewer", "custom", "planner", "researcher"] {
+        assert!(runnable(Node::Work, kind, "Pay", "Task").is_ok(), "{kind}");
+    }
+    for kind in ["planner", "researcher"] {
+        assert!(
+            runnable(Node::Group, kind, "Checkout", "Epic").is_ok(),
+            "{kind}"
+        );
+    }
+    for kind in ["implementer", "reviewer", "custom", ""] {
+        let refused = runnable(Node::Group, kind, "Checkout", "Epic").unwrap_err();
+        assert!(
+            matches!(refused, CoreError::GroupNotRunnable { .. }),
+            "{kind}"
+        );
+        assert_eq!(
+            refused.to_string(),
+            "Checkout is an epic: it holds work and is not run itself. Run its items, or plan it."
+        );
+    }
+}
+
+#[test]
+fn a_chain_runs_from_the_item_up_and_a_loop_or_a_missing_parent_ends_it() {
+    let (task, epic, shop, orphan) = (
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+    );
+    let fact = |item: Uuid, title: &str, parent: Option<Uuid>| {
+        (
+            item,
+            RoutingFact {
+                parent,
+                link: ChainLink {
+                    item,
+                    title: title.into(),
+                    run_settings: None,
+                    roles: vec![],
+                },
+            },
+        )
+    };
+    let by_id: HashMap<Uuid, RoutingFact> = [
+        fact(task, "Pay", Some(epic)),
+        fact(epic, "Checkout", Some(shop)),
+        fact(shop, "Shop", None),
+        fact(orphan, "Lost", Some(Uuid::new_v4())),
+    ]
+    .into();
+    let titles = |item| -> Vec<String> {
+        chain(item, &by_id)
+            .into_iter()
+            .map(|link| link.title)
+            .collect()
+    };
+    assert_eq!(titles(task), ["Pay", "Checkout", "Shop"]);
+    assert_eq!(titles(shop), ["Shop"]);
+    assert_eq!(titles(orphan), ["Lost"]);
+    assert!(titles(Uuid::new_v4()).is_empty());
+
+    let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+    let looped: HashMap<Uuid, RoutingFact> = [fact(a, "A", Some(b)), fact(b, "B", Some(a))].into();
+    assert_eq!(chain(a, &looped).len(), 2);
+}
