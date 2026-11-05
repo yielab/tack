@@ -1,5 +1,6 @@
 use super::*;
-use crate::item_types::preset;
+use crate::hierarchy::Entry;
+use crate::item_types::{Level, preset};
 use crate::models::ProjectType;
 use crate::principal::Scope;
 use crate::workflow::simple_workflow;
@@ -29,7 +30,23 @@ fn board(items: &[(Uuid, &str)]) -> BoardView {
         roles: vec![("Backend".into(), Uuid::new_v4())],
         profiles: ["p-code".to_string()].into(),
         profiles_by_team: [("code".to_string(), vec!["p-code".to_string()])].into(),
+        forest: {
+            let mut forest = Forest::new(Uuid::nil());
+            for (id, _) in items {
+                forest.insert(*id, entry(None, Level::Work, "Task"));
+            }
+            forest
+        },
         anchor_type: None,
+    }
+}
+
+fn entry(parent: Option<Uuid>, level: Level, name: &str) -> Entry {
+    Entry {
+        parent,
+        title: name.to_owned(),
+        type_name: name.to_owned(),
+        level,
     }
 }
 
@@ -436,4 +453,67 @@ fn operations_and_refs_read_as_json() {
     );
     assert_eq!(operations[1].needs(), vec![0]);
     assert!(matches!(operations[2], Operation::Due { due: None, .. }));
+}
+
+#[test]
+fn a_set_that_would_break_the_tree_is_refused_with_every_reason() {
+    let (epic, story, task) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let mut board = board(&[(epic, "To Do"), (story, "To Do"), (task, "To Do")]);
+    board.forest.insert(epic, entry(None, Level::Group, "Epic"));
+    board
+        .forest
+        .insert(story, entry(Some(epic), Level::Work, "Story"));
+    board
+        .forest
+        .insert(task, entry(Some(story), Level::Work, "Task"));
+    let under = |item: Uuid, parent: Option<Uuid>| Operation::Parent {
+        item: ItemRef::Existing(item),
+        parent: parent.map(ItemRef::Existing),
+    };
+
+    // The epic under its own grandchild, and the epic under a task.
+    let operations = vec![
+        under(epic, Some(task)),
+        under(story, None),
+        under(epic, Some(story)),
+    ];
+    let problems = validate(&operations, &all(&operations), &board, &HashMap::new()).unwrap_err();
+    let reasons = reasons(&problems);
+    assert_eq!(reasons.len(), 2, "{reasons:?}");
+    assert!(reasons[0].contains("inside itself"), "{reasons:?}");
+    // The story went to the top first, so the epic under it is now a plain move that fits.
+    assert!(
+        reasons[1].contains("An epic cannot go under a story"),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn a_parent_moves_with_the_operations_before_it() {
+    let (epic, task) = (Uuid::new_v4(), Uuid::new_v4());
+    let mut board = board(&[(epic, "To Do"), (task, "To Do")]);
+    board.forest.insert(epic, entry(None, Level::Group, "Epic"));
+    let operations = vec![
+        Operation::Parent {
+            item: ItemRef::Existing(task),
+            parent: Some(ItemRef::Existing(epic)),
+        },
+        Operation::Parent {
+            item: ItemRef::Existing(task),
+            parent: None,
+        },
+    ];
+    assert!(validate(&operations, &all(&operations), &board, &HashMap::new()).is_ok());
+}
+
+#[test]
+fn a_create_under_work_cannot_be_a_group() {
+    let task = Uuid::new_v4();
+    let board = board(&[(task, "To Do")]);
+    let mut make = create("Checkout");
+    make.item_type = Some("epic".into());
+    make.parent = Some(ItemRef::Existing(task));
+    let operations = vec![Operation::Create(make)];
+    let problems = validate(&operations, &[0], &board, &HashMap::new()).unwrap_err();
+    assert!(reasons(&problems)[0].contains("An epic cannot go under a task"));
 }
