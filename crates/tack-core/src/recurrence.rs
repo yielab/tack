@@ -64,7 +64,7 @@ pub fn clone_for_next(item: &Item, due: NaiveDate) -> CreateItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{EstimateUnit, Item, ItemSource, ItemType, Priority, Recurrence};
+    use crate::models::{EstimateUnit, Item, ItemSource, Priority, Recurrence};
     use chrono::{NaiveDate, Utc};
     use uuid::Uuid;
 
@@ -99,7 +99,7 @@ mod tests {
             parent_id: Some(Uuid::new_v4()),
             title: "Pay rent".into(),
             description: Some("transfer".into()),
-            item_type: ItemType::Bug,
+            item_type: "bug".into(),
             status: "Done".into(),
             priority: Priority::High,
             estimate: Some(2.0),
@@ -123,7 +123,7 @@ mod tests {
         let next = clone_for_next(&item, due);
         assert_eq!(next.title, "Pay rent");
         assert_eq!(next.description.as_deref(), Some("transfer"));
-        assert_eq!(next.item_type, Some(ItemType::Bug));
+        assert_eq!(next.item_type.as_deref(), Some("bug"));
         assert_eq!(next.priority, Some(Priority::High));
         assert_eq!(next.tags, Some(vec!["home".to_string()]));
         assert_eq!(next.parent_id, item.parent_id);

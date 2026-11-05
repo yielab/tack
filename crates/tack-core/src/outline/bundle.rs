@@ -13,11 +13,12 @@ use uuid::Uuid;
 
 use super::{
     BundleAutoStart, BundleAutomation, BundleAutonomy, BundleField, BundleProfile, BundleRole,
-    BundleSprint, BundleStatus, BundleTeam, BundleWorkflow, Outline, OutlineError, OutlineItem,
-    OutlineProject, ResolvedOutline, TEAM_DELIVERS, TEAM_SHAPES, label, parse_due_date, resolve,
-    topological, trimmed,
+    BundleSprint, BundleStatus, BundleTeam, BundleType, BundleWorkflow, Outline, OutlineError,
+    OutlineItem, OutlineProject, ResolvedOutline, TEAM_DELIVERS, TEAM_SHAPES, label,
+    parse_due_date, resolve, topological, trimmed,
 };
 use crate::autonomy::Level;
+use crate::item_types::{self, ItemTypeDef, TypeColor};
 use crate::models::{
     CustomFieldDefinition, CustomFieldType, CustomFieldValue, Dependency, DependencyType,
     EstimateUnit, Item, Priority, Project, ProjectType, Role, Sprint, SprintStatus,
@@ -59,6 +60,10 @@ pub struct Board<'a> {
     /// The project's level today; L3 for a new one.
     pub level: Level,
     pub auto_start: bool,
+    /// The project's type catalog; a new project's is the preset of its type.
+    pub item_types: &'a [ItemTypeDef],
+    /// A project the file creates: the file's `types` replace the preset instead of adding to it.
+    pub new_project: bool,
 }
 
 /// A section's row: made new, or matched by name to one the board has.
@@ -78,6 +83,11 @@ pub struct Plan {
     /// Levels and auto-start already lowered to what an import may grant.
     pub automation: Option<BundleAutomation>,
     pub items: ResolvedOutline,
+    /// The whole catalog the project ends with, when the file changes it; the store writes it
+    /// before the items.
+    pub types: Option<Vec<ItemTypeDef>>,
+    /// The names of the types the items' words added, as work.
+    pub new_types: Vec<String>,
     pub sections: Vec<SectionSummary>,
     pub warnings: Vec<String>,
 }
@@ -283,6 +293,144 @@ pub fn is_team_name(name: &str) -> bool {
 
 /// The `teams` section: names in docket's form, once each, a shape and a delivery from the words
 /// the file knows, methods named like teams.
+/// The catalog while a file is checked: what the project will have, and whether that differs from
+/// what it has.
+struct Catalog {
+    types: Vec<ItemTypeDef>,
+    changed: bool,
+}
+
+/// The file's `types` against the board's: a new project takes them whole, an existing one gains
+/// the ones it lacks and takes the name and colour of the ones it has (its levels and default stay,
+/// which only Settings changes while items use them).
+fn check_types(
+    outline: &Outline,
+    board: &Board<'_>,
+    problems: &mut Vec<String>,
+    sections: &mut Vec<SectionSummary>,
+) -> Catalog {
+    let mut catalog = Catalog {
+        types: board.item_types.to_vec(),
+        changed: false,
+    };
+    if outline.types.is_empty() {
+        return catalog;
+    }
+    for (i, entry) in outline.types.iter().enumerate() {
+        if !item_types::is_valid_key(&entry.key) {
+            problems.push(format!(
+                "types: entry {} has key \"{}\", which is not 1-{} lowercase letters, digits, '_' or '-'",
+                i + 1,
+                entry.key,
+                item_types::MAX_KEY_LEN
+            ));
+        }
+        if let Err(e) = item_types::check_name(&entry.name) {
+            problems.push(format!("types: \"{}\": {e}", entry.key));
+        }
+    }
+    let mut seen = HashSet::new();
+    for entry in &outline.types {
+        if !seen.insert(entry.key.as_str()) {
+            problems.push(format!("types: the key \"{}\" is used twice", entry.key));
+        }
+    }
+    let (mut created, mut updated) = (0, 0);
+    let mut warnings = Vec::new();
+    if board.new_project {
+        catalog.types = outline
+            .types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| ItemTypeDef {
+                key: t.key.clone(),
+                name: t.name.trim().to_owned(),
+                level: t.level,
+                color: t.color,
+                order: i as u32,
+                default_work: t.default,
+            })
+            .collect();
+        created = outline.types.len();
+    } else {
+        for entry in &outline.types {
+            match catalog.types.iter_mut().find(|t| t.key == entry.key) {
+                Some(have) => {
+                    if have.level != entry.level {
+                        warnings.push(format!(
+                            "types: \"{}\" stays {} as the project has it; its level changes under Settings",
+                            entry.key,
+                            have.level.as_str()
+                        ));
+                    }
+                    have.name = entry.name.trim().to_owned();
+                    have.color = entry.color;
+                    updated += 1;
+                }
+                None => {
+                    let order = catalog.types.iter().map(|t| t.order + 1).max().unwrap_or(0);
+                    catalog.types.push(ItemTypeDef {
+                        key: entry.key.clone(),
+                        name: entry.name.trim().to_owned(),
+                        level: entry.level,
+                        color: entry.color,
+                        order,
+                        default_work: false,
+                    });
+                    created += 1;
+                }
+            }
+        }
+    }
+    catalog.changed = true;
+    sections.push(SectionSummary {
+        section: "types".into(),
+        created,
+        updated,
+        not_mentioned: catalog.types.len().saturating_sub(created + updated),
+        warnings,
+    });
+    catalog
+}
+
+/// Gives each item the key of its type. A word is a key or a name of the catalog in any case; a
+/// word the catalog lacks is added to it as a work type. Returns the names added.
+fn name_types(resolved: &mut ResolvedOutline, catalog: &mut Catalog) -> Vec<String> {
+    let mut added = Vec::new();
+    for planned in &mut resolved.items {
+        let Some(word) = planned.input.item_type.take() else {
+            continue;
+        };
+        let wanted = item_types::key_of_word(&word);
+        let found = catalog.types.iter().find(|t| {
+            t.key == word.to_lowercase()
+                || t.name.eq_ignore_ascii_case(&word)
+                || wanted.as_deref() == Some(t.key.as_str())
+        });
+        let key = match (found, wanted) {
+            (Some(found), _) => found.key.clone(),
+            (None, Some(key)) => {
+                let order = catalog.types.iter().map(|t| t.order + 1).max().unwrap_or(0);
+                catalog.types.push(ItemTypeDef {
+                    key: key.clone(),
+                    name: word.clone(),
+                    level: item_types::Level::Work,
+                    color: TypeColor::Neutral,
+                    order,
+                    default_work: false,
+                });
+                catalog.changed = true;
+                added.push(word);
+                key
+            }
+            // nothing a key can be made of: the item takes the default work type
+            (None, None) => continue,
+        };
+        planned.input.item_type = Some(key);
+    }
+    added
+}
+
 fn check_teams(teams: &[BundleTeam], problems: &mut Vec<String>) {
     let mut seen: HashSet<&str> = HashSet::new();
     for team in teams {
@@ -402,6 +550,9 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
             problems.extend(found);
         }
     }
+
+    // types
+    let mut catalog = check_types(outline, board, &mut problems, &mut sections);
 
     // fields
     let mut field_defs: BTreeMap<String, CustomFieldDefinition> = BTreeMap::new();
@@ -661,7 +812,7 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
     let mut sprint_names: HashSet<&str> = outline.sprints.iter().map(|s| s.name.trim()).collect();
     sprint_names.extend(board.sprints.iter().map(|(_, n)| n.trim()));
     let mut item_warnings = Vec::new();
-    let mut resolved = None;
+    let mut resolved: Option<ResolvedOutline> = None;
     match resolve(&outline.items, board.workflow) {
         Ok(found) => {
             item_warnings.extend(found.warnings.iter().cloned());
@@ -691,6 +842,15 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
     }
     // resolve's warnings are already in item_warnings
     warnings.extend(item_warnings);
+    let new_types = match resolved.as_mut() {
+        Some(found) => name_types(found, &mut catalog),
+        None => Vec::new(),
+    };
+    if catalog.changed
+        && let Err(e) = item_types::check_catalog(&catalog.types)
+    {
+        problems.push(format!("types: {e}"));
+    }
 
     if !problems.is_empty() {
         return Err(OutlineError { problems });
@@ -703,6 +863,8 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
         sprints,
         automation,
         items: resolved.expect("items resolved when there are no problems"),
+        types: catalog.changed.then_some(catalog.types),
+        new_types,
         sections,
         warnings,
     })
@@ -1037,6 +1199,12 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         sprints,
         automation: Some(automation),
         teams,
+        types: parts
+            .project
+            .item_types
+            .iter()
+            .map(BundleType::from_def)
+            .collect(),
         items: items_of(parts),
     }
 }
@@ -1119,7 +1287,7 @@ fn items_of(parts: &Parts<'_>) -> Vec<OutlineItem> {
                 reference: reference.get(&item.id).cloned(),
                 title: item.title.clone(),
                 description: item.description.clone(),
-                item_type: Some(item.item_type.to_string()),
+                item_type: Some(item.item_type.clone()),
                 status: Some(item.status.clone()),
                 priority: (item.priority != Priority::Medium).then(|| item.priority.to_string()),
                 assignee: item.assignee.clone(),

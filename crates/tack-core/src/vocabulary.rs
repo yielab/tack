@@ -7,12 +7,6 @@ pub type VocabularyMap = HashMap<String, String>;
 
 /// All valid vocabulary keys that can be customized per project.
 pub const VOCABULARY_KEYS: &[&str] = &[
-    "epic",
-    "feature",
-    "task",
-    "subtask",
-    "bug",
-    "requirement",
     "sprint",
     "backlog",
     "board",
@@ -25,15 +19,10 @@ pub const VOCABULARY_KEYS: &[&str] = &[
     "release",
 ];
 
-/// Returns the default agile vocabulary.
+/// Returns the default agile vocabulary: the words that are not item types (the types are the
+/// project's catalog, `item_types`).
 pub fn default_vocabulary() -> VocabularyMap {
     HashMap::from([
-        ("epic".into(), "Epic".into()),
-        ("feature".into(), "Feature".into()),
-        ("task".into(), "Task".into()),
-        ("subtask".into(), "Subtask".into()),
-        ("bug".into(), "Bug".into()),
-        ("requirement".into(), "Requirement".into()),
         ("sprint".into(), "Sprint".into()),
         ("backlog".into(), "Backlog".into()),
         ("board".into(), "Board".into()),
@@ -51,12 +40,6 @@ pub fn default_vocabulary() -> VocabularyMap {
 pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
     match project_type {
         ProjectType::Construction => HashMap::from([
-            ("epic".into(), "Building".into()),
-            ("feature".into(), "Section".into()),
-            ("task".into(), "Work Order".into()),
-            ("subtask".into(), "Activity".into()),
-            ("bug".into(), "Defect".into()),
-            ("requirement".into(), "Specification".into()),
             ("sprint".into(), "Phase".into()),
             ("backlog".into(), "Pending Work".into()),
             ("board".into(), "Project Board".into()),
@@ -69,12 +52,6 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("release".into(), "Handover".into()),
         ]),
         ProjectType::Homework => HashMap::from([
-            ("epic".into(), "Course".into()),
-            ("feature".into(), "Module".into()),
-            ("task".into(), "Assignment".into()),
-            ("subtask".into(), "Question".into()),
-            ("bug".into(), "Correction".into()),
-            ("requirement".into(), "Rubric Item".into()),
             ("sprint".into(), "Week".into()),
             ("backlog".into(), "Upcoming".into()),
             ("board".into(), "Planner".into()),
@@ -87,12 +64,6 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("release".into(), "Graduation".into()),
         ]),
         ProjectType::Personal => HashMap::from([
-            ("epic".into(), "Goal".into()),
-            ("feature".into(), "Objective".into()),
-            ("task".into(), "Action".into()),
-            ("subtask".into(), "Step".into()),
-            ("bug".into(), "Issue".into()),
-            ("requirement".into(), "Need".into()),
             ("sprint".into(), "Cycle".into()),
             ("backlog".into(), "Ideas".into()),
             ("board".into(), "Board".into()),
@@ -105,12 +76,6 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("release".into(), "Completion".into()),
         ]),
         ProjectType::Maintenance => HashMap::from([
-            ("epic".into(), "System".into()),
-            ("feature".into(), "Area".into()),
-            ("task".into(), "Ticket".into()),
-            ("subtask".into(), "Job".into()),
-            ("bug".into(), "Fault".into()),
-            ("requirement".into(), "Standard".into()),
             ("sprint".into(), "Schedule".into()),
             ("backlog".into(), "Queue".into()),
             ("board".into(), "Dashboard".into()),
@@ -123,12 +88,6 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("release".into(), "Sign-off".into()),
         ]),
         ProjectType::Legal => HashMap::from([
-            ("epic".into(), "Matter".into()),
-            ("feature".into(), "Case".into()),
-            ("task".into(), "Filing".into()),
-            ("subtask".into(), "Document".into()),
-            ("bug".into(), "Issue".into()),
-            ("requirement".into(), "Statute".into()),
             ("sprint".into(), "Term".into()),
             ("backlog".into(), "Intake".into()),
             ("board".into(), "Docket".into()),
@@ -141,12 +100,6 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("release".into(), "Settlement".into()),
         ]),
         ProjectType::Research => HashMap::from([
-            ("epic".into(), "Study".into()),
-            ("feature".into(), "Experiment".into()),
-            ("task".into(), "Protocol".into()),
-            ("subtask".into(), "Procedure".into()),
-            ("bug".into(), "Anomaly".into()),
-            ("requirement".into(), "Hypothesis".into()),
             ("sprint".into(), "Cycle".into()),
             ("backlog".into(), "Question Bank".into()),
             ("board".into(), "Lab Board".into()),
@@ -159,12 +112,6 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("release".into(), "Publication".into()),
         ]),
         ProjectType::Event => HashMap::from([
-            ("epic".into(), "Event".into()),
-            ("feature".into(), "Track".into()),
-            ("task".into(), "Task".into()),
-            ("subtask".into(), "Detail".into()),
-            ("bug".into(), "Issue".into()),
-            ("requirement".into(), "Requirement".into()),
             ("sprint".into(), "Milestone Week".into()),
             ("backlog".into(), "Ideas".into()),
             ("board".into(), "Run Sheet".into()),
@@ -216,7 +163,7 @@ mod tests {
     #[test]
     fn test_construction_vocabulary_renames() {
         let vocab = vocabulary_for_type(&ProjectType::Construction);
-        assert_eq!(vocab.get("task").unwrap(), "Work Order");
+        assert_eq!(vocab.get("milestone").unwrap(), "Inspection Point");
         assert_eq!(vocab.get("sprint").unwrap(), "Phase");
     }
 
@@ -239,15 +186,15 @@ mod tests {
         }
         assert_eq!(
             vocabulary_for_type(&ProjectType::Legal)
-                .get("task")
+                .get("deliverable")
                 .unwrap(),
-            "Filing"
+            "Brief"
         );
         assert_eq!(
             vocabulary_for_type(&ProjectType::Research)
-                .get("epic")
+                .get("release")
                 .unwrap(),
-            "Study"
+            "Publication"
         );
         assert_eq!(
             vocabulary_for_type(&ProjectType::Event)
@@ -259,9 +206,9 @@ mod tests {
 
     #[test]
     fn test_resolve_falls_back_to_default() {
-        let custom: VocabularyMap = HashMap::from([("task".into(), "Work Order".into())]);
-        assert_eq!(resolve(&custom, "task"), "Work Order");
-        assert_eq!(resolve(&custom, "epic"), "Epic"); // fallback
+        let custom: VocabularyMap = HashMap::from([("sprint".into(), "Iteration".into())]);
+        assert_eq!(resolve(&custom, "sprint"), "Iteration");
+        assert_eq!(resolve(&custom, "backlog"), "Backlog"); // fallback
     }
 
     #[test]

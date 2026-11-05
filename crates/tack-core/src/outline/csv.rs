@@ -206,7 +206,7 @@ pub fn items_to_csv(items: &[Item]) -> String {
                 item.id.to_string(),
                 item.title.clone(),
                 item.description.clone().unwrap_or_default(),
-                item.item_type.to_string(),
+                item.item_type.clone(),
                 item.status.clone(),
                 item.priority.to_string(),
                 item.assignee.clone().unwrap_or_default(),

@@ -211,6 +211,7 @@ fn every_stable_error_code_names_its_status_and_its_wire_word() {
         (WipLimitExceeded, "wip_limit_exceeded", 400),
         (DependencyCycle, "dependency_cycle", 400),
         (InvalidStatusTransition, "invalid_status_transition", 400),
+        (TypeInUse, "type_in_use", 409),
         (MisdirectedHost, "misdirected_host", 421),
         (CrossSiteRequest, "cross_site_request", 403),
         (UnsupportedMediaType, "unsupported_media_type", 415),

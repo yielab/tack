@@ -1,5 +1,6 @@
 use super::*;
-use crate::models::{CodeOrigin, ItemSource, ItemType, WorkspaceMode};
+use crate::item_types::preset;
+use crate::models::{CodeOrigin, ItemSource, WorkspaceMode};
 use crate::workflow::{kanban_workflow, scrum_workflow};
 
 const MY_SAAS: &str = include_str!("../../../../tack-api/tests/fixtures/bundles/my-saas.yaml");
@@ -29,6 +30,8 @@ struct Owned {
     fleets: Vec<(String, String)>,
     level: Level,
     auto_start: bool,
+    item_types: Vec<ItemTypeDef>,
+    new_project: bool,
 }
 
 impl Owned {
@@ -42,6 +45,8 @@ impl Owned {
             fleets: Vec::new(),
             level: Level::L3,
             auto_start: false,
+            item_types: preset(&ProjectType::Web),
+            new_project: false,
         }
     }
 
@@ -58,6 +63,8 @@ impl Owned {
                 harness_kinds: &HARNESSES,
                 level: self.level,
                 auto_start: self.auto_start,
+                item_types: &self.item_types,
+                new_project: self.new_project,
             },
         )
     }
@@ -303,6 +310,7 @@ fn the_my_saas_file_checks_clean_but_for_its_three_autonomy_warnings() {
     assert_eq!(
         names,
         [
+            "types",
             "fields",
             "profiles",
             "roles",
@@ -312,6 +320,133 @@ fn the_my_saas_file_checks_clean_but_for_its_three_autonomy_warnings() {
         ]
     );
     assert_eq!(plan.items.items.len(), 20);
+}
+
+fn type_of(plan: &Plan, index: usize) -> Option<&str> {
+    plan.items.items[index].input.item_type.as_deref()
+}
+
+#[test]
+fn an_items_word_is_a_key_or_a_name_of_the_catalog_in_any_case() {
+    let outline = yaml(
+        "items:\n  - {title: A, type: BUG}\n  - {title: B, type: Feature}\n  - {title: C}\n  \
+         - {title: D, type: epic}\n",
+    );
+    let plan = Owned::empty().check(&outline).expect("checks clean");
+    assert_eq!(type_of(&plan, 0), Some("bug"));
+    assert_eq!(type_of(&plan, 1), Some("feature"));
+    assert_eq!(
+        type_of(&plan, 2),
+        None,
+        "no word: the store gives the default"
+    );
+    assert_eq!(type_of(&plan, 3), Some("epic"));
+    assert!(plan.types.is_none() && plan.new_types.is_empty());
+}
+
+#[test]
+fn a_word_the_catalog_lacks_is_added_as_work_and_listed() {
+    let outline = yaml("items:\n  - {title: A, type: Spike}\n  - {title: B, type: spike}\n");
+    let plan = Owned::empty().check(&outline).expect("checks clean");
+    assert_eq!(plan.new_types, ["Spike"]);
+    assert_eq!(type_of(&plan, 0), Some("spike"));
+    assert_eq!(type_of(&plan, 1), Some("spike"));
+    let types = plan.types.expect("the catalog changes");
+    let spike = types.iter().find(|t| t.key == "spike").unwrap();
+    assert_eq!(spike.level, item_types::Level::Work);
+    assert_eq!(spike.name, "Spike");
+    assert!(!spike.default_work);
+    assert_eq!(types.iter().filter(|t| t.default_work).count(), 1);
+}
+
+#[test]
+fn a_new_project_takes_the_files_types_whole_and_an_existing_one_gains_the_missing() {
+    let file = "types:\n  - {key: building, name: Building, level: group, color: accent}\n  \
+                - {key: order, name: Work Order, level: work, color: neutral, default: true}\n\
+                items:\n  - {title: A, type: building}\n";
+    let mut board = Owned::empty();
+    board.new_project = true;
+    board.item_types = Vec::new();
+    let plan = board.check(&yaml(file)).expect("checks clean");
+    let keys: Vec<&str> = plan
+        .types
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|t| t.key.as_str())
+        .collect();
+    assert_eq!(keys, ["building", "order"]);
+    assert_eq!(type_of(&plan, 0), Some("building"));
+
+    let renamed = "types:\n  - {key: epic, name: Saga, level: group, color: danger}\n  \
+                   - {key: order, name: Order, level: work, color: neutral}\n";
+    let plan = Owned::empty().check(&yaml(renamed)).expect("checks clean");
+    let types = plan.types.unwrap();
+    let epic = types.iter().find(|t| t.key == "epic").unwrap();
+    assert_eq!(
+        (epic.name.as_str(), epic.color),
+        ("Saga", TypeColor::Danger)
+    );
+    assert!(types.iter().any(|t| t.key == "order" && !t.default_work));
+    assert_eq!(types.iter().filter(|t| t.default_work).count(), 1);
+}
+
+#[test]
+fn the_files_types_are_checked_like_a_catalog() {
+    let mut board = Owned::empty();
+    board.new_project = true;
+    let no_default = "types:\n  - {key: a, name: A, level: work, color: neutral}\n";
+    assert!(board.check(&yaml(no_default)).is_err());
+    let group_default =
+        "types:\n  - {key: a, name: A, level: group, color: neutral, default: true}\n";
+    assert!(board.check(&yaml(group_default)).is_err());
+    let twice = "types:\n  - {key: a, name: A, level: work, color: neutral, default: true}\n  \
+                 - {key: a, name: B, level: work, color: neutral}\n";
+    let err = board.check(&yaml(twice)).unwrap_err();
+    assert!(
+        err.problems.iter().any(|p| p.contains("used twice")),
+        "{err}"
+    );
+    let bad_key =
+        "types:\n  - {key: Bad Key, name: A, level: work, color: neutral, default: true}\n";
+    assert!(board.check(&yaml(bad_key)).is_err());
+}
+
+#[test]
+fn the_export_writes_the_catalog_and_the_file_reads_it_back() {
+    let project = synthetic_project();
+    let parts = Parts {
+        project: &project,
+        fields: &[],
+        profiles: &[],
+        roles: &[],
+        sprints: &[],
+        autonomy: None,
+        auto_start: BundleAutoStart::default(),
+        items: &[],
+        item_roles: &[],
+        item_fields: &[],
+        dependencies: &[],
+        fleets: &[],
+        reported_teams: &[],
+    };
+    let written = to_bundle(&parts);
+    let text = serde_json::to_string(&written).unwrap();
+    let back: Outline = serde_json::from_str(&text).unwrap();
+    let types: Vec<ItemTypeDef> = back
+        .types
+        .iter()
+        .enumerate()
+        .map(|(i, t)| ItemTypeDef {
+            key: t.key.clone(),
+            name: t.name.clone(),
+            level: t.level,
+            color: t.color,
+            order: i as u32,
+            default_work: t.default,
+        })
+        .collect();
+    assert_eq!(types, project.item_types);
 }
 
 #[test]
@@ -337,6 +472,7 @@ fn synthetic_project() -> Project {
         description: None,
         project_type: ProjectType::Web,
         vocabulary: vocabulary_for_type(&ProjectType::Web),
+        item_types: preset(&ProjectType::Web),
         workflow: scrum_workflow(),
         default_model: None,
         github_token_ref: None,
@@ -368,7 +504,7 @@ fn synthetic_item(project: &Project, title: &str, parent: Option<Uuid>) -> Item 
         parent_id: parent,
         title: title.into(),
         description: None,
-        item_type: ItemType::Task,
+        item_type: "task".into(),
         status: "To Do".into(),
         priority: Priority::Medium,
         estimate: None,

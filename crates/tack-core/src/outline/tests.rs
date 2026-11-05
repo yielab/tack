@@ -235,7 +235,7 @@ fn fields_parsed_leniently() {
     }];
     let input = &resolve(&items, &scrum_workflow()).unwrap().items[0].input;
     assert_eq!(input.title, "Design");
-    assert_eq!(input.item_type, Some(ItemType::Epic));
+    assert_eq!(input.item_type.as_deref(), Some("Epic"));
     assert_eq!(input.priority, Some(Priority::Critical));
     assert_eq!(
         input.due_date.unwrap().to_rfc3339(),
@@ -342,7 +342,7 @@ fn csv_export_reimports_with_hierarchy() {
         parent_id: parent,
         title: title.into(),
         description: Some("has, a comma\nand a line".into()),
-        item_type: ItemType::Task,
+        item_type: "task".into(),
         status: "To Do".into(),
         priority: Priority::High,
         estimate: None,

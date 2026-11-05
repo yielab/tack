@@ -1,5 +1,5 @@
 # A Tack project bundle: the outline of ADR 0017 with six more sections (ADR 0022).
-# Applied in this order: project, fields, profiles, roles, sprints, automation, items.
+# Applied in this order: project, types, fields, profiles, roles, sprints, automation, items.
 # The whole file is checked before anything is written; every problem is reported at
 # once; an unknown key anywhere is refused. Names are the references: `profile: X`
 # names a profile of this file first, then one the board already has. An import
@@ -10,12 +10,7 @@ project:
   name: My SaaS
   type: web
   description: Invoicing and appointment booking for small agencies.
-  vocabulary:                     # any subset of the 16 keys; the rest keep the type's defaults
-    epic: Colección
-    feature: Historia
-    task: Pieza
-    subtask: Paso
-    bug: Error
+  vocabulary:                     # any subset of the 10 keys; the rest keep the type's defaults
     sprint: Semana
     backlog: Ideas
     board: Tablero
@@ -26,7 +21,6 @@ project:
     phase: Fase
     milestone: Hito
     release: Publicación
-    requirement: Requisito
   workflow:                       # EITHER `preset: scrum|kanban|simple|construction|legal|research|event`
     statuses:                     # OR the statuses in order, each with a category; wip_limit optional
       - { name: Ideas, category: todo }
@@ -42,7 +36,14 @@ project:
       - { from: En revisión, to: Hecho }
       - { from: Hecho, to: Por hacer }
 
-fields:                           # custom fields; the name is what items use
+types:                            # item types: a level (group holds work, work is work) and a token colour; one default work type
+  - { key: epic, name: Iniciativa, level: group, color: accent }
+  - { key: feature, name: Historia, level: work, color: success }
+  - { key: task, name: Tarea, level: work, color: neutral, default: true }
+  - { key: bug, name: Error, level: work, color: danger }
+  - { key: requirement, name: Requisito, level: work, color: warning }
+
+fields:                           # custom fields; the name is what items use; the name is what items use
   - { name: Plan, type: select, required: true, options: [free, pro, team, business, enterprise] }
   - { name: Segmento, type: select, options: [autónomo, pyme, empresa] }
   - { name: Canal, type: multi_select, options: [app, newsletter, instagram, tiktok] }
