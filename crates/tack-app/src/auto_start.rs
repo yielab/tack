@@ -324,11 +324,17 @@ async fn start(
             .ok()
             .and_then(|roles| roles.into_iter().next().map(|(name, _)| name)),
     };
+    // Work that takes its profile from an ancestor says whose it is.
+    let inherited = resolved
+        .from
+        .as_ref()
+        .map(|(_, title)| format!(", from {title}"))
+        .unwrap_or_default();
     let who = match role {
-        Some(role) => format!("with the role {role}"),
+        Some(role) => format!("with the role {role}{inherited}"),
         None => {
             format!(
-                "with no role, and goes to {}",
+                "with no role, and goes to {}{inherited}",
                 destination(policy.as_ref(), &harness)
             )
         }

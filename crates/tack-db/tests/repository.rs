@@ -48,6 +48,8 @@ mod item_types;
 mod notifications;
 #[path = "repository/rate_card.rs"]
 mod rate_card;
+#[path = "repository/routing_queries.rs"]
+mod routing_queries;
 #[path = "repository/store_conventions.rs"]
 mod store_conventions;
 #[path = "repository/threads.rs"]

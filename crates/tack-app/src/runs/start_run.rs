@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use tack_core::hierarchy::{Node, runnable};
 use tack_core::models;
 use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
 use tack_db::repo::execution::{EnqueueResult, NewExecutionRequest, RunnerListingRow};
@@ -719,21 +720,58 @@ pub async fn resolve_profile(
             json!({}),
         )
     }
-    let roles = repo.profiles_for_item(item.id).await.map_err(internal)?;
+    let chain = queries::items::routing_chain(repo, item.id)
+        .await
+        .map_err(internal)?;
     let implementer = queries::agent_profiles::implementer_profile_id(repo)
         .await
         .map_err(internal)?;
     let profiles = profile_candidates(repo).await.map_err(internal)?;
     Ok(resolve(
         explicit,
-        item.run_settings
-            .as_ref()
-            .and_then(|r| r.agent_profile_id.as_deref()),
-        &roles,
+        &chain,
         project.default_profile_id.as_deref(),
         implementer.as_deref(),
         &profiles,
     ))
+}
+
+/// Whether the profile may run the item: any profile runs work, and a group runs only with a
+/// profile that plans or researches. A refusal creates nothing.
+pub async fn check_runnable(
+    repo: &Repository,
+    item_id: Uuid,
+    profile_id: &str,
+) -> Result<(), Refusal> {
+    fn internal(failure: tack_db::StoreError) -> Refusal {
+        tracing::error!(error = %failure, "Could not check that the item can be run");
+        error(
+            StableErrorCode::InternalError,
+            "Could not check that the item can be run",
+            json!({}),
+        )
+    }
+    let Some(found) = queries::items::node_of(repo, item_id)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(item_not_found());
+    };
+    if found.node == Node::Work {
+        return Ok(());
+    }
+    let kind = queries::agent_profiles::profile_by_id(repo, profile_id)
+        .await
+        .map_err(internal)?
+        .map(|row| row.kind)
+        .unwrap_or_default();
+    runnable(found.node, &kind, &found.title, &found.type_name).map_err(|refused| {
+        error(
+            refused.code(),
+            &refused.to_string(),
+            json!({"item_id": item_id, "reason": "group_not_runnable"}),
+        )
+    })
 }
 
 /// Every agent profile as [`resolve`] chooses among them.
@@ -1310,6 +1348,7 @@ pub async fn start_run(
                 json!({"field": "agent_profile_id"}),
             )
         })?;
+    check_runnable(repo, item.id, &resolved.profile_id).await?;
     if input.agent_profile_id.is_none() {
         let source = profile_source_label(&resolved.source);
         if let (Some(source), Some(metadata)) = (source, input.metadata.as_object_mut()) {

@@ -517,3 +517,17 @@ fn a_create_under_work_cannot_be_a_group() {
     let problems = validate(&operations, &[0], &board, &HashMap::new()).unwrap_err();
     assert!(reasons(&problems)[0].contains("An epic cannot go under a task"));
 }
+
+#[test]
+fn who_does_it_on_a_group_is_allowed_and_names_who_does_its_work() {
+    let epic = Uuid::new_v4();
+    let mut board = board(&[(epic, "To Do")]);
+    board.forest.insert(epic, entry(None, Level::Group, "Epic"));
+    let operations = [Operation::WhoDoesIt {
+        item: ItemRef::Existing(epic),
+        role: Some("Backend".into()),
+        team: None,
+        profile_id: Some("p-code".into()),
+    }];
+    assert!(validate(&operations, &all(&operations), &board, &HashMap::new()).is_ok());
+}
