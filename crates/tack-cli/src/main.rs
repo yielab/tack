@@ -135,6 +135,15 @@ enum Commands {
         action: ProjectCommands,
     },
 
+    /// List a project's item types: their level and how many items use each
+    Types {
+        /// Project ID
+        project: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Add a new item to a project
     Add {
         /// Item title
@@ -142,9 +151,9 @@ enum Commands {
         /// Project ID
         #[arg(short = 'p', long)]
         project: String,
-        /// Item type (task, epic, feature, bug, subtask, requirement)
-        #[arg(short = 't', long, default_value = "task")]
-        item_type: String,
+        /// Item type: a key of the project's types (see `tack types`); omitted, its default work type
+        #[arg(short = 't', long)]
+        item_type: Option<String>,
         /// Priority (critical, high, medium, low)
         #[arg(long, default_value = "medium")]
         priority: String,
@@ -173,7 +182,7 @@ enum Commands {
         /// Filter by status
         #[arg(short, long)]
         status: Option<String>,
-        /// Filter by item type
+        /// Filter by item type: a key of the project's types
         #[arg(long)]
         item_type: Option<String>,
         /// Filter by assignee
@@ -475,6 +484,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Project {
             action: ProjectCommands::Autonomy { project, json },
         } => cmd_project_autonomy(&client, &project, json),
+
+        Commands::Types { project, json } => cmd::board::cmd_types(&client, &project, json),
 
         Commands::Add {
             title,

@@ -55,7 +55,10 @@ fn software_holds_work_in_epic_and_construction_names_its_levels() {
     assert_eq!(groups, ["Building", "Section"]);
     let default = construction.iter().find(|t| t.default_work).unwrap();
     assert_eq!(default.name, "Work Order");
-    assert!(construction.iter().all(|t| t.key != "subtask"));
+    assert!(
+        construction.iter().all(|t| !t.key.starts_with("sub")),
+        "a subtask is work under work, not a type"
+    );
 }
 
 #[test]

@@ -299,6 +299,38 @@ pub(crate) fn cmd_project_autonomy(
     Ok(())
 }
 
+/// `tack types <project>`: the project's item types, with their level and how many items use each.
+pub(crate) fn cmd_types(client: &TackClient, project: &str, as_json: bool) -> anyhow::Result<()> {
+    let resp = client.get(&format!("/projects/{project}/types"))?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let empty = vec![];
+    let types = resp.as_array().unwrap_or(&empty);
+    print_table_header(&["KEY", "NAME", "LEVEL", "COLOR", "ITEMS", "DEFAULT"]);
+    for t in types {
+        let items = t["items"].as_u64().unwrap_or(0).to_string();
+        print_table_row(&[
+            t["key"].as_str().unwrap_or("?"),
+            t["name"].as_str().unwrap_or("?"),
+            match t["level"].as_str() {
+                Some("group") => "holds work",
+                Some("work") => "work",
+                _ => "?",
+            },
+            t["color"].as_str().unwrap_or("?"),
+            &items,
+            if t["default_work"].as_bool().unwrap_or(false) {
+                "yes"
+            } else {
+                ""
+            },
+        ]);
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_projects(client: &TackClient, as_json: bool) -> anyhow::Result<()> {
     let resp = client.get("/projects")?;
     if as_json {
@@ -328,7 +360,7 @@ pub(crate) fn cmd_add(
     client: &TackClient,
     title: String,
     project: String,
-    item_type: String,
+    item_type: Option<String>,
     priority: String,
     parent: Option<String>,
     assignee: Option<String>,
@@ -338,9 +370,11 @@ pub(crate) fn cmd_add(
 ) -> anyhow::Result<()> {
     let mut body = json!({
         "title": title,
-        "item_type": item_type,
         "priority": priority,
     });
+    if let Some(t) = item_type {
+        body["item_type"] = json!(t);
+    }
     if let Some(p) = parent {
         body["parent_id"] = json!(p);
     }
@@ -359,9 +393,10 @@ pub(crate) fn cmd_add(
         return Ok(());
     }
     let id = resp["id"].as_str().unwrap_or("?");
-    // Translate item_type through the project's vocabulary.
-    let v = vocab::fetch(client, &project);
-    let type_label = vocab::term(&v, &item_type);
+    // The type the server gave it, by the name the project calls it.
+    let names = vocab::type_names(client, &project);
+    let key = resp["item_type"].as_str().unwrap_or("");
+    let type_label = vocab::term(&names, key);
     println!(
         "Created {}: {} ({})",
         type_label,
@@ -410,7 +445,7 @@ pub(crate) fn cmd_list(
         println!("No items found.");
         return Ok(());
     }
-    let v = vocab::fetch(client, &project);
+    let v = vocab::type_names(client, &project);
     print_table_header(&["ID", "TITLE", "TYPE", "STATUS", "PRIORITY", "ASSIGNEE"]);
     for item in items {
         let raw_type = item["item_type"].as_str().unwrap_or("task");
@@ -627,7 +662,7 @@ pub(crate) fn cmd_board(client: &TackClient, project: String, as_json: bool) -> 
         return Ok(());
     }
 
-    let v = vocab::fetch(client, &project);
+    let v = vocab::type_names(client, &project);
     let board_name = view["name"].as_str().unwrap_or("Board");
     println!("── {board_name} ────────────────────────────");
 

@@ -72,7 +72,7 @@ pub fn classify(method: &Method, path: &str) -> Access {
             [
                 "projects",
                 project,
-                "items" | "search" | "roles" | "auto-start",
+                "items" | "search" | "roles" | "auto-start" | "types",
             ],
             true,
         )

@@ -250,7 +250,7 @@ pub async fn get_board_view(
         }
         Some(BoardGrouping::ItemType) => {
             // Group by item type
-            group_by_item_type(items)
+            group_by_item_type(items, &project.item_types)
         }
         Some(BoardGrouping::Sprint) => {
             // Group by sprint
@@ -317,21 +317,23 @@ fn group_by_priority(items: Vec<ItemCard>) -> Vec<BoardColumnWithItems> {
     columns
 }
 
-/// Helper: Group items by item type
-fn group_by_item_type(items: Vec<ItemCard>) -> Vec<BoardColumnWithItems> {
-    let types = vec!["epic", "feature", "task", "subtask", "bug", "requirement"];
+/// Helper: Group items by item type, in the order of the project's catalog and under its names.
+fn group_by_item_type(
+    items: Vec<ItemCard>,
+    types: &[tack_core::item_types::ItemTypeDef],
+) -> Vec<BoardColumnWithItems> {
     let mut columns = Vec::new();
 
-    for item_type in types {
+    for def in types {
         let type_items: Vec<ItemCard> = items
             .iter()
-            .filter(|item| item.item_type.to_string() == item_type)
+            .filter(|item| item.item.item_type == def.key)
             .cloned()
             .collect();
 
         if !type_items.is_empty() {
             columns.push(BoardColumnWithItems {
-                name: item_type.to_string(),
+                name: def.name.clone(),
                 items: type_items,
                 wip_limit: None,
                 wip_exceeded: false,

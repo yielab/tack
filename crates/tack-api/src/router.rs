@@ -25,9 +25,9 @@ use crate::handlers::spa;
 use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
     briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
-    export, import_github, import_linear, items, local_runner, metrics, mrp, notifications,
-    outline, projects, roles, routing, runner_admin, runner_protocol, settings, sprints,
-    team_apply, teams, templates, threads, triggers, websocket,
+    export, import_github, import_linear, item_types, items, local_runner, metrics, mrp,
+    notifications, outline, projects, roles, routing, runner_admin, runner_protocol, settings,
+    sprints, team_apply, teams, templates, threads, triggers, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -410,6 +410,14 @@ pub fn build_router(state: AppState) -> Router {
             get(sprints::get_sprint).patch(sprints::update_sprint),
         )
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
+        .route(
+            "/projects/{id}/types",
+            get(item_types::list_item_types).post(item_types::create_item_type),
+        )
+        .route(
+            "/projects/{id}/types/{key}",
+            patch(item_types::update_item_type).delete(item_types::delete_item_type),
+        )
         .route("/projects/{project_id}/roles", post(roles::create_role))
         .route("/projects/{project_id}/roles", get(roles::list_roles))
         .route(

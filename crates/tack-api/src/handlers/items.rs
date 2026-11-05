@@ -633,7 +633,7 @@ pub struct CreateSubtaskFromPlan {
     /// Indexes of entries in this list that block this one.
     #[serde(default)]
     pub depends_on: Vec<u32>,
-    /// The item type, when the project has it; else the parent item's.
+    /// The item type, when the project has it; else the parent's when that is work, else the default work type.
     #[serde(default, rename = "type")]
     pub item_type: Option<String>,
     /// A project role, by name.

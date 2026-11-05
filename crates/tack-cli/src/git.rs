@@ -19,7 +19,6 @@ pub fn type_prefix(item_type: &str) -> String {
         "bug" => "fix".to_string(),
         "epic" => "epic".to_string(),
         "task" => "task".to_string(),
-        "subtask" => "task".to_string(),
         "requirement" => "req".to_string(),
         other => {
             let s = slugify(other);

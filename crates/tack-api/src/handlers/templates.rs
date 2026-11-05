@@ -6,7 +6,7 @@ use tack_core::models::*;
 use tack_core::outline::bundle::{Parts, ProfileRow, to_bundle};
 use tack_core::outline::{
     BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain, BundleField, BundleStatus,
-    BundleWorkflow, Outline, OutlineProject,
+    BundleType, BundleWorkflow, Outline, OutlineProject,
 };
 use tack_core::workflow::{StatusCategory, StatusDef};
 use tack_db::repo;

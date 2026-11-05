@@ -117,7 +117,7 @@ pub static CREATE_OUTLINE: Tool = Tool {
                                 "ref": { "type": "string", "description": "A name for this item, unique in the outline" },
                                 "title": { "type": "string" },
                                 "description": { "type": "string" },
-                                "type": { "type": "string", "description": "epic, feature, task (default), subtask, bug, requirement, or a custom word" },
+                                "type": { "type": "string", "description": "A key or name of the project's types; omitted, its default work type; a word the project lacks is added as a work type" },
                                 "status": { "type": "string", "description": "A workflow status (any case); default the first one" },
                                 "priority": { "type": "string", "description": "critical, high, medium (default), low, none" },
                                 "assignee": { "type": "string" },
