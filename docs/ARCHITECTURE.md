@@ -70,7 +70,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - Error types: typed domain errors (`CoreError`)
 - Item briefs (`brief.rs`): types, validation and Markdown rendering, as plain data
 - The merge policy (`autonomy.rs`): `Level`, `Facts`, `Hold` and the pure `evaluate`, including the team's ceiling (`Hold::HarnessCeiling`)
-- Which profile a run gets (`run_defaults.rs`, `resolve`) and which waiting tasks a project starts (`auto_start.rs`, `pick`), both pure
+- Which profile a run gets, read up the item's chain of ancestors (`run_defaults.rs`, `resolve`), whether a profile may run an item (`hierarchy.rs`, `runnable`: a group only with a profile that plans) and which waiting tasks a project starts (`auto_start.rs`, `pick`), all pure
 - Recurrence (`recurrence.rs`: when the next copy of a repeating task is due) and the rate card (`rate_card.rs`)
 - The project file (`outline.rs`, `outline/bundle.rs`): the types of every section, `resolve` for items, `check` for a whole file against a board and `to_bundle` for the export
 

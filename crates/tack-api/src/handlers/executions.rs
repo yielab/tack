@@ -799,7 +799,7 @@ pub async fn continue_execution(
         (status = 200, description = "Execution request created or idempotently replayed", body = CreateExecutionResponse),
         (status = 400, description = "invalid_request", body = RunnerV1ErrorEnvelope),
         (status = 404, description = "not_found (item does not exist)", body = RunnerV1ErrorEnvelope),
-        (status = 409, description = "conflict / idempotency_conflict / runner_revoked", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict / idempotency_conflict / runner_revoked / group_not_runnable (an item that holds work is run only with a profile that plans or researches)", body = RunnerV1ErrorEnvelope),
     ),
 )]
 pub async fn create_execution(

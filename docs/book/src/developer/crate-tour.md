@@ -184,7 +184,7 @@ pub struct DependencyGraph {
 
 ### `error.rs`
 
-`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `TypeInUse`, `GroupUnderWork`, `ParentLoop`, `TreeTooDeep`, `ParentInOtherProject`, `GroupInSprint`, `Validation`).
+`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `TypeInUse`, `GroupUnderWork`, `ParentLoop`, `TreeTooDeep`, `ParentInOtherProject`, `GroupInSprint`, `GroupNotRunnable`, `Validation`).
 
 Each variant has a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. The table is under `tack-api`'s `error.rs` below, so the core crate stays free of HTTP knowledge.
 
@@ -198,7 +198,7 @@ The merge policy as one pure function. `Level` (`L3 < L4 < L5`), `Facts` (the tr
 
 ### `run_defaults.rs` and `auto_start.rs`
 
-`run_defaults::resolve` returns the profile a run gets when the caller names none, and where it came from (`Source`): the task's saved settings, its role, the project default, the built-in Implementer. `auto_start::pick` takes the waiting tasks (`Candidate`) and the project's `Limits` and returns the ones to start now and a `Skip` reason for each other. Both are tables of cases, tested without a database. The tick that feeds them is `tack-app/src/auto_start.rs`.
+`run_defaults::resolve` takes the item's routing chain (`ChainLink`s: the item, then its ancestors) and returns the profile a run gets when the caller names none, and where it came from (`Source`, and `from`, the ancestor it was read on): the saved settings or the role of the nearest link that names a profile, the project default, the built-in Implementer. `hierarchy::runnable` refuses a group to any profile that does not plan (`GroupNotRunnable`), and `hierarchy::chain` builds the chains of a whole project from `queries::items::routing_facts`. `auto_start::pick` takes the waiting tasks (`Candidate`) and the project's `Limits` and returns the ones to start now and a `Skip` reason for each other. Both are tables of cases, tested without a database. The tick that feeds them is `tack-app/src/auto_start.rs`.
 
 ---
 
@@ -478,7 +478,7 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `SectionFailed` | `section_failed`, with a message that names the project-file section and says whether what came before stayed | 500 |
 | `Coded { code, message, field }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
 | `Core(CoreError::*NotFound*)` | `not_found` | 404 |
-| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `group_under_work`, `parent_loop`, `tree_too_deep`, `parent_in_other_project`, `group_in_sprint`, `validation_failed` (`CoreError::code()`) | 400; `type_in_use` is 409; the five tree codes are 422 |
+| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `group_under_work`, `parent_loop`, `tree_too_deep`, `parent_in_other_project`, `group_in_sprint`, `group_not_runnable`, `validation_failed` (`CoreError::code()`) | 400; `type_in_use` and `group_not_runnable` are 409; the five tree codes are 422 |
 | `Store(StoreError::NotFound { entity })` | `not_found`, "`<entity>` not found" | 404 |
 | `Store(StoreError::Conflict)` | `conflict` | 409 |
 | `Store(StoreError::Corrupt { table, column })` | `internal_error`; logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" | 500 |
