@@ -5,7 +5,9 @@ ADR 0021 (every run goes to a team), ADR 0024 (limits in tokens, each naming who
 decision 5 (Tack configures no prompt, service or secret for a team), ADR 0032 (a team is shown as
 it is; a person always accepts a plan) and ADR 0034 (a manager works through the board). Amends
 ADR 0021's header (its decision 2 route was never built, its default pod and its gate changed) and
-ADR 0024's decision table (decision 1 was overturned by ADR 0027 decision 5).
+ADR 0024's decision table (decision 1 was overturned by ADR 0027 decision 5). **Amended 2026-11-05
+(proposed)** with decisions 10 to 13, an item is a group or work, executed by Phase 93; decision 7's
+card becomes the group's lane, row and page.
 
 **The ask.** A person sets up a project with several teams — one that fixes code, one that
 researches, one that answers customers — and sends each card to the right one, with the right
@@ -53,7 +55,7 @@ table below says which decisions hold for every agent and which only when docket
 | 4 | **A misfit is refused before sending, with its reason, for every need the contract answers.** `TeamNeeds` grows from two facts (web, proposals) to five: web, proposals, **repository** (a run that changes code cannot go to a team that delivers a report), **method** (unknown, or with missing roles), **needs** (an unsatisfied need: a pod's missing service, a local agent not signed in). Each misfit is shown on the profile in `GET /api/teams`, on **Run with agent**, and in the refusal text, as `NoWeb` is today. A fact the harness did not report is never a misfit | any agent (web, proposals, repository, needs from the doctor); docket adds method and its own needs | "Not sent: team `fab-research` delivers a report and this card changes the repository", or "Not sent: Codex is not signed in on the runner", instead of a run that stops inside the agent |
 | 5 | **Three levels of limit, one owner each, every one shown with its owner.** The run's tokens are Tack's (profile, run, provisional, day): the runner applies them to a local agent, docket applies `maxTokens` to a task. The step's rounds, tool calls and time are docket's machine guards, shown as such with where to raise them (Phase 87). The team's tokens are docket's `budgetTokens`: Tack shows the amount, what is used, the window and the pause, and offers **Resume team** when docket lists `podResume`. Tack sets no team budget and keeps no dollars. A row the harness did not report is not shown | run: any agent; step and team: docket | The run card and Agents → Teams say for each limit who applies it; a paused team is resumed from the board |
 | 6 | **One routing function, in the server.** `tack_core::run_defaults::resolve` is the only answer to "who would do this card" and is served per project; the lane is the profile's team, or the single agent it runs; a profile whose harness no active runner reports is **nobody**, with that reason, as a team nobody reports is today. Flow and Map consume it and `routeItem` in the web is deleted. `teamOf` lives in one place | any agent | The lane a card is drawn in is the lane it runs in |
-| 7 | **A parent item shows its children's progress and tells the person when they finish; it moves nothing.** The item page and card read "k of n children done · teams a, b" (a single agent counts as a team); when the last child's run finishes the inbox (ADR 0035) gets an **info** notification. Status stays the person's (Phase 86); "every child done marks the parent done" stays a future status rule | any agent | A split card is followed from its parent, and the person decides when it is done |
+| 7 | **A parent item shows its children's progress and tells the person when they finish; it moves nothing.** The group's page, its lane and its row read (amended by decision 13; originally the item page and card) "k of n children done · teams a, b" (a single agent counts as a team); when the last child's run finishes the inbox (ADR 0035) gets an **info** notification. Status stays the person's (Phase 86); "every child done marks the parent done" stays a future status rule | any agent | A split card is followed from its parent, and the person decides when it is done |
 | 8 | **A business structure is a Tack template: roles as departments, each with its profile, and the teams it expects — described, not created.** A department is a role and a profile; the profile names a docket team or runs a local agent. The project file and templates gain `teams:` (name, shape, delivers, methods), descriptive and only for the profiles that name one. Import and the Map compare the structure with what the runners report and list what is missing: a team not reported, with the docket command that makes it; a harness no runner reports, with the doctor's fix. A built-in template "Digital business" carries the departments docket documents (software, ops, support, growth, revenue, finance, insight) with the rule that a department gets a team of its own only when its work has a different shape or a different gate; **without docket every department is a local-agent profile that delivers into the repository** (a report is a file), because the folder shapes are docket's. **Applying the repository's teams** goes through the runner (it has the checkout and talks to docket), with the person pasting docket's `reviewCode` as an Inbox decision, once docket's apply reaches folder pods. Tack never writes a recipe, a service, a secret or a quota (ADR 0030 d5) | any agent (roles, profiles, missing harness); docket adds folder teams and the apply | Pick "Digital business", see the organisation chart with the teams and agents that exist and the ones to create or install, each with its command or its button; a support card is drafted and proposed, and the team's sheet says it sends nothing until the operator declares the channel |
 | 9 | **Words.** docket's `profile` (attended, lights-out) is shown as **Supervision**; a docket member's `role` is shown as a **member**, never beside a board role; a local agent is "a team of one" on the Teams screen and never "a pod"; ADR 0021 and ADR 0024 are amended in their headers. The book's User guide gets one page, "A team", with the six questions of decision 2 and no source paths | any agent | The same word means one thing on every screen |
 
@@ -67,6 +69,36 @@ at apply time), which is most of the contract, printed where Tack cannot read it
 **If you do nothing.** Every project onboarded needs the skill's author in the room: the rules that
 decide which team fits which card live in `onboarding-lab/skill/references/rules.md`, and the product
 checks none of them. A card sent with the wrong method ends `Succeeded` without review.
+
+## Amendment, 2026-11-05: an item is a group or work (proposed)
+
+**The ask.** An epic is a card in the To Do column beside the tasks it holds, and it stays there,
+because a parent moves nothing (decision 7). Auto-start can start it as if it were a task, and the
+Dashboard counts it as one more task. "Subtask" is a type and a position at the same time. The
+Board, the List, the Timeline and the Orchestration view each work out on their own what a parent
+is, and the List cannot move a row under another parent. Jira, Azure DevOps, Linear, GitHub
+Projects and Shortcut all keep the container and the unit of work on different levels, and each of
+their views shows one level. Tack does the same, with one rule in one place.
+
+| # | Decision | Works with | What changes for whoever uses Tack |
+|---|---|---|---|
+| 10 | **A project's types are a catalog, and each type has a level: group or work.** A type is data of the project (key, name, level, colour, and one default work type), not an enum. The type words leave the vocabulary for the catalog, and each project type's preset becomes a catalog (Software: Epic is a group; Feature, Task, Bug and Requirement are work). "Subtask" is not a type: it is work under work | any agent | Settings → Types names the types and their levels; a Construction project's Building is a group and its Work Order is work |
+| 11 | **An item is a group when its type is a group or when it has children; otherwise it is work.** One function in `tack-core` answers this. The server sends the answer on every item, with the item's ancestors and the progress of everything under it, and no screen works it out again. A group holds groups and work; work holds work; a group never sits under work. The tree has at most five levels and no loops, and an item can be moved under another parent at any time, by the same rule | any agent | Every screen agrees on what a parent is; dragging a row or a card under another parent moves it there |
+| 12 | **Work runs; a group is planned.** Any profile can run work. A group runs only with a profile that proposes (Planner, Researcher), and what that run finds becomes the group's children when a person accepts it. Auto-start, the Run dialog, change sets and the MCP apply this one rule, and a refusal names it. Who does a piece of work is read from the item, then from its nearest ancestor that names someone, then from the project | any agent | An epic is never started as if it were a task; "Plan with agent" on an epic proposes its tasks; a team set on the epic receives its tasks |
+| 13 | **A view shows the level it is for.** Board, Calendar and Sprints hold work; there a group is a lane, a heading or a milestone with its progress, never a card among the work. The List is the whole tree. The Timeline draws a group as a summary bar over what it holds. The Dashboard counts work and shows each group's progress. Decision 7 stands: a group's status stays the person's, shown on its lane, and nothing moves it | any agent | No epic among the tasks: the board reads as "what can be done", grouped by "what it is for" |
+
+**Considered and not adopted.**
+
+- **A fixed Epic › Task › Subtask ladder.** Construction and Homework name their levels differently,
+  and a task that a plan splits becomes a parent on its own. A level on the type, plus "has
+  children", covers both.
+- **A list of allowed children per type.** The level rule covers every case read; a list per type
+  is configuration that nobody would maintain.
+- **Keeping the saved boards** (`boards` table, `BoardGrouping`, `GET /boards/{id}/view`). Only the
+  CLI reads them, while the web derives its own board: two derivations of one screen. They are
+  removed, and the lanes replace their grouping.
+- **Moving a group's status by itself when its work is done.** Phase 86 removed every automatic
+  status move; it stays a future status rule.
 
 ## Note, 2026-11-04: what the real docket sent
 
