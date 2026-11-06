@@ -150,7 +150,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
       <Show when={children().length > 0}>
         <div data-testid="item-children" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
           <span>Sub-items:</span>
-          <Show when={childrenText(props.item.children_progress)}>
+          <Show when={childrenText(props.item.progress)}>
             {(text) => (
               <span data-testid="item-children-progress" class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                 {' '}{text()}

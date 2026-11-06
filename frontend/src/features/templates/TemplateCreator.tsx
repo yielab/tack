@@ -5,7 +5,7 @@ import { api } from '../../shared/api';
 import { Button, Field, FieldShell, Select, Modal, Badge } from '../../shared/ui';
 import { VOCAB_KEYS, resolveLabel } from '../../shared/vocab/vocab';
 import { FiChevronDown, FiChevronRight, FiPlus, FiTrash2 } from 'solid-icons/fi';
-import type { WorkflowStatus, TemplateCustomField, TemplateBoardConfig, ProjectType, CustomFieldType } from '../../shared/types';
+import type { WorkflowStatus, TemplateCustomField, ProjectType, CustomFieldType } from '../../shared/types';
 import Card from '../../shared/ui/Card';
 
 // ── local row shape for the workflow editor ──────────────────────────────────
@@ -128,7 +128,6 @@ export default function TemplateCreator() {
   const [workflowOpen, setWorkflowOpen] = createSignal(false);
   const [vocabOpen, setVocabOpen] = createSignal(false);
   const [fieldsOpen, setFieldsOpen] = createSignal(false);
-  const [boardsOpen, setBoardsOpen] = createSignal(false);
 
   // ── workflow state ────────────────────────────────────────────────────────
   const [statusRows, setStatusRows] = createSignal<StatusRow[]>([]);
@@ -216,16 +215,6 @@ export default function TemplateCreator() {
   const removeField = (idx: number) =>
     setCustomFields(fs => fs.filter((_, i) => i !== idx));
 
-  // ── boards state ──────────────────────────────────────────────────────────
-  const [boards, setBoards] = createSignal<{ name: string; description: string }[]>([]);
-
-  const addBoard = () =>
-    setBoards(bs => [...bs, { name: `Board ${bs.length + 1}`, description: '' }]);
-  const removeBoard = (idx: number) =>
-    setBoards(bs => bs.filter((_, i) => i !== idx));
-  const setBoardField = (idx: number, field: 'name' | 'description', value: string) =>
-    setBoards(bs => bs.map((b, i) => (i === idx ? { ...b, [field]: value } : b)));
-
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -252,18 +241,6 @@ export default function TemplateCreator() {
     // custom fields
     const custom_fields = customFields().length > 0 ? customFields() : null;
 
-    // boards — columns derived from workflow statuses (or empty means backend uses defaults)
-    const statusNames = validStatuses.map(r => r.name.trim());
-    const default_boards: TemplateBoardConfig[] | null =
-      boards().length > 0
-        ? boards().map((b, i) => ({
-            name: b.name.trim() || `Board ${i + 1}`,
-            description: b.description.trim() || null,
-            is_default: i === 0,
-            columns: statusNames.map(s => ({ status: s, wip_limit: null, collapsed: false })),
-          }))
-        : null;
-
     try {
       await api.templates.create({
         name: name().trim(),
@@ -272,7 +249,6 @@ export default function TemplateCreator() {
         vocabulary,
         workflow,
         custom_fields,
-        default_boards,
       });
 
       toast.success(`Template "${name()}" created`);
@@ -303,7 +279,7 @@ export default function TemplateCreator() {
             Create Project Template
           </h1>
           <p class="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            Define a reusable project blueprint — workflow, vocabulary, custom fields, and boards.
+            Define a reusable project blueprint — workflow, vocabulary, and custom fields.
             Sections left collapsed use the project type defaults.
           </p>
         </div>
@@ -562,72 +538,6 @@ export default function TemplateCreator() {
               style={addBtnStyle}
             >
               <FiPlus size={16} /> Add Custom Field
-            </button>
-          </Section>
-
-          {/* ── Board Configuration ───────────────────────────────────────── */}
-          <Section
-            title="Board Configuration"
-            description="Name the boards for this template. Columns are derived from the workflow statuses."
-            badge={boards().length > 0 ? `${boards().length} board${boards().length > 1 ? 's' : ''}` : undefined}
-            open={boardsOpen()}
-            onToggle={() => setBoardsOpen(o => !o)}
-          >
-            <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              Leave empty for a single default board. The first board is always the default.
-            </p>
-
-            <div class="space-y-2">
-              <For each={boards()}>
-                {(board, i) => (
-                  <div class="flex items-start gap-3 rounded-item p-3" style={itemStyle}>
-                    <div class="flex-1 space-y-2">
-                      <input
-                        type="text"
-                        value={board.name}
-                        aria-label={`Board ${i() + 1}: name`}
-                        placeholder="Board name"
-                        onInput={(e) => setBoardField(i(), 'name', e.currentTarget.value)}
-                        class={`w-full ${inPanelInput}`}
-                        style={{ ...inPanelInputStyle, 'background-color': 'var(--color-bg-base)' }}
-                      />
-                      <input
-                        type="text"
-                        value={board.description}
-                        aria-label={`Board ${i() + 1}: description`}
-                        placeholder="Description (optional)"
-                        onInput={(e) => setBoardField(i(), 'description', e.currentTarget.value)}
-                        class={`w-full ${inPanelInput}`}
-                        style={{ ...inPanelInputStyle, 'background-color': 'var(--color-bg-base)' }}
-                      />
-                    </div>
-                    <Show when={i() === 0}>
-                      <span class="mt-1 rounded-full px-2.5 py-[3px] text-micro font-bold" style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}>
-                        Default
-                      </span>
-                    </Show>
-                    <button
-                      type="button"
-                      onClick={() => removeBoard(i())}
-                      class={`mt-0.5 ${iconBtnClass}`}
-                      style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
-                      title="Remove board"
-                      aria-label={`Remove board ${i() + 1}${board.name ? ` (${board.name})` : ''}`}
-                    >
-                      <FiTrash2 size={16} />
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-
-            <button
-              type="button"
-              onClick={addBoard}
-              class={addBtnClass}
-              style={addBtnStyle}
-            >
-              <FiPlus size={16} /> Add Board
             </button>
           </Section>
 

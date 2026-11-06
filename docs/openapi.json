@@ -821,167 +821,6 @@
         }
       }
     },
-    "/api/boards/{id}": {
-      "get": {
-        "tags": [
-          "boards"
-        ],
-        "summary": "GET /api/boards/:id - Get a specific board",
-        "operationId": "get_board",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Board ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The board",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Board"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Board not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "boards"
-        ],
-        "summary": "DELETE /api/boards/:id - Delete a board",
-        "operationId": "delete_board",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Board ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Board deleted"
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "boards"
-        ],
-        "summary": "PATCH /api/boards/:id - Update a board",
-        "operationId": "update_board",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Board ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateBoard"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Updated board",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Board"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/boards/{id}/view": {
-      "get": {
-        "tags": [
-          "boards"
-        ],
-        "summary": "GET /api/boards/:id/view - Get board state with items grouped and filtered",
-        "operationId": "get_board_view",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Board ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Board with items grouped into columns",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BoardViewResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Board not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/change-sets/{id}": {
       "get": {
         "tags": [
@@ -5352,103 +5191,6 @@
         }
       }
     },
-    "/api/projects/{project_id}/boards": {
-      "get": {
-        "tags": [
-          "boards"
-        ],
-        "summary": "GET /api/projects/:id/boards - List all boards for a project",
-        "operationId": "list_boards",
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "description": "Project ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Boards for the project",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Board"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "boards"
-        ],
-        "summary": "POST /api/projects/:id/boards - Create a new board for a project",
-        "operationId": "create_board",
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "description": "Project ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateBoard"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Board created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Board"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Project not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/projects/{project_id}/change-sets": {
       "get": {
         "tags": [
@@ -5758,6 +5500,35 @@
             }
           },
           {
+            "name": "node",
+            "in": "path",
+            "description": "Only groups, or only work.",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/Node"
+                }
+              ]
+            }
+          },
+          {
+            "name": "under",
+            "in": "path",
+            "description": "Only what lies under this item, at any depth; the item itself is left out.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
             "name": "assignee",
             "in": "path",
             "required": true,
@@ -5921,7 +5692,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Every item of the project, parents first, each parent with how far its children are",
+            "description": "Every item of the project, parents first, each group with how far the work under it is",
             "content": {
               "application/json": {
                 "schema": {
@@ -10650,244 +10421,6 @@
           }
         }
       },
-      "Board": {
-        "type": "object",
-        "required": [
-          "id",
-          "project_id",
-          "name",
-          "is_default",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "filters": {},
-          "grouping": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/BoardGrouping"
-              }
-            ]
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "is_default": {
-            "type": "boolean"
-          },
-          "name": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "BoardColumn": {
-        "type": "object",
-        "required": [
-          "status",
-          "collapsed"
-        ],
-        "properties": {
-          "collapsed": {
-            "type": "boolean"
-          },
-          "status": {
-            "type": "string"
-          },
-          "wip_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          }
-        }
-      },
-      "BoardColumnWithItems": {
-        "type": "object",
-        "required": [
-          "name",
-          "items",
-          "wip_exceeded"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ItemCard"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "wip_exceeded": {
-            "type": "boolean"
-          },
-          "wip_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          }
-        }
-      },
-      "BoardGrouping": {
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "status"
-            ]
-          },
-          {
-            "type": "string",
-            "enum": [
-              "priority"
-            ]
-          },
-          {
-            "type": "string",
-            "enum": [
-              "item_type"
-            ]
-          },
-          {
-            "type": "string",
-            "enum": [
-              "sprint"
-            ]
-          },
-          {
-            "type": "string",
-            "enum": [
-              "assignee"
-            ]
-          },
-          {
-            "type": "object",
-            "required": [
-              "custom_field"
-            ],
-            "properties": {
-              "custom_field": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          }
-        ]
-      },
-      "BoardTemplate": {
-        "type": "object",
-        "required": [
-          "name",
-          "columns"
-        ],
-        "properties": {
-          "columns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BoardColumn"
-            }
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "filters": {},
-          "grouping": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "BoardView": {
-        "type": "object",
-        "required": [
-          "id",
-          "project_id",
-          "name",
-          "columns",
-          "created_at"
-        ],
-        "properties": {
-          "columns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BoardColumn"
-            }
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "filters": {},
-          "grouping": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      },
-      "BoardViewResponse": {
-        "type": "object",
-        "required": [
-          "board",
-          "columns"
-        ],
-        "properties": {
-          "board": {
-            "$ref": "#/components/schemas/Board"
-          },
-          "columns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BoardColumnWithItems"
-            }
-          }
-        }
-      },
       "BudgetSettings": {
         "type": "object",
         "description": "The project's daily limits; `null` is no limit.",
@@ -11608,34 +11141,6 @@
           "partly"
         ]
       },
-      "ChildrenProgress": {
-        "type": "object",
-        "description": "How far a parent item's children are: how many there are, how many are in a done status, and\nthe teams (or single agents) their latest runs went to.",
-        "required": [
-          "total",
-          "done",
-          "teams"
-        ],
-        "properties": {
-          "done": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "teams": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Each team once, by name; a child run by a single agent counts as a team named for the agent."
-          },
-          "total": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
       "CodeOrigin": {
         "type": "string",
         "enum": [
@@ -11887,40 +11392,6 @@
             ],
             "format": "double",
             "description": "Absent without a rate card or when any of the team's models is unlisted."
-          }
-        }
-      },
-      "CreateBoard": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "filters": {},
-          "grouping": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/BoardGrouping"
-              }
-            ]
-          },
-          "is_default": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
           }
         }
       },
@@ -12600,15 +12071,6 @@
             ],
             "items": {
               "$ref": "#/components/schemas/CustomFieldDefinition"
-            }
-          },
-          "default_boards": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/BoardTemplate"
             }
           },
           "description": {
@@ -14680,18 +14142,10 @@
           },
           {
             "type": "object",
+            "required": [
+              "node"
+            ],
             "properties": {
-              "children_progress": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ChildrenProgress",
-                    "description": "How far the item's children are; `None` for an item without children, and on a read that\ndoes not work it out."
-                  }
-                ]
-              },
               "created_by": {
                 "type": [
                   "string",
@@ -14716,6 +14170,21 @@
               "needs_review": {
                 "type": "boolean",
                 "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
+              },
+              "node": {
+                "$ref": "#/components/schemas/Node",
+                "description": "A group when the item's type holds work or the item has children, otherwise work."
+              },
+              "progress": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Progress",
+                    "description": "How far the work under a group is; `None` for work, for a group with no work under it, and\non a read that does not work it out."
+                  }
+                ]
               },
               "started_by": {
                 "type": [
@@ -14777,20 +14246,20 @@
           {
             "type": "object",
             "properties": {
-              "children_progress": {
+              "progress": {
                 "oneOf": [
                   {
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/ChildrenProgress"
+                    "$ref": "#/components/schemas/Progress"
                   }
                 ]
               }
             }
           }
         ],
-        "description": "An item of the tree, with how far its children are when it has any."
+        "description": "An item of the tree, with how far the work under it is when it holds any."
       },
       "ItemRef": {
         "oneOf": [
@@ -16360,6 +15829,81 @@
           }
         }
       },
+      "Progress": {
+        "type": "object",
+        "description": "How far the work under a group is, over every work item beneath it at any depth, hidden ones\nexcluded.",
+        "required": [
+          "total",
+          "done",
+          "teams",
+          "open_runs",
+          "needs_you"
+        ],
+        "properties": {
+          "done": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Work in a status of the workflow's done category.",
+            "minimum": 0
+          },
+          "ends": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The latest due date of the work."
+          },
+          "estimate_done": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The estimates of the work that is done; `None` exactly when `estimate_total` is."
+          },
+          "estimate_total": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The estimates of all the work; `None` when no work under the group has one."
+          },
+          "needs_you": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Work that asks something of a person.",
+            "minimum": 0
+          },
+          "open_runs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Work with a run queued, running or waiting for a person.",
+            "minimum": 0
+          },
+          "starts": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The earliest start of the work: when it started, else when it was created."
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Each team once, by name; work run by a single agent counts as a team named for the agent."
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "Project": {
         "type": "object",
         "required": [
@@ -16582,7 +16126,6 @@
           "item_types",
           "workflow",
           "custom_fields",
-          "default_boards",
           "roles",
           "profiles",
           "teams",
@@ -16610,12 +16153,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CustomFieldDefinition"
-            }
-          },
-          "default_boards": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BoardTemplate"
             }
           },
           "description": {
@@ -20241,40 +19778,6 @@
           }
         }
       },
-      "UpdateBoard": {
-        "type": "object",
-        "properties": {
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "filters": {},
-          "grouping": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/BoardGrouping"
-              }
-            ]
-          },
-          "is_default": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
       "UpdateCustomField": {
         "type": "object",
         "properties": {
@@ -21268,10 +20771,6 @@
     {
       "name": "attachments",
       "description": "File attachments on items."
-    },
-    {
-      "name": "boards",
-      "description": "Saved board views and their grouped item layout."
     },
     {
       "name": "custom-fields",

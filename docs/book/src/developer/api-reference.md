@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (132 paths, 178 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (129 paths, 172 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -526,6 +526,8 @@ The profiles that may run an item, and why the others may not.
 | `priority` | path | — | yes |  |
 | `sprint_id` | path | `['string', 'null']` | yes |  |
 | `parent_id` | path | `['string', 'null']` | yes |  |
+| `node` | path | — | yes | Only groups, or only work. |
+| `under` | path | `['string', 'null']` | yes | Only what lies under this item, at any depth; the item itself is left out. |
 | `assignee` | path | `['string', 'null']` | yes |  |
 | `tag` | path | `['string', 'null']` | yes |  |
 | `search` | path | `['string', 'null']` | yes |  |
@@ -559,7 +561,7 @@ The profiles that may run an item, and why the others may not.
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Every item of the project, parents first, each parent with how far its children are | `ItemNode`[] |
+| 200 | Every item of the project, parents first, each group with how far the work under it is | `ItemNode`[] |
 
 #### `GET /api/projects/{project_id}/parents`
 
@@ -1252,93 +1254,6 @@ POST /api/items/:id/attachments
 | 200 | Attachment metadata | — |
 | 400 | Missing/oversized file | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
-
----
-
-## Boards
-
-Saved board views and their grouped item layout.
-
-#### `DELETE /api/boards/{id}`
-
-Delete a board
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `id` | path | `string` | yes | Board ID |
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 204 | Board deleted | — |
-
-#### `GET /api/boards/{id}`
-
-Get a specific board
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `id` | path | `string` | yes | Board ID |
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | The board | `Board` |
-| 404 | Board not found | `ErrorEnvelope` |
-
-#### `PATCH /api/boards/{id}`
-
-Update a board
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `id` | path | `string` | yes | Board ID |
-
-**Request body:** `UpdateBoard`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Updated board | `Board` |
-| 422 | Validation error | `ErrorEnvelope` |
-
-#### `GET /api/boards/{id}/view`
-
-Get board state with items grouped and filtered
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `id` | path | `string` | yes | Board ID |
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Board with items grouped into columns | `BoardViewResponse` |
-| 404 | Board not found | `ErrorEnvelope` |
-
-#### `GET /api/projects/{project_id}/boards`
-
-List all boards for a project
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `project_id` | path | `string` | yes | Project ID |
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Boards for the project | `Board`[] |
-
-#### `POST /api/projects/{project_id}/boards`
-
-Create a new board for a project
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `project_id` | path | `string` | yes | Project ID |
-
-**Request body:** `CreateBoard`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Board created | `Board` |
-| 404 | Project not found | `ErrorEnvelope` |
-| 422 | Validation error | `ErrorEnvelope` |
 
 ---
 

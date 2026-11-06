@@ -38,9 +38,6 @@ function templateSummaryChips(t: ProjectTemplate) {
   const fieldCount = t.custom_fields?.length ?? 0;
   if (fieldCount > 0) chips.push({ label: `${fieldCount} custom fields`, tone: 'info' });
 
-  const boardCount = t.default_boards?.length ?? 0;
-  if (boardCount > 0) chips.push({ label: `${boardCount} board${boardCount > 1 ? 's' : ''}` });
-
   const roleCount = t.roles?.length ?? 0;
   if (roleCount > 0) chips.push({ label: `${roleCount} role${roleCount > 1 ? 's' : ''}`, tone: 'success' });
 
@@ -410,7 +407,7 @@ export default function Templates() {
                 color: 'var(--color-info-700)',
               }}
             >
-              This will create a new project with the template's workflow, vocabulary, custom fields and boards
+              This will create a new project with the template's workflow, vocabulary, custom fields
               <Show when={(selectedTemplate()?.roles?.length ?? 0) > 0}>
                 , its {selectedTemplate()!.roles.length} roles and the agent profiles they use
               </Show>
