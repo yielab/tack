@@ -15,6 +15,8 @@ const MoveMenu: Component<{
   onMove: (status: string) => void;
   /** The card's short id, shown at the top of the menu: the card itself keeps it for its hover. */
   itemRef?: string;
+  /** Opens the picker that moves the card under another group: the keyboard's twin of dragging it into a lane. Absent when the project has no group. */
+  onMoveUnder?: () => void;
 }> = (props) => {
   const menuId = createUniqueId();
   const [open, setOpen] = createSignal(false);
@@ -28,7 +30,7 @@ const MoveMenu: Component<{
     const rect = button.getBoundingClientRect();
     const right = window.innerWidth - rect.right;
     // Opens downward, or upward when the menu would run past the window.
-    const flips = rect.bottom + 8 + props.statuses.length * ITEM_HEIGHT > window.innerHeight;
+    const flips = rect.bottom + 8 + (props.statuses.length + (props.onMoveUnder ? 1 : 0)) * ITEM_HEIGHT > window.innerHeight;
     setAnchor(flips ? { right, bottom: window.innerHeight - rect.top + 4 } : { right, top: rect.bottom + 4 });
     setOpen(true);
     queueMicrotask(() => items()[0]?.focus());
@@ -153,6 +155,27 @@ const MoveMenu: Component<{
                 </button>
               )}
             </For>
+            <Show when={props.onMoveUnder}>
+              {(moveUnder) => (
+                <>
+                  <div role="separator" style={{ height: '1px', margin: '4px 8px', background: 'var(--color-border-light)' }} />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabindex={-1}
+                    onClick={() => { close(true); moveUnder()(); }}
+                    class="hover:bg-[var(--color-bg-hover)] focus-visible:bg-[var(--color-bg-hover)]"
+                    style={{
+                      display: 'block', width: '100%', 'min-height': `${ITEM_HEIGHT}px`, padding: '0 12px',
+                      border: 'none', 'border-radius': '10px', background: 'transparent', cursor: 'pointer',
+                      'text-align': 'left', 'font-size': '0.8125rem', 'font-weight': 500, color: 'var(--color-text-primary)',
+                    }}
+                  >
+                    Move under…
+                  </button>
+                </>
+              )}
+            </Show>
           </div>
         </Portal>
       </Show>

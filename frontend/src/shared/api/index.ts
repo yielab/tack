@@ -6,7 +6,6 @@
 
 import { projects } from './projects';
 import { items } from './items';
-import { boards } from './boards';
 import { sprints } from './sprints';
 import { search } from './search';
 import { templates } from './templates';
@@ -30,7 +29,6 @@ import { teams } from './teams';
 export const api = {
   projects,
   items,
-  boards,
   sprints,
   search,
   templates,
