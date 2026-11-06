@@ -20,8 +20,9 @@ frontend/src/
 │   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs, Card,
 │   │             Switch, ConfirmDialog, Fold, CommandPalette, SearchBar,
 │   │             Sidebar, ToastContainer …) plus primitives such as
-│   │             Avatar/AvatarStack, TypeBadge, PriorityDot, WipChip, KbdHint,
+│   │             Avatar/AvatarStack, TypeTile, ProgressBar, PriorityDot, WipChip, KbdHint,
 │   │             RunState, LoadError, RouteBoundary and the icon set
+│   ├── tree.ts   ancestorsOf / itemsUnder: the one place the web derives from the tree
 │   ├── state/    Context stores + signals (project, items, theme, palette,
 │   │             display, commandPalette, optimistic updates, toasts)
 │   ├── api/      Typed fetch client, one module per resource, and the
@@ -109,11 +110,39 @@ A panel is a `<Card>`, which carries that radius and fill; an on/off setting is 
 `<Switch>`; a question before something is removed is `createConfirm()` with its
 `<ConfirmHost />`, not `window.confirm`.
 
+## Showing a group and its work
+
+Whether an item holds work (`node`), how far its work is (`progress`) and which types exist
+(`Project.item_types`, read with `useItemTypes()`) come from the server; a screen never works the
+tree out. The one thing the web derives is an item's ancestors and what lies under a group, in
+`shared/tree.ts` (`ancestorsOf(item, byId)`, `itemsUnder(group, items)`), because every view already
+holds the project's items. Every view draws a group the same way, with these pieces:
+
+- `TypeTile` (`shared/ui/TypeTile.tsx`): a type's name in its catalog colour, stacked for a type that
+  holds work and flat for work. It replaces the old type badge everywhere.
+- `ProgressBar` (`shared/ui/ProgressBar.tsx`): the server's `Progress` as a bar and "3 of 7 done" or
+  "12 of 20 points", plus "n need you"; `progressText` and `needsYouText` give the same words without
+  the bar.
+- `GroupHeader` (`shared/ui/GroupHeader.tsx`): the only way a group is drawn above its work. It holds
+  the `ItemPath`, the `TypeTile`, the title as a link, a status chip that opens the status menu, the
+  `ProgressBar`, the teams, a fold (remembered per group, like `Fold`) and **Add item**, **Plan with
+  agent** and **Move under…**. It has two densities, `lane` (the Board) and `heading` (above a group's
+  items in a list), and takes the work it heads as `children`.
+- `ItemPath` (`shared/ui/ItemPath.tsx`): the ancestors as links, from `ancestorsOf`. The app's
+  navigation is `Breadcrumb`, a different thing.
+- `ParentPicker` (`shared/ui/ParentPicker.tsx`): a combobox over `GET /api/projects/{id}/parents`
+  (`api.items.parents`). Every drag that changes a parent has this keyboard twin, so the web offers
+  exactly the parents the server admits.
+
+`GroupHeader`, `ItemPath` and `ParentPicker` are imported from their own files, not from
+`shared/ui/index.ts`: the header opens the run dialog, which imports the kit. A control a group
+cannot use stays on screen, disabled, with its reason.
+
 ## Adding a UI component
 
 1. Build it in `shared/ui/` as a small Solid component. Style it with inline token
    styles — `style={{ 'background-color': 'var(--color-bg-base)' }}` — so it
-   re-themes for free. Reuse existing primitives (`Avatar`, `TypeBadge`,
+   re-themes for free. Reuse existing primitives (`Avatar`, `TypeTile`,
    `PriorityDot`, `WipChip`, `KbdHint`) rather than re-inlining markup.
 2. Export it from `shared/ui/index.ts`.
 3. If it has pure logic (a colour map, a formatter), put that in a co-located
