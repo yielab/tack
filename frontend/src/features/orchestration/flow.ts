@@ -247,7 +247,8 @@ export interface UpNext {
 export interface FlowToken {
   id: string;
   item: Item;
-  parentTitle: string | null;
+  /** A group's run: it proposes the group's items, it does not do them. */
+  planning: boolean;
   run: CardRun | undefined;
   summary: ExecutionSummary | undefined;
   /** The lane it stands in; null for a task nobody will take. */
@@ -302,7 +303,6 @@ export interface FlowLane {
 export interface NobodyEntry {
   id: string;
   item: Item;
-  parentTitle: string | null;
   route: Extract<Route, { kind: 'nobody' }>;
   text: string;
 }
@@ -354,6 +354,7 @@ export function mergeRung(
 function upNextOf(item: Item, summary: ExecutionSummary | undefined, input: FlowInput, route: Route | null, blocked: number): UpNext {
   const queuedReason = summary && summary.state === 'queued' ? (summary.waiting_reason ?? null) : null;
   const start = input.startStatus ?? 'its first status';
+  if (item.node === 'group') return { mode: 'hand', text: 'by hand: it holds work, so only a person asks for its plan', queuedReason };
   if (!input.autoStart) return { mode: 'hand', text: 'by hand: the project does not start tasks by itself', queuedReason };
   // Auto-start only takes tasks that say who does them: a role or a profile chosen on the task.
   if (route?.kind === 'lane' && (route.source === 'project' || route.source === 'implementer')) {
@@ -386,7 +387,6 @@ export function buildFlow(input: FlowInput): Flow {
   const ctx: LaneContext = { profiles: input.profiles, teams: input.teams };
   const itemsById = new Map(input.items.map((i) => [i.id, i]));
   const statusCategory = new Map(input.statuses.map((s) => [s.name, s.category]));
-  const hasChildren = new Set(input.items.flatMap((i) => (i.parent_id ? [i.parent_id] : [])));
   const newest = newestByItem(input.runs);
   const proposedBy = new Map<string, number>();
   for (const i of input.items) {
@@ -440,9 +440,10 @@ export function buildFlow(input: FlowInput): Flow {
   const nobody: NobodyEntry[] = [];
   const laneOfToken = new Map<string, string | null>();
 
+  // Only work starts by itself: a group is planned, and its planning run is a token because a run holds it.
   const startable = (item: Item) => {
     const category = statusCategory.get(item.status);
-    return category !== 'done' && !hasChildren.has(item.id) && item.status === input.startStatus;
+    return category !== 'done' && item.node === 'work' && item.status === input.startStatus;
   };
 
   // First pass: which lane each task stands in, so a blocker can say where it is.
@@ -467,10 +468,9 @@ export function buildFlow(input: FlowInput): Flow {
   }
 
   for (const { item, summary, route, lane } of pending) {
-    const parentTitle = item.parent_id ? (itemsById.get(item.parent_id)?.title ?? null) : null;
     if (!lane || !lanes.has(lane)) {
       if (route?.kind === 'nobody') {
-        nobody.push({ id: item.id, item, parentTitle, route, text: nobodyText(route) });
+        nobody.push({ id: item.id, item, route, text: nobodyText(route) });
       }
       continue;
     }
@@ -488,7 +488,7 @@ export function buildFlow(input: FlowInput): Flow {
     tokens.push({
       id: item.id,
       item,
-      parentTitle,
+      planning: item.node === 'group',
       run,
       summary,
       lane,
@@ -499,7 +499,7 @@ export function buildFlow(input: FlowInput): Flow {
       upNext: station === 'up-next' ? upNextOf(item, summary, input, route, open.length) : null,
       blockers: open,
       proposed: proposedBy.get(item.id) ?? 0,
-      fromTitle: item.source === 'plan' ? parentTitle : null,
+      fromTitle: item.source === 'plan' && item.parent_id ? (itemsById.get(item.parent_id)?.title ?? null) : null,
       tokens: summary?.limit?.used ?? null,
     });
   }
@@ -595,9 +595,8 @@ export function laneQueue(lane: Pick<FlowLane, 'report' | 'counts'>): { running:
 export function candidateIds(items: readonly Item[], runs: readonly ExecutionSummary[], statuses: readonly StatusDef[], startStatus: string | null): string[] {
   const done = new Set(statuses.filter((s) => s.category === 'done').map((s) => s.name));
   const withRun = new Set(runs.map((r) => r.item_id));
-  const parents = new Set(items.flatMap((i) => (i.parent_id ? [i.parent_id] : [])));
   return items
-    .filter((i) => withRun.has(i.id) || i.needs_review === true || (i.status === startStatus && !done.has(i.status) && !parents.has(i.id)))
+    .filter((i) => withRun.has(i.id) || i.needs_review === true || (i.status === startStatus && !done.has(i.status) && i.node === 'work'))
     .map((i) => i.id);
 }
 

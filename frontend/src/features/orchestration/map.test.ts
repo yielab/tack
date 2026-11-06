@@ -31,6 +31,7 @@ const item = (id: string, over: Partial<Item> = {}): Item =>
     project_id: 'p1',
     title: id,
     item_type: 'task',
+    node: 'work',
     status: 'To Do',
     priority: 'medium',
     estimate_unit: 'story_points',

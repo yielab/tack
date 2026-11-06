@@ -2,6 +2,7 @@ import { createContext, useContext, type Accessor } from 'solid-js';
 import type { AgentProfileSummary, ExecutionSummary } from '../../shared/execution/api';
 import type { HarnessCapability } from '../../shared/execution';
 import type { TeamEntry } from '../../shared/execution/teams';
+import type { Item } from '../../shared/types';
 import type { FlowLane, StationKey } from './flow';
 
 /** A task being sent from one lane to another: just what the rules for sending need. */
@@ -17,6 +18,9 @@ export interface MoveSource {
 export interface FlowUi {
   /** The clock the ages are measured against. */
   now: Accessor<number>;
+  projectId: Accessor<string>;
+  /** The project's items by id: each task's path is read from them. */
+  byId: Accessor<ReadonlyMap<string, Item>>;
   /** The lanes, to offer as places a task can be sent. */
   lanes: Accessor<FlowLane[]>;
   /** The task whose blocker is being pointed at: the blocker lights up. */

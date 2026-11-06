@@ -27,6 +27,7 @@ const item = (id: string, over: Json = {}): Json => ({
   project_id: 'p1',
   title: id,
   item_type: 'task',
+  node: 'work',
   status: 'To Do',
   priority: 'medium',
   estimate_unit: 'story_points',
@@ -602,6 +603,39 @@ describe('Orchestration: acting', () => {
     after.dispatchEvent(new Event('mouseleave'));
     await flush();
     expect(blocker.style.boxShadow).not.toContain('2px');
+  });
+});
+
+describe('Orchestration: groups and paths', () => {
+  const grouped = () =>
+    world({
+      teams: [team('saas-notes', STEPS)],
+      profiles: [profile('notes-p', 'saas-notes')],
+      items: [
+        item('epic', { title: 'Checkout', item_type: 'epic', node: 'group', status: 'Doing', run_settings: { agent_profile_id: 'notes-p' } }),
+        item('part', { title: 'Payments', parent_id: 'epic', run_settings: { agent_profile_id: 'notes-p' } }),
+        item('quiet', { title: 'Quiet epic', item_type: 'epic', node: 'group', run_settings: { agent_profile_id: 'notes-p' } }),
+      ],
+      runs: [run('epic', 'running', 'notes-p')],
+    });
+
+  it('draws_a_group_only_as_its_planning_run_with_its_type_tile', async () => {
+    const c = await mount(grouped());
+    const tokens = qa(c, '[data-testid="flow-token"]');
+    expect(tokens.map((t) => t.getAttribute('data-item-id')).sort()).toEqual(['epic', 'part']);
+    const planning = q(c, '[data-item-id="epic"]')!;
+    expect(q(planning, '[data-testid="flow-token-planning"]')!.textContent).toContain('Planning');
+    expect(q(planning, '[data-testid="type-tile"]')!.textContent).toBe('Epic');
+    expect(q(c, '[data-item-id="part"] [data-testid="flow-token-planning"]')).toBeNull();
+  });
+
+  it('shows_the_path_of_what_a_task_sits_under_as_links', async () => {
+    const c = await mount(grouped());
+    const path = q(c, '[data-item-id="part"] [data-testid="item-path"]')!;
+    const link = q<HTMLAnchorElement>(path, 'a')!;
+    expect(link.textContent).toBe('Checkout');
+    expect(link.getAttribute('href')).toBe('/projects/p1/items/epic');
+    expect(q(c, '[data-item-id="epic"] [data-testid="item-path"]')).toBeNull();
   });
 });
 
