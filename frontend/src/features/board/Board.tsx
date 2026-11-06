@@ -1,25 +1,31 @@
-import { createMemo, createUniqueId, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
+import { createMemo, createUniqueId, For, Show, createSignal, createEffect, onMount, onCleanup, type Component, type JSX } from 'solid-js';
 import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import AutomationBadge from '../../shared/ui/AutomationBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
-import { childrenText, type ExecutionSummary } from '../../shared/execution';
+import type { ExecutionSummary } from '../../shared/execution';
 import { useExecutionStore } from '../../shared/state/executionContext';
 import { api } from '../../shared/api';
-import { deriveBoard } from '../../shared/api/boards';
-import type { BoardColumn, Item, BoardState, Priority } from '../../shared/types';
+import type { Item, Priority, UpdateItem } from '../../shared/types';
 import CreateItemModal from './CreateItemModal';
 import { createBoardSocket, type BoardSocket } from '../../shared/realtime/boardSocket';
 import type { SocketStatus } from '../../shared/realtime/socket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
-import { withOptimisticUpdate } from '../../shared/state/optimistic';
+import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
+import { getBoardLanes, setBoardLanes, type BoardLanes } from '../../shared/state/display';
+import { ancestorsOf } from '../../shared/tree';
 import { useAutoStart, type WaitingReason } from '../../shared/state/autoStart';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
 import { statusDotColor } from '../../shared/ui/statusDot';
-import { Avatar, AvatarStack, teamInitials, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton } from '../../shared/ui';
+import { Avatar, AvatarStack, teamInitials, Badge, RunState, TypeTile, PriorityDot, WipChip, Skeleton } from '../../shared/ui';
+import { priorityLabel } from '../../shared/ui/PriorityDot';
+import GroupHeader from '../../shared/ui/GroupHeader';
+import ItemPath from '../../shared/ui/ItemPath';
+import ParentPicker from '../../shared/ui/ParentPicker';
+import Modal from '../../shared/ui/Modal';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -29,7 +35,7 @@ import MoveMenu from './MoveMenu';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
   cardRun, countRuns, getAlwaysPriority, orderByWork, passesFilters, showsPriority,
-  type CardRun, type RunFilter,
+  type CardRun, type RunCounts, type RunFilter,
 } from '../../shared/runWithAgent/cardRun';
 
 /** Short, human id for the card header (real ids are UUIDs). */
@@ -51,9 +57,10 @@ export const ItemCard: Component<{
   alwaysPriority?: boolean;
   /** Why auto-start has not started this task, when it would have. */
   waiting?: WaitingReason | null;
-  /** The title of the item this one is part of; shown on a card auto-start holds or started. */
-  parentTitle?: string;
-  /** The team's initials among the teams on this board. */
+  /** Every item the board holds, by id: given when the board is not in lanes, so the card says what it sits under. */
+  byId?: ReadonlyMap<string, Item>;
+  /** Opens the picker that moves the card under another group; the card's menu offers it when given. */
+  onMoveUnder?: (item: Item) => void;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isHovered, setIsHovered] = createSignal(false);
@@ -135,6 +142,9 @@ export const ItemCard: Component<{
           />
         )}
       </Show>
+      <Show when={props.byId}>
+        {(byId) => <ItemPath item={props.item} byId={byId()} projectId={props.item.project_id} />}
+      </Show>
       <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '7px' }}>
         <h4 style={{
           flex: 1, 'min-width': 0,
@@ -159,6 +169,7 @@ export const ItemCard: Component<{
             statuses={props.statuses.filter((status) => status !== props.item.status)}
             onMove={(status) => props.onMove(props.item.id, status)}
             itemRef={shortId(props.item.id)}
+            onMoveUnder={props.onMoveUnder ? () => props.onMoveUnder!(props.item) : undefined}
           />
           {/* The action follows the state: a run waiting for review is reviewed, not started again;
               a live run has its own link in the meta line. */}
@@ -204,27 +215,6 @@ export const ItemCard: Component<{
           </p>
         )}
       </Show>
-      <Show when={props.parentTitle && (props.waiting || props.item.started_by === 'auto_start') ? props.parentTitle : undefined}>
-        {(parent) => (
-          <p
-            data-testid="card-parent"
-            title={`Part of: ${parent()}`}
-            style={{ margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
-          >
-            Part of: {parent()}
-          </p>
-        )}
-      </Show>
-      <Show when={childrenText(props.item.progress)}>
-        {(text) => (
-          <p
-            data-testid="card-children"
-            style={{ margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
-          >
-            {text()}
-          </p>
-        )}
-      </Show>
       <div
         data-testid="card-meta"
         style={{ display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '6px 8px', 'font-size': '0.75rem' }}
@@ -258,7 +248,7 @@ export const ItemCard: Component<{
         <Show when={showsPriority(props.item.priority, props.alwaysPriority === true)}>
           <PriorityDot priority={props.item.priority as Priority} showLabel />
         </Show>
-        <TypeBadge type={props.item.item_type} />
+        <TypeTile type={props.item.item_type} />
       </div>
       <Show when={props.item.recurrence}>
         <div><Badge>Repeats</Badge></div>
@@ -285,45 +275,117 @@ export const ItemCard: Component<{
   );
 };
 
-const BoardColumnView: Component<{
-  column: BoardColumn;
-  statuses: string[];
+/** One status of the workflow with the work in it. Groups are never in a column: they are lane headers. */
+interface ColumnModel {
+  status: string;
+  wip_limit?: number | null;
+  items: Item[];
+}
+
+/** One band of the board: a group and the work under it, or work that has no group. */
+interface LaneModel {
+  id: string;
+  /** The group the lane is for; absent for "No parent", a priority or an assignee. */
+  group?: Item;
+  label: string;
+  items: Item[];
+}
+
+/** The id of the lane of work that has no group above it. */
+const NO_PARENT = '__no-parent__';
+
+const PRIORITY_ORDER: Priority[] = ['critical', 'high', 'medium', 'low', 'none'];
+
+/** Work in the order the columns show it: what needs a person first, then what is going, then the rest. */
+const orderedShown = (runOf: (item: Item) => CardRun | undefined, filters: () => ReadonlySet<RunFilter>) =>
+  (items: Item[]): Item[] => orderByWork(items.filter((item) => passesFilters(runOf(item), filters())), runOf);
+
+/** A column's name, how many cards it holds, its WIP limit, its Add item and the runs in it. */
+const ColumnHead: Component<{
+  column: ColumnModel;
+  headingId: string;
   dotColor: string;
-  onItemDrop: (itemId: string, newStatus: string) => void;
-  onMoveItem: (itemId: string, newStatus: string) => void;
+  shown: number;
+  runCounts: RunCounts;
+  filters: ReadonlySet<RunFilter>;
+  onToggleFilter: (filter: RunFilter) => void;
   onAddItem: (status: string) => void;
+}> = (props) => (
+  <>
+    <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
+      <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
+      <h3 id={props.headingId} title={props.column.status} style={{
+        'min-width': 0, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap',
+        'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
+        'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
+      }}>
+        {props.column.status}
+      </h3>
+      <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
+        {props.shown === props.column.items.length ? props.column.items.length : `${props.shown} of ${props.column.items.length}`}
+      </span>
+      <Show when={props.column.wip_limit != null}>
+        <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
+      </Show>
+      <button
+        onClick={() => props.onAddItem(props.column.status)}
+        title="Add item"
+        aria-label={`Add item to ${props.column.status}`}
+        class="focus:outline-none focus-visible:ring-2"
+        style={{
+          'margin-left': 'auto', 'min-width': '24px', 'min-height': '24px', 'border-radius': 'var(--radius-pill)', border: 'none',
+          background: 'var(--color-bg-app)', cursor: 'pointer', color: 'var(--color-text-secondary)',
+          display: 'inline-flex', 'align-items': 'center', gap: '4px', padding: '0 9px 0 7px', 'flex-shrink': 0,
+          'font-size': '0.75rem', 'font-weight': 600, 'white-space': 'nowrap',
+          transition: 'color .12s, box-shadow .12s',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary-600)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.boxShadow = 'none'; }}
+      >
+        <IconPlus size={13} />
+        Add item
+      </button>
+    </div>
+    {/* The runs of the column sit under its name as a thin line, so the name keeps its width. */}
+    <div style={{ padding: '0 8px 2px' }}>
+      <RunMiniBar counts={props.runCounts} active={props.filters} onToggle={props.onToggleFilter} />
+    </div>
+  </>
+);
+
+/** The cards of one column, or of one column in one lane: a drop target that takes a card by id. */
+const CardList: Component<{
+  /** What the list shows, filtered and in order. */
+  shown: Item[];
+  /** How many cards the column holds before the run filter. */
+  total: number;
+  statuses: string[];
+  /** The name the list is labelled by: the column's heading, or in a lane, a sentence naming both. */
+  labelledBy?: string;
+  label?: string;
+  inLane: boolean;
+  onDropItem: (itemId: string) => void;
+  onMoveItem: (itemId: string, newStatus: string) => void;
   onEditItem: (item: Item) => void;
-  /** Whether work has started in this column: false for a "to do" status. */
+  onMoveUnder?: (item: Item) => void;
   started: boolean;
   runOf: (item: Item) => CardRun | undefined;
   waitingOf: (item: Item) => WaitingReason | null;
-  parentTitleOf: (item: Item) => string | undefined;
-  filters: ReadonlySet<RunFilter>;
-  onToggleFilter: (filter: RunFilter) => void;
+  byId?: ReadonlyMap<string, Item>;
   alwaysPriority: boolean;
 }> = (props) => {
   const [isDragOver, setIsDragOver] = createSignal(false);
-  const headingId = createUniqueId();
-
-  const runCounts = createMemo(() => countRuns(props.column.items.map(props.runOf)));
-  // A filter narrows what the column shows, never what it holds: the count and
-  // the WIP chip keep speaking of every card in it. Inside the column the cards a person has to
-  // act on come first, then the ones going, then the rest, each group in the column's own order.
-  const shown = createMemo(() =>
-    orderByWork(props.column.items.filter((item) => passesFilters(props.runOf(item), props.filters)), props.runOf),
-  );
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     e.dataTransfer!.dropEffect = 'move';
     setIsDragOver(true);
   };
-  const handleDragLeave = () => setIsDragOver(false);
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     const itemId = e.dataTransfer!.getData('text/plain');
-    if (itemId) props.onItemDrop(itemId, props.column.status);
+    if (itemId) props.onDropItem(itemId);
   };
 
   // A column read down to its foot stays at its foot when its box shrinks (a banner
@@ -331,7 +393,7 @@ const BoardColumnView: Component<{
   // own, so the last card would otherwise slip under the column's edge.
   let scroller: HTMLDivElement | undefined;
   onMount(() => {
-    if (typeof ResizeObserver === 'undefined' || !scroller) return;
+    if (props.inLane || typeof ResizeObserver === 'undefined' || !scroller) return;
     const el = scroller;
     let lastHeight = el.clientHeight;
     const observer = new ResizeObserver(() => {
@@ -345,6 +407,90 @@ const BoardColumnView: Component<{
   });
 
   return (
+    // The column's own scroll: focusable, so the keyboard can scroll it, and it keeps the wheel to
+    // itself instead of passing it to the board. In a lane the whole board scrolls, so a cell does not.
+    <div
+      ref={scroller}
+      role="group"
+      aria-labelledby={props.labelledBy}
+      aria-label={props.label}
+      tabindex={props.inLane ? undefined : 0}
+      onDragOver={handleDragOver}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={handleDrop}
+      style={{
+        flex: props.inLane ? undefined : 1, 'min-height': props.inLane ? '64px' : 0,
+        'overflow-y': props.inLane ? 'visible' : 'auto', 'overscroll-behavior': 'contain',
+        'scrollbar-gutter': props.inLane ? undefined : 'stable',
+        display: 'flex', 'flex-direction': 'column', gap: '8px',
+        padding: '2px 2px 4px',
+        'border-radius': 'var(--radius-item)',
+        outline: isDragOver() ? '2px dashed var(--color-primary-600)' : 'none',
+        'outline-offset': '-2px',
+        background: isDragOver() ? 'var(--color-accent-soft)' : 'transparent',
+        transition: 'background-color .12s',
+      }}
+    >
+      <ForById each={props.shown}>
+        {(item) => (
+          <ItemCard
+            item={item()}
+            statuses={props.statuses}
+            onEdit={props.onEditItem}
+            onMove={props.onMoveItem}
+            onMoveUnder={props.onMoveUnder}
+            run={props.runOf(item())}
+            waiting={props.waitingOf(item())}
+            byId={props.byId}
+            notStarted={!props.started}
+            alwaysPriority={props.alwaysPriority}
+          />
+        )}
+      </ForById>
+      <Show when={props.total > 0 && props.shown.length === 0}>
+        <div style={{
+          padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
+        }}>
+          No cards here match the run filter
+        </div>
+      </Show>
+      <Show when={props.total === 0 && !props.inLane}>
+        <div style={{
+          'min-height': '70px', display: 'grid', 'place-items': 'center',
+          border: '2px dashed var(--color-border-light)', 'border-radius': 'var(--radius-item)',
+          padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
+        }}>
+          Drop items here
+        </div>
+      </Show>
+    </div>
+  );
+};
+
+/** The cards' props that every column of every lane takes alike. */
+type CardWiring = Pick<
+  Parameters<typeof CardList>[0],
+  'statuses' | 'onMoveItem' | 'onEditItem' | 'onMoveUnder' | 'runOf' | 'waitingOf' | 'alwaysPriority'
+>;
+
+const BoardColumnView: Component<CardWiring & {
+  column: ColumnModel;
+  dotColor: string;
+  onItemDrop: (itemId: string, newStatus: string) => void;
+  onAddItem: (status: string) => void;
+  /** Whether work has started in this column: false for a "to do" status. */
+  started: boolean;
+  byId?: ReadonlyMap<string, Item>;
+  filters: ReadonlySet<RunFilter>;
+  onToggleFilter: (filter: RunFilter) => void;
+}> = (props) => {
+  const headingId = createUniqueId();
+  const runCounts = createMemo(() => countRuns(props.column.items.map(props.runOf)));
+  // A filter narrows what the column shows, never what it holds: the count and
+  // the WIP chip keep speaking of every card in it.
+  const shown = createMemo(() => orderedShown(props.runOf, () => props.filters)(props.column.items));
+
+  return (
     <section
       role="region"
       aria-labelledby={headingId}
@@ -356,97 +502,32 @@ const BoardColumnView: Component<{
         '--scrollbar-track': 'var(--color-bg-panel)',
       }}
     >
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
-        <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
-        <h3 id={headingId} title={props.column.status} style={{
-          'min-width': 0, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap',
-          'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
-          'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
-        }}>
-          {props.column.status}
-        </h3>
-        <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
-          {shown().length === props.column.items.length ? props.column.items.length : `${shown().length} of ${props.column.items.length}`}
-        </span>
-        <Show when={props.column.wip_limit != null}>
-          <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
-        </Show>
-        <button
-          onClick={() => props.onAddItem(props.column.status)}
-          title="Add item"
-          aria-label={`Add item to ${props.column.status}`}
-          class="focus:outline-none focus-visible:ring-2"
-          style={{
-            'margin-left': 'auto', 'min-width': '24px', 'min-height': '24px', 'border-radius': 'var(--radius-pill)', border: 'none',
-            background: 'var(--color-bg-app)', cursor: 'pointer', color: 'var(--color-text-secondary)',
-            display: 'inline-flex', 'align-items': 'center', gap: '4px', padding: '0 9px 0 7px', 'flex-shrink': 0,
-            'font-size': '0.75rem', 'font-weight': 600, 'white-space': 'nowrap',
-            transition: 'color .12s, box-shadow .12s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary-600)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.boxShadow = 'none'; }}
-        >
-          <IconPlus size={13} />
-          Add item
-        </button>
-      </div>
-      {/* The runs of the column sit under its name as a thin line, so the name keeps its width. */}
-      <div style={{ padding: '0 8px 2px' }}>
-        <RunMiniBar counts={runCounts()} active={props.filters} onToggle={props.onToggleFilter} />
-      </div>
-      {/* The column's own scroll: focusable, so the keyboard can scroll it, and
-          it keeps the wheel to itself instead of passing it to the board. */}
-      <div
-        ref={scroller}
-        role="group"
-        aria-labelledby={headingId}
-        tabindex={0}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        style={{
-          flex: 1, 'min-height': 0, 'overflow-y': 'auto', 'overscroll-behavior': 'contain', 'scrollbar-gutter': 'stable',
-          display: 'flex', 'flex-direction': 'column', gap: '8px',
-          padding: '2px 2px 4px',
-          'border-radius': 'var(--radius-item)',
-          outline: isDragOver() ? '2px dashed var(--color-primary-600)' : 'none',
-          'outline-offset': '-2px',
-          background: isDragOver() ? 'var(--color-accent-soft)' : 'transparent',
-          transition: 'background-color .12s',
-        }}
-      >
-        <ForById each={shown()}>
-          {(item) => (
-            <ItemCard
-              item={item()}
-              statuses={props.statuses}
-              onEdit={props.onEditItem}
-              onMove={props.onMoveItem}
-              run={props.runOf(item())}
-              waiting={props.waitingOf(item())}
-              parentTitle={props.parentTitleOf(item())}
-              notStarted={!props.started}
-              alwaysPriority={props.alwaysPriority}
-            />
-          )}
-        </ForById>
-        <Show when={props.column.items.length > 0 && shown().length === 0}>
-          <div style={{
-            padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
-          }}>
-            No cards here match the run filter
-          </div>
-        </Show>
-        <Show when={props.column.items.length === 0}>
-          <div style={{
-            'min-height': '70px', display: 'grid', 'place-items': 'center',
-            border: '2px dashed var(--color-border-light)', 'border-radius': 'var(--radius-item)',
-            padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
-          }}>
-            Drop items here
-          </div>
-        </Show>
-      </div>
+      <ColumnHead
+        column={props.column}
+        headingId={headingId}
+        dotColor={props.dotColor}
+        shown={shown().length}
+        runCounts={runCounts()}
+        filters={props.filters}
+        onToggleFilter={props.onToggleFilter}
+        onAddItem={props.onAddItem}
+      />
+      <CardList
+        shown={shown()}
+        total={props.column.items.length}
+        labelledBy={headingId}
+        inLane={false}
+        onDropItem={(itemId) => props.onItemDrop(itemId, props.column.status)}
+        started={props.started}
+        byId={props.byId}
+        statuses={props.statuses}
+        onMoveItem={props.onMoveItem}
+        onEditItem={props.onEditItem}
+        onMoveUnder={props.onMoveUnder}
+        runOf={props.runOf}
+        waitingOf={props.waitingOf}
+        alwaysPriority={props.alwaysPriority}
+      />
     </section>
   );
 };
@@ -479,6 +560,56 @@ const BoardLoadingSkeleton: Component = () => {
   );
 };
 
+/** The label over a lane that is not a group: "No parent", a priority, an assignee. */
+const LaneLabel: Component<{ label: string; count: number; refusal?: string | null }> = (props) => (
+  <div style={{ padding: '4px 12px' }}>
+    <h2 style={{
+      margin: 0, display: 'flex', 'align-items': 'baseline', gap: '8px', 'font-family': 'var(--font-body)',
+      'font-size': '0.9375rem', 'font-weight': 700, color: 'var(--color-text-primary)',
+    }}>
+      {props.label}
+      <span style={{ 'font-size': '0.75rem', 'font-weight': 500, color: 'var(--color-text-tertiary)' }}>{props.count}</span>
+    </h2>
+    <Show when={props.refusal}>
+      {(why) => <p role="alert" data-testid="group-refusal" style={{ margin: '4px 0 0', 'font-size': '0.75rem', 'font-weight': 600, color: 'var(--color-danger-600)' }}>{why()}</p>}
+    </Show>
+  </div>
+);
+
+/** The one row of a group with no work: a place to drop work onto, and where to find the two ways to fill it. */
+const EmptyLane: Component<{ group: Item; onDropItem: (itemId: string) => void }> = (props) => {
+  const [isDragOver, setIsDragOver] = createSignal(false);
+  return (
+    <div
+      data-testid="lane-empty"
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; setIsDragOver(true); }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        const itemId = e.dataTransfer!.getData('text/plain');
+        if (itemId) props.onDropItem(itemId);
+      }}
+      style={{
+        margin: '0 12px 8px', padding: '14px', 'text-align': 'center', 'font-size': '0.8125rem', color: 'var(--color-text-secondary)',
+        border: `2px dashed ${isDragOver() ? 'var(--color-primary-600)' : 'var(--color-border-light)'}`, 'border-radius': 'var(--radius-item)',
+        background: isDragOver() ? 'var(--color-accent-soft)' : 'transparent',
+      }}
+    >
+      Nothing under {props.group.title} yet. Drop work here, add an item, or plan it with an agent.
+    </div>
+  );
+};
+
+/** What the toolbar's choice of lanes offers. Role is listed and cannot be chosen: the board's items do not carry their roles. */
+const LANE_CHOICES: Array<{ value: BoardLanes | 'role'; label: string; unavailable?: string }> = [
+  { value: 'parent', label: 'By parent' },
+  { value: 'none', label: 'None' },
+  { value: 'role', label: 'Role (unavailable)', unavailable: 'The board does not know an item’s roles, so it cannot split work by role.' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'assignee', label: 'Assignee' },
+];
+
 const Board: Component = () => {
   const params = useParams();
   const projectId = () => params.id;
@@ -502,8 +633,6 @@ const Board: Component = () => {
   const runOf = (item: Item): CardRun | undefined => cardRun(newestRuns().get(item.id), item.needs_review === true);
   const autoStart = useAutoStart(projectId);
   const waitingOf = (item: Item): WaitingReason | null => autoStart.waiting(item.id);
-  const titles = createMemo(() => new Map((items() ?? []).map((i) => [i.id, i.title] as const)));
-  const parentTitleOf = (item: Item): string | undefined => (item.parent_id ? titles().get(item.parent_id) : undefined);
 
   const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
   const toggleRunFilter = (filter: RunFilter) =>
@@ -514,13 +643,30 @@ const Board: Component = () => {
     });
   // Chosen in Settings → Display & accessibility, remembered in this browser.
   const alwaysPriority = () => getAlwaysPriority();
+  const pointsWord = () => vocabulary()?.story_points?.toLowerCase();
 
-  const boardStateFromServer = createMemo((): BoardState | null => {
-    const proj = project();
-    const its = items();
-    if (!proj || !its) return null;
-    return deriveBoard(proj, its);
-  });
+  // A move shows at once as a patch over the item the server sent, and goes when the server answers.
+  const [patches, setPatches] = createSignal<Record<string, Partial<Item>>>({});
+  const patchItem = (id: string, patch: Partial<Item>) => setPatches((prior) => ({ ...prior, [id]: { ...prior[id], ...patch } }));
+  const unpatchItem = (id: string) => setPatches(({ [id]: _gone, ...rest }) => rest);
+
+  const allItems = createMemo((): Item[] => (items() ?? []).map((item) => (patches()[item.id] ? { ...item, ...patches()[item.id] } : item)));
+  const itemsById = createMemo(() => new Map(allItems().map((item) => [item.id, item] as const)));
+  // The server says which items hold work (`node`): groups are lane headers, work is the cards.
+  const groups = createMemo(() => allItems().filter((item) => item.node === 'group'));
+  const work = createMemo(() => allItems().filter((item) => item.node !== 'group'));
+  const hasGroups = () => groups().length > 0;
+
+  const [lanesStamp, setLanesStamp] = createSignal(0);
+  const lanesChoice = (): BoardLanes => {
+    lanesStamp();
+    return hasGroups() ? (getBoardLanes(projectId()) ?? 'parent') : 'none';
+  };
+  const chooseLanes = (lanes: BoardLanes) => {
+    const pid = projectId();
+    if (pid) setBoardLanes(pid, lanes);
+    setLanesStamp((n) => n + 1);
+  };
 
   // status name → category, for the column dot color.
   const categoryOf = (status: string): 'todo' | 'in_progress' | 'done' =>
@@ -529,32 +675,68 @@ const Board: Component = () => {
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [selectedColumn, setSelectedColumn] = createSignal<string | null>(null);
+  const [createParent, setCreateParent] = createSignal<string | undefined>();
   const [activeContext, setActiveContext] = createSignal<ShortcutContext>('board');
   const [editingItem, setEditingItem] = createSignal<Item | null>(null);
   const [modalMode, setModalMode] = createSignal<'create' | 'edit'>('create');
-  const [optimisticBoardState, setOptimisticBoardState] = createSignal<BoardState | null>(null);
+  const [movingUnder, setMovingUnder] = createSignal<Item | null>(null);
+  const [laneRefusal, setLaneRefusal] = createSignal<{ lane: string; message: string } | null>(null);
 
-  const currentBoard = (): BoardState | null | undefined => optimisticBoardState() || boardStateFromServer();
   // Columns keyed by status, as ForById keys cards by id: a refetch builds new
   // column objects, and a column keyed by object would rebuild every card.
-  const columnsByStatus = createMemo(() =>
-    (currentBoard()?.columns ?? []).map((column) => ({ id: column.status, column })),
-  );
+  const columns = createMemo(() => {
+    const statuses = [...(project()?.workflow.statuses ?? [])].sort((a, b) => a.order - b.order);
+    const byStatus = new Map<string, Item[]>(statuses.map((s) => [s.name, []]));
+    for (const item of work()) {
+      // A status the workflow no longer has lands in the first column.
+      (byStatus.get(item.status) ?? (statuses[0] ? byStatus.get(statuses[0].name) : undefined))?.push(item);
+    }
+    return statuses.map((s): ColumnModel & { id: string } => ({ id: s.name, status: s.name, wip_limit: s.wip_limit, items: byStatus.get(s.name) ?? [] }));
+  });
+  const statusNames = createMemo(() => columns().map((column) => column.id));
 
-  const statusNames = createMemo(() => columnsByStatus().map((entry) => entry.id));
+  // The lane each piece of work is in, when the board is split by parent: the nearest group above it.
+  const laneOfWork = createMemo(() => {
+    const lanes = new Map<string, string>();
+    for (const item of work()) {
+      const group = ancestorsOf(item, itemsById()).reverse().find((ancestor) => ancestor.node === 'group');
+      lanes.set(item.id, group?.id ?? NO_PARENT);
+    }
+    return lanes;
+  });
+
+  const lanes = createMemo((): LaneModel[] => {
+    const mode = lanesChoice();
+    if (mode === 'none') return [];
+    const pieces = work();
+    if (mode === 'priority') {
+      return PRIORITY_ORDER
+        .map((p) => ({ id: `priority:${p}`, label: priorityLabel(p), items: pieces.filter((item) => item.priority === p) }))
+        .filter((lane) => lane.items.length > 0);
+    }
+    if (mode === 'assignee') {
+      const names = [...new Set(pieces.map((item) => item.assignee).filter((name): name is string => !!name))].sort((a, b) => a.localeCompare(b));
+      const byName = names.map((name) => ({ id: `assignee:${name}`, label: name, items: pieces.filter((item) => item.assignee === name) }));
+      const nobody = pieces.filter((item) => !item.assignee);
+      return nobody.length > 0 ? [...byName, { id: 'assignee:', label: 'Unassigned', items: nobody }] : byName;
+    }
+    // Needs-you first, then open runs, then the parent's own order: the way a column orders its cards.
+    const ordered = [...groups()].sort((a, b) =>
+      (b.progress?.needs_you ?? 0) - (a.progress?.needs_you ?? 0)
+      || (b.progress?.open_runs ?? 0) - (a.progress?.open_runs ?? 0)
+      || a.sort_order - b.sort_order);
+    const byGroup = ordered.map((group) => ({
+      id: group.id, group, label: group.title, items: pieces.filter((item) => laneOfWork().get(item.id) === group.id),
+    }));
+    const loose = pieces.filter((item) => laneOfWork().get(item.id) === NO_PARENT);
+    return loose.length > 0 ? [...byGroup, { id: NO_PARENT, label: 'No parent', items: loose }] : byGroup;
+  });
 
   // Unique assignees across the board → toolbar avatar stack.
-  const assignees = createMemo(() => {
-    const set = new Set<string>();
-    for (const col of currentBoard()?.columns ?? []) {
-      for (const it of col.items) if (it.assignee) set.add(it.assignee);
-    }
-    return [...set];
-  });
-  const itemCount = () => (currentBoard()?.columns ?? []).reduce((n, c) => n + c.items.length, 0);
-  const boardRunCounts = createMemo(() =>
-    countRuns((currentBoard()?.columns ?? []).flatMap((column) => column.items.map(runOf))),
-  );
+  const assignees = createMemo(() => [...new Set(work().map((item) => item.assignee).filter((name): name is string => !!name))]);
+  const itemCount = () => work().length;
+  const boardRunCounts = createMemo(() => countRuns(work().map(runOf)));
+  const shown = (columnItems: Item[]) => orderedShown(runOf, runFilters)(columnItems);
 
   // Real-time board updates via the reconnecting socket.
   const [sock, setSock] = createSignal<BoardSocket>();
@@ -590,7 +772,7 @@ const Board: Component = () => {
       key: 'n',
       description: 'Create new item',
       action: () => {
-        const firstColumn = currentBoard()?.columns[0];
+        const firstColumn = columns()[0];
         if (firstColumn) handleAddItem(firstColumn.status);
       },
     });
@@ -598,36 +780,44 @@ const Board: Component = () => {
     keyboardManager.register('modal', { key: 'Escape', description: 'Close modal', action: () => setShowCreateModal(false) });
   });
 
-  const handleItemDrop = async (itemId: string, newStatus: string) => {
-    const realBoard = boardStateFromServer();
-    if (!realBoard) return;
-    const item = realBoard.columns.flatMap((col) => col.items).find((i) => i.id === itemId);
-    if (!item || item.status === newStatus) return;
-
-    const optimisticBoard = {
-      ...realBoard,
-      columns: realBoard.columns.map((col) => ({
-        ...col,
-        items: col.items
-          .filter((i) => i.id !== itemId)
-          .concat(col.status === newStatus ? [{ ...item, status: newStatus }] : []),
-      })),
-    };
-
-    await withOptimisticUpdate(
-      () => api.items.update(itemId, { status: newStatus }),
-      () => setOptimisticBoardState(optimisticBoard),
-      async () => { setOptimisticBoardState(null); await refetch(); },
-      {
-        showSuccessToast: true,
-        successMessage: `Item moved to ${newStatus}`,
-        showErrorToast: true,
-        errorMessage: 'Failed to move item',
-      }
-    );
-
-    setOptimisticBoardState(null);
+  /**
+   * Changes an item and shows the change at once. If the server turns it down, the card goes back to
+   * where it was and the server's sentence is shown on `refuseOn`'s lane, or as a toast when that lane
+   * is not on the screen.
+   */
+  const changeItem = async (item: Item, patch: UpdateItem, shownAs: Partial<Item>, done: string, refuseOn?: string) => {
+    setLaneRefusal(null);
+    patchItem(item.id, shownAs);
+    try {
+      await api.items.update(item.id, patch);
+      toast.success(done);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to move item';
+      if (refuseOn && lanes().some((lane) => lane.id === refuseOn)) setLaneRefusal({ lane: refuseOn, message });
+      else toast.error(message);
+    }
+    unpatchItem(item.id);
     await refetch();
+  };
+
+  /** A card is dropped on a column, in the lane `laneId` when the board is split by parent. */
+  const handleItemDrop = async (itemId: string, newStatus?: string, laneId?: string) => {
+    const item = work().find((i) => i.id === itemId);
+    if (!item) return;
+    const patch: UpdateItem = {};
+    const shownAs: Partial<Item> = {};
+    if (newStatus && newStatus !== item.status) { patch.status = newStatus; shownAs.status = newStatus; }
+    let parent: Item | null | undefined;
+    if (lanesChoice() === 'parent' && laneId && laneId !== laneOfWork().get(item.id)) {
+      parent = laneId === NO_PARENT ? null : itemsById().get(laneId);
+      patch.parent_id = parent?.id ?? null;
+      shownAs.parent_id = parent?.id ?? null;
+    }
+    if (Object.keys(patch).length === 0) return;
+    const done = parent !== undefined
+      ? `${patch.status ? `Item moved to ${patch.status}, ` : 'Item moved '}${parent ? `under ${parent.title}` : 'out of its group'}`
+      : `Item moved to ${patch.status}`;
+    await changeItem(item, patch, shownAs, done, laneId);
   };
 
   // The menu's move: the same action as a drop, then the keyboard lands on the
@@ -637,10 +827,28 @@ const Board: Component = () => {
     document.querySelector<HTMLElement>(`[data-item-id="${itemId}"] [aria-label="Move to…"]`)?.focus();
   };
 
-  const handleAddItem = (status: string) => {
+  /** The picker's answer: the item goes under the parent, or to the top of the project. */
+  const handleMoveUnder = async (item: Item, parent: Item | null) => {
+    setMovingUnder(null);
+    const target = parent?.id ?? NO_PARENT;
+    await changeItem(
+      item,
+      { parent_id: parent?.id ?? null },
+      { parent_id: parent?.id ?? null },
+      parent ? `${item.title} moved under ${parent.title}` : `${item.title} moved out of its group`,
+      item.node === 'group' ? item.id : target,
+    );
+  };
+
+  const handleGroupStatus = async (group: Item, status: string) => {
+    await changeItem(group, { status }, { status }, `${group.title} is now ${status}`);
+  };
+
+  const handleAddItem = (status: string, parentId?: string) => {
     setModalMode('create');
     setEditingItem(null);
     setSelectedColumn(status);
+    setCreateParent(parentId);
     setShowCreateModal(true);
   };
 
@@ -650,6 +858,19 @@ const Board: Component = () => {
     const onItemUpdated = () => void refetch();
     window.addEventListener(ITEM_UPDATED_EVENT, onItemUpdated);
     onCleanup(() => window.removeEventListener(ITEM_UPDATED_EVENT, onItemUpdated));
+  });
+
+  // The width of the board's own view, so a lane's header can stay in sight while its columns scroll sideways.
+  const [viewWidth, setViewWidth] = createSignal<number>();
+  let lanesScroller: HTMLDivElement | undefined;
+  createEffect(() => {
+    if (lanesChoice() === 'none' || typeof ResizeObserver === 'undefined' || !lanesScroller) return;
+    const el = lanesScroller;
+    const measure = () => setViewWidth(Math.max(0, el.clientWidth - 44));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    onCleanup(() => observer.disconnect());
   });
 
   const liveLabel = () =>
@@ -664,10 +885,52 @@ const Board: Component = () => {
         ? { bg: 'var(--color-bg-subtle)', fg: 'var(--color-text-secondary)', dot: 'var(--color-text-tertiary)' }
         : { bg: 'var(--color-warning-100)', fg: 'var(--color-warning-600)', dot: 'var(--color-warning-600)' };
 
+  const cardWiring = (): CardWiring => ({
+    statuses: statusNames(),
+    onMoveItem: handleMoveItem,
+    onEditItem: handleEditItem,
+    onMoveUnder: hasGroups() ? setMovingUnder : undefined,
+    runOf,
+    waitingOf,
+    alwaysPriority: alwaysPriority(),
+  });
+
+  /** The columns of one lane: a cell per status, each a drop target for the lane. */
+  const laneCells = (lane: () => LaneModel): JSX.Element => {
+    const members = createMemo(() => new Set(lane().items.map((item) => item.id)));
+    return (
+      <Show
+        when={lane().items.length > 0 || !lane().group}
+        fallback={<EmptyLane group={lane().group!} onDropItem={(itemId) => handleItemDrop(itemId, undefined, lane().id)} />}
+      >
+        <div style={{ display: 'flex', gap: '14px', 'align-items': 'flex-start', padding: '0 12px 8px' }}>
+          <ForById each={columns()}>
+            {(column) => {
+              const cellItems = () => column().items.filter((item) => members().has(item.id));
+              return (
+                <div style={{ width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': '26px', padding: '8px 10px' }}>
+                  <CardList
+                    {...cardWiring()}
+                    shown={shown(cellItems())}
+                    total={cellItems().length}
+                    label={`${column().status}, ${lane().label}`}
+                    inLane
+                    started={categoryOf(column().status) !== 'todo'}
+                    onDropItem={(itemId) => handleItemDrop(itemId, column().status, lane().id)}
+                  />
+                </div>
+              );
+            }}
+          </ForById>
+        </div>
+      </Show>
+    );
+  };
+
   return (
     <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, 'min-height': 0 }}>
       {/* board toolbar */}
-      <div style={{ 'flex-shrink': 0, padding: '16px 22px 10px', display: 'flex', 'align-items': 'center', gap: '12px' }}>
+      <div style={{ 'flex-shrink': 0, padding: '16px 22px 10px', display: 'flex', 'align-items': 'center', gap: '12px', 'flex-wrap': 'wrap' }}>
         <h1 style={{ 'font-size': '2.125rem', 'line-height': 1.1, margin: 0, color: 'var(--color-text-primary)' }}>
           {vocab.t('board')}
         </h1>
@@ -690,6 +953,31 @@ const Board: Component = () => {
           <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>
         <div style={{ flex: 1 }} />
+        {/* Only a project with a group has lanes to choose. */}
+        <Show when={hasGroups()}>
+          <label style={{ display: 'inline-flex', 'align-items': 'center', gap: '8px', 'font-size': '0.8125rem', color: 'var(--color-text-secondary)' }}>
+            Lanes
+            <select
+              data-testid="board-lanes"
+              value={lanesChoice()}
+              onChange={(e) => chooseLanes(e.currentTarget.value as BoardLanes)}
+              class="focus:outline-none focus-visible:ring-2"
+              style={{
+                'min-height': '32px', padding: '0 12px', 'border-radius': 'var(--radius-pill)', 'font-size': '0.8125rem',
+                border: '1px solid var(--color-border-medium)', 'background-color': 'var(--color-bg-base)', color: 'var(--color-text-primary)',
+                '--tw-ring-color': 'var(--color-focus-ring)',
+              }}
+            >
+              <For each={LANE_CHOICES}>
+                {(choice) => (
+                  <option value={choice.value} disabled={!!choice.unavailable} title={choice.unavailable} selected={choice.value === lanesChoice()}>
+                    {choice.label}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+        </Show>
         <Show when={assignees().length > 0}>
           <AvatarStack names={assignees()} max={5} />
         </Show>
@@ -697,52 +985,128 @@ const Board: Component = () => {
 
       <AgentStrip counts={boardRunCounts()} active={runFilters()} onToggle={toggleRunFilter} />
 
-      <FirstRunBanner hasItems={itemCount() > 0} />
+      <FirstRunBanner hasItems={itemCount() > 0 || hasGroups()} />
 
       <Show when={!loading()} fallback={<div style={{ padding: '6px 22px 22px', 'overflow-x': 'auto' }}><BoardLoadingSkeleton /></div>}>
         <Show
           when={projectId()}
           fallback={<div style={{ 'text-align': 'center', padding: '48px', color: 'var(--color-text-secondary)' }}>Please select a project from the Projects page</div>}
         >
-          <Show when={(currentBoard()?.columns ?? []).length > 0 && (currentBoard()?.columns ?? []).every((col) => col.items.length === 0)}>
+          <Show when={columns().length > 0 && !hasGroups() && work().length === 0}>
             <div style={{ padding: '10px 22px 0' }}>
-              <EmptyProjectGuide onAddItem={() => handleAddItem(currentBoard()!.columns[0].status)} />
+              <EmptyProjectGuide onAddItem={() => handleAddItem(columns()[0].status)} />
             </div>
           </Show>
 
-          {/* The last link of the height chain (Layout → WorkLayout → here): this
-              row takes what is left of the screen, so each column scrolls inside
-              itself and the horizontal bar sits at the bottom of the screen. */}
-          <div
-            role="group"
-            aria-label="Board columns"
-            tabindex={0}
-            style={{
-              flex: 1, 'min-height': 0, display: 'flex', gap: '14px', 'align-items': 'flex-start',
-              'overflow-x': 'auto', 'overflow-y': 'hidden', 'scrollbar-gutter': 'stable', padding: '6px 22px 22px',
-            }}
+          <Show
+            when={lanesChoice() !== 'none'}
+            fallback={
+              // The last link of the height chain (Layout → WorkLayout → here): this
+              // row takes what is left of the screen, so each column scrolls inside
+              // itself and the horizontal bar sits at the bottom of the screen.
+              <div
+                role="group"
+                aria-label="Board columns"
+                tabindex={0}
+                style={{
+                  flex: 1, 'min-height': 0, display: 'flex', gap: '14px', 'align-items': 'flex-start',
+                  'overflow-x': 'auto', 'overflow-y': 'hidden', 'scrollbar-gutter': 'stable', padding: '6px 22px 22px',
+                }}
+              >
+                <ForById each={columns()}>
+                  {(column) => (
+                    <BoardColumnView
+                      {...cardWiring()}
+                      column={column()}
+                      dotColor={dotColor(column().id)}
+                      onItemDrop={(itemId, status) => handleItemDrop(itemId, status)}
+                      onAddItem={handleAddItem}
+                      started={categoryOf(column().id) !== 'todo'}
+                      byId={hasGroups() ? itemsById() : undefined}
+                      filters={runFilters()}
+                      onToggleFilter={toggleRunFilter}
+                    />
+                  )}
+                </ForById>
+              </div>
+            }
           >
-            <ForById each={columnsByStatus()}>
-              {(entry) => (
-                <BoardColumnView
-                  column={entry().column}
-                  statuses={statusNames()}
-                  dotColor={dotColor(entry().id)}
-                  onItemDrop={handleItemDrop}
-                  onMoveItem={handleMoveItem}
-                  onAddItem={handleAddItem}
-                  onEditItem={handleEditItem}
-                  started={categoryOf(entry().id) !== 'todo'}
-                  runOf={runOf}
-                  waitingOf={waitingOf}
-                  parentTitleOf={parentTitleOf}
-                  filters={runFilters()}
-                  onToggleFilter={toggleRunFilter}
-                  alwaysPriority={alwaysPriority()}
-                />
-              )}
-            </ForById>
-          </div>
+            {/* Lanes: the whole board scrolls, down through the lanes and sideways through the columns. */}
+            <div
+              ref={lanesScroller}
+              role="group"
+              aria-label="Board lanes"
+              tabindex={0}
+              style={{ flex: 1, 'min-height': 0, 'overflow': 'auto', 'scrollbar-gutter': 'stable', padding: '0 22px 22px' }}
+            >
+              <div style={{ 'min-width': 'max-content', display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+                <div
+                  data-testid="lane-columns"
+                  style={{
+                    position: 'sticky', top: 0, 'z-index': 2, display: 'flex', gap: '14px', padding: '6px 12px 0',
+                    background: 'var(--color-bg-app)',
+                  }}
+                >
+                  <ForById each={columns()}>
+                    {(column) => {
+                      const headingId = createUniqueId();
+                      return (
+                        <div style={{ width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': '26px', padding: '12px 10px 8px' }}>
+                          <ColumnHead
+                            column={column()}
+                            headingId={headingId}
+                            dotColor={dotColor(column().id)}
+                            shown={shown(column().items).length}
+                            runCounts={countRuns(column().items.map(runOf))}
+                            filters={runFilters()}
+                            onToggleFilter={toggleRunFilter}
+                            onAddItem={(status) => handleAddItem(status)}
+                          />
+                        </div>
+                      );
+                    }}
+                  </ForById>
+                </div>
+                <ForById each={lanes()}>
+                  {(lane) => (
+                    <Show
+                      when={lane().group}
+                      fallback={
+                        <section aria-label={lane().label} data-testid="lane" data-lane={lane().id}>
+                          <LaneLabel
+                            label={lane().label}
+                            count={lane().items.length}
+                            refusal={laneRefusal()?.lane === lane().id ? laneRefusal()!.message : null}
+                          />
+                          {laneCells(lane)}
+                        </section>
+                      }
+                    >
+                      {(group) => (
+                        <div data-testid="lane" data-lane={lane().id}>
+                          <GroupHeader
+                            group={group()}
+                            byId={itemsById()}
+                            density="lane"
+                            statuses={project()?.workflow.statuses ?? []}
+                            onStatusChange={(status) => void handleGroupStatus(group(), status)}
+                            pointsWord={pointsWord()}
+                            onAddItem={() => handleAddItem(columns()[0]?.status ?? '', group().id)}
+                            onMoveUnder={() => setMovingUnder(group())}
+                            defaultOpen={categoryOf(group().status) !== 'done'}
+                            refusal={laneRefusal()?.lane === lane().id ? laneRefusal()!.message : null}
+                            headerStyle={viewWidth() != null ? { position: 'sticky', left: '0', width: `${viewWidth()}px`, 'box-sizing': 'border-box' } : undefined}
+                          >
+                            {laneCells(lane)}
+                          </GroupHeader>
+                        </div>
+                      )}
+                    </Show>
+                  )}
+                </ForById>
+              </div>
+            </div>
+          </Show>
         </Show>
       </Show>
 
@@ -752,6 +1116,7 @@ const Board: Component = () => {
           onClose={() => {
             setShowCreateModal(false);
             setSelectedColumn(null);
+            setCreateParent(undefined);
             setEditingItem(null);
             setModalMode('create');
           }}
@@ -760,9 +1125,22 @@ const Board: Component = () => {
           vocabulary={vocabulary()}
           itemTypes={project()?.item_types}
           initialStatus={selectedColumn() || undefined}
+          parentId={createParent()}
           mode={modalMode()}
           existingItem={editingItem() || undefined}
         />
+        <Modal isOpen={movingUnder() != null} onClose={() => setMovingUnder(null)} title={`Move under…: ${movingUnder()?.title ?? ''}`} size="md">
+          <Show when={movingUnder()}>
+            {(moving) => (
+              <ParentPicker
+                projectId={projectId()!}
+                of={{ item: moving().id }}
+                current={moving().parent_id ?? null}
+                onPick={(parent) => void handleMoveUnder(moving(), parent ? (itemsById().get(parent.id) ?? null) : null)}
+              />
+            )}
+          </Show>
+        </Modal>
       </Show>
     </div>
   );

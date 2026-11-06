@@ -18,6 +18,7 @@ function makeItem(p: Partial<Item> = {}): Item {
     project_id: 'project-1',
     title: 'Fix login bug',
     item_type: 'task',
+    node: 'work',
     status: 'To Do',
     priority: 'medium',
     estimate_unit: 'story_points',
@@ -77,23 +78,6 @@ describe('Board ItemCard', () => {
     expect(free.querySelector('[data-testid="card-waiting"]')).toBeNull();
     const unknown = await mount(makeItem());
     expect(unknown.querySelector('[data-testid="card-waiting"]')).toBeNull();
-  });
-
-  it('a_card_auto_start_holds_or_started_names_its_parent_and_any_other_card_does_not', async () => {
-    const text = '3 runs are already open, the most this project allows';
-    const held = await mount(makeItem({ parent_id: 'p' }), undefined, { waiting: { code: 'max_open', text }, parentTitle: 'Billing epic' });
-    expect(held.querySelector('[data-testid="card-parent"]')!.textContent).toBe('Part of: Billing epic');
-    const started = await mount(makeItem({ parent_id: 'p', started_by: 'auto_start' }), undefined, { parentTitle: 'Billing epic' });
-    expect(started.querySelector('[data-testid="card-parent"]')).not.toBeNull();
-    const plain = await mount(makeItem({ parent_id: 'p' }), undefined, { parentTitle: 'Billing epic' });
-    expect(plain.querySelector('[data-testid="card-parent"]')).toBeNull();
-  });
-
-  it('a_parent_card_says_how_many_of_its_children_are_done_and_which_teams_have_them', async () => {
-    const parent = await mount(makeItem({ progress: { total: 2, done: 1, open_runs: 0, needs_you: 0, estimate_total: null, estimate_done: null, starts: null, ends: null, teams: ['claude-code', 'fab-build'] } }));
-    expect(parent.querySelector('[data-testid="card-children"]')!.textContent).toBe('1 of 2 children done · claude-code, fab-build');
-    const lone = await mount(makeItem());
-    expect(lone.querySelector('[data-testid="card-children"]')).toBeNull();
   });
 
   it('a_card_shows_ready_for_review_when_its_run_left_something_to_review', async () => {
