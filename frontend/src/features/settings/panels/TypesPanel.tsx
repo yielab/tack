@@ -93,7 +93,7 @@ const TypesPanel: Component = () => {
   };
 
   return (
-    <div class="grid max-w-[920px] gap-[18px]">
+    <div class="grid gap-4" style={{ 'max-width': '57.5rem' }}>
       <p class="text-small" style={MUTED}>
         What an item can be. A type that holds work (like an epic) is planned, shows how far its work is and is never
         run itself; work is what gets done and run. New work takes the default type.
@@ -229,7 +229,7 @@ const TypeRow: Component<{
         Press the up or down arrow to move it. It is number {props.index + 1} of {props.count}.
       </span>
 
-      <div class="flex min-w-[10rem] flex-1 items-center gap-2">
+      <div class="flex flex-1 items-center gap-2" style={{ 'min-width': '10rem' }}>
         <TypeTile type={u().key} label={u().name} class="flex-none" />
         <input
           type="text"
@@ -262,7 +262,7 @@ const TypeRow: Component<{
           <For each={LEVELS}>{(l) => <option value={l.value} selected={u().level === l.value}>{l.label}</option>}</For>
         </select>
         <Show when={locked()}>
-          <p id={`${ids}-kind`} data-testid="type-kind-reason" class="max-w-[16rem] text-caption" style={MUTED}>
+          <p id={`${ids}-kind`} data-testid="type-kind-reason" class="text-caption" style={{ ...MUTED, 'max-width': '16rem' }}>
             {kindReason(u())}
           </p>
         </Show>
@@ -346,7 +346,7 @@ const AddType: Component<{
   return (
     <form onSubmit={submit} class="flex flex-col gap-2" aria-label="Add a type" data-testid="add-type">
       <div class="flex flex-wrap items-end gap-3">
-        <label class="flex min-w-[10rem] flex-1 flex-col gap-1 text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <label class="flex flex-1 flex-col gap-1 text-small font-semibold" style={{ color: 'var(--color-text-primary)', 'min-width': '10rem' }}>
           Name
           <input
             type="text"
