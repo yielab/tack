@@ -91,7 +91,8 @@ Shows how far Tack may merge this project's changes on its own. Change the level
 
 ```sh
 tack list --project <id>                  # list items; filter with --status, --item-type, --assignee
-tack board --project <id>                 # the board in the terminal
+tack board --project <id>                 # the work in the terminal, a column per status
+tack board --project <id> --by parent     # a block per epic (or building, or course), with how far its work is
 tack search "login" --project <id>        # search; leave out --project to search everything
 
 tack add "Design login page" --project <id> --item-type task --priority high
