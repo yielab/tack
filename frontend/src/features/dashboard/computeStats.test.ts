@@ -27,6 +27,7 @@ const mk = (over: Partial<Item>): Item =>
   ({
     id: Math.random().toString(36).slice(2),
     item_type: 'task',
+    node: 'work',
     status: 'todo',
     priority: 'medium',
     tags: [],
@@ -71,6 +72,42 @@ describe('computeDashboardStats', () => {
     // throughput: 1 completed within 7 days (2 days ago), 2 within 30 days (2 & 20 days ago)
     expect(s.throughput7).toBe(1);
     expect(s.throughput30).toBe(2);
+  });
+
+  it('counts_the_three_tasks_of_an_epic_and_not_the_epic', () => {
+    const epic = mk({ id: 'epic', item_type: 'epic', node: 'group', status: 'doing', estimate: 40, priority: 'high' });
+    const tasks = [
+      mk({ parent_id: 'epic', status: 'done', estimate: 2, completed_at: daysBefore(1) }),
+      mk({ parent_id: 'epic', status: 'doing', estimate: 3 }),
+      mk({ parent_id: 'epic', status: 'todo' }),
+    ];
+
+    const s = computeDashboardStats([epic, ...tasks], STATUSES, NOW);
+
+    expect(s.totalItems).toBe(3);
+    expect(s.doneItems).toBe(1);
+    expect(s.completionRate).toBe(33);
+    expect(s.byStatus.map((x) => x.count)).toEqual([1, 1, 1]);
+    expect(s.byPriority).toEqual({ critical: 0, high: 0, medium: 3, low: 0 });
+    expect(s.byType).toEqual([{ name: 'task', count: 3 }]);
+    expect(s.totalEstimate).toBe(5);
+    expect(s.completedEstimate).toBe(2);
+    expect(s.recentItems).toBe(3);
+    expect(s.throughput7).toBe(1);
+  });
+
+  it('lists_the_top_level_groups_those_needing_a_person_first_then_the_least_left', () => {
+    const group = (id: string, title: string, total: number, done: number, needs_you = 0, over: Partial<Item> = {}) =>
+      mk({ id, title, item_type: 'epic', node: 'group', progress: { total, done, needs_you, open_runs: 0, teams: [] }, ...over });
+    const items = [
+      group('big', 'Big', 10, 1),
+      group('almost', 'Almost done', 10, 9),
+      group('asks', 'Asks a person', 10, 0, 2),
+      group('nested', 'Inside Big', 2, 0, 5, { parent_id: 'big' }),
+      mk({ id: 'w', parent_id: 'big' }),
+    ];
+
+    expect(computeDashboardStats(items, STATUSES, NOW).groups.map((g) => g.title)).toEqual(['Asks a person', 'Almost done', 'Big']);
   });
 
   it('handles an empty project safely', () => {
@@ -152,20 +189,22 @@ describe('Dashboard item types', () => {
     document.body.innerHTML = '';
   });
 
-  it("names a type as the project's catalog does", async () => {
+  const project = {
+    id: 'p1',
+    name: 'P',
+    workflow: { statuses: STATUSES },
+    vocabulary: {},
+    item_types: [
+      { key: 'epic', name: 'Saga', level: 'group', color: 'accent', order: 0, default_work: false },
+      { key: 'task', name: 'Task', level: 'work', color: 'neutral', order: 1, default_work: true },
+    ],
+  } as unknown as Project;
+
+  /** Mounts the Overview on a project whose items are `items`; returns the container and how to take it down. */
+  const mountOverview = (items: Item[]) => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-      Promise.resolve(new Response(JSON.stringify({ data: [mk({ item_type: 'epic' }), mk({ item_type: 'task' })], total: 2 }), { status: 200 })),
+      Promise.resolve(new Response(JSON.stringify({ data: items, total: items.length }), { status: 200 })),
     );
-    const project = {
-      id: 'p1',
-      name: 'P',
-      workflow: { statuses: STATUSES },
-      vocabulary: {},
-      item_types: [
-        { key: 'epic', name: 'Saga', level: 'group', color: 'accent', order: 0, default_work: false },
-        { key: 'task', name: 'Task', level: 'work', color: 'neutral', order: 1, default_work: true },
-      ],
-    } as unknown as Project;
     const ctx: ProjectContextValue = {
       projectId: () => 'p1',
       project: (() => project) as unknown as Resource<Project>,
@@ -193,8 +232,50 @@ describe('Dashboard item types', () => {
         }),
       container,
     );
+    return { container, dispose };
+  };
+
+  const saga = (over: Partial<Item>) =>
+    mk({ project_id: 'p1', item_type: 'epic', node: 'group', progress: { total: 3, done: 1, needs_you: 0, open_runs: 0, teams: [] }, ...over });
+
+  it("names a type as the project's catalog does", async () => {
+    const { container, dispose } = mountOverview([saga({ title: 'Checkout' }), mk({ item_type: 'task' })]);
     await vi.waitFor(() => expect(container.textContent).toContain('Saga'));
     expect(container.textContent).not.toContain('epic');
+    dispose();
+  });
+
+  it('lists_each_top_level_group_with_its_progress_and_counts_only_work_everywhere_else', async () => {
+    const { container, dispose } = mountOverview([
+      saga({ id: 'calm', title: 'Calm epic' }),
+      saga({ id: 'asks', title: 'Asking epic', progress: { total: 4, done: 0, needs_you: 2, open_runs: 1, teams: [] } }),
+      saga({ id: 'inner', title: 'Inner epic', parent_id: 'calm' }),
+      saga({ id: 'empty', title: 'Empty epic', progress: { total: 0, done: 0, needs_you: 0, open_runs: 0, teams: [] } }),
+      mk({ parent_id: 'calm' }),
+      mk({ parent_id: 'calm', status: 'done' }),
+      mk({ parent_id: 'asks' }),
+    ]);
+    await vi.waitFor(() => expect(container.textContent).toContain('Groups'));
+
+    const rows = [...container.querySelectorAll('[data-testid="group-row"]')];
+    // The one asking for a person, then the one with nothing left, then the one with two items left.
+    expect(rows.map((row) => row.querySelector('a')?.textContent)).toEqual(['Asking epic', 'Empty epic', 'Calm epic']);
+    expect(rows[0].textContent).toContain('2 need you');
+    expect(rows[1].textContent).toContain('No work yet');
+    expect(rows[2].textContent).toContain('1 of 3 done');
+    expect(rows[2].querySelector('a')?.getAttribute('href')).toBe('/projects/p1/items/calm');
+    // Three tasks, not seven items.
+    const tiles = [...container.querySelectorAll('p')];
+    const total = tiles.find((p) => p.textContent === 'Total Items')!.nextElementSibling!;
+    expect(total.textContent).toBe('3');
+    dispose();
+  });
+
+  it('has_no_groups_panel_in_a_project_without_groups', async () => {
+    const { container, dispose } = mountOverview([mk({}), mk({})]);
+    await vi.waitFor(() => expect(container.textContent).toContain('Status Distribution'));
+    expect(container.querySelector('[data-testid="group-row"]')).toBeNull();
+    expect(container.textContent).not.toContain('Groups');
     dispose();
   });
 });

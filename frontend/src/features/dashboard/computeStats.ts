@@ -12,17 +12,38 @@ export interface DashboardStats {
   completedEstimate: number;
   recentItems: number;
   doneItems: number;
+  /** The top-level groups, the ones needing a person first, then the ones with the least left. */
+  groups: Item[];
   throughput7: number;
   throughput30: number;
 }
 
-/** Pure aggregation of project items for the dashboard. `now` is
- * injected so time-window metrics are deterministic in tests. */
+/** The work among the items. A group holds work and is not counted as work itself: its figures come from the work under it. */
+export function workOf(items: readonly Item[]): Item[] {
+  return items.filter((item) => item.node === 'work');
+}
+
+/** The groups with no group above them, those needing a person first, then those with the least left to do. */
+function topGroups(items: readonly Item[]): Item[] {
+  const held = new Set(items.map((item) => item.id));
+  const left = (group: Item) => (group.progress?.total ?? 0) - (group.progress?.done ?? 0);
+  return items
+    .filter((item) => item.node === 'group' && !(item.parent_id && held.has(item.parent_id)))
+    .sort(
+      (a, b) =>
+        (b.progress?.needs_you ?? 0) - (a.progress?.needs_you ?? 0)
+        || left(a) - left(b),
+    );
+}
+
+/** Pure aggregation of project items for the dashboard: counts, points and breakdowns cover work only,
+ * and the groups are listed apart. `now` is injected so time-window metrics are deterministic in tests. */
 export function computeDashboardStats(
-  items: Item[],
+  allItems: Item[],
   statuses: WorkflowStatus[],
   now: Date,
 ): DashboardStats {
+  const items = workOf(allItems);
   const totalItems = items.length;
 
   const byStatus = statuses.map((s) => ({
@@ -75,6 +96,7 @@ export function computeDashboardStats(
     completedEstimate,
     recentItems,
     doneItems,
+    groups: topGroups(allItems),
     throughput7: completedSince(since7),
     throughput30: completedSince(since30),
   };
