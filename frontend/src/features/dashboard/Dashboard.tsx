@@ -3,7 +3,7 @@ import { A, useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { useProject } from '../../shared/state/projectContext';
 import { useExecutionStore } from '../../shared/state/executionContext';
-import { computeDashboardStats, computeRunStats, TOKENS_BY_TEAM_UNAVAILABLE, type RunOutcome, type RunStats } from './computeStats';
+import { computeDashboardStats, computeRunStats, workOf, TOKENS_BY_TEAM_UNAVAILABLE, type RunOutcome, type RunStats } from './computeStats';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { Button, EmptyState, Skeleton } from '../../shared/ui';
 import { IconOverview } from '../../shared/ui/icons';
@@ -12,8 +12,11 @@ import { typeTone } from '../../shared/ui/TypeTile';
 import { useItemTypes } from '../../shared/vocab/useItemTypes';
 import type { TypeColor } from '../../shared/types';
 import type { JSX } from 'solid-js';
-import type { Priority } from '../../shared/types';
+import type { Item, Priority } from '../../shared/types';
 import Card from '../../shared/ui/Card';
+import ProgressBar from '../../shared/ui/ProgressBar';
+import TypeTile from '../../shared/ui/TypeTile';
+import { itemHref } from '../../shared/ui/ItemPath';
 
 /** The runs bar's segments, in the order the board lists its states. Colours are the run-state tokens. */
 const RUN_OUTCOMES: ReadonlyArray<{ id: RunOutcome; label: string }> = [
@@ -30,8 +33,9 @@ export default function Dashboard() {
   const projectId = params.id!;
   const navigate = useNavigate();
 
-  const { project } = useProject();
+  const { project, vocabulary } = useProject();
   const { t } = useVocab();
+  const pointsWord = () => vocabulary()?.story_points?.toLowerCase();
   const types = useItemTypes();
   const [items] = createResource(() => api.items.list(projectId));
   const executions = useExecutionStore();
@@ -39,7 +43,7 @@ export default function Dashboard() {
   // The runs row reads each item's latest run through the store the board fills, so the
   // project's runs come in one batched request, the same one the board's cards use.
   createEffect(() => {
-    const stops = (items() ?? []).map((item) => executions.watchItem(item.id));
+    const stops = workOf(items() ?? []).map((item) => executions.watchItem(item.id));
     onCleanup(() => stops.forEach((stop) => stop()));
   });
 
@@ -51,7 +55,7 @@ export default function Dashboard() {
   // The store holds every run any view has loaded, so only this project's items count.
   const runStats = createMemo(() =>
     computeRunStats(
-      items() || [],
+      workOf(items() || []),
       [...executions.requests().values()].flatMap((record) => (record.summary ? [record.summary] : [])),
       new Date(),
     ),
@@ -129,6 +133,11 @@ export default function Dashboard() {
         {/* Runs: hidden until the project has run anything, so a board that never ran has no empty row. */}
         <Show when={runStats().withRuns > 0}>
           <RunsRow stats={runStats()} projectId={projectId} />
+        </Show>
+
+        {/* Groups: absent in a project without any, so it looks as it always did. */}
+        <Show when={stats().groups.length > 0}>
+          <GroupsPanel groups={stats().groups} pointsWord={pointsWord()} />
         </Show>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
@@ -285,6 +294,37 @@ function RunsRow(props: { stats: RunStats; projectId: string }) {
         </StatTile>
       </div>
     </section>
+  );
+}
+
+/** Each top-level group with how far its work is, the ones that need a person first. */
+function GroupsPanel(props: { groups: Item[]; pointsWord?: string }) {
+  return (
+    <Card class="px-5 py-[18px] flex flex-col gap-2.5">
+      <h2 id="groups-heading" class="text-lg text-content">Groups</h2>
+      <ul aria-labelledby="groups-heading" class="m-0 flex list-none flex-col gap-2 p-0">
+        <For each={props.groups}>
+          {(group) => (
+            <li data-testid="group-row" class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <TypeTile type={group.item_type} class="flex-none" />
+              <A
+                href={itemHref(group.project_id, group.id)}
+                class="min-w-0 truncate text-small font-bold hover:underline focus:outline-none focus-visible:ring-2"
+                style={{ color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
+              >
+                {group.title}
+              </A>
+              <Show
+                when={(group.progress?.total ?? 0) > 0}
+                fallback={<span class="text-xs text-content-muted">No work yet</span>}
+              >
+                <ProgressBar progress={group.progress} pointsWord={props.pointsWord} class="ml-auto" />
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+    </Card>
   );
 }
 
