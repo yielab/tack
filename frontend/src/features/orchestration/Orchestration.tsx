@@ -396,8 +396,12 @@ const Orchestration: Component = () => {
     await refetch();
   };
 
+  const itemsById = createMemo(() => new Map((items() ?? []).map((i) => [i.id, i])));
+
   const ui: FlowUi = {
     now,
+    projectId,
+    byId: itemsById,
     lanes: () => flow()?.lanes ?? [],
     highlight,
     setHighlight,

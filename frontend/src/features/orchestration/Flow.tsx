@@ -1,6 +1,7 @@
 import { type Component, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Button } from '../../shared/ui';
+import { Button, TypeTile } from '../../shared/ui';
+import ItemPath from '../../shared/ui/ItemPath';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
 import { scopedNobody, showsNobody, visibleLanes, type Flow, type FlowFilter, type FlowScope, type NobodyEntry, type UnusedTeam } from './flow';
 import { useFlowUi } from './context';
@@ -31,6 +32,7 @@ const NobodyRow: Component<{ entry: NobodyEntry }> = (props) => {
       style={{ 'background-color': 'var(--color-bg-elevated)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)', cursor: 'grab' }}
     >
       <div class="flex min-w-0 items-start gap-2">
+        <TypeTile type={e().item.item_type} class="flex-none" />
         <button
           type="button"
           class="min-w-0 flex-1 text-left text-small font-semibold focus:outline-none focus-visible:ring-2"
@@ -50,9 +52,7 @@ const NobodyRow: Component<{ entry: NobodyEntry }> = (props) => {
           }}
         />
       </div>
-      <Show when={e().parentTitle}>
-        {(parent) => <p class="text-caption" style={{ ...MUTED, 'overflow-wrap': 'anywhere' }}>{parent()}</p>}
-      </Show>
+      <ItemPath item={e().item} byId={ui.byId()} projectId={ui.projectId()} class="text-caption" />
       <p class="text-caption" data-testid="flow-nobody-reason" data-reason={e().route.reason} style={{ color: 'var(--run-needs-ink)', 'overflow-wrap': 'anywhere' }}>
         {e().text}
       </p>

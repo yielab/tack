@@ -41,6 +41,7 @@ const item = (p: Partial<Item> & { id: string }): Item =>
     project_id: 'p1',
     title: p.id,
     item_type: 'task',
+    node: 'work',
     status: 'To Do',
     priority: 'medium',
     estimate_unit: 'story_points',
@@ -406,18 +407,38 @@ describe('buildFlow: lanes, stations and tokens', () => {
     const tokens = flow.lanes.flatMap((l) => l.tokens);
     expect(tokens.find((t) => t.id === 'research')!.proposed).toBe(1);
     expect(tokens.find((t) => t.id === 'child')!.fromTitle).toBe('Research');
-    expect(tokens.find((t) => t.id === 'child')!.parentTitle).toBe('Research');
   });
 
-  it('leaves_out_done_tasks_with_no_recent_run_and_tasks_that_only_hold_others', () => {
+  it('leaves_out_done_tasks_with_no_recent_run_and_the_group_that_only_holds_others', () => {
     const flow = flowOf({
       items: [
         item({ id: 'old', status: 'Done', run_settings: own('notes') }),
-        item({ id: 'epic', item_type: 'epic', run_settings: own('notes') }),
+        item({ id: 'epic', item_type: 'epic', node: 'group', run_settings: own('notes') }),
         item({ id: 'part', parent_id: 'epic', run_settings: own('notes') }),
       ],
     });
     expect(flow.lanes[0].tokens.map((t) => t.id)).toEqual(['part']);
+  });
+
+  it('draws_no_token_for_a_group_but_its_planning_run', () => {
+    const flow = flowOf({
+      items: [
+        item({ id: 'epic', item_type: 'epic', node: 'group', status: 'Doing', run_settings: own('notes') }),
+        item({ id: 'idle-epic', item_type: 'epic', node: 'group', run_settings: own('notes') }),
+        item({ id: 'part', parent_id: 'epic', run_settings: own('notes') }),
+      ],
+      runs: [run({ item_id: 'epic', agent_profile_id: 'notes' })],
+    });
+    const tokens = flow.lanes.flatMap((l) => l.tokens);
+    expect(tokens.map((t) => t.id).sort()).toEqual(['epic', 'part']);
+    expect(tokens.find((t) => t.id === 'epic')!.planning).toBe(true);
+    expect(tokens.find((t) => t.id === 'part')!.planning).toBe(false);
+  });
+
+  it('reads_a_group_from_its_node_and_not_from_having_children', () => {
+    // An item that holds nothing yet but is a group by its type is not started either.
+    const flow = flowOf({ items: [item({ id: 'empty-epic', item_type: 'epic', node: 'group', run_settings: own('notes') })] });
+    expect(flow.lanes.flatMap((l) => l.tokens)).toEqual([]);
   });
 
   it('shows_a_task_that_ended_today_in_Done_and_one_flagged_for_review_at_Ready_for_review', () => {
@@ -636,7 +657,7 @@ describe('laneQueue and candidateIds', () => {
       item({ id: 'ready' }),
       item({ id: 'moved', status: 'Doing' }),
       item({ id: 'ran', status: 'Doing' }),
-      item({ id: 'epic' }),
+      item({ id: 'epic', node: 'group' }),
       item({ id: 'child', parent_id: 'epic', status: 'Doing', needs_review: true }),
     ];
     const statuses = [{ name: 'To Do', category: 'todo' }, { name: 'Doing', category: 'in_progress' }];

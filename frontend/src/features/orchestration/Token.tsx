@@ -1,5 +1,6 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, TypeTile } from '../../shared/ui';
+import ItemPath from '../../shared/ui/ItemPath';
 import { ageText, moveTarget, sourceText, type FlowLane, type FlowToken } from './flow';
 import { useFlowUi, type MoveSource } from './context';
 import MoveMenu, { type MoveChoice } from './MoveMenu';
@@ -24,8 +25,8 @@ export function moveChoices(source: Pick<MoveSource, 'lane' | 'inFlight' | 'stat
 }
 
 /**
- * One task as a token: its type, its title (which opens the task on its Execution tab), the parent's
- * title under it, the run's state, how long the run has been going, and what links it to other work:
+ * One task as a token: its type, its title (which opens the task on its Execution tab), the path of
+ * what it sits under, the run's state, how long the run has been going, and what links it to other work:
  * sent back, waiting on another task, proposals it made or came from. A task that has not started can
  * be dragged to another lane's Up next, or sent with the Move to… menu.
  */
@@ -89,12 +90,12 @@ const Token: Component<{ token: FlowToken; source: MoveSource }> = (props) => {
           />
         </Show>
       </div>
-      <Show when={t().parentTitle}>
-        {(parent) => (
-          <p class="text-caption" data-testid="flow-token-parent" style={{ ...MUTED, 'overflow-wrap': 'anywhere' }}>
-            {parent()}
-          </p>
-        )}
+      <ItemPath item={t().item} byId={ui.byId()} projectId={ui.projectId()} class="text-caption" />
+      <Show when={t().planning}>
+        <p class="text-caption font-semibold" data-testid="flow-token-planning" style={{ color: 'var(--color-accent-ink)' }}>
+          Planning
+          <span class="sr-only"> — this run proposes the items of a group; it does not do them</span>
+        </p>
       </Show>
       <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-caption" style={MUTED}>
         <Show when={age()}>
