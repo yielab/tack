@@ -492,6 +492,7 @@ pub fn create_outline(client: &TackClient, args: &Value) -> Result<Value, String
             "roles",
             "sprints",
             "automation",
+            "types",
         ],
     )?;
     let project_id = opt_str(args, "project_id")

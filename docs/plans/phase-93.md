@@ -1,6 +1,6 @@
 # Phase 93: an item is a group or work
 
-**Status: PROPOSED 2026-11-05.** Executes ADR 0036's amendment of 2026-11-05, decisions 10 to 13
+**Status: BUILT 2026-11-05, in `develop` (cards A to H; the live suite against docket and prill is the one step left).** Executes ADR 0036's amendment of 2026-11-05, decisions 10 to 13
 (`docs/adr/0036-the-board-orchestrates-and-a-team-declares-what-it-accepts.md`, section "Amendment,
 2026-11-05"). Read that table first: it says what is decided, and this file says only how. Eight
 cards in five rounds: **A**; **B**; **C ∥ D**; **E**; **F ∥ G ∥ H**. The cards are grouped by the

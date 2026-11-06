@@ -6,8 +6,8 @@ decision 5 (Tack configures no prompt, service or secret for a team), ADR 0032 (
 it is; a person always accepts a plan) and ADR 0034 (a manager works through the board). Amends
 ADR 0021's header (its decision 2 route was never built, its default pod and its gate changed) and
 ADR 0024's decision table (decision 1 was overturned by ADR 0027 decision 5). **Amended 2026-11-05
-(proposed)** with decisions 10 to 13, an item is a group or work, executed by Phase 93
-(`docs/plans/phase-93.md`); decision 7's
+(accepted and built 2026-11-05)** with decisions 10 to 13, an item is a group or work, executed by
+Phase 93 (`docs/plans/phase-93.md`); decision 7's
 card becomes the group's lane, row and page.
 
 **The ask.** A person sets up a project with several teams — one that fixes code, one that
@@ -71,7 +71,7 @@ at apply time), which is most of the contract, printed where Tack cannot read it
 decide which team fits which card live in `onboarding-lab/skill/references/rules.md`, and the product
 checks none of them. A card sent with the wrong method ends `Succeeded` without review.
 
-## Amendment, 2026-11-05: an item is a group or work (proposed)
+## Amendment, 2026-11-05: an item is a group or work (accepted, built)
 
 **The ask.** An epic is a card in the To Do column beside the tasks it holds, and it stays there,
 because a parent moves nothing (decision 7). Auto-start can start it as if it were a task, and the

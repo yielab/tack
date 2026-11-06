@@ -134,6 +134,7 @@ pub static CREATE_OUTLINE: Tool = Tool {
                     "profiles": { "type": "array", "description": "Agent profiles the project uses" },
                     "roles": { "type": "array", "description": "Roles and the profile each one uses" },
                     "sprints": { "type": "array", "description": "Sprints" },
+                    "types": { "type": "array", "description": "The project's item types (key, name, level group or work, color, default_work); a person's credential only" },
                     "automation": { "type": "object", "description": "The project's automation settings" },
                     "dry_run": { "type": "boolean", "description": "Check and report without writing" },
                     "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }

@@ -698,6 +698,7 @@ async fn mcp_create_outline_posts_to_the_matching_route() {
             "items": items,
             "roles": [{ "name": "Dev", "profile": "Implementer" }],
             "profiles": [{ "name": "Implementer" }],
+            "types": [{ "key": "epic", "name": "Epic", "level": "group", "color": "accent", "order": 0, "default_work": false }],
         })))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({ "created": 2 })))
         .mount(&server)
@@ -710,6 +711,7 @@ async fn mcp_create_outline_posts_to_the_matching_route() {
             "items": items,
             "roles": [{ "name": "Dev", "profile": "Implementer" }],
             "profiles": [{ "name": "Implementer" }],
+            "types": [{ "key": "epic", "name": "Epic", "level": "group", "color": "accent", "order": 0, "default_work": false }],
         }),
     ] {
         let uri = server.uri();
