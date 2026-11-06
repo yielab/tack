@@ -429,7 +429,6 @@ async fn save_project_as_template_snapshots_fields() {
     assert_eq!(status, StatusCode::OK, "{template}");
     assert_eq!(template["name"], "Snapshot");
     assert_eq!(template["custom_fields"].as_array().unwrap().len(), 1);
-    assert!(template.get("default_boards").is_none());
 }
 
 #[tokio::test]

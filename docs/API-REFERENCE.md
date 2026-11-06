@@ -170,7 +170,7 @@ per-endpoint listing precisely so they do not get duplicated by one.
 **Templates, custom fields and the project file**
 - Built-in templates (`is_builtin: true`) cannot be deleted.
 - `POST /api/projects/from-template/{id}` applies the template's workflow,
-  vocabulary, custom field definitions, default boards, roles, profiles and automation
+  vocabulary, custom field definitions, roles, profiles and automation
   to the new project, through the same code as a project-file import.
 - `POST /api/projects/{id}/save-as-template` snapshots the project's *current*
   configuration, not the template it was created from.
@@ -185,12 +185,14 @@ per-endpoint listing precisely so they do not get duplicated by one.
   `long_text`, `number`, `date`, `boolean`, `select`, `multi_select`, `url`,
   `email`) — `select`/`multi_select` values must match the field's own `options`.
 
-**Boards**
-- Creating a board with `is_default: true` unmarks every other board on the project.
-- The last board, or a default board with no other board to promote first, cannot
-  be deleted.
-- `GET /api/boards/{id}/view` groups items live at read time by the board's
-  `grouping` — there is no materialized, cached column assignment to go stale.
+**Items**
+- `GET /api/projects/{id}/items` takes `node=work|group` (an item is a group when its type holds
+  work or it has children, otherwise work) and `under=<item>` (everything beneath that item, at
+  any depth, the item itself left out). Every item read carries `node`, and a group carries
+  `progress`: how many work items are under it, how many are done, their estimates, the span of
+  their dates, the teams, the runs open and the work that needs a person. Hidden items count nowhere.
+- There are no saved boards: the board is the project's work items by status, and the live
+  socket carries every event of the project.
 
 **Search**
 - Both search routes pass `q` to SQLite FTS5 `MATCH` over titles, descriptions and tags, best
