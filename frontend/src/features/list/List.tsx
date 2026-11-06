@@ -726,7 +726,7 @@ function ItemRow(props: {
   const [showActions, setShowActions] = createSignal(false);
   const typeConfig = () => props.types.find((t) => t.key === props.item.item_type);
   const typeLabel = () => typeConfig()?.name ?? props.item.item_type;
-  const hasChildren = props.item.children.length > 0;
+  const hasRows = props.item.children.length > 0;
   // The server says whether the row holds work; the List draws it as the heading of what is under it.
   const isGroup = () => props.item.node === 'group';
 
@@ -768,11 +768,11 @@ function ItemRow(props: {
                       type="button"
                       onClick={props.onToggleExpand}
                       aria-label={props.isExpanded ? 'Collapse children' : 'Expand children'}
-                      aria-expanded={hasChildren ? (props.isExpanded ? 'true' : 'false') : undefined}
-                      disabled={!props.canCollapse && hasChildren}
-                      title={!props.canCollapse && hasChildren ? 'A filter is holding every parent open' : undefined}
-                      tabindex={hasChildren ? undefined : -1}
-                      class={`flex-shrink-0 grid place-items-center w-5 h-5 rounded-full text-content-muted hover:bg-sunken transition-colors ${hasChildren ? '' : 'invisible'}`}
+                      aria-expanded={hasRows ? (props.isExpanded ? 'true' : 'false') : undefined}
+                      disabled={!props.canCollapse && hasRows}
+                      title={!props.canCollapse && hasRows ? 'A filter is holding every parent open' : undefined}
+                      tabindex={hasRows ? undefined : -1}
+                      class={`flex-shrink-0 grid place-items-center w-5 h-5 rounded-full text-content-muted hover:bg-sunken transition-colors ${hasRows ? '' : 'invisible'}`}
                     >
                       {props.isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
                     </button>
@@ -800,7 +800,7 @@ function ItemRow(props: {
                               <span class={`min-w-0 line-clamp-2 break-words text-sm text-content group-hover/title:text-brand transition-colors ${isGroup() ? 'font-semibold' : 'font-medium'}`}>
                                 {props.item.title}
                               </span>
-                              <Show when={hasChildren}>
+                              <Show when={hasRows}>
                                 <Badge class="flex-shrink-0">{props.item.children.length}</Badge>
                               </Show>
                               <Show when={props.item.recurrence}>
