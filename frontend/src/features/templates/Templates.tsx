@@ -3,7 +3,7 @@ import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
 import { FiTrash2 } from 'solid-icons/fi';
-import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton, createConfirm } from '../../shared/ui';
+import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton, TypeList, createConfirm } from '../../shared/ui';
 import { IconTemplates } from '../../shared/ui/icons';
 import { projectTypePillStyle, projectTypeTone } from '../../shared/ui/projectTypeTone';
 import type { ProjectTemplate } from '../../shared/types';
@@ -261,6 +261,7 @@ export default function Templates() {
                       {template.name}
                     </h3>
                   </div>
+                  <TypeList types={template.item_types} />
                   <div class="flex flex-wrap gap-1.5">
                     <span style={projectTypePillStyle(typeInfo.value)}>
                       {typeInfo.label}

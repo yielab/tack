@@ -58,6 +58,8 @@ export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 export { default as TypeTile, typeTone } from './TypeTile';
 export type { TypeTileProps } from './TypeTile';
 
+export { default as TypeList } from './TypeList';
+
 // GroupHeader, ItemPath and ParentPicker are imported from their own files: the header opens the run dialog, which imports this kit.
 export { default as ProgressBar, progressText, needsYouText } from './ProgressBar';
 export type { ProgressBarProps } from './ProgressBar';

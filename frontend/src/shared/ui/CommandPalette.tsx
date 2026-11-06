@@ -1,8 +1,11 @@
 import { createSignal, For, Show, type Component, createEffect, createMemo, onCleanup } from 'solid-js';
 import { Portal, Dynamic } from 'solid-js/web';
+import { useNavigate, useParams } from '@solidjs/router';
 import { IconSearch, type IconProps } from './icons';
 import KbdHint from './KbdHint';
 import { trapFocus } from './focusTrap';
+import { createItemSearch, ItemResult } from './itemSearch';
+import type { Item } from '../types';
 
 export interface Command {
   id: string;
@@ -14,6 +17,8 @@ export interface Command {
   group?: string;
   action: () => void;
   shortcut?: string;
+  /** A found item: it is drawn with its type and the path of what it sits under. */
+  item?: Item;
 }
 
 export interface CommandPaletteProps {
@@ -23,14 +28,19 @@ export interface CommandPaletteProps {
 }
 
 const CommandPalette: Component<CommandPaletteProps> = (props) => {
-  const [search, setSearch] = createSignal('');
+  const navigate = useNavigate();
+  const params = useParams();
+  // The words typed also search the items of the project the person is in, or of every project outside one.
+  const found = createItemSearch(() => params.id as string | undefined);
+  const search = found.query;
+  const setSearch = found.setQuery;
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   let inputRef: HTMLInputElement | undefined;
   let dialog: HTMLDivElement | undefined;
 
   createEffect(() => {
     if (!props.isOpen) return;
-    setSearch('');
+    found.clear();
     setSelectedIndex(0);
     const previouslyFocused = document.activeElement as HTMLElement | null;
     setTimeout(() => inputRef?.focus(), 10);
@@ -49,10 +59,18 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
   // Flat, filtered list (drives ↑↓ selection).
   const filtered = createMemo(() => {
     const q = search().toLowerCase();
+    const items: Command[] = found.results().map((item) => ({
+      id: `item-${item.id}`,
+      label: item.title,
+      group: 'Items',
+      item,
+      action: () => navigate(`/projects/${item.project_id}/board?item=${item.id}`),
+    }));
     if (!q) return props.commands;
-    return props.commands.filter(
-      (c) => c.label.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q),
-    );
+    return [
+      ...props.commands.filter((c) => c.label.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q)),
+      ...items,
+    ];
   });
 
   // Same list, grouped for display, preserving the flat order/index.
@@ -145,10 +163,17 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
             </div>
 
             {/* results */}
-            <div id="cmdk-results" role="listbox" aria-label="Results" style={{ 'max-height': '50vh', 'overflow-y': 'auto', padding: '6px 10px 10px' }}>
+            <div
+              id="cmdk-results"
+              role="listbox"
+              aria-label="Results"
+              style={{ 'max-height': '50vh', 'overflow-y': 'auto', padding: '6px 10px 10px' }}
+              // A path link inside an item goes to that item: the palette has done its job.
+              on:click={(e) => { if ((e.target as Element).closest('a')) props.onClose(); }}
+            >
               <Show
                 when={filtered().length > 0}
-                fallback={<div role="status" style={{ padding: '28px', 'text-align': 'center', 'font-size': '0.8125rem', color: 'var(--color-text-tertiary)' }}>No matches for “{search()}”</div>}
+                fallback={<div role="status" style={{ padding: '28px', 'text-align': 'center', 'font-size': '0.8125rem', color: 'var(--color-text-tertiary)' }}>{found.loading() ? 'Searching items…' : <>No matches for “{search()}”</>}</div>}
               >
                 <For each={groups()}>
                   {(g, gi) => (
@@ -160,8 +185,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                         {({ cmd, index }) => {
                           const active = () => index === selectedIndex();
                           return (
-                            <button
-                              type="button"
+                            <div
                               id={`cmdk-option-${index}`}
                               role="option"
                               aria-selected={active() ? 'true' : 'false'}
@@ -175,6 +199,10 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                                 background: active() ? 'var(--color-accent-soft)' : 'transparent',
                               }}
                             >
+                              <Show
+                                when={cmd.item}
+                                fallback={
+                                  <>
                               <span aria-hidden="true" style={{
                                 width: '26px', height: '26px', 'border-radius': 'var(--radius-pill)', 'flex-shrink': 0,
                                 display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-size': '0.75rem',
@@ -184,7 +212,16 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                               <Show when={cmd.shortcut}>
                                 <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>{cmd.shortcut}</span>
                               </Show>
-                            </button>
+                                  </>
+                                }
+                              >
+                                {(item) => (
+                                  <span data-testid="palette-item" style={{ display: 'flex', 'flex-direction': 'column', gap: '5px', flex: 1, 'min-width': 0, padding: '2px 0 2px 5px' }}>
+                                    <ItemResult item={item()} byId={found.byId()} />
+                                  </span>
+                                )}
+                              </Show>
+                            </div>
                           );
                         }}
                       </For>

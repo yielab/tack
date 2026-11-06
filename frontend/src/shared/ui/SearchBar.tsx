@@ -1,10 +1,8 @@
 import { createSignal, Show, For, createEffect, onCleanup, type Component } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { api } from '../api';
-import type { Item, Priority } from '../types';
+import type { Item } from '../types';
 import { IconSearch, IconClose } from './icons';
-import TypeTile from './TypeTile';
-import PriorityDot from './PriorityDot';
+import { createItemSearch, ItemResult } from './itemSearch';
 import KbdHint from './KbdHint';
 
 export interface SearchBarProps {
@@ -13,18 +11,16 @@ export interface SearchBarProps {
 }
 
 /** Global / in-project item search. Debounced API query with a token-styled
- *  results dropdown; ↑↓ to navigate, Enter opens the item drawer, ⌃/ focuses. */
+ *  results dropdown; each result shows its type, the path of what it sits under, priority
+ *  and status. ↑↓ to navigate, Enter opens the item drawer, ⌃/ focuses. */
 const SearchBar: Component<SearchBarProps> = (props) => {
   const navigate = useNavigate();
-  const [query, setQuery] = createSignal('');
-  const [results, setResults] = createSignal<Item[]>([]);
+  const { query, setQuery, results, loading, byId, clear: clearSearch } = createItemSearch(() => props.projectId);
   const [isOpen, setIsOpen] = createSignal(false);
-  const [loading, setLoading] = createSignal(false);
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [focused, setFocused] = createSignal(false);
   let searchRef: HTMLDivElement | undefined;
   let inputRef: HTMLInputElement | undefined;
-  let searchTimeout: number | undefined;
 
   // ⌃/ (or ⌘/) focuses the search input.
   createEffect(() => {
@@ -38,31 +34,14 @@ const SearchBar: Component<SearchBarProps> = (props) => {
     onCleanup(() => window.removeEventListener('keydown', onKey));
   });
 
-  // Debounced search.
+  // The dropdown opens when a search finds something, and closes when the query is too short to search.
   createEffect(() => {
-    const q = query();
-    if (q.trim().length < 2) {
-      setResults([]);
-      setIsOpen(false);
-      return;
-    }
-    if (searchTimeout) clearTimeout(searchTimeout);
-    searchTimeout = window.setTimeout(async () => {
-      setLoading(true);
-      try {
-        const items = props.projectId
-          ? await api.search.inProject(props.projectId, q)
-          : await api.search.global(q);
-        setResults(items);
-        setIsOpen(items.length > 0);
-        setSelectedIndex(0);
-      } catch (error) {
-        console.error('Search failed:', error);
-        setResults([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
+    if (query().trim().length < 2) setIsOpen(false);
+  });
+  createEffect(() => {
+    const found = results();
+    setSelectedIndex(0);
+    if (found.length > 0) setIsOpen(true);
   });
 
   // Click outside closes the dropdown.
@@ -101,15 +80,12 @@ const SearchBar: Component<SearchBarProps> = (props) => {
   const handleSelectItem = (item: Item) => {
     // Deep-link to the item drawer over its project board.
     navigate(`/projects/${item.project_id}/board?item=${item.id}`);
-    setQuery('');
-    setResults([]);
-    setIsOpen(false);
+    clear();
     inputRef?.blur();
   };
 
   const clear = () => {
-    setQuery('');
-    setResults([]);
+    clearSearch();
     setIsOpen(false);
   };
 
@@ -145,6 +121,11 @@ const SearchBar: Component<SearchBarProps> = (props) => {
           onKeyDown={handleKeyDown}
           onFocus={() => { setFocused(true); if (results().length > 0) setIsOpen(true); }}
           onBlur={() => setFocused(false)}
+          role="combobox"
+          aria-expanded={isOpen() && results().length > 0 ? 'true' : 'false'}
+          aria-controls="search-results"
+          aria-autocomplete="list"
+          aria-activedescendant={isOpen() && results().length > 0 ? `search-option-${selectedIndex()}` : undefined}
           aria-label={props.placeholder ?? 'Search items'}
           placeholder={props.placeholder ?? 'Search items…'}
           style={{
@@ -173,32 +154,34 @@ const SearchBar: Component<SearchBarProps> = (props) => {
             animation: 'tk-pal .16s cubic-bezier(.2,.7,.3,1)',
           }}
         >
-          <div style={{ 'max-height': '50vh', 'overflow-y': 'auto', padding: '6px' }}>
+          <div
+            id="search-results"
+            role="listbox"
+            aria-label="Search results"
+            style={{ 'max-height': '50vh', 'overflow-y': 'auto', padding: '6px' }}
+            // A path link inside a result goes to that item: the results have done their job.
+            on:click={(e) => { if ((e.target as Element).closest('a')) clear(); }}
+          >
             <For each={results()}>
               {(item, index) => {
                 const active = () => index() === selectedIndex();
                 return (
-                  <button
+                  <div
+                    id={`search-option-${index()}`}
+                    role="option"
+                    aria-selected={active() ? 'true' : 'false'}
+                    data-testid="search-result"
                     onClick={() => handleSelectItem(item)}
                     onMouseEnter={() => setSelectedIndex(index())}
                     style={{
                       width: '100%', display: 'flex', 'flex-direction': 'column', gap: '5px',
-                      padding: '9px 12px', 'border-radius': 'var(--radius-lg)', border: 'none', cursor: 'pointer',
-                      'text-align': 'left', 'font-family': 'inherit',
+                      padding: '9px 12px', 'border-radius': 'var(--radius-lg)', cursor: 'pointer',
+                      'text-align': 'left', 'box-sizing': 'border-box',
                       background: active() ? 'var(--color-accent-soft)' : 'transparent',
                     }}
                   >
-                    <span style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis', 'max-width': '100%' }}>
-                      {item.title}
-                    </span>
-                    <span style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
-                      <TypeTile type={item.item_type} />
-                      <Show when={item.priority !== 'none'}>
-                        <PriorityDot priority={item.priority as Priority} showLabel />
-                      </Show>
-                      <span style={{ 'font-size': '0.6875rem', color: 'var(--color-text-tertiary)' }}>{item.status}</span>
-                    </span>
-                  </button>
+                    <ItemResult item={item} byId={byId()} />
+                  </div>
                 );
               }}
             </For>

@@ -1,6 +1,6 @@
 import { type Component, createSignal, createResource, createMemo, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { Modal, Button, Field, Select, FieldShell, Badge } from '../../shared/ui';
+import { Modal, Button, Field, Select, FieldShell, Badge, TypeList } from '../../shared/ui';
 import { api } from '../../shared/api';
 import type { CreateProject, ProjectType, ProjectTemplate } from '../../shared/types';
 import type { FolderCheck } from '../../shared/api/projects';
@@ -114,6 +114,10 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       items: list.filter((t) => t.project_type === d.type),
     })).filter((g) => g.items.length > 0);
   });
+
+  // A project made from a bare project type starts with that type's preset: the built-in template of
+  // the type carries the same types, which is the only place the web can read a preset from.
+  const blankTypes = () => (templates() ?? []).find((t) => t.is_builtin && t.project_type === projectType())?.item_types;
 
   const reset = () => {
     setName('');
@@ -403,6 +407,14 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                 options={PROJECT_TYPE_OPTIONS}
                 hint="Determines default workflow and terminology"
               />
+              <Show when={blankTypes()}>
+                {(types) => (
+                  <div class="flex flex-col gap-1">
+                    <span class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>Starts with these types</span>
+                    <TypeList types={types()} />
+                  </div>
+                )}
+              </Show>
             </Show>
 
             <Show when={templates.loading}>
@@ -456,6 +468,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                                   <Badge tone="neutral">Built-in</Badge>
                                 </Show>
                               </div>
+                              <TypeList types={t.item_types} class="mt-1" />
                               <Show when={t.description}>
                                 <p
                                   class="mt-0.5 line-clamp-2 text-xs"

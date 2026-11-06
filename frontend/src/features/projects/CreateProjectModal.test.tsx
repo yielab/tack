@@ -160,4 +160,38 @@ describe('CreateProjectModal', () => {
     confirm.click();
     await vi.waitFor(() => expect(outlinePosts()).toEqual(['/api/projects/outline?dry_run=true', '/api/projects/outline']));
   });
+
+  it('shows the types of each template under its name, and those a bare project type starts with', async () => {
+    const types = (...names: Array<[string, 'group' | 'work']>) =>
+      names.map(([name, level], order) => ({ key: name.toLowerCase(), name, level, color: 'neutral', order, default_work: false }));
+    const template = (id: string, name: string, project_type: string, item_types: unknown[], is_builtin: boolean) => ({
+      id, name, description: null, project_type, is_builtin, item_types, workflow: null, vocabulary: {}, custom_fields: [], roles: [], profiles: [],
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(
+        new Response(
+          String(input).endsWith('/api/templates')
+            ? JSON.stringify([
+                template('t1', 'Site works', 'construction', types(['Building', 'group'], ['Work Order', 'work']), true),
+                template('t2', 'My software', 'software', types(['Saga', 'group']), false),
+                template('t3', 'Software', 'software', types(['Epic', 'group'], ['Task', 'work']), true),
+              ])
+            : '{}',
+          { status: 200 },
+        ),
+      ),
+    );
+    mount();
+    await flush();
+    await flush();
+    const cards = [...dialog().querySelectorAll('#template-picker button')].filter((b) => b.querySelector('[data-testid="type-list"]'));
+    expect(cards.map((c) => c.querySelector('[data-testid="type-list"]')!.textContent)).toEqual([
+      'Saga (holds work)',
+      'Epic (holds work)Task',
+      'Building (holds work)Work Order',
+    ]);
+    // Start blank, Software: the built-in template of that type, not the person's own.
+    const blank = [...dialog().querySelectorAll('span')].find((s) => s.textContent === 'Starts with these types')!;
+    expect(blank.parentElement!.querySelector('[data-testid="type-list"]')!.textContent).toBe('Epic (holds work)Task');
+  });
 });

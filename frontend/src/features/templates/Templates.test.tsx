@@ -69,4 +69,24 @@ describe('Templates', () => {
     expect(preview?.textContent).toContain('Security → Security review');
     dispose();
   });
+
+  it('shows the types a template starts with under its name, a type that holds work apart', async () => {
+    const withTypes = {
+      ...TEMPLATE,
+      item_types: [
+        { key: 'building', name: 'Building', level: 'group', color: 'accent', order: 0, default_work: false },
+        { key: 'order', name: 'Work Order', level: 'work', color: 'neutral', order: 1, default_work: true },
+      ],
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(new Response(JSON.stringify(String(input).includes('/api/templates') ? [withTypes] : {}), { status: 200 })),
+    );
+    const { container, dispose } = mount();
+    await flush();
+    await flush();
+    const tiles = [...container.querySelectorAll('[data-testid="type-list"] li')];
+    expect(tiles.map((t) => t.textContent)).toEqual(['Building (holds work)', 'Work Order']);
+    expect(tiles.map((t) => t.getAttribute('data-holds-work'))).toEqual(['true', 'false']);
+    dispose();
+  });
 });
