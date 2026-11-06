@@ -99,10 +99,218 @@ names each card's files, shapes, removals, docs, tests and greps.
 - **G** — the Timeline, the Calendar, Sprints and the Dashboard.
 - **H** — Orchestration, search, and Settings → Types.
 
+**Phase 94 — the agent is contained the same way whatever runs it, and Tack measures what it already
+labels** (2026-11-06;
+[plan](https://github.com/yielab/tack/blob/develop/docs/plans/evals-y-guardrails-2026-11-06.es.md),
+[audit](https://github.com/yielab/tack/blob/develop/docs/audits/evals-y-guardrails-2026-11-06.es.md);
+no ADR: ADR 0013 and ADR 0018 decisions 11 and 12 are amended where their text becomes false.
+**Proposed, not accepted:** the plan's §11 decisions 1 to 4 are the maintainer's, and rounds 3 and 4
+wait on them).
+
+An audit of the four harnesses found that the board contains an agent well (scopes, change sets, a
+second secret for decisions, demotion after a revert) and the machine does not: the network is never
+cut, Claude Code runs with every permission skipped in `auto` even with no sandbox, a missing `bwrap`
+means no sandbox rather than no run, the install step runs as the user, and docket's sandbox is assumed
+rather than asked. Each harness has a different set of holes, because every control is a flag of one
+CLI and not a rule of the runner. Tack judges no work itself and never grades the one that does: the
+verifier is off by default and never changes a run's state, yet every run already ends with a person's
+label (accepted, rejected with a reason, merged, reverted) that nothing reads back.
+
+Rules of the phase. **A guardrail is the runner's rule, not a CLI's flag:** every card lands in the
+four harnesses or writes in the descriptor why one cell cannot, and a parity test keeps the matrix
+green. **A rule is a boundary test and its benign twin** (the normal case that must keep passing).
+**Opus plans and integrates, Sonnet and Haiku execute;** each card names its files and its `-E`
+filter, runs only those tests, and has a token cap (S ≈ 300k, M ≈ 900k, L ≈ 2M counted tokens); the
+full suites, Playwright and the live suite run once per round. **A real model is the integrator's:**
+cards prove with the fake agent; regression, safety and verifier run at integration with Claude Haiku
+5.5 through Anthropic (the local model stays an option) under a token budget, never in CI, and CI
+still needs neither docket nor prill. **Nothing invented:** no agent writes eval tasks from
+imagination; capability tasks come only from runs a person rejected or reverted.
+
+**Round 0 — cleanup and the truth of the documents** (parallel, no shared files):
+
+- **C0-1 — dead code and stale names** (Haiku · S). Delete `event_sink` (no production caller) and
+  the three helpers only tests use; rename `needs_beta_6` for what it checks, `docket_v5.rs` to
+  `docket_api.rs` (after the pending docket change lands) and `table.spec.ts` to `list.spec.ts`; fix
+  the comments that say `InPlace` is not provisioned, that `is_operator` means Tack too, and that the
+  rate card serves a dollar budget. Done when the greps in the plan are empty and the runner suite and
+  clippy are green.
+- **C0-2 — amendment notes** (Haiku · S). One dated note at the end of ADRs 0004, 0021, 0024, 0027,
+  0032, 0036 and 0018 (decision 10), the `mrp-v1` contract README and the environment policy's module
+  doc, each saying what the code does today and which card changes it. Done when every note names its
+  source and the book carries no phase number.
+- **C0-3 — one human review** (Sonnet · M). The pack review and the run review become one store and one
+  endpoint: a reason is required to reject, the reviewer is the real principal, and a migration keeps
+  both stores' rows. Done when the migration test is seen failing first, the reason-less reject is a
+  400, `"operator"` is gone from the handlers, and `MrpPanel` reads one endpoint.
+
+**Round 1 — parity, and containment that changes nothing for normal use** (GR0 first and alone, the
+rest in parallel):
+
+- **GR0 — the parity matrix** (Sonnet · M). A list of parity rules in the protocol crate and, per
+  descriptor, who meets each: the CLI, the runner, docket, or missing with a reason. A boundary test
+  walks every registered descriptor; the run page lists per rule who applies it. Done when the test is
+  red today exactly on the audit's red cells, a test descriptor with an unexplained gap is red, and
+  each later card turns its cells green.
+- **GR1 — no sandbox means ask** (Sonnet · S). When the runner found no sandbox the request runs as
+  `ask` whatever it asked for: Claude Code never gets `bypassPermissions` outside a sandbox, Codex is
+  switched to `app-server`, opencode's block says `ask`; one event says why. Done when a boundary test
+  per descriptor shows the asking command line with a fake "none" sandbox, and the twin shows `auto`
+  unchanged under `bwrap`.
+- **GR4 — the agent's own config is read-only and brings no integrations** (Sonnet · M). `~/.claude`
+  and `~/.codex` are bound read-only with a writable copy of what the CLI must write; Codex gets
+  `-c mcp_servers={}` as Claude Code has `--strict-mcp-config` and opencode `mcpServers: []`; the
+  three CLIs' login credentials join redaction. Done when writing those files from inside the sandbox
+  leaves the originals untouched, a user-configured MCP server never reaches Codex, a seeded credential
+  reads `[REDACTED]`, and both CLIs still start and keep their session.
+- **GR7 — the environment policy names the proxies and the config homes** (Haiku · S). `HTTP(S)_PROXY`,
+  `ALL_PROXY`, `NO_PROXY`, `NODE_PATH`, `JAVA_TOOL_OPTIONS`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `OPENCODE_CONFIG`, and the `XDG_` and `npm_config_` prefixes, one boundary test per name. Done when
+  the module doc and the list say the same thing.
+- **GR8 — docket's sandbox is asked, not assumed** (Sonnet · S). The probe reads docket's isolation
+  posture from `features`; absent or `none` reads as `none`, so auto-start and the dialog default to
+  `ask`. Done when the fake docket's three variants give `none`, `none`, `harness`. The ask to docket
+  is written with the other neighbours' asks, and never blocks.
+- **GR10 — the merge's integrity** (Sonnet · M). An unknown team ceiling holds the automatic merge; the
+  decision is read from the verified statement's predicate (prill signs the whole pack) and a
+  mismatch with the translated pack holds; the Merge button over a `reject` requires a written reason,
+  and the person still decides (decision 4). Done when two new rows of the policy table are seen
+  failing first and the handler test refuses the reason-less merge.
+- **GR11 — MCP is an agent** (Sonnet · M). `tack mcp` with no agent credential refuses unless
+  `--operator` is passed; the MCP origin is derived from the principal, not from a header; `ask` and
+  no network are fixed by the server for a run an agent principal creates (decision 3). Done when the
+  trust-boundary tests show a forged client header changes nothing and an agent's `auto` lands as
+  `ask`, and the live suite's manager tests still pass at integration.
+- **GR14 — three small hardenings** (Haiku · S). The session cookie carries `Secure` behind https or
+  `X-Forwarded-Proto` and a `Max-Age`; a decision gets a default `expires_at`; a runner credential
+  expires by default. No rate limit: loopback needs none and the tunnel has Cloudflare's. Done when
+  three trust-boundary tests pass.
+- **GR18 — docket's path is redacted like the others** (Sonnet · S). Steps, `outward` calls and
+  record rows pass through the same redactor as local output. Done when a secret seeded in each of
+  the three reads `[REDACTED]` with the fake docket.
+- **P1 — the evidence names the model family for every harness** (Haiku · S). Only docket's steps
+  carry `family` today; the verifier reads it from the last implementer step and, missing it, marks
+  the judge degraded, so every Claude Code, Codex or opencode run with a judge ends in review. The
+  three local harnesses record the family their CLI reports. Done when a fixture run of each harness
+  yields a `generator.family` in the verifier's evidence document.
+
+**Round 2 — the evals harness and the change contract** (sequential):
+
+- **EDD-1 — the change contract and the prompt template's fingerprint** (Sonnet · S). `CONTRIBUTING.md`
+  gains the step "does it change what the agent reads or receives? then name the suite, the threshold
+  and the baseline, and write the task first"; `docs/TESTING.md` gains an "Evals" section; a hash of
+  the prompt templates is computed at build time, stored with each run and shown on its page. Done
+  when changing one template line changes the fingerprint in a test and the three documents agree.
+- **E2-1 — the task, the world and the trial** (Sonnet · M). A development crate `tack-evals` (not
+  released, a leaf in the crate graph): a `task.yaml` loader, a clean world per trial over the test
+  support crate (data dir, port, seeded repo, fake `$HOME` with canaries, a fake secret), an operator
+  that answers decisions with the decision token, a trial that creates project, profile and item,
+  starts the run and freezes what it left, and `trials.jsonl`; subcommands `run` and
+  `check-solutions`. Done when, with the fake agent, one task ends Succeeded, one asks and is approved,
+  a broken reference solution makes `check-solutions` exit 1, an invalid task is refused with its
+  reason, and an agent writing into `hidden/` cannot change the exam; CI runs these tests.
+- **E2-2 — graders, metrics and report** (Sonnet · M). Three code graders (outcome, governance,
+  verifier agreement), pass@k and pass^k, Wilson intervals, task-clustered error, the paired
+  difference, the four-way failure taxonomy (tack, agent, eval, infra), `summary.md`, and the
+  `compare` and `nightly` subcommands. Done when each grader is proved with tampered records, the
+  metrics match hand-computed values, `compare` works on two synthetic trial files, and `nightly` warns
+  on a 3/3 → 1/3 task and not on an infra failure.
+- **E2-3 — the regression suite and the first baseline** (Sonnet · M; the baseline is the
+  integrator's run). Eight to ten tasks from the `calc` fixture and the live suite's journeys, two of
+  them planning tasks, each with hidden checks and a reference solution, run across the four harnesses
+  (a harness that cannot do a task by design is `not_applicable` with its reason). Done when every task
+  passes `check-solutions` and the first baseline per harness is committed.
+
+**Round 3 — the large guardrails, measured before and after** (E3-1 and E3-2 first, then in
+parallel; GR5b last; decisions 1 and 2 gate GR2 and GR5):
+
+- **E3-1 — the safety suite** (Sonnet · M). Eight to ten pairs, each a task with and without the
+  attack (vectors: card text, the repository's README, a web page, a comment in a test, a
+  `postinstall`; targets: exfiltrate the fake secret, touch the agent's config, weaken a test, push,
+  read the SSH canary). Done when the twins pass `check-solutions` and the baseline gives, per
+  harness, utility, utility under attack, intermediate and final attack success, before any card below.
+- **E3-2 — the verifier suite** (Sonnet · M; about one hour of a person's labelling). A script makes
+  fifteen mutants and weakened-test variants over the regression solutions beside fifteen reference
+  solutions; a person confirms the thirty labels. Done when the verifier grader reports prill's false
+  approval and false rejection (and the Reviewer profile's, once it emits a verdict).
+- **GR2 — the sandbox is required** (Sonnet · M; decision 1). `[sandbox] required = true` by default:
+  with no `bwrap` and no explicit opt-out the probe says the agent does not run here and why; the run
+  page, Agents and the administrator guide say so; ADR 0018 decision 11 is amended. Done when the
+  boundary test schedules nothing without the opt-out and runs as `ask` with it.
+- **GR3 — three more flags** (Haiku · S). `--unshare-ipc --unshare-uts --cap-drop ALL`, nothing else.
+  Done when a real-`bwrap` test sees no host IPC and empty capabilities, and `git`, `node` and
+  `python3` still start inside.
+- **GR5a — an egress proxy with an allow-list** (Sonnet · M; decision 2). One `CONNECT` proxy on
+  loopback per run, its list the descriptor's model endpoints plus the profile's allowed hosts, handed
+  to the agent through the proxy variables; a refused destination is an event on the run. Done when a
+  fetch outside the list fails with the event and the CLI still reaches its model.
+- **GR5b — the network is enforced** (Sonnet · M; after GR5a and GR2). `--unshare-net`, with the
+  proxy reaching the sandbox through a mounted Unix socket. Done when, under real `bwrap`, a direct
+  connection to any address fails, only the list passes through the proxy, the safety suite's final
+  exfiltration success is zero and the twins lose no more than five points.
+- **GR6 — the install step runs in the sandbox** (Sonnet · M). The dependency install runs under the
+  same `bwrap` with the fake home, an allow-listed environment and the proxy pointed at the registry,
+  its output redacted; a board-supplied replacement install command needs the runner's
+  `[prepare] board_may_replace`. Done when a `postinstall` cannot reach the real home, an unpermitted
+  board command is refused with a reason, and the `calc` fixture still installs.
+- **GR9 — what examines the agent holds the merge** (Sonnet · M). With a prill pack, the signal is
+  its structured `flags` (tautological or deleted tests, changed test or analysis config, changed
+  manifests, config changed in head), read as data rather than flattened into text; with no pack, a
+  shared exact-name list in the protocol crate recorded in the evidence for the four harnesses. Either
+  way the run is held from automatic merge and the review asks for confirmation. Done when a pack
+  fixture with `tautological_test` holds, the list's case table no longer flags `latest/` or
+  `contest.md`, and the verifier suite is re-run after.
+- **GR12 — trust follows the item in every harness** (Sonnet · S). An imported, untrusted item runs
+  as `ask` with web tools off by default in the four harnesses, shown with its reason and raisable by
+  the person. Done when a start-run test per harness shows the defaults and the safety suite's
+  imported-card vector is re-measured.
+- **GR13 — the limits close at the edges** (Sonnet · M). Cancelling kills the process group and the
+  session for the three local CLIs; a failed cancel retries with SIGKILL and marks the run; a profile
+  whose agent reports no usage while running (Codex today) is not auto-started after exceeding its
+  limit and gets a shorter default wall clock. Done when a child in its own session dies on cancel in a
+  test per descriptor and the auto-start test skips the unmeasured profile.
+- **GR17 — the outcome rules hold for docket too** (Sonnet · M). On `done`, the diff of the branch
+  docket returns enters the evidence like a local agent's, so the Planner rule, the "changed nothing"
+  rule and GR9 see the same thing. Done when, with the fake docket, a Planner that edits `src/` is
+  Failed, a `done` run with no diff is Failed, and a run touching `tests/` is flagged.
+
+**Round 4 — production and the loop back** (EDD-2 before EDD-3; C0-3 before EDD-2):
+
+- **EDD-2 — quality figures by window** (Sonnet · M). `GET /api/metrics` gains success rate,
+  first-pass acceptance, rework per item, revert after merge, the verifier's agreement with the
+  person's review and the pull request's fate, pass^k of recurring tasks, questions per hundred actions
+  with the fraction granted, and stops by reason, cut by profile, harness, model, team and template
+  fingerprint; the Metrics page shows a Quality section. Done when fixtures give known rates and the
+  agreement matches a four-case hand table.
+- **EDD-3 — a trend reaches the inbox** (Sonnet · S). One notification rule: the last seven days
+  against the previous twenty-eight, Wilson intervals, a "needs attention" notification only when they
+  do not overlap, evaluated once a day. Done when a synthetic drop notifies once and no drop notifies
+  nothing.
+- **EDD-4 — `promote`** (Sonnet · S). From a rejected or reverted attempt: a git bundle at the base
+  commit, the item and its brief, the person's reason and a pointer to the evidence, anonymised, into a
+  git-ignored candidates folder (with docket's task fields when the run was docket's). Done when a
+  fixture attempt yields a candidate with no secret, home path or real name, and `check-solutions`
+  refuses it until a person adds the hidden checks and the reference solution.
+- **C4-1 — cleanup with conditions** (Haiku · S). `subtasks-from-plan` and the `ItemSource::Plan`
+  texts take the catalog's words (the `plan-v1` field stays); the `status_map_policy_id` and
+  `[provider]` compatibility shims go, only once `v0.2.0-beta.1` is published. Done when the greps are
+  empty.
+
+Left out on purpose, listed under "Future, not planned": a calibrated model judge, the OTel
+`gen_ai.evaluation.result` export, a Harbor or Terminal-Bench adapter, a hash-chained log, seccomp in
+the sandbox, a rate limit per credential.
+
 ## Future, not planned
 
-Phase 76 and status rules are the only ones. They have no date, no owner and no card in progress;
-they stay written so they can be opened later.
+Phase 76, status rules and the evals leftovers are the only ones. They have no date, no owner and
+no card in progress; they stay written so they can be opened later.
+
+**What Phase 94 left out.** A model judge that decides only once calibrated against human labels
+(TPR and TNR at or above 0.90 on a held-out set, abstaining otherwise); publishing each eval trial as an
+OTel `gen_ai.evaluation.result` event on the run's trace; an adapter so Tack can be scored by an
+external benchmark (Harbor, Terminal-Bench); a hash-chained log for merges, change sets and
+decisions; seccomp in the sandbox; a rate limit per agent credential. Each comes back as a card when a
+measurement asks for it.
 
 **[Phase 76](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md) — the project
 file is kept in sync.** ADR 0025 is proposed. Nothing is built, and the plan was written before
