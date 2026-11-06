@@ -67,7 +67,7 @@ workflow, plus a three-step onboarding card:
 ## 4. Add tasks
 
 Click the **+** in any column (or the onboarding card's **+ Add item**). Only the
-title is required; type, priority, description, story points, subtasks and tags are
+title is required; type, parent, priority, description, story points and tags are
 there when you want them. The first task is the one an agent will write:
 
 <img src="../screenshots/tutorial/04-new-item.png" width="98%" alt="The Create New Item modal: title 'Draft the launch announcement', type Task, priority Medium, and a one-line description of the post in the rich-text editor.">

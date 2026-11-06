@@ -182,19 +182,21 @@ project's provisional one when the profile sets none.
 
 ## List
 
-Every item as a row, children indented under their parent, with a header row to sort by and the
+The whole tree: every item as a row, what lies under an item indented beneath it, with a header row to sort by and the
 controls to filter, edit and rearrange the columns.
 
-- Rows are ordered by creation date within each level until you sort. A parent with children shows how many it has; use the arrow to expand or collapse it, or **Expand all** and **Collapse all** in the header.
+- Rows are ordered by creation date within each level until you sort. A parent with items under it shows how many it has; use the arrow to expand or collapse it, or **Expand all** and **Collapse all** in the header.
 - Each row shows the title, priority, status, assignee, due date, its work (where the item's latest run is), and the badges the Board shows. Click the title to open the item drawer.
-- **New Item** in the header adds an item at the top level. On a row, **+** (shown on hover or keyboard focus) adds a child under it and the bin deletes it after a confirmation.
-- Moving the last child of an item to Done does not move the parent: a status is only set by a person.
+- **A row that holds work reads differently from work.** An item that holds work (an epic, a building, a course, or a task with items under it) has a stacked type tile and a semibold title, and its **Work** cell shows how far what is under it is (**3 of 7 done**, **12 of 20 points** when the work has estimates, and **2 need you** when any of it waits for you) instead of a run, because only work runs. Work has a flat tile and the state of its latest run.
+- **New Item** in the header adds an item at the top level. On a row, **+** (shown on hover or keyboard focus) adds an item under it, of the project's default work type; the row opens to show the form. The bin deletes the row after a confirmation, and **⋯** opens the row's menu.
+- Moving the last item under a parent to Done does not move the parent: a status is only set by a person.
+- **Show.** A project with items that hold work offers **Show: Everything · Work · Groups** next to the filters: **Work** lists the work alone as one flat list, **Groups** lists the items that hold work alone, and **Everything** is the whole tree. A project with none has no such choice.
 - **Sort.** Press a column header to sort by it, again to reverse, and a third time to go back to creation order. Priority sorts Critical, High, Medium, Low, None; **Work** puts what needs you first, then what is going, then what is over, and items with no run last. Sorting reorders the rows within each parent, so a child never leaves its parent.
 - **Filter.** **Filter…** matches as you type against the title, assignee and status, and the work list beside it keeps only items whose latest run is in that state (**Your turn**, **Queued**, **Running**, **Needs you**, **Ready for review**, **Failed** or **Not started**). A parent that holds a match stays in view, open, so the match is never shown without where it belongs; **Clear filter** brings every row back.
 - **Work.** The Work column sits beside Status and says where the item's latest run is, in the same words and symbols as the Board (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled**, **Not started**); an item that has never run shows a dash. Status is the column you chose; Work is what the agents report, so a row can be in Backlog and Running at once.
 - **Edit in place.** Press a status, priority, assignee or due date to change it where it is, and the title's pencil to rename it (the title itself opens the item). Enter or leaving the field saves, Escape puts the value back, and the keyboard returns to the cell.
 - **Columns** shows or hides columns (the title stays: rows are named and nested by it), and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser. **Type** is hidden until you show it, because each row already carries a type tile.
-- A row cannot be dragged under another parent.
+- **Move a row under another.** Drag it onto the row it should go under, or open the row's **⋯** menu and choose **Move under…**: a field lists exactly the items the row may go under, with **No parent** to take it to the top; type to narrow them, use the arrow keys, and press Enter. When the move is not allowed (for example, "An epic cannot go under a task.") the row stays where it was and the reason appears above the list until you dismiss it.
 
 ---
 
