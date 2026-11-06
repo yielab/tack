@@ -580,7 +580,7 @@ function GroupBar(props: {
       <div
         data-testid="summary-bar"
         data-late={late() ? 'true' : 'false'}
-        class="absolute top-1 bottom-1 flex items-center gap-1 overflow-hidden rounded-[6px] px-1"
+        class="absolute top-1 bottom-1 flex items-center gap-1 overflow-hidden rounded-sm px-1"
         style={{
           left: `${props.left}%`,
           width: `${props.width}%`,

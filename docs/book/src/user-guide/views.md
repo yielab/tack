@@ -202,8 +202,9 @@ controls to filter, edit and rearrange the columns.
 
 Monthly grid positioned by due date. Drag to reschedule.
 
-- Items appear on the day of their due date. Items without one are listed in the **Unscheduled** tray under the grid.
-- **Drag** an item from one day to another to change its due date, or from the tray onto a day to schedule it. Drop an item on the tray to clear its due date.
+- Work appears on the day of its due date. Work without one is listed in the **Unscheduled** tray under the grid.
+- **An item that holds work** (an epic, a building, a course) with a due date is a **milestone** on that day: a chip with its type and title, at the top of the day. It is not dragged, and it never appears in the tray; set its date on its page. A project with no such item looks as it always did.
+- **Drag** a piece of work from one day to another to change its due date, or from the tray onto a day to schedule it. Drop an item on the tray to clear its due date.
 - **← Previous**, **Next →** and **Today** move between months.
 - Click an item to open the item drawer.
 
@@ -213,7 +214,8 @@ Monthly grid positioned by due date. Drag to reschedule.
 
 Gantt-style horizontal bar chart. Drag to reschedule.
 
-- Each item with a start date or a due date is a bar spanning its dates.
+- Each piece of work with a start date or a due date is a bar spanning its dates.
+- **An item that holds work** (an epic, a building, a course) is a **summary bar**: a flat bar, with its type and title, from the earliest start of its work to the latest due date of its work, with its work listed under it. The arrow at its left folds the work away and back. Because it sums up its work, it cannot be dragged and its cursor says so: move the work to move the bar. The item's own due date is a diamond on its row, and the bar turns red, with a warning mark, when its work ends after that date. Rows follow the tree: an item, then what is under it. A project with no such item looks as it always did.
 - **Drag a bar** sideways to shift both dates. **Drag either edge** to change the start date or the due date on its own.
 - **Week**, **Month** and **Quarter** in the toolbar set the zoom; **Today** returns to the present.
 - An item blocked by another carries a marker.
@@ -225,8 +227,9 @@ Gantt-style horizontal bar chart. Drag to reschedule.
 
 Two-pane sprint planning. The tab and the words below follow your project's [vocabulary](vocabulary.md): a construction project sees "Phase", for example.
 
-- **Left pane (backlog):** items not assigned to any sprint, sorted by priority.
-- **Right pane:** one lane per sprint that is not closed, showing its dates, the done and total items, the points done and planned, and a progress bar. **New sprint** adds one; **Edit** on a lane changes its name, goal and dates.
+- **Left pane (backlog):** work not assigned to any sprint, sorted by priority. When the project has items that hold work (epics, buildings, courses), the backlog is set out under the heading of the item each piece of work sits in, the way a lane of the [Board](#board) is headed, and work with no parent comes last under **No parent**. A heading with no work waiting in the backlog is left out.
+- **Only work goes in a sprint.** An item that holds work is planned through the work under it: it has no card to drag, and if the server refuses a move ("An epic does not go in a sprint: its items do."), the reason appears on screen.
+- **Right pane:** one lane per sprint that is not closed, showing its dates, the done and total items of work, the points done and planned, and a progress bar. **New sprint** adds one; **Edit** on a lane changes its name, goal and dates.
 - **Drag from the backlog** into a lane to assign the item. Drag between lanes to reassign. Drag back to the backlog to unassign. A sprint accepts items only while it is planning or active.
 - A sprint moves through *planning*, *active*, *review* and *closed*. The button on each lane takes it to the next one: **Start**, **Complete** (to review), then **Close**.
 
@@ -236,8 +239,9 @@ Two-pane sprint planning. The tab and the words below follow your project's [voc
 
 Read-only project statistics, in the sidebar.
 
-- Tiles for the total number of items, how many are completed, the completion rate and what was completed in the last 7 and 30 days.
+- Tiles for the total number of items, how many are completed, the completion rate and what was completed in the last 7 and 30 days. These and every count below cover work only; an item that holds work is not counted, its work is.
 - Once the project has run anything, a **Runs** row: a bar of the runs started in the last 7 days by outcome, with the count of each in words beside it; the number of items that need you now (a question to answer, or a run ready for review); and a link to **Factory metrics**. Each item counts once, by its latest run. **Tokens per team** is shown disabled, with the reason, because this page does not load the attempts the tokens are counted from.
+- When the project has items that hold work, a **Groups** panel lists each one that sits at the top, with its type, its title (a link to its page) and how far its work is (**3 of 7 done**, or points when the work has estimates, and **2 need you** when any of it waits for you). The ones that need you come first, then those with the least left to do.
 - A breakdown by workflow status, by priority and by item type, as bars.
 - Progress in story points (or your project's word for them), when items carry estimates.
 - Everything is computed when you open the page, from the items and each item's latest run.
