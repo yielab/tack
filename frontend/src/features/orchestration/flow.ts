@@ -13,6 +13,7 @@ import type { RunStateName } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { Dependency, Item } from '../../shared/types';
 import type { Routed } from '../../shared/execution/routing';
+import { ancestorsOf } from '../../shared/tree';
 
 type RunSettings = components['schemas']['RunSettings'];
 type TeamLine = components['schemas']['TeamLine'];
@@ -388,9 +389,12 @@ export function buildFlow(input: FlowInput): Flow {
   const itemsById = new Map(input.items.map((i) => [i.id, i]));
   const statusCategory = new Map(input.statuses.map((s) => [s.name, s.category]));
   const newest = newestByItem(input.runs);
+  // A plan's items sit under the task whose run proposed them: its parent is the last of its ancestors.
+  const parentOf = (item: Item): Item | undefined => ancestorsOf(item, itemsById).at(-1);
   const proposedBy = new Map<string, number>();
   for (const i of input.items) {
-    if (i.source === 'plan' && i.parent_id) proposedBy.set(i.parent_id, (proposedBy.get(i.parent_id) ?? 0) + 1);
+    const parent = i.source === 'plan' ? parentOf(i) : undefined;
+    if (parent) proposedBy.set(parent.id, (proposedBy.get(parent.id) ?? 0) + 1);
   }
 
   const profileIds = new Set<string>();
@@ -499,7 +503,7 @@ export function buildFlow(input: FlowInput): Flow {
       upNext: station === 'up-next' ? upNextOf(item, summary, input, route, open.length) : null,
       blockers: open,
       proposed: proposedBy.get(item.id) ?? 0,
-      fromTitle: item.source === 'plan' && item.parent_id ? (itemsById.get(item.parent_id)?.title ?? null) : null,
+      fromTitle: item.source === 'plan' ? (parentOf(item)?.title ?? null) : null,
       tokens: summary?.limit?.used ?? null,
     });
   }
