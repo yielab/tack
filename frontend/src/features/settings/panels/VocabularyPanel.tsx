@@ -1,4 +1,5 @@
 import { type Component, createSignal, createEffect, For } from 'solid-js';
+import { A, useParams } from '@solidjs/router';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
 import { Button } from '../../../shared/ui';
@@ -8,6 +9,7 @@ import { VOCAB_KEYS, resolveLabel } from '../../../shared/vocab/vocab';
 /** The vocabulary editor: the words that are not item types (the types are the project's own catalog). Saves `vocabulary` only. */
 const VocabularyPanel: Component = () => {
   const { project, projectId, refetch } = useProject();
+  const params = useParams();
   const [edits, setEdits] = createSignal<Record<string, string>>({});
   const [saving, setSaving] = createSignal(false);
   const [dirty, setDirty] = createSignal(false);
@@ -57,7 +59,12 @@ const VocabularyPanel: Component = () => {
     <div class="grid max-w-[880px] gap-[18px]">
       <div class="flex flex-col gap-1.5">
         <p class="mb-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
-          Rename any term to match your domain. Blank fields fall back to the default label.
+          Rename any term to match your domain. Blank fields fall back to the default label. The types an item
+          can be (an epic, a task) are named under{' '}
+          <A href={`/projects/${params.id}/settings?tab=types`} class="font-semibold underline" style={{ color: 'var(--color-accent-ink)' }}>
+            Types
+          </A>
+          .
         </p>
 
         <table class="w-full border-separate border-spacing-y-1.5 text-small">
