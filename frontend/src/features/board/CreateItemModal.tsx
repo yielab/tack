@@ -7,11 +7,12 @@ import { api } from '../../shared/api';
 import type { CreateItem, Item, ItemTypeDef } from '../../shared/types';
 import { toast } from '../../shared/ui/toast';
 import { resolveLabel } from '../../shared/vocab/vocab';
-import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
-import { createConfirm } from '../../shared/ui/ConfirmDialog';
+import { FiPlus, FiX } from 'solid-icons/fi';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import { agentProfilesApi, type AgentProfileSummary } from '../../shared/execution';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
+import ParentPicker from '../../shared/ui/ParentPicker';
+import TypeTile from '../../shared/ui/TypeTile';
 
 /** Choice chip (type / priority / estimate): a pill; the chosen one gets the
  *  accent-soft fill, accent ink and a 2px accent ring. */
@@ -47,12 +48,6 @@ export interface CreateItemModalProps {
 
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'none';
 
-interface SubtaskItem {
-  id: string;
-  title: string;
-}
-
-
 const priorityConfig: Record<Priority, { label: string; color: string; emoji: string }> = {
   critical: { label: 'Critical', color: 'red', emoji: '🔥' },
   high: { label: 'High', color: 'orange', emoji: '⬆️' },
@@ -65,36 +60,46 @@ const estimateOptions = [0, 0.5, 1, 2, 3, 5, 8, 13, 21];
 
 const CreateItemModal: Component<CreateItemModalProps> = (props) => {
   const mode = () => props.mode || 'create';
-  const typeNames = createMemo(() => new Map((props.itemTypes ?? []).map((t) => [t.key, t.name])));
+  // The catalog's types by what they are for: the ones that hold work, then the ones that are work.
+  const holdsWork = createMemo(() => (props.itemTypes ?? []).filter((t) => t.level === 'group'));
+  const workTypes = createMemo(() => (props.itemTypes ?? []).filter((t) => t.level !== 'group'));
   const defaultType = () => props.itemTypes?.find((t) => t.default_work)?.key ?? '';
   // Ids that tie each heading to what it names: a <label> to its input, a
   // group's name to its row of option buttons.
   const uid = createUniqueId();
-  const ids = { type: `${uid}-type`, priority: `${uid}-priority`, estimate: `${uid}-estimate`, who: `${uid}-who`, children: `${uid}-children`, tags: `${uid}-tags` };
+  const ids = { type: `${uid}-type`, priority: `${uid}-priority`, estimate: `${uid}-estimate`, who: `${uid}-who`, parent: `${uid}-parent`, tags: `${uid}-tags` };
   const [title, setTitle] = createSignal('');
   const [description, setDescription] = createSignal('');
   // Empty until a person picks one: the project's default work type, which the server gives an item made without one.
   const [itemType, setItemType] = createSignal('');
   const chosenType = () => itemType() || defaultType();
+  const typeName = (key: string) => props.itemTypes?.find((t) => t.key === key)?.name ?? key;
   const [priority, setPriority] = createSignal<Priority>('medium');
   const [estimate, setEstimate] = createSignal<number | null>(null);
   const [tags, setTags] = createSignal<string[]>([]);
   const [tagInput, setTagInput] = createSignal('');
-  const [subtasks, setSubtasks] = createSignal<SubtaskItem[]>([]);
-  const [subtaskInput, setSubtaskInput] = createSignal('');
+  // Where the item goes: preset by the Add item of a lane or a group, chosen from the parents the server admits.
+  const [parentId, setParentId] = createSignal<string | null>(null);
+  const [pickingParent, setPickingParent] = createSignal(false);
+  const [parentNote, setParentNote] = createSignal('');
   const [profileId, setProfileId] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
 
-  // Load child items when in edit mode
-  const [childItems, { refetch: refetchChildren }] = createResource(
-    () => (mode() === 'edit' && props.existingItem ? props.existingItem.id : null),
-    async (parentId) => {
-      if (!parentId || !props.projectId) return [];
-      const items = await api.items.list(props.projectId);
-      return items.filter(item => item.parent_id === parentId);
-    }
+  // The parents the tree rule admits for the chosen type: the preset parent is named from them, and a
+  // parent the type cannot go under is dropped rather than refused at Create.
+  const [admitted] = createResource(
+    () => (props.isOpen && mode() === 'create' && chosenType() ? chosenType() : null),
+    (type) => api.items.parents(props.projectId, { type }).catch(() => null),
   );
+  const parentChoice = () => admitted()?.find((p) => p.id === parentId());
+  createEffect(() => {
+    const list = admitted();
+    const id = parentId();
+    if (!list || !id || list.some((p) => p.id === id)) return;
+    setParentId(null);
+    setParentNote(`${typeName(chosenType())} cannot go under that parent, so it goes at the top.`);
+  });
 
   // Every profile, to choose who does the new task; none to choose from hides the choice.
   const [profiles] = createResource(
@@ -121,7 +126,9 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       setPriority('medium');
       setEstimate(null);
       setTags([]);
-      setSubtasks([]);
+      setParentId(props.parentId ?? null);
+      setPickingParent(false);
+      setParentNote('');
       setProfileId(null);
     }
   });
@@ -136,50 +143,6 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
   const removeTag = (tag: string) => {
     setTags(tags().filter((t) => t !== tag));
-  };
-
-  const addSubtask = () => {
-    const title = subtaskInput().trim();
-    if (title) {
-      setSubtasks([...subtasks(), { id: crypto.randomUUID(), title }]);
-      setSubtaskInput('');
-    }
-  };
-
-  const removeSubtask = (id: string) => {
-    setSubtasks(subtasks().filter((s) => s.id !== id));
-  };
-
-  const handleCreateChild = async () => {
-    const title = subtaskInput().trim();
-    if (!title || !props.existingItem) return;
-
-    try {
-      await api.items.create(props.projectId, {
-        title,
-        priority: 'medium',
-        parent_id: props.existingItem.id,
-      });
-      toast.success('Child item created');
-      setSubtaskInput('');
-      await refetchChildren();
-    } catch (err) {
-      toast.error('Failed to create child item');
-    }
-  };
-
-  const [ask, ConfirmHost] = createConfirm();
-
-  const handleDeleteChild = async (itemId: string) => {
-    if (!(await ask({ title: 'Delete child item?', message: 'The child item will be deleted.', confirmLabel: 'Delete', danger: true }))) return;
-
-    try {
-      await api.items.remove(itemId);
-      toast.success('Child item deleted');
-      await refetchChildren();
-    } catch (err) {
-      toast.error('Failed to delete child item');
-    }
   };
 
   const handleSubmit = async (e: Event) => {
@@ -212,7 +175,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
           priority: priority(),
           estimate: estimate() || undefined,
           tags: tags(),
-          parent_id: props.parentId,
+          parent_id: parentId(),
         };
 
         const createdItem = await api.items.create(props.projectId, itemData);
@@ -224,17 +187,6 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             await api.items.update(createdItem.id, { run_settings: { agent_profile_id: chosen } });
           } catch {
             toast.error('The item was created, but who does it could not be saved. Choose it again on the item.');
-          }
-        }
-
-        // Create subtasks if any
-        if (subtasks().length > 0) {
-          for (const subtask of subtasks()) {
-            await api.items.create(props.projectId, {
-              title: subtask.title,
-              priority: 'medium',
-              parent_id: createdItem.id,
-            });
           }
         }
 
@@ -265,7 +217,6 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       title={mode() === 'edit' ? 'Edit Item' : 'Create New Item'}
       size="xl"
     >
-      <ConfirmHost />
       <form onSubmit={handleSubmit} class="space-y-5">
         {/* Error message */}
         <Show when={error()}>
@@ -299,19 +250,36 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
               <span id={ids.type} class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
                 Type
               </span>
-              <div role="group" aria-labelledby={ids.type} class="flex flex-wrap gap-1.5">
-                <For each={props.itemTypes ?? []}>
-                  {(def) => (
-                    <button
-                      type="button"
-                      onClick={() => setItemType(def.key)}
-                      aria-pressed={chosenType() === def.key}
-                      class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(chosenType() === def.key)}`}
-                      style={chipStyle(chosenType() === def.key)}
-                      disabled={loading()}
-                    >
-                      {def.name}
-                    </button>
+              <div role="group" aria-labelledby={ids.type} class="space-y-2">
+                {/* A catalog with no type that holds work has nothing to tell apart, so it shows no headings. */}
+                <For each={[
+                  { id: 'holds', heading: 'Holds work', types: holdsWork() },
+                  { id: 'work', heading: 'Work', types: workTypes() },
+                ].filter((kind) => kind.types.length > 0)}>
+                  {(kind) => (
+                    <div role="group" aria-label={holdsWork().length > 0 ? kind.heading : undefined} data-testid={`create-types-${kind.id}`}>
+                      <Show when={holdsWork().length > 0}>
+                        <span class="mb-1 block text-micro font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }} aria-hidden="true">
+                          {kind.heading}
+                        </span>
+                      </Show>
+                      <div class="flex flex-wrap gap-1.5">
+                        <For each={kind.types}>
+                          {(def) => (
+                            <button
+                              type="button"
+                              onClick={() => setItemType(def.key)}
+                              aria-pressed={chosenType() === def.key}
+                              class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(chosenType() === def.key)}`}
+                              style={chipStyle(chosenType() === def.key)}
+                              disabled={loading()}
+                            >
+                              {def.name}
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </div>
                   )}
                 </For>
               </div>
@@ -346,6 +314,56 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             </div>
           </div>
         </div>
+
+        {/* Parent: always offered in create mode; the picker lists only what the type can go under. */}
+        <Show when={mode() === 'create'}>
+          <div data-testid="create-parent">
+            <span id={ids.parent} class={sectionLabel} style={{ color: 'var(--color-text-secondary)' }}>
+              Parent
+            </span>
+            <div class="flex flex-wrap items-center gap-2">
+              <Show
+                when={parentId()}
+                fallback={<span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No parent</span>}
+              >
+                {(id) => (
+                  <span class="inline-flex min-w-0 items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                    <Show when={parentChoice()}>{(p) => <TypeTile type={p().type} class="flex-none" />}</Show>
+                    <span class="min-w-0 truncate font-semibold" data-parent-id={id()}>{parentChoice()?.title ?? '…'}</span>
+                  </span>
+                )}
+              </Show>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setPickingParent((open) => !open)}
+                aria-expanded={pickingParent()}
+                disabled={loading()}
+              >
+                {pickingParent() ? 'Close' : 'Choose parent'}
+              </Button>
+            </div>
+            <Show when={parentNote()}>
+              <p role="status" class="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{parentNote()}</p>
+            </Show>
+            <Show when={pickingParent() && chosenType()}>
+              <ParentPicker
+                class="mt-2"
+                projectId={props.projectId}
+                of={{ type: chosenType() }}
+                current={parentId()}
+                allowNone
+                label="Parent"
+                onPick={(parent) => {
+                  setParentId(parent?.id ?? null);
+                  setParentNote('');
+                  setPickingParent(false);
+                }}
+              />
+            </Show>
+          </div>
+        </Show>
 
         {/* Who does it (only in create mode, and only when there is a profile to choose) */}
         <Show when={mode() === 'create' && (profiles()?.length ?? 0) > 0}>
@@ -401,96 +419,6 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             </For>
           </div>
         </div>
-
-        {/* Subtasks/Child Items */}
-        <Show when={mode() === 'create' || mode() === 'edit'}>
-          <div>
-            <label for={ids.children} class={`${sectionLabel} text-content-muted`}>
-              {mode() === 'edit' ? 'Child Items' : 'Subtasks'}
-            </label>
-
-            {/* CREATE MODE: Subtask list (will be created on submit) */}
-            <Show when={mode() === 'create' && subtasks().length > 0}>
-              <div class="space-y-2 mb-3">
-                <For each={subtasks()}>
-                  {(subtask) => (
-                    <div class="flex items-center gap-2 bg-sunken px-4 py-2 rounded-full">
-                      <span class="flex-1 text-content">{subtask.title}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeSubtask(subtask.id)}
-                        aria-label={`Remove subtask ${subtask.title}`}
-                        class="text-content-subtle hover:text-danger-500 transition-colors"
-                      >
-                        <FiX size={18} />
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-
-            {/* EDIT MODE: Existing child items (live from database) */}
-            <Show when={mode() === 'edit' && childItems() && childItems()!.length > 0}>
-              <div class="space-y-2 mb-3">
-                <For each={childItems()}>
-                  {(child) => (
-                    <div class="flex items-center gap-2 bg-sunken px-4 py-2 rounded-full">
-                      <span class="text-sm text-content-subtle">
-                        {typeNames().get(child.item_type) ?? child.item_type}
-                      </span>
-                      <span class="flex-1 text-content">{child.title}</span>
-                      <span class="text-micro font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">
-                        {child.status}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteChild(child.id)}
-                        aria-label={`Delete ${child.title}`}
-                        class="text-content-subtle hover:text-danger-500 transition-colors"
-                      >
-                        <FiTrash2 size={16} />
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-
-            {/* Add subtask/child item input */}
-            <div class="flex gap-2">
-              <input
-                id={ids.children}
-                type="text"
-                value={subtaskInput()}
-                onInput={(e) => setSubtaskInput(e.currentTarget.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (mode() === 'edit') {
-                      handleCreateChild();
-                    } else {
-                      addSubtask();
-                    }
-                  }
-                }}
-                placeholder={mode() === 'edit' ? 'Add a child item...' : 'Add a subtask...'}
-                class="flex-1 min-h-9 px-3.5 py-1.5 text-sm border rounded-full placeholder-content-faint focus:outline-none focus-visible:ring-2"
-                style={pillInputStyle}
-                disabled={loading()}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={mode() === 'edit' ? handleCreateChild : addSubtask}
-                disabled={loading()}
-              >
-                <FiPlus size={18} />
-                Add
-              </Button>
-            </div>
-          </div>
-        </Show>
 
         {/* Tags */}
         <div>
