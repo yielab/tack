@@ -18,10 +18,13 @@ import { useExecutionStore } from '../../shared/state/executionContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item, ItemTypeDef } from '../../shared/types';
 import { Button, Badge, EmptyState, RunState, createConfirm } from '../../shared/ui';
+import ItemMenu from '../../shared/ui/ItemMenu';
+import MoveUnderDialog from '../../shared/ui/MoveUnderDialog';
+import ProgressBar from '../../shared/ui/ProgressBar';
+import TypeTile from '../../shared/ui/TypeTile';
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { IconList } from '../../shared/ui/icons';
 import { priorityColor } from '../../shared/ui/PriorityDot';
-import { typeTone as toneOf } from '../../shared/ui/TypeTile';
 import type { Priority } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import {
@@ -30,7 +33,7 @@ import {
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2, FiEdit2 } from 'solid-icons/fi';
 import Card from '../../shared/ui/Card';
 import {
-  COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, emptyColumns, matchesQuery, pruneTree, visibleRows,
+  ACTIONS_REM, COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, emptyColumns, matchesQuery, pruneTree, visibleRows,
   type ColDef, type EditableKey, type ItemNode, type SortDir, type SortKey,
 } from './listRows';
 import { hasColumnChoice, loadDensity, loadHiddenColumns, saveDensity, saveHiddenColumns, type Density } from './listPrefs';
@@ -63,6 +66,14 @@ const DENSITY_STYLE: Record<Density, { gap: string; pad: string }> = {
   compact: { gap: '0.25rem', pad: '0.25rem' },
 };
 
+/** What the List shows: every row, the work alone, or the groups alone. */
+type Scope = 'everything' | 'work' | 'groups';
+const SCOPE_CHOICES: { value: Scope; label: string }[] = [
+  { value: 'everything', label: 'Everything' },
+  { value: 'work', label: 'Work' },
+  { value: 'groups', label: 'Groups' },
+];
+
 /** What the cells need to start, finish or abandon an in-place edit. */
 interface EditApi {
   is: (id: string, key: EditableKey) => boolean;
@@ -78,7 +89,7 @@ export default function List() {
   const projectId = params.id;
 
   const { items, refetch } = useProjectItems();
-  const { project } = useProject();
+  const { project, vocabulary } = useProject();
   const { t } = useVocab();
   const itemTypes = useItemTypes();
   const types = createMemo(() => itemTypes.list());
@@ -101,6 +112,10 @@ export default function List() {
   const [columnsOpen, setColumnsOpen] = createSignal(false);
   const [editing, setEditing] = createSignal<{ id: string; key: EditableKey } | null>(null);
   const [saving, setSaving] = createSignal<string | null>(null);
+  const [scope, setScope] = createSignal<Scope>('everything');
+  // Whom the Move under… dialog is choosing a parent for, and the server's sentence when a move was turned down.
+  const [movingUnder, setMovingUnder] = createSignal<Item | null>(null);
+  const [refusal, setRefusal] = createSignal<string | null>(null);
 
   // Every item's newest run, from the store the board reads. The List asks about
   // all of its items, not just the open rows, so the run filter can see them.
@@ -127,20 +142,36 @@ export default function List() {
     watched.clear();
   });
 
+  // The server says which items hold work (`node`); the List only chooses which of them to draw.
+  const hasGroups = createMemo(() => (items() ?? []).some((item) => item.node === 'group'));
+  const activeScope = (): Scope => (hasGroups() ? scope() : 'everything');
+  const scoped = createMemo(() => {
+    const all = items() ?? [];
+    const only = activeScope();
+    return only === 'everything' ? all : all.filter((item) => (item.node === 'group') === (only === 'groups'));
+  });
+  const pointsWord = () => vocabulary()?.story_points?.toLowerCase();
+
   const filtering = () => query().trim() !== '' || runFilter() !== '';
+  const narrowed = () => filtering() || activeScope() !== 'everything';
+  const clearFilter = () => {
+    setQuery('');
+    setRunFilter('');
+    setScope('everything');
+  };
   const keep = (item: Item) => {
     const run = runFilter();
     return matchesQuery(item, query()) && (run === '' || passesFilters(runOf(item), new Set([run])));
   };
 
   const shownHidden = createMemo(() =>
-    chosen() ? hidden() : new Set([...hidden(), ...emptyColumns(items() ?? [], runOf)]),
+    chosen() ? hidden() : new Set([...hidden(), ...emptyColumns(scoped(), runOf)]),
   );
 
   // Sorting reorders each set of siblings; a filter keeps the parents of what it lets through.
   const organizedItems = createMemo(() => {
     const current = sort();
-    const tree = buildTree(items() ?? [], current?.key ?? null, current?.dir ?? 'asc', runOf);
+    const tree = buildTree(scoped(), current?.key ?? null, current?.dir ?? 'asc', runOf);
     return filtering() ? pruneTree(tree, keep) : tree;
   });
 
@@ -163,7 +194,7 @@ export default function List() {
     return ids;
   });
 
-  const matchCount = createMemo(() => (items() ?? []).filter(keep).length);
+  const matchCount = createMemo(() => scoped().filter(keep).length);
 
   const expandAll = () => setExpandedItems(new Set(allExpandableIds()));
   const collapseAll = () => setExpandedItems(new Set<string>());
@@ -193,9 +224,9 @@ export default function List() {
 
   // The title takes what the other columns leave; the list scrolls inside itself when they do not fit.
   const gridColumns = createMemo(
-    () => [...visibleColumns().map((c) => (c.key === 'title' ? `minmax(${c.rem}rem, 1fr)` : `${c.rem}rem`)), '4.5rem'].join(' '),
+    () => [...visibleColumns().map((c) => (c.key === 'title' ? `minmax(${c.rem}rem, 1fr)` : `${c.rem}rem`)), `${ACTIONS_REM}rem`].join(' '),
   );
-  const minWidth = createMemo(() => `${visibleColumns().reduce((n, c) => n + c.rem, 4.5) + visibleColumns().length * 0.5 + 1.75}rem`);
+  const minWidth = createMemo(() => `${visibleColumns().reduce((n, c) => n + c.rem, ACTIONS_REM) + visibleColumns().length * 0.5 + 1.75}rem`);
 
   const toggleColumn = (key: ColDef['key']) => {
     setHidden(() => {
@@ -258,6 +289,8 @@ export default function List() {
   };
 
   const startCreating = (parentId?: string) => {
+    // The form sits under its parent, so the parent opens to show it.
+    if (parentId) setExpandedItems((prev) => new Set([...prev, parentId]));
     setCreatingAt({ parentId });
     setNewItemTitle('');
     setNewItemType(itemTypes.defaultKey());
@@ -291,7 +324,7 @@ export default function List() {
         setExpandedItems(prev => new Set([...prev, creating.parentId!]));
       }
     } catch (err) {
-      toast.error('Failed to create item');
+      toast.error(err instanceof Error ? err.message : 'Failed to create item');
     }
   };
 
@@ -308,22 +341,29 @@ export default function List() {
     }
   };
 
-  const handleMove = (_itemId: string, _newParentId: string | null) => {
-    // Re-parenting is not supported by the API: `PATCH /items/:id` (UpdateItem in
-    // the OpenAPI contract) has no `parent_id` field, so the backend would
-    // silently ignore the change. Surface that honestly rather than showing a
-    // misleading "moved" toast. (Re-parenting needs a backend UpdateItem change.)
-    toast.info("Re-parenting items isn't supported yet");
+  /** Moves an item under a parent, or to the top of the project (`null`). The server's rule decides; its sentence is shown when it refuses. */
+  const handleMove = async (item: Item, parent: { id: string; title: string } | null) => {
+    if ((item.parent_id ?? null) === (parent?.id ?? null)) return;
+    setRefusal(null);
+    setSaving(item.id);
+    try {
+      await api.items.update(item.id, { parent_id: parent?.id ?? null });
+      if (parent) setExpandedItems((prev) => new Set([...prev, parent.id]));
+      toast.success(parent ? `${item.title} moved under ${parent.title}` : `${item.title} moved to the top`);
+      await refetch();
+    } catch (e) {
+      setRefusal(e instanceof Error ? e.message : 'Failed to move item');
+    } finally {
+      setSaving(null);
+    }
   };
 
+  // Dropping a row onto another puts it under that row.
   const onDragEnd = ({ draggable, droppable }: any) => {
     if (draggable && droppable && draggable.id !== droppable.id) {
-      const draggedItem = flattenedItems().find(i => i.id === draggable.id);
-      const targetItem = flattenedItems().find(i => i.id === droppable.id);
-
-      if (draggedItem && targetItem) {
-        handleMove(draggedItem.id, targetItem.parent_id || null);
-      }
+      const dragged = (items() ?? []).find((i) => i.id === draggable.id);
+      const target = (items() ?? []).find((i) => i.id === droppable.id);
+      if (dragged && target) void handleMove(dragged, target);
     }
   };
 
@@ -345,6 +385,20 @@ export default function List() {
   return (
     <div class="h-full flex flex-col">
       <ConfirmHost />
+      <Show when={projectId}>
+        {(id) => (
+          <MoveUnderDialog
+            projectId={id()}
+            item={movingUnder()}
+            onClose={() => setMovingUnder(null)}
+            onPick={(parent) => {
+              const moving = movingUnder();
+              setMovingUnder(null);
+              if (moving) void handleMove(moving, parent);
+            }}
+          />
+        )}
+      </Show>
       {/* Header */}
       <div class="sticky top-0 z-10 bg-app pb-4">
         <div class="flex items-end gap-2.5">
@@ -401,8 +455,30 @@ export default function List() {
               {(f) => <option value={f.value} selected={runFilter() === f.value}>{f.label}</option>}
             </For>
           </select>
-          <Show when={filtering()}>
-            <Button variant="ghost" size="sm" onClick={() => { setQuery(''); setRunFilter(''); }}>
+          {/* Only a project with groups has anything to choose between. */}
+          <Show when={hasGroups()}>
+            <div role="group" aria-label="Show" class="inline-flex items-center gap-1.5">
+              <span class="text-small text-content-subtle" aria-hidden="true">Show:</span>
+              <For each={SCOPE_CHOICES}>
+                {(choice) => (
+                  <button
+                    type="button"
+                    aria-pressed={scope() === choice.value}
+                    onClick={() => setScope(choice.value)}
+                    class="min-h-9 rounded-full px-3.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+                    style={{
+                      'background-color': scope() === choice.value ? 'var(--color-accent-soft)' : 'var(--color-bg-subtle)',
+                      color: scope() === choice.value ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',
+                    }}
+                  >
+                    {choice.label}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={narrowed()}>
+            <Button variant="ghost" size="sm" onClick={clearFilter}>
               Clear filter
             </Button>
           </Show>
@@ -465,15 +541,35 @@ export default function List() {
             <EmptyState icon={<IconList size={28} />} title="Select a project from the sidebar" />
           </Card>
         }>
+          <Show when={refusal()}>
+            {(why) => (
+              <p
+                role="alert"
+                data-testid="list-refusal"
+                class="mb-2 flex items-center gap-2 rounded-item px-3.5 py-2 text-small font-semibold"
+                style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
+              >
+                <span class="min-w-0 flex-1">{why()}</span>
+                <button
+                  type="button"
+                  onClick={() => setRefusal(null)}
+                  class="flex-none rounded-full px-2 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+                  style={{ border: '1px solid currentColor' }}
+                >
+                  Dismiss
+                </button>
+              </p>
+            )}
+          </Show>
           {/* Items */}
           <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
             <DragDropSensors />
             <SortableProvider ids={flattenedItems().map(i => i.id)}>
               <div>
-                <Show when={flattenedItems().length > 0 || (creatingAt() && !filtering())} fallback={
+                <Show when={flattenedItems().length > 0 || (creatingAt() && !narrowed())} fallback={
                   <Card>
                     <Show
-                      when={filtering()}
+                      when={narrowed()}
                       fallback={
                         <EmptyState
                           icon={<IconList size={28} />}
@@ -490,7 +586,7 @@ export default function List() {
                         icon={<IconList size={28} />}
                         title="No items match your filter"
                         action={
-                          <Button variant="secondary" size="sm" onClick={() => { setQuery(''); setRunFilter(''); }}>
+                          <Button variant="secondary" size="sm" onClick={clearFilter}>
                             Clear filter
                           </Button>
                         }
@@ -550,7 +646,9 @@ export default function List() {
                             padding={spacing().pad}
                             edit={edit}
                             onToggleExpand={() => toggleExpand(item.id)}
+                            pointsWord={pointsWord()}
                             onAddChild={() => startCreating(item.id)}
+                            onMoveUnder={() => setMovingUnder(item)}
                             onDelete={() => handleDelete(item)}
                             onView={() => handleViewItem(item)}
                             isExpanded={isOpen(item.id)}
@@ -614,7 +712,10 @@ function ItemRow(props: {
   padding: string;
   edit: EditApi;
   onToggleExpand: () => void;
+  /** The project's word for points, when it has its own. */
+  pointsWord?: string;
   onAddChild: () => void;
+  onMoveUnder: () => void;
   onDelete: () => void;
   onView: () => void;
   isExpanded: boolean;
@@ -625,8 +726,9 @@ function ItemRow(props: {
   const [showActions, setShowActions] = createSignal(false);
   const typeConfig = () => props.types.find((t) => t.key === props.item.item_type);
   const typeLabel = () => typeConfig()?.name ?? props.item.item_type;
-  const typeTone = () => toneOf(typeConfig()?.color ?? 'neutral');
   const hasChildren = props.item.children.length > 0;
+  // The server says whether the row holds work; the List draws it as the heading of what is under it.
+  const isGroup = () => props.item.node === 'group';
 
   return (
     <div
@@ -634,10 +736,12 @@ function ItemRow(props: {
       role="row"
       data-testid="list-row"
       data-item-id={props.item.id}
+      data-holds-work={isGroup() ? 'true' : 'false'}
       class={`group relative rounded-full transition-[box-shadow,border-color,opacity] duration-200 ${sortable.isActiveDraggable ? 'opacity-50' : ''}`}
       style={{
         'background-color': 'var(--color-bg-panel)',
-        border: showActions() ? '2px solid var(--color-accent-line)' : '2px solid transparent',
+        // A row another is being dragged over says it is where the drop lands.
+        border: showActions() || sortable.isActiveDroppable ? '2px solid var(--color-accent-line)' : '2px solid transparent',
         'box-shadow': showActions() || sortable.isActiveDraggable ? 'var(--shadow-md)' : 'none',
         opacity: props.edit.saving(props.item.id) ? 0.5 : undefined,
       }}
@@ -673,14 +777,15 @@ function ItemRow(props: {
                       {props.isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
                     </button>
 
-                    {/* Type tile */}
-                    <div
-                      class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center font-heading text-sm"
-                      style={{ 'background-color': typeTone().bg, color: typeTone().fg }}
-                      title={typeLabel()}
-                    >
-                      {typeLabel().charAt(0).toUpperCase()}
-                    </div>
+                    {/* Type tile: stacked for a type that holds work, flat for work */}
+                    <span class="flex-shrink-0" title={typeLabel()}>
+                      <TypeTile
+                        type={props.item.item_type}
+                        label={typeLabel().charAt(0).toUpperCase()}
+                        class="font-heading"
+                        style={{ width: '2rem', height: '2rem', 'justify-content': 'center', padding: '0', 'font-size': '0.875rem' }}
+                      />
+                    </span>
 
                     <Show
                       when={props.edit.is(props.item.id, 'title')}
@@ -692,7 +797,7 @@ function ItemRow(props: {
                             class="flex-1 min-w-0 text-left group/title"
                           >
                             <div class="flex items-center gap-2">
-                              <span class="min-w-0 line-clamp-2 break-words text-sm font-bold text-content group-hover/title:text-brand transition-colors">
+                              <span class={`min-w-0 line-clamp-2 break-words text-sm text-content group-hover/title:text-brand transition-colors ${isGroup() ? 'font-semibold' : 'font-medium'}`}>
                                 {props.item.title}
                               </span>
                               <Show when={hasChildren}>
@@ -765,8 +870,16 @@ function ItemRow(props: {
                 </Match>
 
                 <Match when={col.key === 'run'}>
-                  <Show when={props.run} fallback={<span class="text-small text-content-subtle" aria-label="No run">—</span>}>
-                    {(run) => <RunState state={run().state} docket={run().docket} note={run().note} />}
+                  {/* A group has no run of its own: its Work is how far what is under it is. */}
+                  <Show
+                    when={isGroup() && (props.item.progress?.total ?? 0) > 0}
+                    fallback={
+                      <Show when={props.run} fallback={<span class="text-small text-content-subtle" aria-label="No run">—</span>}>
+                        {(run) => <RunState state={run().state} docket={run().docket} note={run().note} />}
+                      </Show>
+                    }
+                  >
+                    <ProgressBar progress={props.item.progress} pointsWord={props.pointsWord} compact />
                   </Show>
                 </Match>
 
@@ -799,12 +912,16 @@ function ItemRow(props: {
           <button
             type="button"
             onClick={props.onAddChild}
-            aria-label={`Add child item to ${props.item.title}`}
+            aria-label={`Add item to ${props.item.title}`}
             class="w-7 h-7 rounded-full grid place-items-center bg-app text-content-muted hover:text-brand transition-colors"
-            title="Add child item"
+            title="Add item"
           >
             <FiPlus size={14} />
           </button>
+          <ItemMenu
+            buttonLabel={`More actions for ${props.item.title}`}
+            entries={[{ label: 'Move under…', onSelect: props.onMoveUnder }]}
+          />
           <button
             type="button"
             onClick={props.onDelete}

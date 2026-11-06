@@ -144,12 +144,15 @@ export interface ColDef {
   pinned?: string;
 }
 
+/** The width, in rem, of the cell that holds a row's buttons. */
+export const ACTIONS_REM = 6.5;
+
 export const COLUMNS: ColDef[] = [
   { key: 'title', label: 'Title', rem: 12, sortable: true, editable: true, pinned: 'Rows are named and nested by their title' },
   { key: 'item_type', label: 'Type', rem: 5.5, sortable: true, editable: false },
   { key: 'status', label: 'Status', rem: 7.5, sortable: true, editable: true },
   // Work is what the newest run reports; Status is the person's. The key stays `run` so a remembered choice of columns holds.
-  { key: 'run', label: 'Work', rem: 9, sortable: true, editable: false },
+  { key: 'run', label: 'Work', rem: 11, sortable: true, editable: false },
   { key: 'priority', label: 'Priority', rem: 6, sortable: true, editable: true },
   { key: 'assignee', vocabKey: 'assignee', label: 'Assignee', rem: 7, sortable: true, editable: true },
   { key: 'due_date', label: 'Due', rem: 6.5, sortable: true, editable: true },
@@ -169,7 +172,8 @@ export function emptyColumns(items: Item[], runOf?: (item: Item) => CardRun | un
   const empty: ColumnKey[] = [];
   if (!some((i) => !!i.assignee)) empty.push('assignee');
   if (!some((i) => !!i.due_date)) empty.push('due_date');
-  if (!some((i) => runOf?.(i) !== undefined)) empty.push('run');
+  // A group's Work is how far what is under it is, so it fills the column as a run does.
+  if (!some((i) => runOf?.(i) !== undefined || (i.node === 'group' && (i.progress?.total ?? 0) > 0))) empty.push('run');
   if (!some((i) => !!i.merge_note || i.started_by === 'auto_start' || !!i.team || i.merged_by === 'auto' || (i.tags?.length ?? 0) > 0)) {
     empty.push('details');
   }
