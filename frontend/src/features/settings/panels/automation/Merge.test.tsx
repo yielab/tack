@@ -77,9 +77,9 @@ describe('Merge: the domains picker', () => {
     const none = mount(settings([]));
     expect(none.container.querySelector('[data-testid="domain-types"]')!.textContent).toContain('Any type');
     document.body.innerHTML = '';
-    const stale = mount(settings(['subtask']));
+    const stale = mount(settings(['retired']));
     const picker = stale.container.querySelector('[data-testid="domain-types"]')!;
-    expect(picker.textContent).toContain('subtask (no longer a type)');
+    expect(picker.textContent).toContain('retired (no longer a type)');
     const gone = boxes(stale.container).at(-1)!;
     gone.checked = false;
     gone.dispatchEvent(new Event('change', { bubbles: true }));
