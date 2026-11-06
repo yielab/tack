@@ -62,7 +62,7 @@ Then start the Tack server (`tack serve`) and the agent can call the tools below
 | `search_items` | read | `query`*, `project_id` | `GET /api/search` or `/projects/{id}/search` |
 | `create_item` | write | `project_id`*, `title`*, `description`, `item_type`, `priority`, `parent_id`, `assignee`, `due_date`, `tags`, `reason` | `POST /api/projects/{id}/items` |
 | `create_project` | write | `name`*, `project_type`, `description` | `POST /api/projects` |
-| `create_outline` | write | `items`*, one of `project_id` / `project`*, `fields`, `profiles`, `roles`, `sprints`, `automation`, `dry_run`, `reason` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
+| `create_outline` | write | `items`*, one of `project_id` / `project`*, `fields`, `profiles`, `roles`, `sprints`, `types`, `automation`, `dry_run`, `reason` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
 | `update_item` | write | `id`*, `title`, `description`, `priority`, `assignee`, `status`, `due_date`, `parent_id`, `who_does_it`, `depends_on`, `reason` | `PATCH /api/items/{id}`; `POST /api/projects/{id}/change-sets` for `who_does_it`, `depends_on` |
 | `move_item` | write | `id`*, `status`*, `reason` | `PATCH /api/items/{id}` |
 | `add_comment` | write | `item_id`*, `content`*, `author`, `reason` | `POST /api/items/{id}/comments` |
@@ -81,7 +81,7 @@ hierarchy and dependencies. Each item takes the outline fields (`ref`, `title`,
 `ref` or exact title. The whole outline is checked before anything is written and every
 problem comes back in one error; nothing is written unless all of it can be. `dry_run:
 true` reports what would be created. The call may also carry `fields`, `profiles`, `roles`,
-`sprints` and `automation`, as in Tack's project file. The file's keys and the preview and refusal
+`sprints`, `types` and `automation`, as in Tack's project file. The file's keys and the preview and refusal
 rules are in the developer guide's [project file reference](https://yielab.github.io/tack/developer/project-file.html) and the user guide's
 [import page](https://yielab.github.io/tack/user-guide/import-export.html#the-project-file).
 `create_project` returns the new project's id and its workflow's status names, the values

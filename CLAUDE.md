@@ -129,6 +129,12 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   team's pending memory needs you in each project that uses it and is approved or refused from the sheet
   (`memoryStatus`, `memoryDecide`), `pipelineChecked` read as a refusal, `readScope` not used (why); a profile's
   `kind` is settable; Tack names docket 0.3.0-beta.1. Verified against a real docket with `onboarding-lab/e2e/docket-prill-e2e.sh --check`.
+- **Built 2026-11-05, in `develop`:** Phase 93 (`docs/plans/phase-93.md`, ADR 0036's amendment, decisions 10 to 13, accepted) — an item
+  is a group or work: a project's types are a catalog (Settings → Types; `ItemType` and the `subtask` type are gone), one tree rule
+  (`tack-core/src/hierarchy.rs`) for every parent, `node` and `progress` on every item, work runs and a group is planned (a role on an
+  epic routes its tasks), the Board in lanes, the List as the tree with Move under…, the Timeline, Dashboard and Orchestration reading
+  the same helpers, and the saved boards deleted. Cards A to H, each through the pre-push gate. Left: the live suite against docket and
+  prill (`docket-prill.spec.ts` test 30 was rewritten and has not been run).
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.

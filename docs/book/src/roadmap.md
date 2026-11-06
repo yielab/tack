@@ -74,7 +74,7 @@ same day except the screenshot `decision-inbox.png`, which waits for the next bi
 
 **Phase 93 — an item is a group or work** (2026-11-05;
 [plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-93.md); ADR 0036 amended with
-decisions 10 to 13, proposed). An epic is a card in the To Do column beside the tasks it holds and
+decisions 10 to 13, accepted). An epic is a card in the To Do column beside the tasks it holds and
 never leaves it. Auto-start can start it as if it were a task, and the Dashboard counts it as one.
 "Subtask" is a type and a position at once. The Board, the List, the Timeline and the Orchestration
 view each work out on their own what a parent is, and the List cannot move a row under another
@@ -85,8 +85,9 @@ One rule replaces all of it: a project's types are a catalog in which each type 
 work; an item is a group when its type holds work or when it has children; work runs and a group is
 planned; and each view shows the level it is for. Nothing old stays beside the new.
 
-There are eight cards for Sonnet agents, in five rounds: A; B; C ∥ D; E; F ∥ G ∥ H. The plan names
-each card's files, shapes, removals, docs, tests and greps.
+Built 2026-11-05, in `develop`: all eight cards in five rounds (A; B; C ∥ D; E; F ∥ G ∥ H), each through
+the pre-push gate, and the full workspace suite. Left is the live suite against docket and prill. The plan
+names each card's files, shapes, removals, docs, tests and greps.
 
 - **A** — the catalog of types, replacing the `ItemType` enum and the type words of the vocabulary.
 - **B** — one rule for the tree, and moving an item under another parent.
