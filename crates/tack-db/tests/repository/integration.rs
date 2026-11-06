@@ -43,7 +43,7 @@ fn project_input(name: &str) -> CreateProject {
 }
 
 /// A `CreateProjectTemplate` with every field but `name`/`project_type` at
-/// its default (no vocabulary/workflow/fields/boards override).
+/// its default (no vocabulary/workflow/fields override).
 fn template_input(
     name: &str,
     project_type: ProjectType,
@@ -56,7 +56,6 @@ fn template_input(
         vocabulary: None,
         workflow: None,
         custom_fields: None,
-        default_boards: None,
         roles: Vec::new(),
         profiles: Vec::new(),
         automation: None,
@@ -85,18 +84,6 @@ fn select_field(name: &str, options: &[&str]) -> CreateCustomField {
         required: Some(true),
         options: Some(options.iter().map(|s| s.to_string()).collect()),
         ..text_field(name)
-    }
-}
-
-/// A `CreateBoard` with no description or filters — the shape every board
-/// test in this file needs beyond name/grouping/is_default.
-fn board_input(name: &str, grouping: BoardGrouping, is_default: bool) -> CreateBoard {
-    CreateBoard {
-        name: name.into(),
-        description: None,
-        grouping: Some(grouping),
-        filters: None,
-        is_default: Some(is_default),
     }
 }
 
@@ -605,7 +592,6 @@ async fn create_and_get_template() {
         vocabulary: None,
         workflow: None,
         custom_fields: None,
-        default_boards: None,
         roles: Vec::new(),
         profiles: Vec::new(),
         automation: None,
@@ -666,8 +652,7 @@ async fn delete_template_not_builtin() {
             vocabulary: None,
             workflow: None,
             custom_fields: None,
-            default_boards: None,
-            roles: Vec::new(),
+                roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
             teams: Vec::new(),
@@ -767,79 +752,6 @@ async fn custom_field_cascade_delete() {
     // Value should be gone
     let result = custom_fields::get_field_value(&repo, item.id, field.id).await;
     assert!(result.is_err());
-}
-
-// ─── Multiple Boards Tests (v1.2) ────────────────────────────
-
-#[tokio::test]
-async fn create_and_list_boards() {
-    let repo = setup_test_db().await;
-    let ws_id = create_test_workspace(&repo).await;
-    let project = common::make_project(&repo, ws_id).await;
-    use tack_db::repo::boards;
-
-    let main = board_input("Main Board", BoardGrouping::Status, true);
-    let board1 = boards::create_board(&repo, project.id, main).await.unwrap();
-    assert_eq!(board1.name, "Main Board");
-    assert!(board1.is_default);
-
-    let priority = board_input("Priority View", BoardGrouping::Priority, false);
-    let board2 = boards::create_board(&repo, project.id, priority)
-        .await
-        .unwrap();
-    assert!(!board2.is_default);
-
-    let all_boards = boards::list_boards(&repo, project.id).await.unwrap();
-    assert_eq!(all_boards.len(), 2);
-}
-
-#[tokio::test]
-async fn default_board_management() {
-    let repo = setup_test_db().await;
-    let ws_id = create_test_workspace(&repo).await;
-    let project = common::make_project(&repo, ws_id).await;
-    use tack_db::repo::boards;
-
-    // Create first board as default, then create a second and make it default.
-    let one = board_input("Board 1", BoardGrouping::Status, true);
-    let board1 = boards::create_board(&repo, project.id, one).await.unwrap();
-    let two = board_input("Board 2", BoardGrouping::Priority, true);
-    let board2 = boards::create_board(&repo, project.id, two).await.unwrap();
-
-    // Board 1 should no longer be default; board 2 should be.
-    let board1_updated = boards::get_board(&repo, board1.id).await.unwrap();
-    assert!(!board1_updated.is_default);
-    assert!(board2.is_default);
-
-    let default = boards::get_default_board(&repo, project.id).await.unwrap();
-    assert_eq!(default.unwrap().id, board2.id);
-}
-
-#[tokio::test]
-async fn board_grouping_types() {
-    let repo = setup_test_db().await;
-    let ws_id = create_test_workspace(&repo).await;
-    let project = common::make_project(&repo, ws_id).await;
-    use tack_db::repo::boards;
-
-    // Test all grouping types
-    let groupings = [
-        ("Status Board", BoardGrouping::Status),
-        ("Priority Board", BoardGrouping::Priority),
-        ("Type Board", BoardGrouping::ItemType),
-        ("Sprint Board", BoardGrouping::Sprint),
-    ];
-
-    for (name, grouping) in groupings {
-        let input = board_input(name, grouping, false);
-        let board = boards::create_board(&repo, project.id, input)
-            .await
-            .unwrap();
-        assert_eq!(board.name, name);
-    }
-
-    let all_boards = boards::list_boards(&repo, project.id).await.unwrap();
-    assert_eq!(all_boards.len(), 4);
 }
 
 // ─── Correctness hotfix regressions ─────────────────

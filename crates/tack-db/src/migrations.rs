@@ -169,6 +169,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("105_notifications", &MIGRATION_105[..]),
         ordinary("106_template_teams", &MIGRATION_106[..]),
         ordinary("107_item_types", &MIGRATION_107[..]),
+        ordinary("108_drop_boards", &MIGRATION_108[..]),
     ]
 }
 
@@ -2264,4 +2265,11 @@ const MIGRATION_107: [&str; 10] = [
     "UPDATE projects SET vocabulary = json_remove(vocabulary, '$.epic', '$.feature', '$.task', '$.subtask', '$.bug', '$.requirement')",
     "UPDATE project_templates SET vocabulary = json_remove(vocabulary, '$.epic', '$.feature', '$.task', '$.subtask', '$.bug', '$.requirement')",
     "UPDATE workspaces SET default_vocabulary = json_remove(default_vocabulary, '$.epic', '$.feature', '$.task', '$.subtask', '$.bug', '$.requirement')",
+];
+
+// 108: the saved boards go (Phase 93, ADR 0036 decision 12). The one board is the project's own view of its work
+// items; a template no longer carries board definitions. Dropping the table drops its indexes with it.
+const MIGRATION_108: [&str; 2] = [
+    "DROP TABLE boards",
+    "ALTER TABLE project_templates DROP COLUMN default_boards",
 ];

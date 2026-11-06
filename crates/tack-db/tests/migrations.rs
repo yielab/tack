@@ -15,6 +15,8 @@ mod bridge_tables_dropped;
 mod change_sets;
 #[path = "migrations/drop_status_moves.rs"]
 mod drop_status_moves;
+#[path = "migrations/drop_boards.rs"]
+mod drop_boards;
 #[path = "migrations/factory_loop_tables.rs"]
 mod factory_loop_tables;
 #[path = "migrations/item_recurrence.rs"]

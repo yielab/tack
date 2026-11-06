@@ -18,7 +18,6 @@ struct TemplateRow {
     item_types: String,
     workflow: String,
     custom_fields: String,
-    default_boards: String,
     roles: String,
     profiles: String,
     automation: Option<String>,
@@ -40,7 +39,6 @@ impl TemplateRow {
             item_types: decode::json(TABLE, "item_types", &self.item_types)?,
             workflow: decode::json(TABLE, "workflow", &self.workflow)?,
             custom_fields: decode::json(TABLE, "custom_fields", &self.custom_fields)?,
-            default_boards: decode::json(TABLE, "default_boards", &self.default_boards)?,
             roles: decode::json(TABLE, "roles", &self.roles)?,
             profiles: decode::json(TABLE, "profiles", &self.profiles)?,
             automation: decode::optional_json(TABLE, "automation", self.automation.as_deref())?,
@@ -81,15 +79,12 @@ pub async fn create_template(
     let custom_fields = serde_json::to_string(&data.custom_fields.unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
 
-    let default_boards = serde_json::to_string(&data.default_boards.unwrap_or_default())
-        .unwrap_or_else(|_| "[]".to_string());
-
     let project_type_str = data.project_type.to_string();
 
     sqlx::query(
         "INSERT INTO project_templates
-         (id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+         (id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
     )
     .bind(id.to_string())
     .bind(&data.name)
@@ -99,7 +94,6 @@ pub async fn create_template(
     .bind(&item_types)
     .bind(&workflow)
     .bind(&custom_fields)
-    .bind(&default_boards)
     .bind(serde_json::to_string(&data.roles).unwrap_or_else(|_| "[]".to_string()))
     .bind(serde_json::to_string(&data.profiles).unwrap_or_else(|_| "[]".to_string()))
     .bind(
@@ -120,7 +114,7 @@ pub async fn create_template(
 #[instrument(skip(repo))]
 pub async fn get_template(repo: &Repository, id: Uuid) -> Result<ProjectTemplate, StoreError> {
     let row = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
+        "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, roles, profiles, automation, teams, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
@@ -142,7 +136,7 @@ pub async fn list_templates(
         let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, roles, profiles, automation, teams, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
              ORDER BY is_builtin DESC, name ASC"
@@ -152,7 +146,7 @@ pub async fn list_templates(
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, roles, profiles, automation, teams, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
@@ -681,32 +675,13 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
             .unwrap_or_else(|| workflow_for_type(&spec.project_type));
         let vocabulary = vocabulary_for_type(&spec.project_type);
 
-        // Build a default board whose columns mirror the workflow statuses
-        let columns: Vec<tack_core::models::BoardColumn> = workflow
-            .statuses
-            .iter()
-            .map(|s| tack_core::models::BoardColumn {
-                status: s.name.clone(),
-                wip_limit: s.wip_limit,
-                collapsed: false,
-            })
-            .collect();
-
-        let default_boards = vec![tack_core::models::BoardTemplate {
-            name: "Main Board".to_string(),
-            description: None,
-            columns,
-            filters: None,
-            grouping: Some("status".to_string()),
-        }];
-
         let id = Uuid::new_v4();
         let now = chrono::Utc::now();
 
         sqlx::query(
             "INSERT INTO project_templates
-             (id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, default_boards, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
+             (id, name, description, project_type, vocabulary, item_types, workflow, custom_fields, roles, profiles, automation, teams, is_builtin, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
         )
         .bind(id.to_string())
         .bind(spec.name)
@@ -719,7 +694,6 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
         )
         .bind(serde_json::to_string(&workflow).unwrap_or_else(|_| "{}".to_string()))
         .bind(serde_json::to_string(&spec.custom_fields).unwrap_or_else(|_| "[]".to_string()))
-        .bind(serde_json::to_string(&default_boards).unwrap_or_else(|_| "[]".to_string()))
         .bind(serde_json::to_string(&spec.roles).unwrap_or_else(|_| "[]".to_string()))
         .bind(serde_json::to_string(&spec.profiles).unwrap_or_else(|_| "[]".to_string()))
         .bind(

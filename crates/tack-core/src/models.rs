@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::hierarchy::Node;
 use crate::item_types::ItemTypeDef;
 use crate::outline::{BundleAutomation, BundleProfile, BundleRole, BundleTeam};
 use crate::vocabulary::VocabularyMap;
@@ -266,38 +267,36 @@ pub struct ItemCard {
     /// Who last changed the item through the API, in the same words as `created_by`.
     #[serde(default)]
     pub updated_by: Option<String>,
-    /// How far the item's children are; `None` for an item without children, and on a read that
-    /// does not work it out.
+    /// A group when the item's type holds work or the item has children, otherwise work.
+    pub node: Node,
+    /// How far the work under a group is; `None` for work, for a group with no work under it, and
+    /// on a read that does not work it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub children_progress: Option<ChildrenProgress>,
+    pub progress: Option<Progress>,
 }
 
-/// How far a parent item's children are: how many there are, how many are in a done status, and
-/// the teams (or single agents) their latest runs went to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// How far the work under a group is, over every work item beneath it at any depth, hidden ones
+/// excluded.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ChildrenProgress {
+pub struct Progress {
     pub total: u32,
+    /// Work in a status of the workflow's done category.
     pub done: u32,
-    /// Each team once, by name; a child run by a single agent counts as a team named for the agent.
+    /// The estimates of all the work; `None` when no work under the group has one.
+    pub estimate_total: Option<f64>,
+    /// The estimates of the work that is done; `None` exactly when `estimate_total` is.
+    pub estimate_done: Option<f64>,
+    /// The earliest start of the work: when it started, else when it was created.
+    pub starts: Option<DateTime<Utc>>,
+    /// The latest due date of the work.
+    pub ends: Option<DateTime<Utc>>,
+    /// Each team once, by name; work run by a single agent counts as a team named for the agent.
     pub teams: Vec<String>,
-}
-
-impl From<Item> for ItemCard {
-    /// A card for an item with no run history: nothing to review, nothing held, nothing started.
-    fn from(item: Item) -> Self {
-        Self {
-            item,
-            needs_review: false,
-            merge_note: None,
-            started_by: None,
-            team: None,
-            merged_by: None,
-            created_by: None,
-            updated_by: None,
-            children_progress: None,
-        }
-    }
+    /// Work with a run queued, running or waiting for a person.
+    pub open_runs: u32,
+    /// Work that asks something of a person.
+    pub needs_you: u32,
 }
 
 impl std::ops::Deref for ItemCard {
@@ -612,28 +611,6 @@ impl std::fmt::Display for SprintStatus {
     }
 }
 
-// ─── Board View Config ──────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BoardView {
-    pub id: Uuid,
-    pub project_id: Uuid,
-    pub name: String,
-    pub columns: Vec<BoardColumn>,
-    pub filters: Option<serde_json::Value>,
-    pub grouping: Option<String>,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BoardColumn {
-    pub status: String,
-    pub wip_limit: Option<usize>,
-    pub collapsed: bool,
-}
-
 // ─── DTOs for creation/updates ───────────────────────────────
 
 #[derive(Debug, Deserialize, Validate)]
@@ -923,6 +900,10 @@ pub struct ItemFilter {
     pub priority: Option<Priority>,
     pub sprint_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
+    /// Only groups, or only work.
+    pub node: Option<Node>,
+    /// Only what lies under this item, at any depth; the item itself is left out.
+    pub under: Option<Uuid>,
     pub assignee: Option<String>,
     pub tag: Option<String>,
     pub search: Option<String>,
@@ -965,7 +946,6 @@ pub struct ProjectTemplate {
     pub item_types: Vec<ItemTypeDef>,
     pub workflow: WorkflowConfig,
     pub custom_fields: Vec<CustomFieldDefinition>,
-    pub default_boards: Vec<BoardTemplate>,
     /// The roles a project made from the template starts with.
     pub roles: Vec<BundleRole>,
     /// The agent profiles those roles use.
@@ -977,16 +957,6 @@ pub struct ProjectTemplate {
     pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BoardTemplate {
-    pub name: String,
-    pub description: Option<String>,
-    pub columns: Vec<BoardColumn>,
-    pub filters: Option<serde_json::Value>,
-    pub grouping: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -1003,7 +973,6 @@ pub struct CreateProjectTemplate {
     pub item_types: Option<Vec<ItemTypeDef>>,
     pub workflow: Option<WorkflowConfig>,
     pub custom_fields: Option<Vec<CustomFieldDefinition>>,
-    pub default_boards: Option<Vec<BoardTemplate>>,
     #[serde(default)]
     pub roles: Vec<BundleRole>,
     #[serde(default)]
@@ -1278,58 +1247,6 @@ impl CustomFieldDefinition {
 
         Ok(())
     }
-}
-
-// ─── Board (Multiple Boards per Project) ────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct Board {
-    pub id: Uuid,
-    pub project_id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub filters: Option<serde_json::Value>, // Filter criteria for this board
-    pub grouping: Option<BoardGrouping>,
-    pub is_default: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub enum BoardGrouping {
-    Status,            // Group by status (default Kanban)
-    Priority,          // Group by priority
-    ItemType,          // Group by item type
-    Sprint,            // Group by sprint
-    Assignee,          // Group by assignee (if we add that)
-    CustomField(Uuid), // Group by custom field
-}
-
-#[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct CreateBoard {
-    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
-    pub name: String,
-    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
-    pub description: Option<String>,
-    pub filters: Option<serde_json::Value>,
-    pub grouping: Option<BoardGrouping>,
-    pub is_default: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct UpdateBoard {
-    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
-    pub name: Option<String>,
-    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
-    pub description: Option<String>,
-    pub filters: Option<serde_json::Value>,
-    pub grouping: Option<BoardGrouping>,
-    pub is_default: Option<bool>,
 }
 
 // ─── Item Brief ──────────────────────────────────────────────

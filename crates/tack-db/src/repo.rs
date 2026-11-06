@@ -2,7 +2,6 @@ pub mod agent_credentials;
 pub mod attachments;
 pub mod autonomy;
 pub mod backup;
-pub mod boards;
 pub mod briefs;
 pub mod budgets;
 pub mod change_sets;
@@ -95,38 +94,6 @@ impl Repository {
 
     pub async fn remove_github_link(&self, item_id: Uuid) -> Result<(), StoreError> {
         github_links::remove_link(self.pool(), item_id).await
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────────
-    // Board Methods
-    // ────────────────────────────────────────────────────────────────────────────────
-
-    pub async fn create_board(
-        &self,
-        project_id: Uuid,
-        data: CreateBoard,
-    ) -> Result<Board, StoreError> {
-        boards::create_board(self, project_id, data).await
-    }
-
-    pub async fn get_board(&self, id: Uuid) -> Result<Board, StoreError> {
-        boards::get_board(self, id).await
-    }
-
-    pub async fn get_default_board(&self, project_id: Uuid) -> Result<Option<Board>, StoreError> {
-        boards::get_default_board(self, project_id).await
-    }
-
-    pub async fn list_boards(&self, project_id: Uuid) -> Result<Vec<Board>, StoreError> {
-        boards::list_boards(self, project_id).await
-    }
-
-    pub async fn update_board(&self, id: Uuid, data: UpdateBoard) -> Result<Board, StoreError> {
-        boards::update_board(self, id, data).await
-    }
-
-    pub async fn delete_board(&self, id: Uuid) -> Result<(), StoreError> {
-        boards::delete_board(self, id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
