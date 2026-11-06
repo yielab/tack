@@ -14,6 +14,10 @@ focused, and ready for input.
   (Board, Orchestration, List, Calendar, Timeline, Sprint, Change sets, Threads, Overview, Factory metrics, Project settings) and
   **Workspace** (All projects, Templates, Agents, Settings). The available commands depend on
   context — item and view commands appear only while you're inside a project.
+- **Items appear as you type.** Two or more letters also search the items of the project you are in
+  (of every project when you are not in one). They are listed after the matching commands, under
+  **Items**, each with its type, the path of what it sits under ("Checkout › Payments"), priority and
+  status. `↵` opens the item over its board; pressing a name in the path opens that item instead.
 - **Navigate** with `↑` / `↓`, **run** the highlighted command with `↵`, and
   **dismiss** with `esc`.
 - The palette is also reachable from the **Search…** button in the sidebar and the
@@ -28,7 +32,9 @@ search items by text.
 
 - Searches run as you type, against the project you're in, or across every project when
   you're not inside one.
-- Each result shows the item's **type** badge, **priority**, and current **status**.
+- Each result shows the item's **type**, the **path** of what it sits under (an epic or a building, then
+  the item inside it, each a link), its **priority** and its current **status**. An item at the top of
+  the tree shows no path.
 - `↑` / `↓` to move through results, `↵` to **open** the highlighted item — this
   deep-links straight to its detail drawer over the project board. `esc` closes the
   results.

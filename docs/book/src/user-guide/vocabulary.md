@@ -27,6 +27,17 @@ A new project starts with the types of its project type. Every type has:
 
 There is no "subtask" type: a sub-item is work under another item, whatever its type.
 
+**Change them in the app.** **Settings → Types** has one row for each type, in the order the app uses:
+
+- **Name** and **Colour** change at once.
+- **Holds work or is work** is a choice of **Holds work** or **Work**. It is off while any item uses the type, and the row says how many do.
+- **Items** is how many items use the type.
+- **Default** is the radio that makes it the type new work takes. A type that holds work cannot be the default, so its radio is off.
+- The handle at the left moves the row: drag it, or focus it and press the up or down arrow (Home and End go to the ends). The order is the one the type pickers use.
+- **Remove** opens "Move its n items to…", which lists the other types at the same level, and removes the type in the same step. A type no item uses is removed after saying so. The default type cannot be removed until another one is the default.
+
+Below the rows, **Add type** takes a name, whether it holds work or is work, and a colour; the key is made from the name (lowercase letters, digits and dashes) and is shown before you add it. A key that already exists is refused with the reason beside the button.
+
 **List them:**
 
 ```sh
@@ -62,7 +73,7 @@ Every word is optional. A word you leave blank uses its default label. A new pro
 
 ## Changing the words
 
-**In the UI:** **Settings → Vocabulary**, edit the fields, then **Save vocabulary**. The new words appear in every view of that project.
+**In the UI:** **Settings → Vocabulary**, edit the fields, then **Save vocabulary**. The new words appear in every view of that project. The panel lists only these ten words; the types an item can be are in **Settings → Types**.
 
 **Via API:**
 

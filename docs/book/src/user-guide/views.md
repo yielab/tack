@@ -110,13 +110,19 @@ no steps; so does a run whose current step the team cannot name.
 
 #### A task is a token
 
-It shows its type, its title, the title of its parent, the run's state in the same
+It shows its type, its title, the path of what it sits under (an epic, then the item inside it, each a link), the run's state in the same
 words and marks as everywhere else, and how long the run has been going. A task a reviewer or a check
 sent back shows a small arrow with how many times out of how many it may go back. A task that waits for
 another says **after:** with that task's title and lane; pointing at the line, or tabbing to it, lights
 up the task it waits for. A task whose run proposed items says how many were created, and a task
 created from a proposal says **from:** with the task it came from. Press a token's title to open the
 task on its Execution tab (on the run's question when the run is asking).
+
+Only work is a token. An item that holds work (an epic, a building, a course) has no token of its own,
+so it never waits at Up next or starts by itself. The one time it appears is when you ask an agent to
+plan it: that run is a token in the lane of the team that plans, marked **Planning**, with the item's
+type drawn as a stacked tile, and it ends where any run ends. The tasks it proposes become tokens of
+their own once you accept them.
 
 #### Nobody will take it
 
