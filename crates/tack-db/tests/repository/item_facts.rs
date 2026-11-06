@@ -73,7 +73,10 @@ async fn a_type_that_holds_work_is_a_group_with_no_children_and_work_with_childr
     assert_eq!(node_of(&repo, &child).await, Node::Work);
 
     // The list says the same, and filters by it.
-    let listed = repo.list_items(project.id, &Default::default()).await.unwrap();
+    let listed = repo
+        .list_items(project.id, &Default::default())
+        .await
+        .unwrap();
     let node_by_title = |title: &str| listed.iter().find(|c| c.title == title).unwrap().node;
     assert_eq!(node_by_title("Checkout"), Node::Group);
     assert_eq!(node_by_title("Lone"), Node::Work);
@@ -130,20 +133,37 @@ async fn a_group_counts_the_work_under_it_at_any_depth_and_never_a_group_or_a_hi
     let a = make(&repo, &project, "A", "task", Some(inner.id), Some(3.0)).await;
     let _b = make(&repo, &project, "B", "task", Some(outer.id), Some(5.0)).await;
     // Work that holds work is a group: only its own work counts.
-    let parent = make(&repo, &project, "Parent", "task", Some(inner.id), Some(100.0)).await;
+    let parent = make(
+        &repo,
+        &project,
+        "Parent",
+        "task",
+        Some(inner.id),
+        Some(100.0),
+    )
+    .await;
     let _c = make(&repo, &project, "C", "task", Some(parent.id), None).await;
     let hidden = make(&repo, &project, "Thread", "task", Some(inner.id), Some(7.0)).await;
     seed::item_hidden(&repo, &hidden.id.to_string()).await;
 
-    let counted = |tallies: &[tack_core::children::Tally]| tallies.iter().map(|t| t.count).sum::<u32>();
-    let all = queries::children::of_project(&repo, project.id).await.unwrap();
+    let counted =
+        |tallies: &[tack_core::children::Tally]| tallies.iter().map(|t| t.count).sum::<u32>();
+    let all = queries::children::of_project(&repo, project.id)
+        .await
+        .unwrap();
     assert_eq!(counted(&all[&outer.id]), 3, "A, B and C under Outer");
     assert_eq!(counted(&all[&inner.id]), 2, "A and C under Inner");
     assert_eq!(counted(&all[&parent.id]), 1);
     assert!(!all.contains_key(&a.id), "work holds nothing");
-    assert!(!all.contains_key(&empty.id), "a group with no work under it is left out");
+    assert!(
+        !all.contains_key(&empty.id),
+        "a group with no work under it is left out"
+    );
     let estimate: f64 = all[&outer.id].iter().filter_map(|t| t.estimate).sum();
-    assert_eq!(estimate, 8.0, "A and B, not the Parent that holds C, not the hidden item");
+    assert_eq!(
+        estimate, 8.0,
+        "A and B, not the Parent that holds C, not the hidden item"
+    );
 
     let one = queries::children::of_parent(&repo, inner.id).await.unwrap();
     assert_eq!(counted(&one), 2);

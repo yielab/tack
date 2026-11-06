@@ -554,7 +554,11 @@ async fn board_prints_a_column_per_workflow_status_of_the_work_only() {
         .await;
 
     let out = run_tack(server.uri(), &["board", "-p", "p1"]).await;
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("To Do (2)"), "{text}");
     assert!(text.contains("Done (1)"), "{text}");
@@ -568,9 +572,16 @@ async fn board_by_parent_prints_a_block_per_group_with_its_progress() {
     mount_board_reads(&server).await;
 
     let out = run_tack(server.uri(), &["board", "-p", "p1", "--by", "parent"]).await;
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("Checkout (Epic) · 1 of 2 done · 1 need you"), "{text}");
+    assert!(
+        text.contains("Checkout (Epic) · 1 of 2 done · 1 need you"),
+        "{text}"
+    );
     assert!(text.contains("  · Refund (Task) · To Do"), "{text}");
     assert!(text.contains("No parent"), "{text}");
     assert!(text.contains("  · Loose (Task) · To Do"), "{text}");

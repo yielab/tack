@@ -7,8 +7,8 @@ use tack_cli::config::Config;
 
 use cmd::backup::cmd_list_remote_backups;
 use cmd::board::{
-    BoardBy, ProjectCommands, cmd_add, cmd_board, cmd_branch, cmd_config, cmd_export, cmd_init, cmd_list,
-    cmd_move, cmd_open, cmd_project_autonomy, cmd_projects, cmd_search, cmd_start,
+    BoardBy, ProjectCommands, cmd_add, cmd_board, cmd_branch, cmd_config, cmd_export, cmd_init,
+    cmd_list, cmd_move, cmd_open, cmd_project_autonomy, cmd_projects, cmd_search, cmd_start,
 };
 use cmd::entities::{CommentAction, FieldAction, SprintAction, cmd_role, cmd_template};
 use cmd::entities::{RoleAction, TemplateAction};

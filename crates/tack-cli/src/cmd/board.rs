@@ -832,7 +832,10 @@ fn render_board(view: &serde_json::Value, types: &vocab::VocabMap) -> String {
             None => format!(" ({})", items.len()),
         };
         out.push_str(&format!("\n{name}{label}\n"));
-        out.push_str(&format!("{}\n", "─".repeat(name.chars().count() + label.chars().count())));
+        out.push_str(&format!(
+            "{}\n",
+            "─".repeat(name.chars().count() + label.chars().count())
+        ));
         if items.is_empty() {
             out.push_str("  (empty)\n");
         }
@@ -854,7 +857,10 @@ fn render_board(view: &serde_json::Value, types: &vocab::VocabMap) -> String {
             }
             None => "No parent".to_string(),
         };
-        out.push_str(&format!("\n{heading}\n{}\n", "─".repeat(heading.chars().count())));
+        out.push_str(&format!(
+            "\n{heading}\n{}\n",
+            "─".repeat(heading.chars().count())
+        ));
         if items.is_empty() {
             out.push_str("  (no work directly under it)\n");
         }
@@ -876,7 +882,13 @@ pub(crate) fn cmd_board(
     let (statuses, groups) = match by {
         BoardBy::Status => {
             let p = client.get(&format!("/projects/{project}"))?;
-            (p["workflow"]["statuses"].as_array().cloned().unwrap_or_default(), vec![])
+            (
+                p["workflow"]["statuses"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default(),
+                vec![],
+            )
         }
         BoardBy::Parent => (vec![], fetch_items(client, &project, "group")?),
     };
@@ -951,7 +963,10 @@ mod tests {
     use super::*;
 
     fn types() -> vocab::VocabMap {
-        vocab::VocabMap::from([("epic".into(), "Course".into()), ("task".into(), "Task".into())])
+        vocab::VocabMap::from([
+            ("epic".into(), "Course".into()),
+            ("task".into(), "Task".into()),
+        ])
     }
 
     #[test]
@@ -994,8 +1009,14 @@ mod tests {
             json!({"title": "Loose", "status": "To Do", "item_type": "task", "parent_id": null}),
         ];
         let text = render_board(&board_view(BoardBy::Parent, &[], &groups, &work), &types());
-        assert!(text.contains("Algebra (Course) · 3 of 7 done · 2 need you"), "{text}");
-        assert!(text.contains("Geometry (Course) · 12 of 20 points"), "{text}");
+        assert!(
+            text.contains("Algebra (Course) · 3 of 7 done · 2 need you"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Geometry (Course) · 12 of 20 points"),
+            "{text}"
+        );
         assert!(text.contains("Empty (Course) · no work yet"), "{text}");
         assert!(text.contains("  · A (Task) · Done"), "{text}");
         assert!(text.contains("No parent\n"), "{text}");
