@@ -23,9 +23,14 @@ const ITEM = {
   updated_at: '2025-01-01T00:00:00Z',
 };
 
+const TYPES = [
+  { key: 'epic', name: 'Epic', level: 'group', color: 'accent', order: 0, default_work: false },
+  { key: 'task', name: 'Task', level: 'work', color: 'neutral', order: 1, default_work: true },
+];
+
 const projectValue: ProjectContextValue = {
   projectId: () => 'p1',
-  project: (() => null) as unknown as Resource<null>,
+  project: (() => ({ id: 'p1', item_types: TYPES })) as unknown as Resource<null>,
   workflow: () => ({ workflow_type: 'kanban', statuses: [{ name: 'todo', category: 'todo', order: 0 }] }),
   vocabulary: () => ({}),
   refetch: () => {},
@@ -42,6 +47,12 @@ const ATTEMPT = {
 };
 
 let runs: unknown[] = [];
+/** What `GET /projects/p1/items?under=` answers: the work under the group. */
+let underItems: unknown[] = [];
+/** What `GET /projects/p1/parents` answers. */
+let parentOptions: unknown[] = [];
+/** The writes the screen made, in order. */
+let writes: Array<{ method: string; url: string; body: unknown }> = [];
 /** The project's items as the list endpoint answers them. */
 let projectItems: unknown[] = [];
 let autoStart = false;
@@ -51,6 +62,8 @@ let waitingReason: { code: string; text: string } | null = null;
 
 function jsonOf(url: string): unknown {
   if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: ITEM, roles: [], dependencies: [] };
+  if (url.includes('/parents?')) return parentOptions;
+  if (/\/projects\/p1\/items\?.*under=/.test(url)) return { data: underItems, total: underItems.length, page: 1, per_page: 200 };
   if (/\/projects\/p1\/items\?/.test(url)) return { data: projectItems, total: projectItems.length, page: 1, per_page: 200 };
   if (url.includes('/dependencies')) return [];
   if (url.includes('/sprints')) return [];
@@ -70,15 +83,22 @@ function jsonOf(url: string): unknown {
 beforeEach(() => {
   runs = [];
   projectItems = [];
+  underItems = [];
+  parentOptions = [];
+  writes = [];
   localStorage.clear();
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) =>
-    Promise.resolve(
-      new Response(JSON.stringify(jsonOf(String(input))), {
-        status: 200,
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    const body = method === 'GET' ? null : JSON.parse(String(init?.body ?? 'null'));
+    if (method !== 'GET') writes.push({ method, url: String(input), body });
+    const answer = method === 'PATCH' ? { ...ITEM, ...body } : method === 'POST' ? { id: 'made', project_id: 'p1' } : jsonOf(String(input));
+    return Promise.resolve(
+      new Response(JSON.stringify(answer), {
+        status: method === 'POST' ? 201 : 200,
         headers: { 'Content-Type': 'application/json', ETag: '"1"' },
       }),
-    ),
-  );
+    );
+  });
 });
 
 afterEach(() => {
@@ -134,30 +154,106 @@ describe('ItemBody', () => {
     dispose();
   });
 
-  it('a parent lists its sub-items and a sub-item names its parent, in the drawer that sits outside the items context', async () => {
+  it('an item under a group shows the groups above it as a path, outermost first', async () => {
+    Object.assign(ITEM, { parent_id: 'story' });
     projectItems = [
+      { ...ITEM, id: 'epic', title: 'Checkout', parent_id: null, item_type: 'epic', node: 'group' },
+      { ...ITEM, id: 'story', title: 'Payments', parent_id: 'epic', node: 'group' },
       ITEM,
-      { ...ITEM, id: 'kid-1', title: 'First child', status: 'todo', parent_id: ITEM.id },
-      { ...ITEM, id: 'kid-2', title: 'Second child', status: 'todo', parent_id: ITEM.id },
     ];
-    const { container, dispose } = await mount('drawer');
-    const kids = container.querySelector('[data-testid="item-children"]')!;
-    expect(kids.textContent).toContain('Sub-items');
-    expect([...kids.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['First child', 'Second child']);
-    expect(container.querySelector('[data-testid="item-children-progress"]')).toBeNull();
-    dispose();
-  });
-
-  it('a parent says how many of its children are done and which teams have them', async () => {
-    (ITEM as Record<string, unknown>).progress = { total: 2, done: 1, teams: ['saas-code'] };
-    projectItems = [ITEM, { ...ITEM, id: 'kid-1', parent_id: ITEM.id }, { ...ITEM, id: 'kid-2', parent_id: ITEM.id }];
     try {
       const { container, dispose } = await mount('drawer');
-      expect(container.querySelector('[data-testid="item-children-progress"]')?.textContent?.trim()).toBe('1 of 2 children done · saas-code');
+      const path = container.querySelector('[data-testid="item-path"]')!;
+      expect([...path.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Checkout', 'Payments']);
+      expect(container.querySelector('[data-testid="item-parent"]')).toBeNull();
       dispose();
     } finally {
-      delete (ITEM as Record<string, unknown>).progress;
+      delete (ITEM as Record<string, unknown>).parent_id;
     }
+  });
+
+  it("a group's page leads with Progress, open: its bar, its work under the Work states, and Add item and Plan with agent", async () => {
+    Object.assign(ITEM, { item_type: 'epic', node: 'group', progress: { total: 2, done: 1, needs_you: 0, open_runs: 1, teams: ['saas-code'] } });
+    underItems = [
+      { ...ITEM, id: 'kid-1', title: 'Build the form', item_type: 'task', node: 'work', parent_id: ITEM.id, progress: null },
+      { ...ITEM, id: 'kid-2', title: 'Write the copy', item_type: 'task', node: 'work', parent_id: ITEM.id, progress: null },
+    ];
+    runs = [{ ...RUN, item_id: 'kid-1' }];
+    try {
+      const { container, dispose } = await mount('page');
+      const fold = container.querySelector<HTMLElement>('[data-testid="item-progress"]')!;
+      expect(fold.querySelector('button[aria-expanded]')!.getAttribute('aria-expanded')).toBe('true');
+      expect(fold.querySelector('[data-testid="progress-text"]')!.textContent).toBe('1 of 2 done');
+      expect(fold.textContent).toContain('Teams: saas-code');
+      const sections = [...fold.querySelectorAll<HTMLElement>('[data-testid="progress-section"]')];
+      expect(sections.map((x) => x.dataset.state)).toEqual(['running', 'none']);
+      expect([...sections[0].querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Build the form']);
+      expect([...sections[1].querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Write the copy']);
+      const buttons = [...container.querySelectorAll('button')].map((b) => b.textContent?.trim());
+      expect(buttons).toContain('Add item');
+      expect(buttons.filter((b) => b === 'Plan with agent')).toHaveLength(1);
+      expect(buttons).not.toContain('Run with agent');
+      // The progress comes before the Now panel.
+      expect(fold.compareDocumentPosition(container.querySelector('[data-testid="now-panel"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(container.querySelector('[data-testid="now-panel"]')!.textContent).toContain('Nothing has planned this yet.');
+      dispose();
+    } finally {
+      for (const key of ['progress', 'node']) delete (ITEM as Record<string, unknown>)[key];
+      ITEM.item_type = 'task';
+    }
+  });
+
+  it('Add item on a group creates an item under it', async () => {
+    Object.assign(ITEM, { item_type: 'epic', node: 'group' });
+    try {
+      const { container, dispose } = await mount('page');
+      [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Add item')!.click();
+      await flush();
+      const input = container.querySelector<HTMLInputElement>('input[aria-label="New item title"]')!;
+      input.value = 'Draft the terms';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await flush();
+      await flush();
+      expect(writes.map((w) => `${w.method} ${w.url}`)).toEqual([`POST /api/projects/p1/items`]);
+      expect(writes[0].body).toEqual({ title: 'Draft the terms', parent_id: ITEM.id });
+      dispose();
+    } finally {
+      for (const key of ['node']) delete (ITEM as Record<string, unknown>)[key];
+      ITEM.item_type = 'task';
+    }
+  });
+
+  it('work that was split says Split into n items above its run, and its run section reads like a group', async () => {
+    Object.assign(ITEM, { node: 'group', progress: { total: 3, done: 0, needs_you: 0, open_runs: 0, teams: [] } });
+    try {
+      const { container, dispose } = await mount('page');
+      expect(container.querySelector('[data-testid="item-progress"]')).toBeNull();
+      const split = container.querySelector('[data-testid="item-split"]')!;
+      expect(split.textContent?.trim()).toBe('Split into 3 items');
+      expect(split.compareDocumentPosition(container.querySelector('[data-testid="now-panel"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(container.querySelector('[data-testid="now-panel"]')!.textContent).toContain('Nothing has planned this yet.');
+      dispose();
+    } finally {
+      for (const key of ['progress', 'node']) delete (ITEM as Record<string, unknown>)[key];
+    }
+  });
+
+  it('Move under… in the header menu offers the parents the server admits and moves the item under the one chosen', async () => {
+    parentOptions = [{ id: 'epic', title: 'Checkout', type: 'epic' }];
+    const { container, dispose } = await mount('page');
+    container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click();
+    await flush();
+    [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Move under…')!.click();
+    await flush();
+    await flush();
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.includes('Checkout'))!;
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/projects/p1/parents?item=item-1'), expect.anything());
+    option.click();
+    await flush();
+    await flush();
+    expect(writes.find((w) => w.method === 'PATCH')?.body).toEqual({ parent_id: 'epic' });
+    dispose();
   });
 
   it('an item with no run says who would do it, under its one Run with agent button', async () => {

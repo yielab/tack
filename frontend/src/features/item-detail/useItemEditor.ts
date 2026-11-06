@@ -70,7 +70,7 @@ export function useItemEditor(itemId: Accessor<string | undefined>) {
     descTimer = setTimeout(() => void patch({ description: html }), 600);
   };
 
-  return { item, dependencies, refetchDependencies, patch, onDescriptionChange };
+  return { item, refetchItem: refetch, dependencies, refetchDependencies, patch, onDescriptionChange };
 }
 
 export type ItemEditor = ReturnType<typeof useItemEditor>;

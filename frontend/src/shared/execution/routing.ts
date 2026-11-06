@@ -10,11 +10,3 @@ export const routingApi = {
   /** For each open card: the profile that would do it and where it runs, or why nobody would. */
   list: (projectId: string): Promise<Routed[]> => request<Routed[]>(`/projects/${projectId}/routing`),
 };
-
-/** How far the work under a group is, as a card and the item page say it: "1 of 2 children done · fab-build, claude-code".
- *  Null for an item without work under it. */
-export function childrenText(progress: components['schemas']['Progress'] | null | undefined): string | null {
-  if (!progress || progress.total <= 0) return null;
-  const done = `${progress.done} of ${progress.total} ${progress.total === 1 ? 'child' : 'children'} done`;
-  return progress.teams.length > 0 ? `${done} · ${progress.teams.join(', ')}` : done;
-}

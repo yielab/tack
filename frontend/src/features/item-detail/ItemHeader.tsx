@@ -1,14 +1,13 @@
-import { type Component, type JSX, createResource, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
+import { type Component, type JSX, createMemo, createResource, createSignal, createEffect, onCleanup, onMount, Show } from 'solid-js';
 import { api } from '../../shared/api';
-import { A } from '@solidjs/router';
 import { Icons, TypeTile } from '../../shared/ui';
+import ItemPath from '../../shared/ui/ItemPath';
 import { statusDotColor } from '../../shared/ui/statusDot';
 import ItemMenu from '../../shared/ui/ItemMenu';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useProject } from '../../shared/state/projectContext';
 import type { Item, UpdateItem } from '../../shared/types';
 import { shortItemId } from '../../shared/shortItemId';
-import { childrenText } from '../../shared/execution';
 
 export interface ItemHeaderProps {
   item: Item;
@@ -20,10 +19,10 @@ export interface ItemHeaderProps {
   focusTitle?: boolean;
 }
 
-/** What an item is: type, id, creation date, an editable title and its status. */
+/** What an item is: the path above it, its type, id, creation date, an editable title and its status. */
 const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const { workflow } = useProject();
-  // The project's items name the parent and the sub-items. A screen under the board's tabs already has them;
+  // The project's items name the ancestors. A screen under the board's tabs already has them;
   // the drawer sits outside those tabs, so it reads them itself rather than name nobody.
   const shared = (() => {
     try {
@@ -37,9 +36,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
     () => api.items.list(props.item.project_id).catch(() => [] as Item[]),
   );
   const projectItems = () => (shared ? shared() : own());
-  const parent = () => (props.item.parent_id ? projectItems()?.find((i) => i.id === props.item.parent_id) : undefined);
-  const children = () => projectItems()?.filter((i) => i.parent_id === props.item.id) ?? [];
-  const href = (id: string) => `/projects/${props.item.project_id}/items/${id}`;
+  const byId = createMemo(() => new Map((projectItems() ?? []).map((i) => [i.id, i] as const)));
 
   // Title is locally mirrored so it commits on blur / Enter, not every keypress.
   const [title, setTitle] = createSignal(props.item.title);
@@ -73,6 +70,8 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
 
   return (
     <div class="space-y-5">
+      <ItemPath item={props.item} byId={byId()} projectId={props.item.project_id} />
+
       {/* Type + id */}
       <div class="flex flex-wrap items-center gap-2">
         <TypeTile type={props.item.item_type} />
@@ -136,41 +135,6 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
           }))}
         />
       </div>
-
-      <Show when={parent()}>
-        {(p) => (
-          <p data-testid="item-parent" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            Part of:{' '}
-            <A href={href(p().id)} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
-              {p().title}
-            </A>
-          </p>
-        )}
-      </Show>
-      <Show when={children().length > 0}>
-        <div data-testid="item-children" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          <span>Sub-items:</span>
-          <Show when={childrenText(props.item.progress)}>
-            {(text) => (
-              <span data-testid="item-children-progress" class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                {' '}{text()}
-              </span>
-            )}
-          </Show>
-          <ul class="mt-0.5 flex flex-col gap-0.5">
-            <For each={children()}>
-              {(c) => (
-                <li class="min-w-0">
-                  <A href={href(c.id)} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
-                    {c.title}
-                  </A>
-                  <span style={{ color: 'var(--color-text-tertiary)' }}> · {c.status}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-        </div>
-      </Show>
     </div>
   );
 };
