@@ -65,7 +65,7 @@ enforces it.
 
 ## API Client
 
-`src/shared/api/` holds one module per area of the API (`projects.ts`, `items.ts`, `boards.ts`, ...)
+`src/shared/api/` holds one module per area of the API (`projects.ts`, `items.ts`, `sprints.ts`, ...)
 over the fetch wrapper in `client.ts`; `index.ts` re-exports them. `schema.gen.ts` is generated from
 `docs/openapi.json` (`npm run gen:api`, or `./scripts/regen-generated.sh` from the repo root) and is
 never edited by hand. The API base is `/api`; `VITE_API_URL` overrides it for a build.
