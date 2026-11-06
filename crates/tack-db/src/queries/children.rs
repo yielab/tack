@@ -107,7 +107,8 @@ pub async fn of_groups(
         return Ok(HashMap::new());
     }
     let ids: Vec<String> = groups.iter().map(Uuid::to_string).collect();
-    let ids = serde_json::to_string(&ids).map_err(|error| StoreError::corrupt(TABLE, "id", error))?;
+    let ids =
+        serde_json::to_string(&ids).map_err(|error| StoreError::corrupt(TABLE, "id", error))?;
     tallies_where(repo, "parent_id IN (SELECT value FROM json_each(?))", &ids).await
 }
 

@@ -7,7 +7,13 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-async fn item(app: &Router, project: &str, title: &str, item_type: &str, parent: Option<&str>) -> String {
+async fn item(
+    app: &Router,
+    project: &str,
+    title: &str,
+    item_type: &str,
+    parent: Option<&str>,
+) -> String {
     let (status, item) = send(
         app,
         "POST",
@@ -36,14 +42,22 @@ async fn titles(app: &Router, uri: &str) -> Vec<String> {
 #[tokio::test]
 async fn node_work_leaves_the_epics_out_and_node_group_keeps_only_them() {
     let (app, _) = test_app().await;
-    let pid = crate::common::create_project(&app, "P", "software").await.to_string();
+    let pid = crate::common::create_project(&app, "P", "software")
+        .await
+        .to_string();
     let epic = item(&app, &pid, "Checkout", "epic", None).await;
     item(&app, &pid, "Pay", "task", Some(&epic)).await;
     item(&app, &pid, "Lone", "task", None).await;
 
     let base = format!("/api/projects/{pid}/items");
-    assert_eq!(titles(&app, &format!("{base}?node=work")).await, ["Lone", "Pay"]);
-    assert_eq!(titles(&app, &format!("{base}?node=group")).await, ["Checkout"]);
+    assert_eq!(
+        titles(&app, &format!("{base}?node=work")).await,
+        ["Lone", "Pay"]
+    );
+    assert_eq!(
+        titles(&app, &format!("{base}?node=group")).await,
+        ["Checkout"]
+    );
     let (_, work) = send(&app, "GET", &format!("{base}?node=work"), Value::Null, &[]).await;
     assert_eq!(work["total"], 2, "the total follows the filter");
 }
@@ -51,7 +65,9 @@ async fn node_work_leaves_the_epics_out_and_node_group_keeps_only_them() {
 #[tokio::test]
 async fn under_lists_the_subtree_at_any_depth() {
     let (app, _) = test_app().await;
-    let pid = crate::common::create_project(&app, "P", "software").await.to_string();
+    let pid = crate::common::create_project(&app, "P", "software")
+        .await
+        .to_string();
     let epic = item(&app, &pid, "Checkout", "epic", None).await;
     let pay = item(&app, &pid, "Pay", "task", Some(&epic)).await;
     item(&app, &pid, "Receipt", "task", Some(&pay)).await;
@@ -71,7 +87,9 @@ async fn under_lists_the_subtree_at_any_depth() {
 #[tokio::test]
 async fn a_group_carries_its_node_and_the_progress_of_the_work_under_it() {
     let (app, _) = test_app().await;
-    let pid = crate::common::create_project(&app, "P", "software").await.to_string();
+    let pid = crate::common::create_project(&app, "P", "software")
+        .await
+        .to_string();
     let epic = item(&app, &pid, "Checkout", "epic", None).await;
     let pay = item(&app, &pid, "Pay", "task", Some(&epic)).await;
     item(&app, &pid, "Receipt", "task", Some(&pay)).await;
@@ -87,7 +105,10 @@ async fn a_group_carries_its_node_and_the_progress_of_the_work_under_it() {
 
     let (_, detail) = send(&app, "GET", &format!("/api/items/{epic}"), Value::Null, &[]).await;
     assert_eq!(detail["item"]["node"], "group");
-    assert_eq!(detail["item"]["progress"]["total"], 1, "Pay holds Receipt, so it is no work");
+    assert_eq!(
+        detail["item"]["progress"]["total"], 1,
+        "Pay holds Receipt, so it is no work"
+    );
     assert_eq!(detail["item"]["progress"]["done"], 0);
 
     let (_, listed) = send(
@@ -115,7 +136,9 @@ async fn a_group_carries_its_node_and_the_progress_of_the_work_under_it() {
 #[tokio::test]
 async fn work_has_no_progress_and_a_created_item_says_what_it_is() {
     let (app, _) = test_app().await;
-    let pid = crate::common::create_project(&app, "P", "software").await.to_string();
+    let pid = crate::common::create_project(&app, "P", "software")
+        .await
+        .to_string();
     let (_, epic) = send(
         &app,
         "POST",
@@ -125,7 +148,10 @@ async fn work_has_no_progress_and_a_created_item_says_what_it_is() {
     )
     .await;
     assert_eq!(epic["node"], "group");
-    assert!(epic.get("progress").is_none(), "an epic with nothing under it has none");
+    assert!(
+        epic.get("progress").is_none(),
+        "an epic with nothing under it has none"
+    );
     let (_, task) = send(
         &app,
         "POST",
@@ -141,7 +167,9 @@ async fn work_has_no_progress_and_a_created_item_says_what_it_is() {
 #[tokio::test]
 async fn the_saved_boards_are_gone() {
     let (app, _) = test_app().await;
-    let pid = crate::common::create_project(&app, "P", "software").await.to_string();
+    let pid = crate::common::create_project(&app, "P", "software")
+        .await
+        .to_string();
     let board = Uuid::new_v4();
     for (method, uri) in [
         ("GET", format!("/api/boards/{board}")),

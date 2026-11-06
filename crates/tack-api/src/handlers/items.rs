@@ -232,10 +232,9 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
     if snapshot.item.node == Node::Group {
-        snapshot.item.progress =
-            progress_by_group(&state, snapshot.item.project_id, Some(&[id]))
-                .await?
-                .remove(&id);
+        snapshot.item.progress = progress_by_group(&state, snapshot.item.project_id, Some(&[id]))
+            .await?
+            .remove(&id);
     }
 
     // Also fetch roles and dependencies for the detail view

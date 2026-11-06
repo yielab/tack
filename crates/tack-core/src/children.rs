@@ -44,13 +44,8 @@ pub fn progress(tallies: &[Tally], workflow: &WorkflowConfig) -> Option<Progress
         total,
         done: tallies.iter().filter(done).map(|t| t.count).sum(),
         estimate_total: estimated.then(|| tallies.iter().filter_map(|t| t.estimate).sum()),
-        estimate_done: estimated.then(|| {
-            tallies
-                .iter()
-                .filter(done)
-                .filter_map(|t| t.estimate)
-                .sum()
-        }),
+        estimate_done: estimated
+            .then(|| tallies.iter().filter(done).filter_map(|t| t.estimate).sum()),
         starts: tallies.iter().filter_map(|t| t.starts).min(),
         ends: tallies.iter().filter_map(|t| t.due).max(),
         teams,

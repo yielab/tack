@@ -707,7 +707,10 @@ async fn list_items_filter_by_item_type_returns_only_matching_items() {
     assert_eq!(status, StatusCode::OK);
 
     let all_items = list["data"].as_array().unwrap();
-    assert!(!all_items.is_empty(), "the list should have at least one item");
+    assert!(
+        !all_items.is_empty(),
+        "the list should have at least one item"
+    );
     assert!(
         all_items.iter().all(|i| i["item_type"] == "task"),
         "all items must be of type 'task', got: {:?}",

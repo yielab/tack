@@ -23,10 +23,11 @@ use crate::error::ApiError;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
-    export, import_github, import_linear, item_types, items, local_runner, metrics, mrp,
-    notifications, outline, projects, roles, routing, runner_admin, runner_protocol, settings,
-    sprints, team_apply, teams, templates, threads, triggers, websocket,
+    agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, briefs,
+    change_sets, comments, custom_fields, decisions, dependencies, digest, executions, export,
+    import_github, import_linear, item_types, items, local_runner, metrics, mrp, notifications,
+    outline, projects, roles, routing, runner_admin, runner_protocol, settings, sprints,
+    team_apply, teams, templates, threads, triggers, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,

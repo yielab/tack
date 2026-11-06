@@ -652,7 +652,7 @@ async fn delete_template_not_builtin() {
             vocabulary: None,
             workflow: None,
             custom_fields: None,
-                roles: Vec::new(),
+            roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
             teams: Vec::new(),

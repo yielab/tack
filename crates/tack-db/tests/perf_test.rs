@@ -28,9 +28,21 @@ struct Row {
 fn tree_rows(parent: Option<Uuid>, level: usize, rows: &mut Vec<(Uuid, Row)>) {
     for _ in 0..FANOUT[level] {
         let group = Uuid::new_v4();
-        rows.push((group, Row { item_type: "epic", parent }));
+        rows.push((
+            group,
+            Row {
+                item_type: "epic",
+                parent,
+            },
+        ));
         for _ in 0..WORK_PER_GROUP {
-            rows.push((Uuid::new_v4(), Row { item_type: "task", parent: Some(group) }));
+            rows.push((
+                Uuid::new_v4(),
+                Row {
+                    item_type: "task",
+                    parent: Some(group),
+                },
+            ));
         }
         if level + 1 < FANOUT.len() {
             tree_rows(Some(group), level + 1, rows);
@@ -135,7 +147,9 @@ async fn list_items_p95_under_100ms_at_50k() {
     let _ = measure_latencies(&repo, project.id, &project.workflow, &filter, 1).await;
     let latencies = measure_latencies(&repo, project.id, &project.workflow, &filter, 100).await;
     let (p50, p95, p99) = (latencies[49], latencies[94], latencies[98]);
-    println!("list_items with node and progress @ 50k items — p50={p50:?}  p95={p95:?}  p99={p99:?}");
+    println!(
+        "list_items with node and progress @ 50k items — p50={p50:?}  p95={p95:?}  p99={p99:?}"
+    );
 
     assert!(
         p95 < Duration::from_millis(100),

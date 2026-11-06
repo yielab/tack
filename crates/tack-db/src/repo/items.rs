@@ -685,7 +685,9 @@ fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<Str
     }
     match filter.node {
         Some(Node::Group) => {
-            clause.push_str(&format!(" AND ({LEVEL_SQL} = 'group' OR {HAS_CHILDREN_SQL})"));
+            clause.push_str(&format!(
+                " AND ({LEVEL_SQL} = 'group' OR {HAS_CHILDREN_SQL})"
+            ));
         }
         Some(Node::Work) => {
             clause.push_str(&format!(
