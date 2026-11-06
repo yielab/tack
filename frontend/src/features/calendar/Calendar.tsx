@@ -9,6 +9,7 @@ import { IconCalendar } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
 import { onActivateKey } from '../../shared/ui/keyActivate';
 import Card from '../../shared/ui/Card';
+import TypeTile from '../../shared/ui/TypeTile';
 
 export default function Calendar() {
   const params = useParams();
@@ -34,7 +35,11 @@ export default function Calendar() {
   const nextMonth = () => setCurrentDate(new Date(currentYear(), currentMonth() + 1, 1));
   const goToday = () => setCurrentDate(new Date());
 
-  const getItemsForDate = (day: number): Item[] => {
+  // A group is planned, not scheduled by dragging: its due date is a milestone, and the day cell
+  // lists it before the work. Only work is dragged between days and into the tray.
+  const isWork = (item: Item) => item.node === 'work';
+
+  const dueOn = (day: number): Item[] => {
     const allItems = items() || [];
     const target = new Date(currentYear(), currentMonth(), day);
     return allItems.filter(item => {
@@ -45,8 +50,10 @@ export default function Calendar() {
         && d.getDate() === target.getDate();
     });
   };
+  const getItemsForDate = (day: number): Item[] => dueOn(day).filter(isWork);
+  const getMilestonesForDate = (day: number): Item[] => dueOn(day).filter(item => !isWork(item));
 
-  const unscheduledItems = createMemo(() => (items() || []).filter(i => !i.due_date));
+  const unscheduledItems = createMemo(() => (items() || []).filter(i => isWork(i) && !i.due_date));
 
   const getPriorityStyle = (priority: string) => ({
     'background-color': priorityFill(priority as Priority),
@@ -220,6 +227,28 @@ export default function Calendar() {
                   </div>
 
                   <div class="flex-1 flex flex-col gap-1 overflow-y-auto max-h-24">
+                    <For each={getMilestonesForDate(day!)}>
+                      {(group) => (
+                        <button
+                          type="button"
+                          data-testid="milestone"
+                          onClick={() => setSearchParams({ item: group.id })}
+                          class="flex items-center gap-1 rounded-[10px] px-1.5 py-[3px] text-left text-micro focus:outline-none focus-visible:ring-2"
+                          style={{
+                            border: '1.5px solid var(--color-border-medium)',
+                            'background-color': 'var(--color-bg-app)',
+                            color: 'var(--color-text-primary)',
+                            cursor: 'pointer',
+                            '--tw-ring-color': 'var(--color-focus-ring)',
+                          }}
+                          title={`${group.title} is due — a group's due date is set on its page`}
+                        >
+                          <span aria-hidden="true">◆</span>
+                          <TypeTile type={group.item_type} class="flex-none" />
+                          <span class="min-w-0 truncate font-bold">{group.title}</span>
+                        </button>
+                      )}
+                    </For>
                     <For each={getItemsForDate(day!)}>
                       {(item) => (
                         <div

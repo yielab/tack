@@ -28,6 +28,29 @@ describe('Calendar', () => {
     expect(container.textContent).not.toContain('No items to show on the calendar');
   });
 
+  it('shows_a_groups_due_date_as_a_milestone_that_cannot_be_dragged_and_never_lists_it_as_unscheduled', async () => {
+    const container = await mountProjectView(() => <Calendar />, 'calendar', {
+      items: [
+        makeItem({ id: 'epic', title: 'Checkout', item_type: 'epic', node: 'group', due_date: middleOfThisMonth }),
+        makeItem({ id: 'plan', title: 'Plan the rollout', item_type: 'epic', node: 'group' }),
+        makeItem({ id: 'due', title: 'Ship the release', parent_id: 'epic', due_date: middleOfThisMonth }),
+      ],
+    });
+
+    const milestone = container.querySelector<HTMLElement>('[data-testid="milestone"]')!;
+    expect(milestone.textContent).toContain('Checkout');
+    expect(milestone.querySelector('[data-testid="type-tile"]')?.textContent).toBe('Epic');
+    expect(milestone.getAttribute('draggable')).toBeNull();
+    // It sits on its due day, ahead of the work due that day.
+    const cell = milestone.parentElement!;
+    expect(cell.parentElement?.firstElementChild?.textContent).toBe('15');
+    expect(cell.firstElementChild).toBe(milestone);
+    expect(cell.querySelector('[title^="Ship the release"]')).not.toBeNull();
+    // A group with no due date is not "unscheduled work": the tray holds work only.
+    expect(container.textContent).toContain('Unscheduled (0)');
+    expect(container.textContent).not.toContain('Plan the rollout');
+  });
+
   it('says_so_when_the_project_has_no_items', async () => {
     const container = await mountProjectView(() => <Calendar />, 'calendar', { items: [] });
     expect(container.textContent).toContain('No items to show on the calendar');
