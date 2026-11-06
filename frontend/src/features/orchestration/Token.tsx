@@ -1,5 +1,5 @@
 import { type Component, For, Show } from 'solid-js';
-import { RunState, TypeBadge } from '../../shared/ui';
+import { RunState, TypeTile } from '../../shared/ui';
 import { ageText, moveTarget, sourceText, type FlowLane, type FlowToken } from './flow';
 import { useFlowUi, type MoveSource } from './context';
 import MoveMenu, { type MoveChoice } from './MoveMenu';
@@ -65,7 +65,7 @@ const Token: Component<{ token: FlowToken; source: MoveSource }> = (props) => {
       }}
     >
       <div class="flex min-w-0 items-start gap-2">
-        <TypeBadge type={t().item.item_type} class="flex-none" />
+        <TypeTile type={t().item.item_type} class="flex-none" />
         <button
           type="button"
           data-testid="flow-token-open"

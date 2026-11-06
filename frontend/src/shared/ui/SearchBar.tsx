@@ -3,7 +3,7 @@ import { useNavigate } from '@solidjs/router';
 import { api } from '../api';
 import type { Item, Priority } from '../types';
 import { IconSearch, IconClose } from './icons';
-import TypeBadge from './TypeBadge';
+import TypeTile from './TypeTile';
 import PriorityDot from './PriorityDot';
 import KbdHint from './KbdHint';
 
@@ -192,7 +192,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
                       {item.title}
                     </span>
                     <span style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
-                      <TypeBadge type={item.item_type} />
+                      <TypeTile type={item.item_type} />
                       <Show when={item.priority !== 'none'}>
                         <PriorityDot priority={item.priority as Priority} showLabel />
                       </Show>

@@ -43,7 +43,7 @@ export type { ConfirmOptions, ConfirmDialogProps } from './ConfirmDialog';
 export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
 
-export { default as Fold, readFoldOpen } from './Fold';
+export { default as Fold, readFoldOpen, saveFoldOpen } from './Fold';
 export type { FoldProps } from './Fold';
 
 export { default as Tabs } from './Tabs';
@@ -55,8 +55,12 @@ export { default as Avatar, AvatarStack, hueFromName, initialsOf } from './Avata
 export { teamInitials } from './teamInitials';
 export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 
-export { default as TypeBadge, typeTone } from './TypeBadge';
-export type { TypeBadgeProps } from './TypeBadge';
+export { default as TypeTile, typeTone } from './TypeTile';
+export type { TypeTileProps } from './TypeTile';
+
+// GroupHeader, ItemPath and ParentPicker are imported from their own files: the header opens the run dialog, which imports this kit.
+export { default as ProgressBar, progressText, needsYouText } from './ProgressBar';
+export type { ProgressBarProps } from './ProgressBar';
 
 export { default as PriorityDot, priorityColor, priorityFill, priorityLabel } from './PriorityDot';
 export type { PriorityDotProps } from './PriorityDot';

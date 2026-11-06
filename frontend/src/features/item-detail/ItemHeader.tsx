@@ -1,9 +1,9 @@
 import { type Component, type JSX, createResource, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
 import { api } from '../../shared/api';
 import { A } from '@solidjs/router';
-import { Icons, TypeBadge } from '../../shared/ui';
+import { Icons, TypeTile } from '../../shared/ui';
 import { statusDotColor } from '../../shared/ui/statusDot';
-import ItemMenu from './ItemMenu';
+import ItemMenu from '../../shared/ui/ItemMenu';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useProject } from '../../shared/state/projectContext';
 import type { Item, UpdateItem } from '../../shared/types';
@@ -75,7 +75,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
     <div class="space-y-5">
       {/* Type + id */}
       <div class="flex flex-wrap items-center gap-2">
-        <TypeBadge type={props.item.item_type} />
+        <TypeTile type={props.item.item_type} />
         <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)' }}>
           {shortItemId(props.item.id)}
         </span>

@@ -24,6 +24,10 @@ const ItemMenu: Component<{
   menuLabel?: string;
   /** What the button shows; "⋯" when absent. */
   icon?: JSX.Element;
+  /** Words the button shows before its icon: it is then a pill that reads as the choice it opens (a status chip), not a round button. */
+  label?: JSX.Element;
+  /** Which edge of the button the menu lines up with; the right one by default. */
+  align?: 'left' | 'right';
 }> = (props) => {
   const menuId = createUniqueId();
   const [open, setOpen] = createSignal(false);
@@ -86,13 +90,18 @@ const ItemMenu: Component<{
             toggle();
           }
         }}
-        class="grid h-8 w-8 place-items-center rounded-full text-lg leading-none focus:outline-none focus-visible:ring-2"
+        class={
+          props.label
+            ? 'inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold leading-none focus:outline-none focus-visible:ring-2'
+            : 'grid h-8 w-8 place-items-center rounded-full text-lg leading-none focus:outline-none focus-visible:ring-2'
+        }
         style={{
-          color: 'var(--color-text-secondary)',
+          color: props.label ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
           border: '1px solid var(--color-border-strong)',
           '--tw-ring-color': 'var(--color-focus-ring)',
         }}
       >
+        {props.label}
         <span aria-hidden="true" class="inline-flex">{props.icon ?? '⋯'}</span>
       </button>
       <Show when={open()}>
@@ -102,7 +111,7 @@ const ItemMenu: Component<{
           role="menu"
           aria-label={props.menuLabel ?? 'Item actions'}
           on:keydown={onMenuKeyDown}
-          class="absolute right-0 top-full z-50 mt-1 min-w-56 max-w-xs rounded-item p-1"
+          class={`absolute top-full z-50 mt-1 min-w-56 max-w-xs rounded-item p-1 ${props.align === 'left' ? 'left-0' : 'right-0'}`}
           style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-medium)', 'box-shadow': 'var(--shadow-md)' }}
         >
           <For each={props.entries}>

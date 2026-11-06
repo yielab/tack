@@ -69,6 +69,8 @@ export interface RunWithAgentButtonProps {
   /** How the labelled trigger is drawn; the item's Now panel makes it the one filled button only
    *  when starting a run is what to do next. */
   variant?: ButtonVariant;
+  /** The labelled trigger's words, when "Run with agent" is not what the host offers (a group is planned, not run). */
+  label?: string;
   capabilities?: () => RunnerCapabilities[];
   /** A stable `data-testid` for the trigger itself, so a script finds it by what it is and not by its words. */
   testId?: string;
@@ -183,7 +185,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
             setOpen(true);
           }}
         >
-          {hasRun() ? 'Run again' : 'Run with agent'}
+          {props.label ?? (hasRun() ? 'Run again' : 'Run with agent')}
         </Button>
       )}
       <RunWithAgentModal

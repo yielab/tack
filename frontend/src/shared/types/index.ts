@@ -8,8 +8,6 @@
 //
 // Only genuinely frontend-internal shapes that have no 1:1 backend schema stay
 // hand-written here:
-//   - `BoardState` / `BoardColumn` — the *derived* Kanban view built client-side
-//     by `deriveBoard()` (the backend has no single "board state" response).
 //   - `BoardEvent` — the WebSocket event union (WS frames aren't in the REST spec).
 //   - the template-builder shapes (`TemplateCustomField`,
 //     `CreateTemplate`) — the editor's working model, which is looser than the
@@ -48,6 +46,12 @@ export type ItemDetail = Schemas['ItemDetail'];
 /** An item's type is a key of its project's catalog (`Project.item_types`). */
 export type ItemTypeDef = Schemas['ItemTypeDef'];
 export type ItemTypeUse = Schemas['ItemTypeUse'];
+/** What an item is for the screens: a group holds items, work is done. */
+export type ItemNode = Schemas['Node'];
+/** How far the work under a group is. */
+export type Progress = Schemas['Progress'];
+/** An item the tree rule admits as the parent of another. */
+export type ParentOption = Schemas['ParentOption'];
 export type TypeColor = Schemas['TypeColor'];
 export type TypeLevel = Schemas['ItemTypeLevel'];
 export type Priority = Schemas['Priority'];
@@ -65,19 +69,6 @@ export type UpdateItem = Schemas['UpdateItem'];
 export type Sprint = Schemas['Sprint'];
 export type SprintStatus = Schemas['SprintStatus'];
 export type CreateSprint = Schemas['CreateSprint'];
-
-// ─── Board (frontend-derived, not a backend response) ──────────────────────
-
-export interface BoardState {
-  columns: BoardColumn[];
-}
-
-export interface BoardColumn {
-  status: string;
-  items: Item[];
-  wip_limit?: number | null;
-  wip_exceeded: boolean;
-}
 
 // ─── Custom fields (definitions) ───────────────────────────────────────────
 
