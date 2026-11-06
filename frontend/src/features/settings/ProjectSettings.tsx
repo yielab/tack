@@ -8,6 +8,7 @@ import { api } from '../../shared/api';
 import GeneralPanel from './panels/GeneralPanel';
 import AutomationPanel from './panels/AutomationPanel';
 import WorkflowPanel from './panels/WorkflowPanel';
+import TypesPanel from './panels/TypesPanel';
 import VocabularyPanel from './panels/VocabularyPanel';
 import FieldsPanel from './panels/FieldsPanel';
 import RolesPanel from './panels/RolesPanel';
@@ -17,6 +18,7 @@ const TABS: TabItem[] = [
   { id: 'general', label: 'General' },
   { id: 'automation', label: 'Automation' },
   { id: 'workflow', label: 'Workflow' },
+  { id: 'types', label: 'Types' },
   { id: 'vocabulary', label: 'Vocabulary' },
   { id: 'fields', label: 'Fields' },
   { id: 'roles', label: 'Roles' },
@@ -92,6 +94,9 @@ const ProjectSettings: Component = () => {
           <Match when={active() === 'workflow'}>
             <WorkflowPanel />
           </Match>
+          <Match when={active() === 'types'}>
+            <TypesPanel />
+          </Match>
           <Match when={active() === 'vocabulary'}>
             <VocabularyPanel />
           </Match>
@@ -115,7 +120,7 @@ const ProjectSettings: Component = () => {
         size="sm"
       >
         <p class="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
-          Saves this project's workflow, vocabulary, custom fields, roles, the agent
+          Saves this project's workflow, types, vocabulary, custom fields, roles, the agent
           profiles those roles use and the automation settings as a reusable template. Items are
           not copied.
         </p>

@@ -25,6 +25,7 @@ import { threads } from './threads';
 import { triggers } from './triggers';
 import { notifications } from './notifications';
 import { teams } from './teams';
+import { itemTypes } from './itemTypes';
 
 export const api = {
   projects,
@@ -48,6 +49,7 @@ export const api = {
   triggers,
   notifications,
   teams,
+  itemTypes,
 };
 
 export { ApiError, tokenStore, request, requestBlob, requestForm, apiUrl } from './client';

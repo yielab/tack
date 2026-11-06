@@ -1,5 +1,6 @@
 import { type Accessor, type Component, For, Show } from 'solid-js';
-import { FieldShell, HelpHint, LoadError, Switch } from '../../../../shared/ui';
+import { FieldShell, HelpHint, LoadError, Switch, TypeTile } from '../../../../shared/ui';
+import { useItemTypes } from '../../../../shared/vocab/useItemTypes';
 import { HELP } from '../../../../shared/help/texts';
 import type { AutonomyDomain, AutonomySettings } from '../../../../shared/api/autonomy';
 import { Block, Heading, LEVELS, Note, PUBLIC_KEY_ID, inputClass, inputStyle } from './parts';
@@ -13,6 +14,43 @@ const list = (text: string) => text.split(/[,\n]/).map((x) => x.trim()).filter(B
  * Merge: how much Tack may merge by itself. Every field saves on change
  * (`PUT /projects/{id}/autonomy`, the whole object, through the ladder's `save`).
  */
+/** The types a domain covers, chosen among the project's own; none chosen means any type. */
+const DomainTypes: Component<{ chosen: readonly string[]; onChange: (keys: string[]) => void }> = (props) => {
+  const types = useItemTypes();
+  // A key the catalog no longer has stays listed, so it can be unchecked.
+  const unknown = () => props.chosen.filter((key) => !types.get(key));
+  const toggle = (key: string, on: boolean) =>
+    props.onChange(on ? [...props.chosen, key] : props.chosen.filter((k) => k !== key));
+  return (
+    <fieldset class="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0" data-testid="domain-types">
+      <legend class="mb-1 p-0 text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+        Item types it covers
+      </legend>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <For each={types.list()}>
+          {(t) => (
+            <label class="inline-flex cursor-pointer items-center gap-1.5">
+              <input type="checkbox" checked={props.chosen.includes(t.key)} onChange={(e) => toggle(t.key, e.currentTarget.checked)} />
+              <TypeTile type={t.key} />
+            </label>
+          )}
+        </For>
+        <For each={unknown()}>
+          {(key) => (
+            <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <input type="checkbox" checked onChange={(e) => toggle(key, e.currentTarget.checked)} />
+              {key} (no longer a type)
+            </label>
+          )}
+        </For>
+      </div>
+      <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+        {props.chosen.length === 0 ? 'Any type.' : 'Only the types checked.'}
+      </p>
+    </fieldset>
+  );
+};
+
 const Merge: Component<{
   settings: Accessor<AutonomySettings | null | undefined>;
   /** Set when the settings did not load: they are not "unavailable". */
@@ -77,14 +115,7 @@ const Merge: Component<{
                         value={d.path_globs.join(', ')}
                         onChange={(e) => void saveDomain(i(), { path_globs: list(e.currentTarget.value) })}
                       />
-                      <input
-                        class={inputClass}
-                        style={inputStyle}
-                        aria-label="Item types it covers"
-                        placeholder="Any type"
-                        value={(d.item_types ?? []).join(', ')}
-                        onChange={(e) => void saveDomain(i(), { item_types: list(e.currentTarget.value) })}
-                      />
+                      <DomainTypes chosen={d.item_types ?? []} onChange={(keys) => void saveDomain(i(), { item_types: keys })} />
                       <div class="flex flex-wrap items-center gap-3">
                         <span data-testid="domain-counts" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                           {d.merged ?? 0} merged · {d.undone ?? 0} undone
