@@ -333,42 +333,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/boards/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** GET /api/boards/:id - Get a specific board */
-        get: operations["get_board"];
-        put?: never;
-        post?: never;
-        /** DELETE /api/boards/:id - Delete a board */
-        delete: operations["delete_board"];
-        options?: never;
-        head?: never;
-        /** PATCH /api/boards/:id - Update a board */
-        patch: operations["update_board"];
-        trace?: never;
-    };
-    "/api/boards/{id}/view": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** GET /api/boards/:id/view - Get board state with items grouped and filtered */
-        get: operations["get_board_view"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/change-sets/{id}": {
         parameters: {
             query?: never;
@@ -1587,24 +1551,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_item_type"];
-        trace?: never;
-    };
-    "/api/projects/{project_id}/boards": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** GET /api/projects/:id/boards - List all boards for a project */
-        get: operations["list_boards"];
-        put?: never;
-        /** POST /api/projects/:id/boards - Create a new board for a project */
-        post: operations["create_board"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/change-sets": {
@@ -4303,59 +4249,6 @@ export interface components {
             depth: number;
             status: string;
         };
-        Board: {
-            /** Format: date-time */
-            created_at: string;
-            description?: string | null;
-            filters?: unknown;
-            grouping?: null | components["schemas"]["BoardGrouping"];
-            /** Format: uuid */
-            id: string;
-            is_default: boolean;
-            name: string;
-            /** Format: uuid */
-            project_id: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        BoardColumn: {
-            collapsed: boolean;
-            status: string;
-            wip_limit?: number | null;
-        };
-        BoardColumnWithItems: {
-            items: components["schemas"]["ItemCard"][];
-            name: string;
-            wip_exceeded: boolean;
-            wip_limit?: number | null;
-        };
-        BoardGrouping: "status" | "priority" | "item_type" | "sprint" | "assignee" | {
-            /** Format: uuid */
-            custom_field: string;
-        };
-        BoardTemplate: {
-            columns: components["schemas"]["BoardColumn"][];
-            description?: string | null;
-            filters?: unknown;
-            grouping?: string | null;
-            name: string;
-        };
-        BoardView: {
-            columns: components["schemas"]["BoardColumn"][];
-            /** Format: date-time */
-            created_at: string;
-            filters?: unknown;
-            grouping?: string | null;
-            /** Format: uuid */
-            id: string;
-            name: string;
-            /** Format: uuid */
-            project_id: string;
-        };
-        BoardViewResponse: {
-            board: components["schemas"]["Board"];
-            columns: components["schemas"]["BoardColumnWithItems"][];
-        };
         /** @description The project's daily limits; `null` is no limit. */
         BudgetSettings: {
             /** Format: int64 */
@@ -4594,18 +4487,6 @@ export interface components {
          * @enum {string}
          */
         ChangeSetStatus: "waiting" | "applied" | "rejected" | "partly";
-        /**
-         * @description How far a parent item's children are: how many there are, how many are in a done status, and
-         *     the teams (or single agents) their latest runs went to.
-         */
-        ChildrenProgress: {
-            /** Format: int32 */
-            done: number;
-            /** @description Each team once, by name; a child run by a single agent counts as a team named for the agent. */
-            teams: string[];
-            /** Format: int32 */
-            total: number;
-        };
         /** @enum {string} */
         CodeOrigin: "folder" | "new_folder" | "url" | "none";
         Comment: {
@@ -4696,13 +4577,6 @@ export interface components {
              * @description Absent without a rate card or when any of the team's models is unlisted.
              */
             usd?: number | null;
-        };
-        CreateBoard: {
-            description?: string | null;
-            filters?: unknown;
-            grouping?: null | components["schemas"]["BoardGrouping"];
-            is_default?: boolean | null;
-            name: string;
         };
         CreateComment: {
             author?: string | null;
@@ -4962,7 +4836,6 @@ export interface components {
         CreateProjectTemplate: {
             automation?: null | components["schemas"]["BundleAutomation"];
             custom_fields?: components["schemas"]["CustomFieldDefinition"][] | null;
-            default_boards?: components["schemas"]["BoardTemplate"][] | null;
             description?: string | null;
             /** @description The project type's preset when absent. */
             item_types?: components["schemas"]["ItemTypeDef"][] | null;
@@ -5742,7 +5615,6 @@ export interface components {
          *     item and never written back, which is why they are not part of the aggregate.
          */
         ItemCard: components["schemas"]["Item"] & {
-            children_progress?: null | components["schemas"]["ChildrenProgress"];
             /**
              * @description Who created the item through the API: `operator`, or the name of the agent credential.
              *     `None` for an item made before callers were recorded, or by Tack itself.
@@ -5757,6 +5629,9 @@ export interface components {
              *     workspace that nobody has reviewed yet.
              */
             needs_review?: boolean;
+            /** @description A group when the item's type holds work or the item has children, otherwise work. */
+            node: components["schemas"]["Node"];
+            progress?: null | components["schemas"]["Progress"];
             /** @description `auto_start` when the newest request was started by the project's own rule, else `None`. */
             started_by?: string | null;
             /** @description The docket team named by the newest request's resolved profile, else `None`. */
@@ -5773,9 +5648,9 @@ export interface components {
             item: components["schemas"]["ItemCard"];
             roles: components["schemas"]["Role"][];
         };
-        /** @description An item of the tree, with how far its children are when it has any. */
+        /** @description An item of the tree, with how far the work under it is when it holds any. */
         ItemNode: components["schemas"]["Item"] & {
-            children_progress?: null | components["schemas"]["ChildrenProgress"];
+            progress?: null | components["schemas"]["Progress"];
         };
         /** @description An item an operation names: one the change set creates, or one the board already has. */
         ItemRef: number | string;
@@ -6356,6 +6231,51 @@ export interface components {
             /** @description How many successful runs it takes before a limit is proposed. */
             runs_needed: number;
         };
+        /**
+         * @description How far the work under a group is, over every work item beneath it at any depth, hidden ones
+         *     excluded.
+         */
+        Progress: {
+            /**
+             * Format: int32
+             * @description Work in a status of the workflow's done category.
+             */
+            done: number;
+            /**
+             * Format: date-time
+             * @description The latest due date of the work.
+             */
+            ends?: string | null;
+            /**
+             * Format: double
+             * @description The estimates of the work that is done; `None` exactly when `estimate_total` is.
+             */
+            estimate_done?: number | null;
+            /**
+             * Format: double
+             * @description The estimates of all the work; `None` when no work under the group has one.
+             */
+            estimate_total?: number | null;
+            /**
+             * Format: int32
+             * @description Work that asks something of a person.
+             */
+            needs_you: number;
+            /**
+             * Format: int32
+             * @description Work with a run queued, running or waiting for a person.
+             */
+            open_runs: number;
+            /**
+             * Format: date-time
+             * @description The earliest start of the work: when it started, else when it was created.
+             */
+            starts?: string | null;
+            /** @description Each team once, by name; work run by a single agent counts as a team named for the agent. */
+            teams: string[];
+            /** Format: int32 */
+            total: number;
+        };
         Project: {
             /** @description How far an agent may go on this project: the rung and the caps on creates (ADR 0034). */
             agents_on_board: components["schemas"]["AgentsOnBoard"];
@@ -6445,7 +6365,6 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             custom_fields: components["schemas"]["CustomFieldDefinition"][];
-            default_boards: components["schemas"]["BoardTemplate"][];
             description?: string | null;
             /** Format: uuid */
             id: string;
@@ -7811,13 +7730,6 @@ export interface components {
             retention?: number | null;
             secret_key?: string | null;
         };
-        UpdateBoard: {
-            description?: string | null;
-            filters?: unknown;
-            grouping?: null | components["schemas"]["BoardGrouping"];
-            is_default?: boolean | null;
-            name?: string | null;
-        };
         UpdateCustomField: {
             default_value?: unknown;
             description?: string | null;
@@ -8692,127 +8604,6 @@ export interface operations {
             };
             /** @description Remote backup not configured */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_board: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Board ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The board */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Board"];
-                };
-            };
-            /** @description Board not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    delete_board: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Board ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Board deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_board: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Board ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateBoard"];
-            };
-        };
-        responses: {
-            /** @description Updated board */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Board"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_board_view: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Board ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Board with items grouped into columns */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BoardViewResponse"];
-                };
-            };
-            /** @description Board not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11961,74 +11752,6 @@ export interface operations {
             };
         };
     };
-    list_boards: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Boards for the project */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Board"][];
-                };
-            };
-        };
-    };
-    create_board: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateBoard"];
-            };
-        };
-        responses: {
-            /** @description Board created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Board"];
-                };
-            };
-            /** @description Project not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
     list_change_sets: {
         parameters: {
             query?: never;
@@ -12190,6 +11913,10 @@ export interface operations {
                 priority: null | components["schemas"]["Priority"];
                 sprint_id: string | null;
                 parent_id: string | null;
+                /** @description Only groups, or only work. */
+                node: null | components["schemas"]["Node"];
+                /** @description Only what lies under this item, at any depth; the item itself is left out. */
+                under: string | null;
                 assignee: string | null;
                 tag: string | null;
                 search: string | null;
@@ -12277,7 +12004,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Every item of the project, parents first, each parent with how far its children are */
+            /** @description Every item of the project, parents first, each group with how far the work under it is */
             200: {
                 headers: {
                     [name: string]: unknown;

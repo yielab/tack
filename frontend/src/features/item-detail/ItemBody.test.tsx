@@ -149,14 +149,14 @@ describe('ItemBody', () => {
   });
 
   it('a parent says how many of its children are done and which teams have them', async () => {
-    (ITEM as Record<string, unknown>).children_progress = { total: 2, done: 1, teams: ['saas-code'] };
+    (ITEM as Record<string, unknown>).progress = { total: 2, done: 1, teams: ['saas-code'] };
     projectItems = [ITEM, { ...ITEM, id: 'kid-1', parent_id: ITEM.id }, { ...ITEM, id: 'kid-2', parent_id: ITEM.id }];
     try {
       const { container, dispose } = await mount('drawer');
       expect(container.querySelector('[data-testid="item-children-progress"]')?.textContent?.trim()).toBe('1 of 2 children done · saas-code');
       dispose();
     } finally {
-      delete (ITEM as Record<string, unknown>).children_progress;
+      delete (ITEM as Record<string, unknown>).progress;
     }
   });
 

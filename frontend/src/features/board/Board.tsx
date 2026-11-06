@@ -215,7 +215,7 @@ export const ItemCard: Component<{
           </p>
         )}
       </Show>
-      <Show when={childrenText(props.item.children_progress)}>
+      <Show when={childrenText(props.item.progress)}>
         {(text) => (
           <p
             data-testid="card-children"

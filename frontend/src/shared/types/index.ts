@@ -11,7 +11,7 @@
 //   - `BoardState` / `BoardColumn` — the *derived* Kanban view built client-side
 //     by `deriveBoard()` (the backend has no single "board state" response).
 //   - `BoardEvent` — the WebSocket event union (WS frames aren't in the REST spec).
-//   - the template-builder shapes (`TemplateCustomField`, `TemplateBoardConfig`,
+//   - the template-builder shapes (`TemplateCustomField`,
 //     `CreateTemplate`) — the editor's working model, which is looser than the
 //     backend's `CreateProjectTemplate` body.
 
@@ -104,19 +104,6 @@ export interface TemplateCustomField {
   options?: string[] | null;
 }
 
-export interface TemplateBoardColumn {
-  status: string;
-  wip_limit?: number | null;
-  collapsed?: boolean;
-}
-
-export interface TemplateBoardConfig {
-  name: string;
-  description?: string | null;
-  columns: TemplateBoardColumn[];
-  is_default?: boolean;
-}
-
 export interface CreateTemplate {
   name: string;
   description?: string | null;
@@ -124,7 +111,6 @@ export interface CreateTemplate {
   vocabulary?: Record<string, string> | null;
   workflow?: WorkflowConfig | null;
   custom_fields?: TemplateCustomField[] | null;
-  default_boards?: TemplateBoardConfig[] | null;
 }
 
 // ─── Comments ──────────────────────────────────────────────────────────────

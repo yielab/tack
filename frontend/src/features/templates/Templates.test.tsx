@@ -12,7 +12,6 @@ const TEMPLATE = {
   vocabulary: {},
   workflow: { workflow_type: 'scrum', statuses: [{ name: 'To Do', order: 0, category: 'todo' }], transitions: null },
   custom_fields: [],
-  default_boards: [],
   roles: [
     { name: 'Content', color: '#f59e0b', icon: null, profile: 'Content writer' },
     { name: 'Security', color: '#ef4444', icon: null, profile: 'Security review' },

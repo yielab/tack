@@ -90,7 +90,7 @@ describe('Board ItemCard', () => {
   });
 
   it('a_parent_card_says_how_many_of_its_children_are_done_and_which_teams_have_them', async () => {
-    const parent = await mount(makeItem({ children_progress: { total: 2, done: 1, teams: ['claude-code', 'fab-build'] } }));
+    const parent = await mount(makeItem({ progress: { total: 2, done: 1, open_runs: 0, needs_you: 0, estimate_total: null, estimate_done: null, starts: null, ends: null, teams: ['claude-code', 'fab-build'] } }));
     expect(parent.querySelector('[data-testid="card-children"]')!.textContent).toBe('1 of 2 children done · claude-code, fab-build');
     const lone = await mount(makeItem());
     expect(lone.querySelector('[data-testid="card-children"]')).toBeNull();
