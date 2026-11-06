@@ -233,7 +233,7 @@ export default function Calendar() {
                           type="button"
                           data-testid="milestone"
                           onClick={() => setSearchParams({ item: group.id })}
-                          class="flex items-center gap-1 rounded-[10px] px-1.5 py-[3px] text-left text-micro focus:outline-none focus-visible:ring-2"
+                          class="flex items-center gap-1 rounded-item px-1.5 py-[3px] text-left text-micro focus:outline-none focus-visible:ring-2"
                           style={{
                             border: '1.5px solid var(--color-border-medium)',
                             'background-color': 'var(--color-bg-app)',
