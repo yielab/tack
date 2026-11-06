@@ -19,7 +19,7 @@
 //!   extractor, so its request body is hand-declared.
 //! - **Undocumented on purpose.** The WebSocket upgrade
 //!   `GET /api/projects/{id}/boards/live` and the SPA fallback are omitted.
-//! - **Untagged enum variants.** `EstimateUnit::Custom(String)` and `BoardGrouping::CustomField(Uuid)` are
+//! - **Untagged enum variants.** `EstimateUnit::Custom(String)` is
 //!   externally-tagged, so they render as a `oneOf` mixing bare strings with
 //!   single-key objects — faithful to the serde output but noisier than a plain
 //!   string enum.
@@ -38,12 +38,11 @@ use utoipa::openapi::{
 use utoipa::{OpenApi, PartialSchema, ToSchema};
 
 use tack_core::models::{
-    Attachment, Board, BoardColumn, BoardGrouping, BoardView, Comment, CommentType, CreateBoard,
-    CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
+    Attachment, Comment, CommentType, CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
     CreateProjectTemplate, CreateRole, CreateSprint, CustomFieldDefinition, CustomFieldType,
     CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemCard, ItemRole,
     ItemSource, Priority, Project, ProjectTemplate, ProjectType, Role, SetCustomFieldValue, Sprint,
-    SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
+    SprintStatus, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
 };
 use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig, WorkflowType};
 
@@ -990,13 +989,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::custom_fields::get_field_value,
         handlers::custom_fields::delete_field_value,
         handlers::custom_fields::get_all_field_values,
-        // ── Boards ────────────────────────────────────────────────────────
-        handlers::boards_multi::create_board,
-        handlers::boards_multi::list_boards,
-        handlers::boards_multi::get_board,
-        handlers::boards_multi::update_board,
-        handlers::boards_multi::delete_board,
-        handlers::boards_multi::get_board_view,
         // ── Backup / restore ──────────────────────────────────────────────
         handlers::backup::get_backup,
         handlers::backup::post_restore,
@@ -1175,8 +1167,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::items::CreateSubtasksFromPlanRequest,
         handlers::items::CreatedSubtask,
         handlers::items::CreateSubtasksFromPlanResponse,
-        handlers::boards_multi::BoardViewResponse,
-        handlers::boards_multi::BoardColumnWithItems,
         tack_core::models::UpdateSprint,
         handlers::sprints::UpdateSprintStatus,
         handlers::templates::CreateProjectFromTemplate,
@@ -1275,10 +1265,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         Attachment,
         Sprint,
         SprintStatus,
-        BoardView,
-        BoardColumn,
-        Board,
-        BoardGrouping,
         ProjectTemplate,
         CustomFieldDefinition,
         CustomFieldType,
@@ -1297,8 +1283,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         CreateCustomField,
         UpdateCustomField,
         SetCustomFieldValue,
-        CreateBoard,
-        UpdateBoard,
         WorkflowConfig,
         WorkflowType,
         StatusDef,
@@ -1326,7 +1310,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         (name = "comments", description = "Comments on items."),
         (name = "dependencies", description = "Directed dependency edges between items."),
         (name = "attachments", description = "File attachments on items."),
-        (name = "boards", description = "Saved board views and their grouped item layout."),
         (name = "custom-fields", description = "Per-project custom field definitions and values."),
         (name = "templates", description = "Reusable project templates."),
         (name = "import", description = "Import from JSON/YAML/CSV, GitHub Issues, and Linear."),

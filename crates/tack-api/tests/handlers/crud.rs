@@ -682,10 +682,10 @@ async fn setup_custom_field_case(field_def: &str) -> (Router, String, String) {
     (app, fid, iid)
 }
 
-// ─── Board filter integration ─────────────────────────────────────────────────
+// ─── Item list filter integration ─────────────────────────────────────────────
 
 #[tokio::test]
-async fn board_view_filter_by_item_type_returns_only_matching_items() {
+async fn list_items_filter_by_item_type_returns_only_matching_items() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
     let items_uri = format!("/api/projects/{pid}/items");
@@ -696,25 +696,18 @@ async fn board_view_filter_by_item_type_returns_only_matching_items() {
         common::send(&app, "POST", &items_uri, body, &[]).await;
     }
 
-    // Create a board that filters to only "task" items
-    let boards_uri = format!("/api/projects/{pid}/boards");
-    let filter = json!({"name":"Tasks Only","filters":{"item_type":"task"}});
-    let (_, board) = common::send(&app, "POST", &boards_uri, filter, &[]).await;
-    let board_id = board["id"].as_str().unwrap();
-
-    // Fetch the board view
-    let view_uri = format!("/api/boards/{board_id}/view");
-    let (status, view) = common::send(&app, "GET", &view_uri, Value::Null, &[]).await;
+    let (status, list) = common::send(
+        &app,
+        "GET",
+        &format!("{items_uri}?item_type=task"),
+        Value::Null,
+        &[],
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 
-    // All items across all columns must be of type "task"
-    let all_items: Vec<&Value> = view["columns"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|col| col["items"].as_array().unwrap())
-        .collect();
-    assert!(!all_items.is_empty(), "board should have at least one item");
+    let all_items = list["data"].as_array().unwrap();
+    assert!(!all_items.is_empty(), "the list should have at least one item");
     assert!(
         all_items.iter().all(|i| i["item_type"] == "task"),
         "all items must be of type 'task', got: {:?}",

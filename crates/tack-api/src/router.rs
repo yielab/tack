@@ -23,8 +23,7 @@ use crate::error::ApiError;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
-    briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
+    agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
     export, import_github, import_linear, item_types, items, local_runner, metrics, mrp,
     notifications, outline, projects, roles, routing, runner_admin, runner_protocol, settings,
     sprints, team_apply, teams, templates, threads, triggers, websocket,
@@ -550,19 +549,7 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/custom-fields",
             get(custom_fields::get_all_field_values),
         )
-        .route(
-            "/projects/{project_id}/boards",
-            post(boards_multi::create_board),
-        )
-        .route(
-            "/projects/{project_id}/boards",
-            get(boards_multi::list_boards),
-        )
         .route("/projects/{id}/boards/live", get(websocket::board_live))
-        .route("/boards/{id}", get(boards_multi::get_board))
-        .route("/boards/{id}", patch(boards_multi::update_board))
-        .route("/boards/{id}", delete(boards_multi::delete_board))
-        .route("/boards/{id}/view", get(boards_multi::get_board_view))
         // ─── Embedded runner control (gated on loopback + a wired-in
         // control — see `local_runner_available` above) ──────────────────
         .merge(if local_runner_available {

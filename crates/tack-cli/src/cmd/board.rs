@@ -674,63 +674,219 @@ pub(crate) fn cmd_open(
     Ok(())
 }
 
-pub(crate) fn cmd_board(client: &TackClient, project: String, as_json: bool) -> anyhow::Result<()> {
-    let boards = client.get(&format!("/projects/{project}/boards"))?;
+/// How `tack board` lays the work out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum BoardBy {
+    /// One column per workflow status
+    Status,
+    /// One block per group (an epic, a building, a course), with how far its work is
+    Parent,
+}
+
+/// Every item of the project that `node` selects, over all pages of the list.
+fn fetch_items(
+    client: &TackClient,
+    project: &str,
+    node: &str,
+) -> anyhow::Result<Vec<serde_json::Value>> {
+    let mut items = Vec::new();
+    for page in 1.. {
+        let resp = client.get(&format!(
+            "/projects/{project}/items?node={node}&per_page=500&page={page}"
+        ))?;
+        let batch = resp
+            .get("data")
+            .and_then(|d| d.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let total = resp["total"].as_u64().unwrap_or(0) as usize;
+        let empty = batch.is_empty();
+        items.extend(batch);
+        if empty || items.len() >= total {
+            break;
+        }
+    }
+    Ok(items)
+}
+
+/// The work of a project laid out as `tack board` shows it: columns by workflow status, or a
+/// block per group. `statuses` are the workflow's, `groups` and `work` come from the item list.
+fn board_view(
+    by: BoardBy,
+    statuses: &[serde_json::Value],
+    groups: &[serde_json::Value],
+    work: &[serde_json::Value],
+) -> serde_json::Value {
+    match by {
+        BoardBy::Status => {
+            let mut ordered: Vec<&serde_json::Value> = statuses.iter().collect();
+            ordered.sort_by_key(|s| s["order"].as_i64().unwrap_or(i64::MAX));
+            let mut columns: Vec<serde_json::Value> = ordered
+                .iter()
+                .map(|s| {
+                    let name = s["name"].as_str().unwrap_or("?");
+                    json!({
+                        "status": name,
+                        "wip_limit": s["wip_limit"],
+                        "items": work.iter().filter(|i| i["status"] == name).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            // Work in a status the workflow no longer names still shows, after the others.
+            let known: Vec<&str> = ordered.iter().filter_map(|s| s["name"].as_str()).collect();
+            let mut strays: Vec<&str> = work
+                .iter()
+                .filter_map(|i| i["status"].as_str())
+                .filter(|s| !known.contains(s))
+                .collect();
+            strays.dedup();
+            for name in strays {
+                columns.push(json!({
+                    "status": name,
+                    "wip_limit": null,
+                    "items": work.iter().filter(|i| i["status"] == name).collect::<Vec<_>>(),
+                }));
+            }
+            json!({ "columns": columns })
+        }
+        BoardBy::Parent => {
+            let mut blocks: Vec<serde_json::Value> = groups
+                .iter()
+                .map(|g| {
+                    json!({
+                        "group": g,
+                        "items": work.iter().filter(|i| i["parent_id"] == g["id"]).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            let held: Vec<&serde_json::Value> = groups.iter().map(|g| &g["id"]).collect();
+            let loose: Vec<&serde_json::Value> = work
+                .iter()
+                .filter(|i| !held.contains(&&i["parent_id"]))
+                .collect();
+            if !loose.is_empty() {
+                blocks.push(json!({ "group": null, "items": loose }));
+            }
+            json!({ "blocks": blocks })
+        }
+    }
+}
+
+/// "3 of 7 done", or "12 of 20 points" when the work has estimates, and who is waited for.
+fn progress_line(progress: &serde_json::Value) -> String {
+    if progress.is_null() {
+        return "no work yet".to_string();
+    }
+    let number = |v: &serde_json::Value| {
+        let n = v.as_f64().unwrap_or(0.0);
+        if n.fract() == 0.0 {
+            format!("{n:.0}")
+        } else {
+            format!("{n}")
+        }
+    };
+    let mut line = if progress["estimate_total"].is_null() {
+        format!(
+            "{} of {} done",
+            progress["done"].as_u64().unwrap_or(0),
+            progress["total"].as_u64().unwrap_or(0)
+        )
+    } else {
+        format!(
+            "{} of {} points",
+            number(&progress["estimate_done"]),
+            number(&progress["estimate_total"])
+        )
+    };
+    let needs_you = progress["needs_you"].as_u64().unwrap_or(0);
+    if needs_you > 0 {
+        line.push_str(&format!(" · {needs_you} need you"));
+    }
+    line
+}
+
+fn item_line(item: &serde_json::Value, types: &vocab::VocabMap, with_status: bool) -> String {
+    let title = item["title"].as_str().unwrap_or("?");
+    let type_label = vocab::term(types, item["item_type"].as_str().unwrap_or("task"));
+    let status = match (with_status, item["status"].as_str()) {
+        (true, Some(s)) => format!(" · {s}"),
+        _ => String::new(),
+    };
+    let assignee = item["assignee"]
+        .as_str()
+        .map(|a| format!(" [{a}]"))
+        .unwrap_or_default();
+    format!("  · {title} ({type_label}){status}{assignee}")
+}
+
+/// [`board_view`] as the text `tack board` prints.
+fn render_board(view: &serde_json::Value, types: &vocab::VocabMap) -> String {
+    let mut out = String::new();
     let empty = vec![];
-    let boards = boards.as_array().unwrap_or(&empty);
+    for col in view["columns"].as_array().unwrap_or(&empty) {
+        let name = col["status"].as_str().unwrap_or("?");
+        let items = col["items"].as_array().unwrap_or(&empty);
+        let label = match col["wip_limit"].as_u64() {
+            Some(limit) if items.len() as u64 > limit => format!(" ({}/{limit} ⚠)", items.len()),
+            Some(limit) => format!(" ({}/{limit})", items.len()),
+            None => format!(" ({})", items.len()),
+        };
+        out.push_str(&format!("\n{name}{label}\n"));
+        out.push_str(&format!("{}\n", "─".repeat(name.chars().count() + label.chars().count())));
+        if items.is_empty() {
+            out.push_str("  (empty)\n");
+        }
+        for item in items {
+            out.push_str(&item_line(item, types, false));
+            out.push('\n');
+        }
+    }
+    for block in view["blocks"].as_array().unwrap_or(&empty) {
+        let items = block["items"].as_array().unwrap_or(&empty);
+        let heading = match block["group"].as_object() {
+            Some(group) => {
+                let title = group["title"].as_str().unwrap_or("?");
+                let kind = vocab::term(types, group["item_type"].as_str().unwrap_or(""));
+                format!(
+                    "{title} ({kind}) · {}",
+                    progress_line(group.get("progress").unwrap_or(&serde_json::Value::Null))
+                )
+            }
+            None => "No parent".to_string(),
+        };
+        out.push_str(&format!("\n{heading}\n{}\n", "─".repeat(heading.chars().count())));
+        if items.is_empty() {
+            out.push_str("  (no work directly under it)\n");
+        }
+        for item in items {
+            out.push_str(&item_line(item, types, true));
+            out.push('\n');
+        }
+    }
+    out
+}
 
-    let board_id = boards
-        .iter()
-        .find(|b| b["is_default"].as_bool().unwrap_or(false))
-        .or_else(|| boards.first())
-        .and_then(|b| b["id"].as_str())
-        .ok_or_else(|| anyhow::anyhow!("No boards found for project {project}"))?;
-
-    let view = client.get(&format!("/boards/{board_id}/view"))?;
-
+pub(crate) fn cmd_board(
+    client: &TackClient,
+    project: String,
+    by: BoardBy,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let work = fetch_items(client, &project, "work")?;
+    let (statuses, groups) = match by {
+        BoardBy::Status => {
+            let p = client.get(&format!("/projects/{project}"))?;
+            (p["workflow"]["statuses"].as_array().cloned().unwrap_or_default(), vec![])
+        }
+        BoardBy::Parent => (vec![], fetch_items(client, &project, "group")?),
+    };
+    let view = board_view(by, &statuses, &groups, &work);
     if as_json {
         println!("{}", serde_json::to_string_pretty(&view)?);
         return Ok(());
     }
-
-    let v = vocab::type_names(client, &project);
-    let board_name = view["name"].as_str().unwrap_or("Board");
-    println!("── {board_name} ────────────────────────────");
-
-    let cols = view["columns"]
-        .as_array()
-        .map(|a| a.as_slice())
-        .unwrap_or(&[]);
-    for col in cols {
-        let name = col["name"].as_str().unwrap_or("?");
-        let items = col["items"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-        let wip = col["wip_limit"].as_u64();
-        let exceeded = col["wip_exceeded"].as_bool().unwrap_or(false);
-
-        let wip_label = match wip {
-            Some(limit) if exceeded => format!(" ({}/{limit} ⚠)", items.len()),
-            Some(limit) => format!(" ({}/{})", items.len(), limit),
-            None => format!(" ({})", items.len()),
-        };
-
-        println!("\n{name}{wip_label}");
-        println!("{}", "─".repeat(name.len() + wip_label.len()));
-
-        if items.is_empty() {
-            println!("  (empty)");
-        }
-        for item in items {
-            let title = item["title"].as_str().unwrap_or("?");
-            let raw_type = item["item_type"].as_str().unwrap_or("task");
-            let type_label = vocab::term(&v, raw_type);
-            let assignee = item["assignee"].as_str();
-            let suffix = match assignee {
-                Some(a) => format!(" [{a}]"),
-                None => String::new(),
-            };
-            println!("  · {title} ({type_label}){suffix}");
-        }
-    }
+    let types = vocab::type_names(client, &project);
+    print!("{}", render_board(&view, &types));
     Ok(())
 }
 
@@ -793,6 +949,58 @@ pub(crate) fn run_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn types() -> vocab::VocabMap {
+        vocab::VocabMap::from([("epic".into(), "Course".into()), ("task".into(), "Task".into())])
+    }
+
+    #[test]
+    fn the_status_view_has_a_column_per_status_in_workflow_order() {
+        let statuses = [
+            json!({"name": "Done", "order": 2, "wip_limit": null}),
+            json!({"name": "To Do", "order": 0, "wip_limit": null}),
+            json!({"name": "Doing", "order": 1, "wip_limit": 1}),
+        ];
+        let work = [
+            json!({"title": "A", "status": "Doing", "item_type": "task"}),
+            json!({"title": "B", "status": "Doing", "item_type": "task"}),
+            json!({"title": "C", "status": "Old", "item_type": "task"}),
+        ];
+        let view = board_view(BoardBy::Status, &statuses, &[], &work);
+        let names: Vec<&str> = view["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["To Do", "Doing", "Done", "Old"]);
+        let text = render_board(&view, &types());
+        assert!(text.contains("Doing (2/1 ⚠)"), "{text}");
+        assert!(text.contains("To Do (0)\n"), "{text}");
+        assert!(text.contains("  · C (Task)"), "{text}");
+    }
+
+    #[test]
+    fn the_parent_view_has_a_block_per_group_with_its_progress_and_one_for_work_with_no_parent() {
+        let groups = [
+            json!({"id": "g1", "title": "Algebra", "item_type": "epic",
+                   "progress": {"total": 7, "done": 3, "estimate_total": null, "needs_you": 2}}),
+            json!({"id": "g2", "title": "Geometry", "item_type": "epic",
+                   "progress": {"total": 2, "done": 1, "estimate_total": 20.0, "estimate_done": 12.0, "needs_you": 0}}),
+            json!({"id": "g3", "title": "Empty", "item_type": "epic"}),
+        ];
+        let work = [
+            json!({"title": "A", "status": "Done", "item_type": "task", "parent_id": "g1"}),
+            json!({"title": "Loose", "status": "To Do", "item_type": "task", "parent_id": null}),
+        ];
+        let text = render_board(&board_view(BoardBy::Parent, &[], &groups, &work), &types());
+        assert!(text.contains("Algebra (Course) · 3 of 7 done · 2 need you"), "{text}");
+        assert!(text.contains("Geometry (Course) · 12 of 20 points"), "{text}");
+        assert!(text.contains("Empty (Course) · no work yet"), "{text}");
+        assert!(text.contains("  · A (Task) · Done"), "{text}");
+        assert!(text.contains("No parent\n"), "{text}");
+        assert!(text.contains("  · Loose (Task) · To Do"), "{text}");
+    }
 
     #[test]
     fn a_move_sends_the_status_the_parent_or_both() {

@@ -15,8 +15,8 @@ use tack_app::events::{DomainEvent, Fact};
 use tack_app::parents::{self, Subject};
 use tack_core::change_set::{CreateOp, ItemRef, Operation, Origin};
 use tack_core::children;
-use tack_core::hierarchy::Hierarchy;
-use tack_core::models::{ChildrenProgress, CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
+use tack_core::hierarchy::{Hierarchy, Node};
+use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, Progress, UpdateItem};
 use tack_core::principal::Principal;
 use tack_db::queries;
 use tack_db::repo::items::{AtomicItemUpdateOutcome, ItemError};
@@ -46,32 +46,37 @@ fn item_etag(id: Uuid, version: i64) -> String {
     format!("\"{id}-{version}\"")
 }
 
-/// How far each parent's children are, by parent, under the project's workflow.
-async fn progress_by_parent(
+/// How far the work under each group is, by group, under the project's workflow. `groups` limits
+/// the answer to those groups, or reads every group of the project when it is `None`.
+async fn progress_by_group(
     state: &AppState,
     project_id: Uuid,
-) -> ApiResult<HashMap<Uuid, ChildrenProgress>> {
+    groups: Option<&[Uuid]>,
+) -> ApiResult<HashMap<Uuid, Progress>> {
     let project = state
         .repo
         .get_project(project_id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
-    Ok(queries::children::of_project(&state.repo, project_id)
-        .await?
+    let work = match groups {
+        Some(groups) => queries::children::of_groups(&state.repo, groups).await?,
+        None => queries::children::of_project(&state.repo, project_id).await?,
+    };
+    Ok(work
         .into_iter()
-        .filter_map(|(parent, kids)| {
-            children::progress(&kids, &project.workflow).map(|progress| (parent, progress))
+        .filter_map(|(group, work)| {
+            children::progress(&work, &project.workflow).map(|progress| (group, progress))
         })
         .collect())
 }
 
-/// An item of the tree, with how far its children are when it has any.
+/// An item of the tree, with how far the work under it is when it holds any.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ItemNode {
     #[serde(flatten)]
     pub item: Item,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub children_progress: Option<ChildrenProgress>,
+    pub progress: Option<Progress>,
 }
 
 /// A stale `If-Match` answers 412 with the same `{"error": {status, message, code}}` envelope
@@ -141,17 +146,20 @@ pub async fn create_item(
 
     let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
 
-    // A new task has no run history yet, so its card is the bare item.
-    let mut item = ItemCard::from(
-        state
-            .repo
-            .create_item(project_id, &initial_status, input)
-            .await?,
-    );
-    (item.created_by, item.updated_by) = state
+    let created = state
         .repo
-        .record_item_writer(item.id, &principal.label(), true)
+        .create_item(project_id, &initial_status, input)
         .await?;
+    state
+        .repo
+        .record_item_writer(created.id, &principal.label(), true)
+        .await?;
+    let item = state
+        .repo
+        .get_item_snapshot(created.id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {} not found", created.id)))?
+        .item;
 
     state.events().emit(DomainEvent::new(
         project_id,
@@ -184,9 +192,14 @@ pub async fn list_items(
     Query(filter): Query<ItemFilter>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let mut items = state.repo.list_items(project_id, &filter).await?;
-    let mut progress = progress_by_parent(&state, project_id).await?;
+    let groups: Vec<Uuid> = items
+        .iter()
+        .filter(|card| card.node == Node::Group)
+        .map(|card| card.item.id)
+        .collect();
+    let mut progress = progress_by_group(&state, project_id, Some(&groups)).await?;
     for card in &mut items {
-        card.children_progress = progress.remove(&card.item.id);
+        card.progress = progress.remove(&card.item.id);
     }
     let total = state.repo.count_items(project_id, &filter).await?;
     Ok(Json(serde_json::json!({
@@ -218,9 +231,12 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
         .get_item_snapshot(id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
-    snapshot.item.children_progress = progress_by_parent(&state, snapshot.item.project_id)
-        .await?
-        .remove(&id);
+    if snapshot.item.node == Node::Group {
+        snapshot.item.progress =
+            progress_by_group(&state, snapshot.item.project_id, Some(&[id]))
+                .await?
+                .remove(&id);
+    }
 
     // Also fetch roles and dependencies for the detail view
     let roles = state.repo.get_roles_for_item(id).await?;
@@ -853,21 +869,21 @@ pub async fn create_subtasks_from_plan(
         ("project_id" = Uuid, Path, description = "Project ID"),
     ),
     responses(
-        (status = 200, description = "Every item of the project, parents first, each parent with how far its children are", body = Vec<ItemNode>),
+        (status = 200, description = "Every item of the project, parents first, each group with how far the work under it is", body = Vec<ItemNode>),
     ),
 )]
 pub async fn get_item_tree(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let mut progress = progress_by_parent(&state, project_id).await?;
+    let mut progress = progress_by_group(&state, project_id, None).await?;
     let nodes: Vec<ItemNode> = state
         .repo
         .get_item_tree(project_id)
         .await?
         .into_iter()
         .map(|item| ItemNode {
-            children_progress: progress.remove(&item.id),
+            progress: progress.remove(&item.id),
             item,
         })
         .collect();

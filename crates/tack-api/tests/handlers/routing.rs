@@ -1,5 +1,5 @@
 //! `GET /api/projects/{id}/routing`: who would do each open card, by the choice a run takes, and
-//! the team or agent that choice runs in; and `children_progress` on the reads of a parent item.
+//! the team or agent that choice runs in; and `progress` on the reads of a group.
 
 use crate::common;
 use axum::Router;
@@ -503,11 +503,13 @@ async fn a_parent_counts_its_children_and_the_teams_their_latest_runs_went_to() 
     }
 
     let detail = b.get(&format!("/api/items/{parent}")).await;
+    let progress = &detail["item"]["progress"];
     assert_eq!(
-        detail["item"]["children_progress"],
-        json!({"total": 2, "done": 1, "teams": ["claude-code", "fab-build"]}),
+        (&progress["total"], &progress["done"], &progress["teams"]),
+        (&json!(2), &json!(1), &json!(["claude-code", "fab-build"])),
         "{detail}"
     );
+    assert_eq!(detail["item"]["node"], "group");
     let listed = b.get(&format!("/api/projects/{}/items", b.project)).await;
     let of = |id: Uuid| {
         listed["data"]
@@ -518,9 +520,9 @@ async fn a_parent_counts_its_children_and_the_teams_their_latest_runs_went_to() 
             .unwrap()
             .clone()
     };
-    assert_eq!(of(parent)["children_progress"]["total"], 2);
+    assert_eq!(of(parent)["progress"]["total"], 2);
     assert!(
-        of(lone).get("children_progress").is_none(),
+        of(lone).get("progress").is_none(),
         "an item without children carries none"
     );
     let tree = b
@@ -532,5 +534,5 @@ async fn a_parent_counts_its_children_and_the_teams_their_latest_runs_went_to() 
         .iter()
         .find(|n| n["id"] == parent.to_string())
         .unwrap();
-    assert_eq!(node["children_progress"]["done"], 1, "{tree}");
+    assert_eq!(node["progress"]["done"], 1, "{tree}");
 }
