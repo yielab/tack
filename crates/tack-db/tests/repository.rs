@@ -42,6 +42,8 @@ mod execution_transitions_completion;
 mod hierarchy;
 #[path = "repository/integration.rs"]
 mod integration;
+#[path = "repository/item_facts.rs"]
+mod item_facts;
 #[path = "repository/item_types.rs"]
 mod item_types;
 #[path = "repository/notifications.rs"]

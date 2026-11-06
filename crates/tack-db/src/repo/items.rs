@@ -8,7 +8,8 @@ use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::CoreError;
-use tack_core::hierarchy::{Hierarchy, ParentGate, Placement, admit_sprint, node};
+use tack_core::hierarchy::{Hierarchy, Node, ParentGate, Placement, admit_sprint, node};
+use tack_core::item_types::Level;
 use tack_core::models::{
     CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, RunSettings, UpdateItem,
 };
@@ -78,6 +79,13 @@ pub(crate) const TEAM_SQL: &str = "(SELECT json_extract(r.request_snapshot, '$.r
 /// attempt whose merge happened.
 pub(crate) const MERGED_BY_SQL: &str = "(SELECT t.trigger FROM tack_merges t JOIN execution_attempts a ON a.id = t.attempt_id JOIN execution_requests r ON r.id = a.request_id WHERE r.item_id = items.id AND t.merged_at IS NOT NULL ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1)";
 
+/// The `item_level` of an `items` row: the level its type has in the project's catalog.
+const LEVEL_SQL: &str = "(SELECT t.level FROM item_types t WHERE t.project_id = items.project_id AND t.key = items.item_type)";
+
+/// The `has_children` of an `items` row: a child that is not hidden.
+const HAS_CHILDREN_SQL: &str =
+    "EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id AND c.hidden = 0)";
+
 /// The columns of an `items` row that make up an [`Item`], in one place: every item read selects
 /// exactly these and `ItemRow` is exactly these.
 const ITEM_COLUMNS: [&str; 24] = [
@@ -124,7 +132,7 @@ fn card_columns() -> String {
     let created_by = writer_name!("items.created_by");
     let updated_by = writer_name!("items.updated_by");
     format!(
-        "{columns}, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by, {created_by} AS created_by, {updated_by} AS updated_by"
+        "{columns}, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by, {created_by} AS created_by, {updated_by} AS updated_by, {LEVEL_SQL} AS item_level, {HAS_CHILDREN_SQL} AS has_children"
     )
 }
 
@@ -612,12 +620,20 @@ struct ItemCardRow {
     merged_by: Option<String>,
     created_by: Option<String>,
     updated_by: Option<String>,
+    item_level: Option<String>,
+    has_children: bool,
 }
 
 impl ItemCardRow {
     fn into_card(self) -> Result<ItemCard, StoreError> {
+        let level = self
+            .item_level
+            .as_deref()
+            .and_then(Level::parse)
+            .ok_or_else(|| StoreError::corrupt("item_types", "level", "no type has this level"))?;
         Ok(ItemCard {
             item: self.item.into_item()?,
+            node: node(level, self.has_children),
             needs_review: self.needs_review,
             merge_note: self.merge_note,
             started_by: self.started_by,
@@ -625,7 +641,7 @@ impl ItemCardRow {
             merged_by: self.merged_by,
             created_by: self.created_by,
             updated_by: self.updated_by,
-            children_progress: None,
+            progress: None,
         })
     }
 }
@@ -656,6 +672,27 @@ fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<Str
     if let Some(ref parent_id) = filter.parent_id {
         clause.push_str(" AND parent_id = ?");
         binds.push(parent_id.to_string());
+    }
+    if let Some(under) = filter.under {
+        clause.push_str(
+            " AND id IN (WITH RECURSIVE sub(id) AS (
+                    SELECT id FROM items WHERE parent_id = ? AND hidden = 0
+                    UNION ALL
+                    SELECT c.id FROM items c JOIN sub ON c.parent_id = sub.id WHERE c.hidden = 0
+                ) SELECT id FROM sub)",
+        );
+        binds.push(under.to_string());
+    }
+    match filter.node {
+        Some(Node::Group) => {
+            clause.push_str(&format!(" AND ({LEVEL_SQL} = 'group' OR {HAS_CHILDREN_SQL})"));
+        }
+        Some(Node::Work) => {
+            clause.push_str(&format!(
+                " AND ({LEVEL_SQL} <> 'group' AND NOT {HAS_CHILDREN_SQL})"
+            ));
+        }
+        None => {}
     }
     if let Some(ref assignee) = filter.assignee {
         clause.push_str(" AND assignee = ?");

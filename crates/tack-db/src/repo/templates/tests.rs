@@ -223,7 +223,6 @@ async fn a_saved_template_keeps_its_teams() {
             vocabulary: None,
             workflow: None,
             custom_fields: None,
-            default_boards: None,
             roles: Vec::new(),
             profiles: Vec::new(),
             automation: None,
