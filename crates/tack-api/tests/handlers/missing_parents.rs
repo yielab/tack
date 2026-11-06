@@ -62,7 +62,7 @@ async fn a_write_to_a_missing_parent_answers_404() {
     check(cases).await;
 }
 
-/// The writes of the second sweep: briefs, boards, links, imports, outlines and the operator's
+/// The writes of the second sweep: briefs, links, imports, outlines and the operator's
 /// side of a run.
 #[tokio::test]
 async fn the_remaining_writes_to_a_missing_parent_answer_404() {
@@ -72,11 +72,6 @@ async fn the_remaining_writes_to_a_missing_parent_answer_404() {
             "PUT",
             format!("/api/items/{missing}/brief"),
             json!({"acceptance": [], "constraints": []}),
-        ),
-        (
-            "POST",
-            format!("/api/projects/{missing}/boards"),
-            json!({"name": "B"}),
         ),
         (
             "PUT",

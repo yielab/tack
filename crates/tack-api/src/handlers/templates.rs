@@ -161,7 +161,7 @@ pub struct CreateProjectFromTemplate {
 
 /// The actual "build a project from a template" work — extracted from the
 /// route handler below so the project-creation path
-/// (workflow/vocabulary/custom fields/boards) has exactly one
+/// (workflow/vocabulary/custom fields) has exactly one
 /// implementation. `pub(crate)`, not `pub`: not part of the public HTTP
 /// surface.
 pub(crate) async fn build_project_from_template(
@@ -267,28 +267,6 @@ pub(crate) async fn build_project_from_template(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Create boards from template
-    for (idx, board_template) in template.default_boards.iter().enumerate() {
-        let board_data = CreateBoard {
-            name: board_template.name.clone(),
-            description: board_template.description.clone(),
-            filters: board_template.filters.clone(),
-            grouping: board_template
-                .grouping
-                .as_ref()
-                .and_then(|g| parse_grouping_from_string(g)),
-            is_default: Some(idx == 0), // First board is default
-        };
-
-        repo::boards::create_board(&state.repo, project.id, board_data)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, board_name = %board_template.name, "Failed to create board from template");
-                // Continue even if some boards fail
-            })
-            .ok();
-    }
-
     // Return the final project
     state
         .repo
@@ -392,35 +370,6 @@ pub async fn save_project_as_template(
         .collect();
 
     // Snapshot boards — columns are derived from workflow statuses
-    let boards = repo::boards::list_boards(&state.repo, project_id)
-        .await
-        .unwrap_or_default();
-
-    let status_names: Vec<String> = project
-        .workflow
-        .statuses
-        .iter()
-        .map(|s| s.name.clone())
-        .collect();
-
-    let default_boards: Vec<BoardTemplate> = boards
-        .into_iter()
-        .map(|b| BoardTemplate {
-            name: b.name,
-            description: b.description,
-            columns: status_names
-                .iter()
-                .map(|s| BoardColumn {
-                    status: s.clone(),
-                    wip_limit: None,
-                    collapsed: false,
-                })
-                .collect(),
-            filters: b.filters,
-            grouping: b.grouping.map(grouping_to_string),
-        })
-        .collect();
-
     // The project's roles, the profiles they use and its automation settings,
     // written the way an export writes them.
     let profiles: Vec<ProfileRow> = state
@@ -507,11 +456,6 @@ pub async fn save_project_as_template(
         } else {
             Some(custom_fields)
         },
-        default_boards: if default_boards.is_empty() {
-            None
-        } else {
-            Some(default_boards)
-        },
         roles: bundle.roles,
         profiles: bundle.profiles,
         automation: bundle.automation,
@@ -527,39 +471,10 @@ pub async fn save_project_as_template(
         })
 }
 
-fn grouping_to_string(g: BoardGrouping) -> String {
-    match g {
-        BoardGrouping::Status => "status".to_string(),
-        BoardGrouping::Priority => "priority".to_string(),
-        BoardGrouping::ItemType => "item_type".to_string(),
-        BoardGrouping::Sprint => "sprint".to_string(),
-        BoardGrouping::Assignee => "assignee".to_string(),
-        BoardGrouping::CustomField(id) => format!("custom_field:{id}"),
-    }
-}
-
 /// Logs a failed read of the project for a template and answers 500.
 fn read_failed<E: std::fmt::Display>(project_id: Uuid) -> impl Fn(E) -> StatusCode {
     move |e| {
         tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
         StatusCode::INTERNAL_SERVER_ERROR
-    }
-}
-
-/// Helper: Parse grouping from string (for templates)
-fn parse_grouping_from_string(s: &str) -> Option<BoardGrouping> {
-    match s {
-        "status" => Some(BoardGrouping::Status),
-        "priority" => Some(BoardGrouping::Priority),
-        "item_type" => Some(BoardGrouping::ItemType),
-        "sprint" => Some(BoardGrouping::Sprint),
-        "assignee" => Some(BoardGrouping::Assignee),
-        _ if s.starts_with("custom_field:") => {
-            let field_id_str = s.trim_start_matches("custom_field:");
-            Uuid::parse_str(field_id_str)
-                .ok()
-                .map(BoardGrouping::CustomField)
-        }
-        _ => None,
     }
 }

@@ -142,7 +142,7 @@ async fn every_refused_request_answers_the_standard_error_body() {
         ),
         case(
             "GET",
-            "/api/projects/not-a-uuid/boards",
+            "/api/projects/not-a-uuid/items",
             None,
             "",
             StatusCode::BAD_REQUEST,

@@ -307,7 +307,7 @@ async fn delete_template_unknown_id_also_reports_success() {
 // ─── POST /api/projects/from-template/{id} ──────────────────────────────────
 
 #[tokio::test]
-async fn create_project_from_template_applies_workflow_fields_and_boards() {
+async fn create_project_from_template_applies_workflow_and_fields() {
     let (app, _) = common::test_app().await;
     let mut body = minimal_template_body("Launcher");
     body["workflow"] = valid_workflow();
@@ -323,13 +323,6 @@ async fn create_project_from_template_applies_workflow_fields_and_boards() {
         "validation": null,
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
-    }]);
-    body["default_boards"] = json!([{
-        "name": "Main",
-        "description": null,
-        "columns": [{"status": "To Do", "wip_limit": null, "collapsed": false}],
-        "filters": null,
-        "grouping": "status",
     }]);
     let template = create_template(&app, body).await;
     let tid = template["id"].as_str().unwrap();
@@ -356,16 +349,6 @@ async fn create_project_from_template_applies_workflow_fields_and_boards() {
     )
     .await;
     assert_eq!(fields.as_array().unwrap().len(), 1, "custom field copied");
-
-    let (_, boards) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/boards"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    assert_eq!(boards.as_array().unwrap().len(), 1, "board copied");
 }
 
 #[tokio::test]
@@ -421,85 +404,16 @@ async fn create_project_from_template_creates_default_workspace_when_none_exists
     assert_eq!(project["name"], "First Project");
 }
 
-/// `default_boards[].grouping` is free-text on the template row, parsed back
-/// into a `BoardGrouping` per board when a project is created — pins every
-/// arm of that parse, including a string that matches none of them.
-#[tokio::test]
-async fn create_project_from_template_parses_every_grouping_string() {
-    let (app, _) = common::test_app().await;
-    let field_id = Uuid::new_v4();
-    let groupings: Vec<String> = vec![
-        "status".to_string(),
-        "priority".to_string(),
-        "item_type".to_string(),
-        "sprint".to_string(),
-        "assignee".to_string(),
-        format!("custom_field:{field_id}"),
-        "unrecognized-string".to_string(),
-    ];
-    let mut body = minimal_template_body("Grouped");
-    body["default_boards"] = Value::Array(
-        groupings
-            .iter()
-            .enumerate()
-            .map(|(i, g)| {
-                json!({
-                    "name": format!("Board {i}"),
-                    "description": null,
-                    "columns": [],
-                    "filters": null,
-                    "grouping": g,
-                })
-            })
-            .collect(),
-    );
-    let template = create_template(&app, body).await;
-    let tid = template["id"].as_str().unwrap();
-
-    let (status, project) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/from-template/{tid}"),
-        json!({"name": "Every Grouping"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{project}");
-    let pid = project["id"].as_str().unwrap();
-
-    let (_, boards) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/boards"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    assert_eq!(
-        boards.as_array().unwrap().len(),
-        groupings.len(),
-        "every grouping string, recognized or not, still creates its board"
-    );
-}
-
 // ─── POST /api/projects/{project_id}/save-as-template ───────────────────────
 
 #[tokio::test]
-async fn save_project_as_template_snapshots_fields_and_boards() {
+async fn save_project_as_template_snapshots_fields() {
     let (app, pid) = setup().await;
     common::send(
         &app,
         "POST",
         &format!("/api/projects/{pid}/custom-fields"),
         json!({"name": "Score", "field_type": "number"}),
-        &[],
-    )
-    .await;
-    common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/boards"),
-        json!({"name": "Snapshot Board"}),
         &[],
     )
     .await;
@@ -515,11 +429,7 @@ async fn save_project_as_template_snapshots_fields_and_boards() {
     assert_eq!(status, StatusCode::OK, "{template}");
     assert_eq!(template["name"], "Snapshot");
     assert_eq!(template["custom_fields"].as_array().unwrap().len(), 1);
-    assert_eq!(template["default_boards"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        template["default_boards"][0]["name"], "Snapshot Board",
-        "board name carried over"
-    );
+    assert!(template.get("default_boards").is_none());
 }
 
 #[tokio::test]

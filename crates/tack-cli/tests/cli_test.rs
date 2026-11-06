@@ -501,6 +501,81 @@ async fn run_tack(uri: String, args: &'static [&'static str]) -> std::process::O
     .await
 }
 
+/// Mounts the three reads `tack board` makes for project `p1`: the work, the groups and the types.
+async fn mount_board_reads(server: &MockServer) {
+    let list = |data: serde_json::Value| {
+        let total = data.as_array().map_or(0, Vec::len);
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": data, "total": total, "page": 1, "per_page": 500
+        }))
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p1/items"))
+        .and(query_param("node", "work"))
+        .respond_with(list(serde_json::json!([
+            {"id": "w1", "title": "Pay", "item_type": "task", "status": "Done", "parent_id": "g1"},
+            {"id": "w2", "title": "Refund", "item_type": "task", "status": "To Do", "parent_id": "g1"},
+            {"id": "w3", "title": "Loose", "item_type": "task", "status": "To Do", "parent_id": null},
+        ])))
+        .expect(1)
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p1/items"))
+        .and(query_param("node", "group"))
+        .respond_with(list(serde_json::json!([
+            {"id": "g1", "title": "Checkout", "item_type": "epic", "status": "To Do",
+             "progress": {"total": 2, "done": 1, "estimate_total": null, "needs_you": 1}},
+        ])))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p1/types"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"key": "epic", "name": "Epic"}, {"key": "task", "name": "Task"},
+        ])))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn board_prints_a_column_per_workflow_status_of_the_work_only() {
+    let server = MockServer::start().await;
+    mount_board_reads(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "workflow": {"statuses": [
+                {"name": "To Do", "order": 0, "wip_limit": null},
+                {"name": "Done", "order": 1, "wip_limit": null},
+            ]}
+        })))
+        .mount(&server)
+        .await;
+
+    let out = run_tack(server.uri(), &["board", "-p", "p1"]).await;
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("To Do (2)"), "{text}");
+    assert!(text.contains("Done (1)"), "{text}");
+    assert!(text.contains("  · Pay (Task)"), "{text}");
+    assert!(!text.contains("Checkout"), "a group is not work: {text}");
+}
+
+#[tokio::test]
+async fn board_by_parent_prints_a_block_per_group_with_its_progress() {
+    let server = MockServer::start().await;
+    mount_board_reads(&server).await;
+
+    let out = run_tack(server.uri(), &["board", "-p", "p1", "--by", "parent"]).await;
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Checkout (Epic) · 1 of 2 done · 1 need you"), "{text}");
+    assert!(text.contains("  · Refund (Task) · To Do"), "{text}");
+    assert!(text.contains("No parent"), "{text}");
+    assert!(text.contains("  · Loose (Task) · To Do"), "{text}");
+}
+
 #[tokio::test]
 async fn export_bundle_asks_for_the_yaml_project_file() {
     let server = MockServer::start().await;

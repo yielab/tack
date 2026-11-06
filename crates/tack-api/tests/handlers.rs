@@ -21,8 +21,6 @@ mod attempt_scoping;
 mod auto_start;
 #[path = "handlers/autonomy.rs"]
 mod autonomy;
-#[path = "handlers/boards_multi.rs"]
-mod boards_multi;
 #[path = "handlers/briefs.rs"]
 mod briefs;
 #[path = "handlers/bundle.rs"]
@@ -49,6 +47,8 @@ mod fleet_membership;
 mod hierarchy;
 #[path = "handlers/item_concurrency.rs"]
 mod item_concurrency;
+#[path = "handlers/item_facts.rs"]
+mod item_facts;
 #[path = "handlers/item_types.rs"]
 mod item_types;
 #[path = "handlers/local_runner.rs"]

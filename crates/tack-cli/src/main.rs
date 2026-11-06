@@ -7,7 +7,7 @@ use tack_cli::config::Config;
 
 use cmd::backup::cmd_list_remote_backups;
 use cmd::board::{
-    ProjectCommands, cmd_add, cmd_board, cmd_branch, cmd_config, cmd_export, cmd_init, cmd_list,
+    BoardBy, ProjectCommands, cmd_add, cmd_board, cmd_branch, cmd_config, cmd_export, cmd_init, cmd_list,
     cmd_move, cmd_open, cmd_project_autonomy, cmd_projects, cmd_search, cmd_start,
 };
 use cmd::entities::{CommentAction, FieldAction, SprintAction, cmd_role, cmd_template};
@@ -210,11 +210,14 @@ enum Commands {
         json: bool,
     },
 
-    /// Show board view for a project
+    /// Show a project's work: a column per status, or a block per group
     Board {
         /// Project ID
         #[arg(short = 'p', long)]
         project: String,
+        /// How to lay the work out
+        #[arg(long, value_enum, default_value = "status")]
+        by: BoardBy,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
@@ -524,7 +527,7 @@ fn main() -> anyhow::Result<()> {
             json,
         } => cmd_move(&client, id, status, under, top, json),
 
-        Commands::Board { project, json } => cmd_board(&client, project, json),
+        Commands::Board { project, by, json } => cmd_board(&client, project, by, json),
 
         Commands::Branch {
             id,
