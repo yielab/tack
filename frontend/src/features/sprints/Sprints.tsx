@@ -12,6 +12,8 @@ import { priorityColor } from '../../shared/ui/PriorityDot';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import type { Sprint, Item } from '../../shared/types';
 import Card from '../../shared/ui/Card';
+import GroupHeader from '../../shared/ui/GroupHeader';
+import { ancestorsOf, treeRows } from '../../shared/tree';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -47,8 +49,9 @@ export default function Sprints() {
   const projectId = params.id!;
   const [, setSearchParams] = useSearchParams();
 
-  const { project } = useProject();
+  const { project, vocabulary } = useProject();
   const { t } = useVocab();
+  const pointsWord = () => vocabulary()?.story_points?.toLowerCase();
 
   const [sprints, { refetch: refetchSprints }] = createResource(() =>
     api.sprints.list(projectId),
@@ -73,12 +76,36 @@ export default function Sprints() {
     (sprints() ?? []).filter(s => s.status !== 'closed'),
   );
 
+  // A sprint holds work: a group is planned through its items, so it is never a card here.
+  const work = createMemo(() => (items() ?? []).filter(i => i.node === 'work'));
+  const itemsById = createMemo(() => new Map((items() ?? []).map(i => [i.id, i])));
+
   const backlogItems = createMemo(() =>
-    sortByPriority((items() ?? []).filter(i => !i.sprint_id)),
+    sortByPriority(work().filter(i => !i.sprint_id)),
   );
 
   const itemsForSprint = (sprintId: string) =>
-    sortByPriority((items() ?? []).filter(i => i.sprint_id === sprintId));
+    sortByPriority(work().filter(i => i.sprint_id === sprintId));
+
+  const hasGroups = createMemo(() => (items() ?? []).some(i => i.node === 'group'));
+
+  // The backlog under the group each piece of work sits in, in the tree's order, then the work with no group.
+  const backlogSections = createMemo(() => {
+    const byId = itemsById();
+    const groupOf = (item: Item) => ancestorsOf(item, byId).reverse().find(a => a.node === 'group');
+    const inGroup = new Map<string, Item[]>();
+    const loose: Item[] = [];
+    for (const item of backlogItems()) {
+      const group = groupOf(item);
+      if (!group) { loose.push(item); continue; }
+      inGroup.set(group.id, [...(inGroup.get(group.id) ?? []), item]);
+    }
+    const groups = treeRows((items() ?? []).filter(i => i.node === 'group'))
+      .map(({ item }) => item)
+      .filter(group => inGroup.has(group.id))
+      .map(group => ({ group, items: inGroup.get(group.id)! }));
+    return { groups, loose };
+  });
 
   const sprintStats = (sprintId: string) => {
     const its = itemsForSprint(sprintId);
@@ -188,8 +215,9 @@ export default function Sprints() {
     try {
       await api.items.update(itemId, { sprint_id: sprintId });
       await refetchItems();
-    } catch {
-      toast.error('Failed to move item');
+    } catch (error) {
+      // The server says why a sprint refuses an item (a group does not go in one), in words for a person.
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to move item');
     }
   };
 
@@ -216,7 +244,7 @@ export default function Sprints() {
       <div class="flex-1 min-h-0 flex gap-3.5 overflow-hidden">
         {/* ── Left: Backlog ─────────────────────────────────────────── */}
         <div
-          class="w-72 shrink-0 flex flex-col gap-2 p-3.5 rounded-card overflow-hidden transition-colors"
+          class={`${hasGroups() ? 'w-96' : 'w-72'} shrink-0 flex flex-col gap-2 p-3.5 rounded-card overflow-hidden transition-colors`}
           style={{
             'background-color': 'var(--color-accent2-soft)',
             outline: dragOverZone() === 'backlog'
@@ -250,9 +278,40 @@ export default function Sprints() {
                 </div>
               }
             >
-              <ForById each={backlogItems()}>
-                {(item) => <ItemCard item={item()} onDragStart={handleDragStart} onOpen={setSearchParams} />}
-              </ForById>
+              <Show
+                when={hasGroups()}
+                fallback={
+                  <ForById each={backlogItems()}>
+                    {(item) => <ItemCard item={item()} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+                  </ForById>
+                }
+              >
+                <For each={backlogSections().groups}>
+                  {(section) => (
+                    <GroupHeader
+                      group={section.group}
+                      byId={itemsById()}
+                      density="heading"
+                      statuses={project()?.workflow?.statuses ?? []}
+                      pointsWord={pointsWord()}
+                    >
+                      <div class="flex flex-col gap-2 pb-2">
+                        <ForById each={section.items}>
+                          {(item) => <ItemCard item={item()} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+                        </ForById>
+                      </div>
+                    </GroupHeader>
+                  )}
+                </For>
+                <Show when={backlogSections().loose.length > 0}>
+                  <section aria-label="No parent" data-testid="no-parent" class="flex flex-col gap-2">
+                    <h3 class="font-sans text-small font-bold text-content-muted" style={{ padding: '8px 0' }}>No parent</h3>
+                    <ForById each={backlogSections().loose}>
+                      {(item) => <ItemCard item={item()} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+                    </ForById>
+                  </section>
+                </Show>
+              </Show>
             </Show>
           </div>
         </div>
