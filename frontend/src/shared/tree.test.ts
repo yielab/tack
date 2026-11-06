@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ancestorsOf, itemsUnder, type TreeItem } from './tree';
+import { ancestorsOf, itemsUnder, treeRows, type TreeItem } from './tree';
 
 const item = (id: string, parent_id?: string | null): TreeItem => ({ id, parent_id });
 const index = (items: TreeItem[]) => new Map(items.map((i) => [i.id, i]));
@@ -53,5 +53,22 @@ describe('itemsUnder', () => {
   it('does_not_include_the_group_even_when_the_data_loops', () => {
     const loop = [item('a', 'b'), item('b', 'a')];
     expect(itemsUnder(loop[0], loop).map((i) => i.id)).toEqual(['b']);
+  });
+});
+
+describe('treeRows', () => {
+  it('reads_each_top_item_then_everything_under_it_in_the_order_given', () => {
+    const items = [item('b'), item('a'), item('a2', 'a'), item('b1', 'b'), item('a1', 'a'), item('a1x', 'a1')];
+    expect(treeRows(items).map((r) => [r.item.id, r.depth])).toEqual([
+      ['b', 0], ['b1', 1], ['a', 0], ['a2', 1], ['a1', 1], ['a1x', 2],
+    ]);
+  });
+
+  it('counts_an_item_whose_parent_is_not_held_as_a_top_item', () => {
+    expect(treeRows([item('x', 'gone'), item('y', 'x')]).map((r) => [r.item.id, r.depth])).toEqual([['x', 0], ['y', 1]]);
+  });
+
+  it('lists_an_item_caught_in_a_loop_once', () => {
+    expect(treeRows([item('a', 'b'), item('b', 'a')]).map((r) => r.item.id)).toEqual(['a', 'b']);
   });
 });

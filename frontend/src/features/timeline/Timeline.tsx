@@ -12,7 +12,10 @@ import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { priorityFill } from '../../shared/ui/PriorityDot';
-import { IconTimeline } from '../../shared/ui/icons';
+import { IconChevronDown, IconTimeline } from '../../shared/ui/icons';
+import { progressText } from '../../shared/ui/ProgressBar';
+import TypeTile from '../../shared/ui/TypeTile';
+import { ancestorsOf, treeRows } from '../../shared/tree';
 import type { Item, Priority } from '../../shared/types';
 import { onActivateKey } from '../../shared/ui/keyActivate';
 import Card from '../../shared/ui/Card';
@@ -47,6 +50,26 @@ function addDays(d: Date, n: number): Date {
   return new Date(d.getTime() + n * 86_400_000);
 }
 
+const isWork = (item: Item) => item.node === 'work';
+
+/**
+ * Where an item's bar starts and ends. Work draws from when it started (else was created) to its due
+ * date; a group draws from the earliest start of its work to the latest due date of its work, which
+ * the server works out, and only falls back to its own dates when it has no work yet.
+ */
+function spanOf(item: Item): { start: Date; end: Date } {
+  const group = item.node === 'group';
+  const start = new Date((group ? item.progress?.starts : null) ?? item.started_at ?? item.created_at);
+  const end = (group ? item.progress?.ends : null) ?? item.due_date;
+  return { start, end: end ? new Date(end) : addDays(start, 7) };
+}
+
+/** A group whose work ends after the date the group itself is due. */
+function endsAfterDue(item: Item): boolean {
+  const ends = item.progress?.ends;
+  return !!ends && !!item.due_date && new Date(ends).getTime() > new Date(item.due_date).getTime();
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function Timeline() {
@@ -60,8 +83,9 @@ export default function Timeline() {
 
   const [blockedResource, { refetch: refetchBlocked }] = createResource(items, async (its) => {
     const blocked = new Set<string>();
+    // A group has no dependencies of its own: its work does.
     await Promise.all(
-      (its ?? []).map(async (it) => {
+      (its ?? []).filter(isWork).map(async (it) => {
         const deps = await api.dependencies.list(it.id);
         for (const d of deps) {
           const blockedHere =
@@ -122,13 +146,9 @@ export default function Timeline() {
     const { startDate, endDate } = timelineRange();
     const totalMs = endDate.getTime() - startDate.getTime();
 
-    const start = preview?.newStart ?? (item.started_at
-      ? new Date(item.started_at)
-      : new Date(item.created_at));
-
-    const end = preview?.newEnd ?? (item.due_date
-      ? new Date(item.due_date)
-      : addDays(start, 7));
+    const span = spanOf(item);
+    const start = preview?.newStart ?? span.start;
+    const end = preview?.newEnd ?? span.end;
 
     const leftPercent  = Math.max(0, ((start.getTime() - startDate.getTime()) / totalMs) * 100);
     const widthPercent = Math.min(100 - leftPercent, ((end.getTime() - start.getTime()) / totalMs) * 100);
@@ -137,16 +157,32 @@ export default function Timeline() {
     return { start, end, leftPercent, widthPercent: Math.max(0.5, widthPercent), isVisible };
   };
 
-  const timelineItems = createMemo(() => {
-    const allItems = items() || [];
+  // Groups folded shut by the person; their work leaves the chart until they are opened.
+  const [folded, setFolded] = createSignal<ReadonlySet<string>>(new Set());
+  const toggleFold = (id: string) =>
+    setFolded((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
-    return allItems
-      .map(item => {
-        const pos = positionItem(item);
-        return { ...item, ...pos };
-      })
-      .filter(item => item.isVisible)
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
+  const hasGroups = createMemo(() => (items() ?? []).some((item) => !isWork(item)));
+  const itemsById = createMemo(() => new Map((items() ?? []).map((item) => [item.id, item])));
+
+  // The chart reads like the tree: a group, then its work. A group stays on the chart when its own bar is
+  // out of the window but some of its work is in it, so the work keeps its heading.
+  const timelineItems = createMemo(() => {
+    const all = items() ?? [];
+    const byId = itemsById();
+    const inRange = all.filter((item) => positionItem(item).isVisible);
+    const shown = new Set(inRange.map((item) => item.id));
+    for (const item of inRange) for (const ancestor of ancestorsOf(item, byId)) shown.add(ancestor.id);
+    const closed = folded();
+    // Siblings are listed by when they start.
+    const byStart = [...all].sort((a, b) => spanOf(a).start.getTime() - spanOf(b).start.getTime());
+    return treeRows(byStart)
+      .filter(({ item }) => shown.has(item.id) && !ancestorsOf(item, byId).some((ancestor) => closed.has(ancestor.id)))
+      .map(({ item, depth }) => ({ ...item, ...positionItem(item), depth }));
   });
 
   // ── Drag handlers ──────────────────────────────────────────────────────
@@ -160,8 +196,7 @@ export default function Timeline() {
     e.stopPropagation();
     (e.target as Element).setPointerCapture(e.pointerId);
 
-    const start = item.started_at ? new Date(item.started_at) : new Date(item.created_at);
-    const end   = item.due_date   ? new Date(item.due_date)   : addDays(start, 7);
+    const { start, end } = spanOf(item);
 
     setDragState({ itemId: item.id, mode, startClientX: e.clientX, origStart: start, origEnd: end });
   };
@@ -256,6 +291,15 @@ export default function Timeline() {
     const totalMs = endDate.getTime() - startDate.getTime();
     return Math.max(0, Math.min(100, ((Date.now() - startDate.getTime()) / totalMs) * 100));
   });
+
+  /** Where a group's own due date falls in the window, in percent; null outside it or without one. */
+  const dueLeft = (item: Item): number | null => {
+    if (!item.due_date) return null;
+    const { startDate, endDate } = timelineRange();
+    const at = new Date(item.due_date).getTime();
+    if (at < startDate.getTime() || at > endDate.getTime()) return null;
+    return ((at - startDate.getTime()) / (endDate.getTime() - startDate.getTime())) * 100;
+  };
 
   // ── Style helpers ──────────────────────────────────────────────────────
 
@@ -383,7 +427,27 @@ export default function Timeline() {
                 const dragging = () => dragState()?.itemId === item.id;
 
                 return (
-                  <div class="relative h-11 group">
+                  <div class="relative h-11 group" data-depth={item.depth}>
+                    <Show when={item.depth > 0}>
+                      {/* A guide in the margin: this row's bar belongs to the group above. */}
+                      <div
+                        aria-hidden="true"
+                        class="absolute inset-y-0 w-0.5 rounded-full"
+                        style={{ left: '-10px', 'background-color': 'var(--color-border-light)' }}
+                      />
+                    </Show>
+                    <Show when={item.node === 'group'}>
+                      <GroupBar
+                        item={item}
+                        left={pos().leftPercent}
+                        width={pos().widthPercent}
+                        folded={folded().has(item.id)}
+                        onToggle={() => toggleFold(item.id)}
+                        onOpen={() => setSearchParams({ item: item.id })}
+                        dueLeft={dueLeft(item)}
+                      />
+                    </Show>
+                    <Show when={item.node === 'work'}>
                     <div
                       class="absolute top-1 bottom-1 rounded-full transition-shadow"
                       style={{
@@ -441,6 +505,7 @@ export default function Timeline() {
                         <div class="w-0.5 h-3 bg-white/70 rounded-full" />
                       </div>
                     </div>
+                    </Show>
 
                     {/* Date tooltip during drag */}
                     <Show when={dragging() && preview()}>
@@ -480,8 +545,103 @@ export default function Timeline() {
           <span class="text-content-subtle">
             Done items show a ✓ and strikethrough. Blocked items have a red outline.
           </span>
+          <Show when={hasGroups()}>
+            <span class="text-content-subtle">
+              A flat bar sums up the work under a group and cannot be moved; ◆ is the group's due date, and the bar turns red when its work ends after it.
+            </span>
+          </Show>
         </div>
       </Show>
     </div>
+  );
+}
+
+// ── Summary bar ────────────────────────────────────────────────────────────
+
+/**
+ * A group's bar: from the earliest start of its work to the latest due date of its work. It sums
+ * up that work, so it takes no drag and its cursor says so; move the work to move the bar. The
+ * group's own due date is a diamond on the row, and the bar turns the danger colour when the work
+ * ends after it.
+ */
+function GroupBar(props: {
+  item: Item & { start: Date; end: Date };
+  left: number;
+  width: number;
+  folded: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+  dueLeft: number | null;
+}) {
+  const late = () => endsAfterDue(props.item);
+  const progress = () => (props.item.progress && props.item.progress.total > 0 ? progressText(props.item.progress) : null);
+  return (
+    <>
+      <div
+        data-testid="summary-bar"
+        data-late={late() ? 'true' : 'false'}
+        class="absolute top-1 bottom-1 flex items-center gap-1 overflow-hidden rounded-[6px] px-1"
+        style={{
+          left: `${props.left}%`,
+          width: `${props.width}%`,
+          'background-color': late() ? 'var(--color-danger-600)' : 'var(--color-text-secondary)',
+          color: 'var(--color-text-inverse)',
+          cursor: 'not-allowed',
+        }}
+        title={[
+          props.item.title,
+          `${props.item.start.toLocaleDateString()} → ${props.item.end.toLocaleDateString()}`,
+          progress(),
+          late() ? `Its work ends after the day it is due (${new Date(props.item.due_date!).toLocaleDateString()})` : null,
+          'Sums up its work: move the work to move this bar',
+        ].filter(Boolean).join('\n')}
+      >
+        <button
+          type="button"
+          aria-expanded={!props.folded}
+          aria-label={`${props.folded ? 'Unfold' : 'Fold'} ${props.item.title}`}
+          onClick={props.onToggle}
+          class="grid h-6 w-6 flex-none place-items-center rounded-full focus:outline-none focus-visible:ring-2"
+          style={{ color: 'inherit', cursor: 'pointer', '--tw-ring-color': 'var(--color-focus-ring)' }}
+        >
+          <span aria-hidden="true" class="inline-flex" style={{ transform: props.folded ? 'rotate(-90deg)' : 'none' }}>
+            <IconChevronDown size={14} />
+          </span>
+        </button>
+        <TypeTile type={props.item.item_type} class="flex-none" />
+        <button
+          type="button"
+          aria-label={props.item.title}
+          onClick={props.onOpen}
+          class="min-w-0 truncate bg-transparent p-0 text-left text-caption font-bold focus:outline-none focus-visible:underline"
+          style={{ color: 'inherit', cursor: 'pointer' }}
+        >
+          {props.item.title}
+        </button>
+        <Show when={late()}>
+          <span class="flex-none text-xs" aria-label="ends after its due date">⚠</span>
+        </Show>
+      </div>
+      <Show when={props.dueLeft != null}>
+        <span
+          data-testid="due-milestone"
+          role="img"
+          aria-label={`Due ${new Date(props.item.due_date!).toLocaleDateString()}`}
+          title={`${props.item.title} is due ${new Date(props.item.due_date!).toLocaleDateString()}`}
+          class="absolute"
+          style={{
+            left: `${props.dueLeft}%`,
+            top: '50%',
+            width: '12px',
+            height: '12px',
+            transform: 'translate(-50%, -50%) rotate(45deg)',
+            'background-color': late() ? 'var(--color-danger-600)' : 'var(--color-text-primary)',
+            border: '2px solid var(--color-bg-panel)',
+            cursor: 'not-allowed',
+            'z-index': 1,
+          }}
+        />
+      </Show>
+    </>
   );
 }
