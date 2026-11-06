@@ -322,14 +322,26 @@ pub(super) fn body(
         body.insert("autonomy".into(), json!(level.as_str()));
     }
     let mut restrictions = Map::new();
-    let mut denied: Vec<&str> = docket
+    let denied: Vec<&str> = docket
         .and_then(|docket| docket.get("denied_tools")?.as_array())
         .map(|tools| tools.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
     // `network: none` only cuts the jail, and `fetch` runs outside it: a profile that turns the
-    // network off must also take `fetch` away, or the team keeps reading the web.
+    // network off must also take `fetch` away, or the team keeps reading the web. docket closes a
+    // `deniedTools` entry over its whole kind, and `fetch` is a read tool like `read` and `grep`,
+    // so `fetch` alone is blocked by a task policy that names it.
     if !request.permission_policy.network && !denied.contains(&FETCH_TOOL) {
-        denied.push(FETCH_TOOL);
+        restrictions.insert(
+            "policies".into(),
+            json!([{
+                "kind": "policy",
+                "name": "network-off",
+                "appliesTo": ["*"],
+                "when": {"tool": FETCH_TOOL},
+                "then": "block",
+                "message": "the network is off for this run",
+            }]),
+        );
     }
     if !denied.is_empty() {
         restrictions.insert("deniedTools".into(), json!(denied));

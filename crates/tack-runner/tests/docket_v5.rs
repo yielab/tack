@@ -959,9 +959,11 @@ async fn the_task_body_is_the_specs_example_key_by_key() {
 }
 
 /// `network: none` only cuts the jail and `fetch` runs outside it, so a profile that turns the
-/// network off also denies `fetch`; one that keeps the network leaves `fetch` as it is.
+/// network off also blocks `fetch`: by a task policy that names it, because docket closes a
+/// `deniedTools` entry over its whole kind and `fetch` would take `read`, `glob` and `grep` with
+/// it. A profile that keeps the network leaves `fetch` as it is.
 #[tokio::test]
-async fn a_profile_with_the_network_off_also_denies_fetch() {
+async fn a_profile_with_the_network_off_also_blocks_fetch_and_only_fetch() {
     let restrictions_of = |network: bool, denied: Value| async move {
         let fake = pods_fake().await;
         let scene = scene();
@@ -973,18 +975,27 @@ async fn a_profile_with_the_network_off_also_denies_fetch() {
         adapter.start(&request).await.expect("starts");
         fake.requests_to("POST", "/tasks/saas-dev")[0].body["restrictions"].clone()
     };
+    let no_fetch = json!([{
+        "kind": "policy",
+        "name": "network-off",
+        "appliesTo": ["*"],
+        "when": {"tool": "fetch"},
+        "then": "block",
+        "message": "the network is off for this run",
+    }]);
     assert_eq!(
         restrictions_of(false, json!([])).await,
-        json!({"deniedTools": ["fetch"], "network": "none"})
+        json!({"policies": no_fetch, "network": "none"}),
+        "fetch is blocked by name, never put in deniedTools"
     );
     assert_eq!(
         restrictions_of(false, json!(["bash"])).await,
-        json!({"deniedTools": ["bash", "fetch"], "network": "none"})
+        json!({"policies": no_fetch, "deniedTools": ["bash"], "network": "none"})
     );
     assert_eq!(
         restrictions_of(false, json!(["fetch"])).await,
         json!({"deniedTools": ["fetch"], "network": "none"}),
-        "a tool the profile already denies is not named twice"
+        "a profile that denies fetch itself is sent as it is"
     );
     assert_eq!(
         restrictions_of(true, json!([])).await,
