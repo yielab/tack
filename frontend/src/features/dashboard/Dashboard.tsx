@@ -8,7 +8,7 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { Button, EmptyState, Skeleton } from '../../shared/ui';
 import { IconOverview } from '../../shared/ui/icons';
 import { priorityColor } from '../../shared/ui/PriorityDot';
-import { typeTone } from '../../shared/ui/TypeBadge';
+import { typeTone } from '../../shared/ui/TypeTile';
 import { useItemTypes } from '../../shared/vocab/useItemTypes';
 import type { TypeColor } from '../../shared/types';
 import type { JSX } from 'solid-js';
@@ -204,7 +204,7 @@ export default function Dashboard() {
   );
 }
 
-/** Bar colour per item type — the same hue family TypeBadge uses; neutral
+/** Bar colour per item type — the same hue family TypeTile uses; neutral
  *  types fall back to the tertiary text tone so the bar stays visible. */
 function typeBarColor(color: TypeColor): string {
   const fg = typeTone(color).fg;

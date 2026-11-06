@@ -21,7 +21,7 @@ import { Button, Badge, EmptyState, RunState, createConfirm } from '../../shared
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { IconList } from '../../shared/ui/icons';
 import { priorityColor } from '../../shared/ui/PriorityDot';
-import { typeTone as toneOf } from '../../shared/ui/TypeBadge';
+import { typeTone as toneOf } from '../../shared/ui/TypeTile';
 import type { Priority } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import {

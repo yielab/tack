@@ -97,3 +97,31 @@ export function resetDisplay(): void {
 export function initDisplay(): void {
   applyDisplay(getStoredDisplay());
 }
+
+// How a project's Board is split into lanes. It is a per-project choice, kept like the display
+// preferences: in this browser, and the page works without it.
+
+/** What the Board's lanes follow: the group an item is under, nothing, an item's priority or its assignee. */
+export type BoardLanes = 'parent' | 'none' | 'priority' | 'assignee';
+
+const BOARD_LANES = ['parent', 'none', 'priority', 'assignee'] as const;
+const lanesKey = (projectId: string) => `tack_board_lanes:${projectId}`;
+
+/** The lanes the person chose for this project, or undefined when they never did (or storage is blocked). */
+export function getBoardLanes(projectId: string | undefined): BoardLanes | undefined {
+  if (!projectId) return undefined;
+  try {
+    const saved = localStorage.getItem(lanesKey(projectId));
+    return BOARD_LANES.find((lanes) => lanes === saved);
+  } catch {
+    return undefined;
+  }
+}
+
+export function setBoardLanes(projectId: string, lanes: BoardLanes): void {
+  try {
+    localStorage.setItem(lanesKey(projectId), lanes);
+  } catch {
+    /* a convenience, not state: the choice lasts until the page is left */
+  }
+}

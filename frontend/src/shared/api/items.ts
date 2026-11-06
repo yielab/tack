@@ -1,5 +1,5 @@
 import { ApiError, request, requestWithHeaders } from './client';
-import type { Item, ItemPage, ItemDetail, CreateItem, UpdateItem } from '../types';
+import type { Item, ItemPage, ItemDetail, CreateItem, UpdateItem, ParentOption } from '../types';
 import type { components } from './schema.gen';
 
 /** The body of `PUT .../github-link` and the response of `GET .../github-link`. */
@@ -44,6 +44,14 @@ export const items = {
   },
 
   get: getItemWithEtag,
+
+  /**
+   * `GET /projects/{id}/parents` — the items the tree rule admits as the parent of an existing item
+   * (`item`: it and what lies under it are left out) or of one about to be made (`type`: a key of the
+   * catalog), in tree order. The web offers exactly these and never works the rule out itself.
+   */
+  parents: (projectId: string, of: { item: string } | { type: string }) =>
+    request<ParentOption[]>(`/projects/${projectId}/parents?${new URLSearchParams(of).toString()}`),
 
   create: (projectId: string, data: CreateItem) =>
     request<Item>(`/projects/${projectId}/items`, {

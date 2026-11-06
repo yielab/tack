@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { hueFromName, initialsOf } from './Avatar';
-import { typeTone } from './TypeBadge';
+import { typeTone } from './TypeTile';
 import { priorityColor, priorityLabel } from './PriorityDot';
 import { wipChipStyle } from './WipChip';
 

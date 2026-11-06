@@ -4,7 +4,7 @@ import { Fold, RunState, type DocketRunWord, type RunStateName, priorityLabel } 
 import type { Item } from '../../shared/types';
 import ProposeFromFile from './ProposeFromFile';
 import AutomationRow, { WhoWouldDoIt, useAutomation } from './AutomationRow';
-import ItemMenu from './ItemMenu';
+import ItemMenu from '../../shared/ui/ItemMenu';
 import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
 import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
 import ItemHeader from './ItemHeader';

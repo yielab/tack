@@ -13,7 +13,8 @@ export function readFoldOpen(kind: string): boolean | undefined {
   }
 }
 
-function saveFoldOpen(kind: string, open: boolean): void {
+/** Remembers that the person left this kind of section open or shut, for a section that draws its own header (a group's). */
+export function saveFoldOpen(kind: string, open: boolean): void {
   try {
     localStorage.setItem(KEY_PREFIX + kind, open ? '1' : '0');
   } catch {
