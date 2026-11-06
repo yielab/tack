@@ -13,6 +13,7 @@ export function makeItem(p: Partial<Item> & { id: string }): Item {
     project_id: 'p1',
     title: 'Untitled',
     item_type: 'task',
+    node: 'work',
     status: 'To Do',
     priority: 'medium',
     estimate_unit: 'story_points',
