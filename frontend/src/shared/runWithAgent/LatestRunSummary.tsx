@@ -49,6 +49,8 @@ export interface LatestRunSummaryProps {
   onState?: (state: { state: RunStateName; docket?: DocketRunWord } | undefined) => void;
   /** Under the Run button of an item with no run: who would do it. */
   idle?: JSX.Element;
+  /** The item holds work, so it is planned and not run: the panel says so and leaves starting a first plan to the item's own Plan with agent. */
+  group?: boolean;
   /** The panel's last line: what happens to the item without the person. It brings its own hairline. */
   footer?: JSX.Element;
 }
@@ -342,6 +344,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       itemTitle={props.itemTitle ?? ''}
       projectId={props.projectId ?? ''}
       variant={variant}
+      label={props.group ? 'Plan again' : undefined}
       testId={variant === 'primary' ? 'now-primary' : undefined}
       onCreated={props.onCreated}
     />
@@ -358,16 +361,18 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
       <Show when={!latest()}>
         <div data-testid="now-idle" class="space-y-1.5">
-          <p class="text-sm" style={muted()}>Nothing has run on this task yet.</p>
-          <div class="flex flex-wrap items-center gap-2">
-            <RunWithAgentButton
-              itemId={props.itemId}
-              itemTitle={props.itemTitle ?? ''}
-              projectId={props.projectId ?? ''}
-              testId="now-primary"
-              onCreated={props.onCreated}
-            />
-          </div>
+          <p class="text-sm" style={muted()}>{props.group ? 'Nothing has planned this yet.' : 'Nothing has run on this task yet.'}</p>
+          <Show when={!props.group}>
+            <div class="flex flex-wrap items-center gap-2">
+              <RunWithAgentButton
+                itemId={props.itemId}
+                itemTitle={props.itemTitle ?? ''}
+                projectId={props.projectId ?? ''}
+                testId="now-primary"
+                onCreated={props.onCreated}
+              />
+            </div>
+          </Show>
           {props.idle}
         </div>
       </Show>

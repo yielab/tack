@@ -5,8 +5,11 @@ import type { Item } from '../../shared/types';
 import ProposeFromFile from './ProposeFromFile';
 import AutomationRow, { WhoWouldDoIt, useAutomation } from './AutomationRow';
 import ItemMenu from '../../shared/ui/ItemMenu';
+import MoveUnderDialog from '../../shared/ui/MoveUnderDialog';
+import { useItemTypes } from '../../shared/vocab/useItemTypes';
 import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
 import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
+import GroupProgress from './GroupProgress';
 import ItemHeader from './ItemHeader';
 import ItemProperties from './ItemProperties';
 import type { ItemEditor } from './useItemEditor';
@@ -83,6 +86,14 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
 
   const automation = useAutomation(() => props.item);
   const [proposing, setProposing] = createSignal(false);
+  const [moving, setMoving] = createSignal(false);
+
+  // The server says whether the item holds work (`node`); the catalog says whether its type does, which
+  // tells a group from work that a plan split.
+  const itemTypes = useItemTypes();
+  const isGroup = () => props.item.node === 'group';
+  const typeHoldsWork = () => itemTypes.get(props.item.item_type)?.level === 'group';
+  const splitInto = () => (isGroup() && !typeHoldsWork() ? (props.item.progress?.total ?? 0) : 0);
 
   const properties = () => (
     <ItemProperties
@@ -109,6 +120,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
       itemId={props.item.id}
       itemTitle={props.item.title}
       projectId={props.item.project_id}
+      group={isGroup()}
       onCreated={() => props.onTabChange('execution')}
       onOpen={() => props.onTabChange('execution')}
       reviewInTab={props.tab === 'execution'}
@@ -131,18 +143,38 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
         actions={
           <>
             {props.headerActions}
-            <ItemMenu entries={[{ label: 'Propose items from a file', onSelect: () => {
-                    setProposing(true);
-                    props.onTabChange('execution');
-                  },
-                }]} />
+            <ItemMenu entries={[
+              { label: 'Move under…', onSelect: () => setMoving(true) },
+              { label: 'Propose items from a file', onSelect: () => {
+                setProposing(true);
+                props.onTabChange('execution');
+              } },
+            ]} />
           </>
         }
         focusTitle={page()}
       />
+      <MoveUnderDialog
+        projectId={props.item.project_id}
+        item={moving() ? props.item : null}
+        onClose={() => setMoving(false)}
+        onPick={(parent) => {
+          setMoving(false);
+          void props.editor.patch({ parent_id: parent?.id ?? null });
+        }}
+      />
+
+      <Show when={isGroup() && typeHoldsWork()}>
+        <GroupProgress item={props.item} onChanged={() => void props.editor.refetchItem()} />
+      </Show>
 
       <div class={page() ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]' : 'space-y-6'}>
         <div class="min-w-0 space-y-6">
+          <Show when={splitInto() > 0}>
+            <p data-testid="item-split" class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Split into {splitInto()} {splitInto() === 1 ? 'item' : 'items'}
+            </p>
+          </Show>
           {now}
           <Tabs tabs={tabs()} active={props.tab} onChange={props.onTabChange}>
             <Show when={props.tab === 'details'}>

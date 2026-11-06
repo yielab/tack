@@ -1,5 +1,5 @@
 import { ApiError, request, requestWithHeaders } from './client';
-import type { Item, ItemPage, ItemDetail, CreateItem, UpdateItem, ParentOption } from '../types';
+import type { Item, ItemPage, ItemDetail, ItemNode, CreateItem, UpdateItem, ParentOption } from '../types';
 import type { components } from './schema.gen';
 
 /** The body of `PUT .../github-link` and the response of `GET .../github-link`. */
@@ -27,13 +27,15 @@ export const items = {
    * Fetch every item in a project. The endpoint is paginated
    * (`{ data, total, page, per_page }`); we walk pages until we've collected
    * `total` items so projects with >100 items are not silently truncated.
-   * Returns a flat `Item[]` so callers stay unchanged.
+   * Returns a flat `Item[]` so callers stay unchanged. `only` narrows it to groups or work, or to
+   * what lies under one item at any depth (the item itself left out).
    */
-  list: async (projectId: string): Promise<Item[]> => {
+  list: async (projectId: string, only: { node?: ItemNode; under?: string } = {}): Promise<Item[]> => {
     const all: Item[] = [];
+    const filter = new URLSearchParams(only as Record<string, string>).toString();
     for (let page = 1; ; page += 1) {
       const res = await request<ItemPage>(
-        `/projects/${projectId}/items?page=${page}&per_page=${LIST_PAGE_SIZE}`,
+        `/projects/${projectId}/items?page=${page}&per_page=${LIST_PAGE_SIZE}${filter ? `&${filter}` : ''}`,
       );
       const batch = res.data ?? [];
       all.push(...batch);
