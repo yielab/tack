@@ -134,6 +134,10 @@ pub(crate) struct Setup {
     /// The stages the pack reports, as (name, status)
     pub(crate) pack_stages: Vec<(&'static str, &'static str)>,
     pub(crate) merges_per_day: Option<i64>,
+    /// What the pack the runner translated recommends.
+    pub(crate) pack_decision: &'static str,
+    /// The word prill signed into the statement for the same pack.
+    pub(crate) statement_decision: &'static str,
 }
 
 impl Default for Setup {
@@ -147,6 +151,8 @@ impl Default for Setup {
             verify_require: vec!["criteria", "suite"],
             pack_stages: vec![("criteria", "passed"), ("suite", "passed")],
             merges_per_day: Some(5),
+            pack_decision: "merge",
+            statement_decision: "auto-merge-eligible",
         }
     }
 }
@@ -217,6 +223,23 @@ async fn upload(
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 }
 
+/// The captured attestation, its statement's decision replaced by `word`. prill's fake accepts any
+/// envelope, so the signature is not re-made.
+fn envelope_saying(word: &str) -> Vec<u8> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let mut envelope: Value =
+        serde_json::from_slice(include_bytes!("../fixtures/prill/mrp.intoto.json")).unwrap();
+    let mut statement: Value = serde_json::from_slice(
+        &STANDARD
+            .decode(envelope["payload"].as_str().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    statement["predicate"]["recommendation"]["decision"] = json!(word);
+    envelope["payload"] = json!(STANDARD.encode(statement.to_string()));
+    envelope.to_string().into_bytes()
+}
+
 /// A finished attempt with its pack, evidence and (when `signed`) attestation.
 pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt {
     if setup.linked {
@@ -228,7 +251,29 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
     }
     let a = request_and_claim(&b.app, &b.item_id, "a2").await;
     accept_and_start(&b.app, &a).await;
+    // The run's computer reports the most autonomy its harness allows; a scenario about the
+    // ceiling reseeds this.
+    let snapshot =
+        tack_db::queries::execution_requests::request_snapshot(&b.state.repo, &a.request_id)
+            .await
+            .unwrap()
+            .unwrap();
+    let kind = serde_json::from_str::<Value>(&snapshot).unwrap()["requested_harness_kind"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    tack_test_support::seed::agent_runner_capabilities(
+        &b.state.repo,
+        &a.runner_id,
+        &json!({"harnesses": [{
+            "harness_kind": kind, "installed_version": "0.2.0", "probe_error": null,
+            "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L5",
+        }]})
+        .to_string(),
+    )
+    .await;
     let mut pack: Value = serde_json::from_str(READY).unwrap();
+    pack["recommendation"]["decision"] = json!(setup.pack_decision);
     pack["stages"] = setup
         .pack_stages
         .iter()
@@ -256,7 +301,7 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
     )
     .await;
     if setup.signed {
-        let envelope = include_bytes!("../fixtures/prill/mrp.intoto.json");
+        let envelope = envelope_saying(setup.statement_decision);
         upload(
             &b.app,
             &a,
@@ -264,7 +309,7 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
             "mrp_attestation",
             "mrp.intoto.json",
             ATTESTATION_MEDIA_TYPE,
-            envelope,
+            &envelope,
         )
         .await;
     }
@@ -533,6 +578,14 @@ async fn holds_table() {
                 ..Setup::default()
             },
             Some("The required stage suite is not in the pack"),
+        ),
+        (
+            "the signed statement says review while the pack says merge",
+            Setup {
+                statement_decision: "human-review",
+                ..Setup::default()
+            },
+            Some("does not say what the pack says"),
         ),
         (
             "merge budget spent",

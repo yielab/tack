@@ -291,11 +291,12 @@ export const attemptsApi = {
     requestWithHeaders<EventListResult>(
       `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(String(attemptNumber))}/events`,
     ),
-  /** `POST /attempts/{attempt_id}/merge` — 200 `{merged, merge_sha}`; a refusal is a 409 whose message says why. */
-  merge: (attemptId: string) =>
+  /** `POST /attempts/{attempt_id}/merge` — 200 `{merged, merge_sha}`; a refusal is a 409 whose message says why.
+   *  Over a pack that recommends reject the server answers 400 unless `reason` says why the person merges. */
+  merge: (attemptId: string, reason?: string) =>
     requestWithHeaders<{ merged: boolean; merge_sha?: string | null }>(
       `/attempts/${encodeURIComponent(attemptId)}/merge`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify(reason ? { reason } : {}) },
     ),
   review: (requestId: string, attemptNumber: number, body: { verdict: 'accepted' | 'rejected'; reason?: string }) =>
     requestWithHeaders<unknown>(

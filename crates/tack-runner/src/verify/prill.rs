@@ -753,11 +753,7 @@ pub(super) fn pack(
         },
     );
 
-    let merge_decision = match decision.as_str() {
-        "auto-merge-eligible" => MergeDecision::Merge,
-        "human-review" => MergeDecision::Review,
-        _ => MergeDecision::Reject,
-    };
+    let merge_decision = MergeDecision::from_prill(&decision);
     let tier = match risk
         .and_then(|risk| risk.get("level"))
         .and_then(Value::as_str)

@@ -11,7 +11,7 @@ use tack_db::repo::autonomy::MergeRow;
 use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
-use tack_protocol::mrp::MergeDecision;
+use tack_protocol::mrp::{MergeDecision, MergeReadinessPack};
 
 use crate::ports::Ports;
 
@@ -30,6 +30,8 @@ pub struct FactsExtra {
     pub pack_artifact_id: Option<String>,
     /// The most autonomy the team that ran the change allows; see `Facts::ceiling`.
     pub ceiling: Result<Option<Level>, String>,
+    /// The decision inside the signed statement; see `Facts::statement_decision`.
+    pub statement_decision: Option<MergeDecision>,
     /// The settings that decided, kept with the row.
     pub policy: Value,
 }
@@ -46,6 +48,7 @@ impl Default for FactsExtra {
             budget: Check::Pass,
             pack_artifact_id: None,
             ceiling: Ok(None),
+            statement_decision: None,
             policy: Value::Null,
         }
     }
@@ -126,6 +129,7 @@ pub async fn attempt(
         pr_open: Check::Pass,
         ci: CiState::Green,
         ceiling: extra.ceiling,
+        statement_decision: extra.statement_decision,
     };
 
     // Everything that does not need GitHub first, in the policy's order.
@@ -275,6 +279,25 @@ pub async fn disabled_reason(repo: &Repository, ports: &Ports, attempt_id: &str)
     // CI is read when the button is pressed, never to draw it: a list of
     // attempts would otherwise call GitHub on every refresh.
     None
+}
+
+/// What the attempt's newest merge-readiness pack recommends; `None` when it has no pack or the
+/// pack cannot be read.
+pub async fn pack_decision(
+    repo: &Repository,
+    ports: &Ports,
+    attempt_id: &str,
+) -> Option<MergeDecision> {
+    let (_, reference) = queries::autonomy::newest_artifact_of_media_type(
+        repo,
+        attempt_id,
+        crate::autonomy::MRP_MEDIA_TYPE,
+    )
+    .await
+    .ok()??;
+    let pack: MergeReadinessPack =
+        serde_json::from_slice(&ports.artifacts.read(&reference).await?).ok()?;
+    Some(pack.recommendation.decision)
 }
 
 /// The button as the attempts list draws it: enabled when nothing local stops

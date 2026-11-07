@@ -24,25 +24,71 @@ impl Repository {
         .fetch_optional(&mut *tx)
         .await?;
         let attempt_id = attempt_id.ok_or(StoreError::not_found("attempt"))?;
-        let inserted = sqlx::query(
-            "INSERT OR IGNORE INTO attempt_reviews (attempt_id, verdict, reason, reviewed_by, reviewed_at, artifact_id) \
-             VALUES (?, ?, ?, ?, ?, \
-               (SELECT artifact_id FROM execution_artifacts \
-                 WHERE attempt_id = ? AND media_type = 'application/vnd.tack.mrp+json' \
-                 ORDER BY created_at DESC, rowid DESC LIMIT 1))",
+        insert_review(
+            &mut tx,
+            &attempt_id,
+            verdict,
+            reason,
+            reviewed_by,
+            reviewed_at,
         )
-        .bind(&attempt_id)
-        .bind(verdict)
-        .bind(reason)
-        .bind(reviewed_by)
-        .bind(reviewed_at)
-        .bind(&attempt_id)
-        .execute(&mut *tx)
         .await?;
-        if inserted.rows_affected() == 0 {
-            return Err(StoreError::Conflict("already_reviewed".into()));
-        }
         tx.commit().await?;
         Ok(attempt_id)
     }
+
+    /// Records a person's verdict on an attempt known by its id, for a decision taken outside the
+    /// review screen (merging over a rejection). Same single verdict per attempt:
+    /// `Conflict("already_reviewed")` when one stands, which the caller leaves as it is.
+    pub async fn record_review_of_attempt(
+        &self,
+        attempt_id: &str,
+        verdict: &str,
+        reason: Option<&str>,
+        reviewed_by: &str,
+        reviewed_at: &str,
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        insert_review(
+            &mut tx,
+            attempt_id,
+            verdict,
+            reason,
+            reviewed_by,
+            reviewed_at,
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
+/// The one insert behind both ways to record a verdict; the review names the attempt's newest pack.
+async fn insert_review(
+    tx: &mut sqlx::SqliteConnection,
+    attempt_id: &str,
+    verdict: &str,
+    reason: Option<&str>,
+    reviewed_by: &str,
+    reviewed_at: &str,
+) -> Result<(), StoreError> {
+    let inserted = sqlx::query(
+        "INSERT OR IGNORE INTO attempt_reviews (attempt_id, verdict, reason, reviewed_by, reviewed_at, artifact_id) \
+         VALUES (?, ?, ?, ?, ?, \
+           (SELECT artifact_id FROM execution_artifacts \
+             WHERE attempt_id = ? AND media_type = 'application/vnd.tack.mrp+json' \
+             ORDER BY created_at DESC, rowid DESC LIMIT 1))",
+    )
+    .bind(attempt_id)
+    .bind(verdict)
+    .bind(reason)
+    .bind(reviewed_by)
+    .bind(reviewed_at)
+    .bind(attempt_id)
+    .execute(tx)
+    .await?;
+    if inserted.rows_affected() == 0 {
+        return Err(StoreError::Conflict("already_reviewed".into()));
+    }
+    Ok(())
 }
