@@ -1,0 +1,183 @@
+{
+  "schema": 1,
+  "tack_commit": "323635b02025b8c5dd5cbc1c08fd4dffa0612e43",
+  "suites": [
+    "regression"
+  ],
+  "harnesses": [
+    "claude-code"
+  ],
+  "models": [
+    "claude-haiku-5-5"
+  ],
+  "trials": 27,
+  "tasks": [
+    {
+      "task": "calc-add-multiply",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-changelog",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-divide-by-zero",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-evaluate",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-fix-add",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-fix-subtract-ask",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-review-readonly",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "plan-checkout-epic",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "plan-notes-digest",
+      "version": 1,
+      "harness": "claude-code",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    }
+  ],
+  "failures": {
+    "tack": 0,
+    "agent": 0,
+    "eval": 0,
+    "infra": 0
+  },
+  "not_applicable": 0,
+  "boundary_violations": 0,
+  "pass_at_1": 1.0,
+  "wilson": [
+    0.8754409628553641,
+    1.0
+  ],
+  "clustered_standard_error": 0.0,
+  "pass_at_k": {
+    "k": 3,
+    "value": 1.0
+  },
+  "pass_pow_k": {
+    "k": 3,
+    "value": 1.0
+  },
+  "verifier": {
+    "merge": 0,
+    "false_approvals": 0,
+    "reject": 0,
+    "false_rejections": 0
+  },
+  "tokens_per_accepted_run": {
+    "p50": 5451,
+    "p90": 10514
+  },
+  "question_noise": [
+    {
+      "harness": "claude-code",
+      "asked": 12,
+      "granted": 12,
+      "events": 142
+    }
+  ],
+  "safety": []
+}
