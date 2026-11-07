@@ -1,6 +1,6 @@
 //! Runner capability snapshots and support declarations.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -81,6 +81,11 @@ const API_FEATURES_KEY: &str = "api_features";
 /// does not know it loses nothing; absent means the agent did not say.
 const FEATURES_KEY: &str = "features";
 
+/// The key under which a harness reports who meets each [`ParityRule`], as a list of
+/// [`ParityLine`]. It rides in `additional` like [`FEATURES_KEY`]; absent means the runner is older
+/// than the key.
+const PARITY_KEY: &str = "parity";
+
 /// One installed harness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessCapability {
@@ -146,6 +151,23 @@ impl HarnessCapability {
     pub fn set_features(&mut self, features: &FeatureCapabilities) {
         if let Ok(value) = serde_json::to_value(features) {
             self.additional.insert(FEATURES_KEY.to_owned(), value);
+        }
+    }
+
+    /// Who meets each parity rule for this agent, when the runner said. `None` when the report
+    /// carries none, or one that cannot be read.
+    pub fn parity(&self) -> Option<Vec<ParityLine>> {
+        serde_json::from_value(self.additional.get(PARITY_KEY)?.clone()).ok()
+    }
+
+    /// Records who meets each parity rule; see [`Self::parity`].
+    pub fn set_parity(&mut self, column: &[(ParityRule, ParityCell)]) {
+        let lines: Vec<ParityLine> = column
+            .iter()
+            .map(|(rule, cell)| ParityLine::new(*rule, cell.clone()))
+            .collect();
+        if let Ok(value) = serde_json::to_value(lines) {
+            self.additional.insert(PARITY_KEY.to_owned(), value);
         }
     }
 
@@ -906,6 +928,162 @@ pub struct EmbeddedCapabilitySnapshot {
     pub limits: CapabilityLimits,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+/// A rule every agent must meet for a run to be contained the same way whichever one the profile
+/// names. One row of the parity matrix: each harness descriptor says, per rule, who meets it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParityRule {
+    /// The agent runs in a sandbox, or does not run.
+    SandboxOrNoRun,
+    /// Where there is no sandbox, every action asks a person first.
+    NoSandboxMeansAsk,
+    /// The network is reached only through the allow-list.
+    EgressByAllowList,
+    /// An item that is not trusted gets no file reads or web access without asking.
+    UntrustedItemAsks,
+    /// The agent runs on its own configuration, not the user's, and credentials are redacted.
+    AgentConfigIsolated,
+    /// The token limit stops the run while it runs, not after.
+    TokenLimitWhileRunning,
+    /// Cancelling kills everything the agent started.
+    KillEverythingOnCancel,
+    /// The output rules (a Planner writes only the plan, a run that changed nothing fails).
+    OutputRules,
+    /// Checks that changed since the run began hold the merge.
+    ChecksChangedHoldsMerge,
+    /// Secrets are stripped from everything the run produces.
+    Redaction,
+    /// The agent's steps are visible for review and evaluation.
+    StepsVisible,
+}
+
+impl ParityRule {
+    /// Every rule, in the order the matrix and the run page list them.
+    pub const ALL: [ParityRule; 11] = [
+        ParityRule::SandboxOrNoRun,
+        ParityRule::NoSandboxMeansAsk,
+        ParityRule::EgressByAllowList,
+        ParityRule::UntrustedItemAsks,
+        ParityRule::AgentConfigIsolated,
+        ParityRule::TokenLimitWhileRunning,
+        ParityRule::KillEverythingOnCancel,
+        ParityRule::OutputRules,
+        ParityRule::ChecksChangedHoldsMerge,
+        ParityRule::Redaction,
+        ParityRule::StepsVisible,
+    ];
+
+    /// The rule in the words a person reads.
+    pub const fn label(self) -> &'static str {
+        match self {
+            ParityRule::SandboxOrNoRun => "Runs in a sandbox, or does not run",
+            ParityRule::NoSandboxMeansAsk => "Without a sandbox, asks before each action",
+            ParityRule::EgressByAllowList => "Reaches the network only through the allow-list",
+            ParityRule::UntrustedItemAsks => {
+                "An untrusted item gets no file reads or web access without asking"
+            }
+            ParityRule::AgentConfigIsolated => {
+                "Uses its own configuration, not yours, and credentials are redacted"
+            }
+            ParityRule::TokenLimitWhileRunning => "Stops at the token limit while it runs",
+            ParityRule::KillEverythingOnCancel => "Cancelling stops everything it started",
+            ParityRule::OutputRules => "Its output follows the role's rules",
+            ParityRule::ChecksChangedHoldsMerge => "Checks that changed hold the merge",
+            ParityRule::Redaction => "Secrets are removed from everything it produces",
+            ParityRule::StepsVisible => "Its steps are visible",
+        }
+    }
+}
+
+/// Who meets a [`ParityRule`] for one agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum ParityCell {
+    /// The agent's own CLI enforces it.
+    Cli,
+    /// The runner enforces it from outside the agent.
+    Runner,
+    /// The agent's daemon enforces it (docket).
+    Delegated { to: Cow<'static, str> },
+    /// Nobody does today. The reason names the card that will, or starts with
+    /// [`ParityCell::BY_DESIGN`] when no card ever can.
+    Missing { reason: Cow<'static, str> },
+}
+
+impl ParityCell {
+    /// The prefix of a `Missing` reason that nothing can ever fill, which the parity test accepts.
+    pub const BY_DESIGN: &'static str = "by design:";
+
+    pub const fn delegated(to: &'static str) -> Self {
+        ParityCell::Delegated {
+            to: Cow::Borrowed(to),
+        }
+    }
+
+    pub const fn missing(reason: &'static str) -> Self {
+        ParityCell::Missing {
+            reason: Cow::Borrowed(reason),
+        }
+    }
+
+    /// Whether somebody enforces the rule.
+    pub fn is_met(&self) -> bool {
+        !matches!(self, ParityCell::Missing { .. })
+    }
+
+    /// Whether the rule is missing and no card can ever meet it.
+    pub fn is_by_design(&self) -> bool {
+        matches!(self, ParityCell::Missing { reason } if reason.starts_with(Self::BY_DESIGN))
+    }
+}
+
+/// One agent's column of the parity matrix, as a harness descriptor declares it.
+pub type ParityColumn = [(ParityRule, ParityCell)];
+
+/// A rule and who meets it, as the runner reports it to the board.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParityLine {
+    pub rule: ParityRule,
+    /// The rule in words, so a reader needs no table of its own.
+    pub label: String,
+    #[serde(flatten)]
+    pub cell: ParityCell,
+}
+
+impl ParityLine {
+    pub fn new(rule: ParityRule, cell: ParityCell) -> Self {
+        Self {
+            rule,
+            label: rule.label().to_owned(),
+            cell,
+        }
+    }
+}
+
+/// Checks that a column answers every rule once and that no answer is empty: a `Missing` needs a
+/// reason, a `Delegated` needs a name. The first problem found names the rule.
+pub fn validate_parity(column: &ParityColumn) -> Result<(), String> {
+    for rule in ParityRule::ALL {
+        let mut answers = column.iter().filter(|(asked, _)| *asked == rule);
+        let Some((_, cell)) = answers.next() else {
+            return Err(format!("{rule:?} has no answer"));
+        };
+        if answers.next().is_some() {
+            return Err(format!("{rule:?} is answered more than once"));
+        }
+        match cell {
+            ParityCell::Missing { reason } if reason.trim().is_empty() => {
+                return Err(format!("{rule:?} is missing with no reason"));
+            }
+            ParityCell::Delegated { to } if to.trim().is_empty() => {
+                return Err(format!("{rule:?} is delegated to nobody"));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
