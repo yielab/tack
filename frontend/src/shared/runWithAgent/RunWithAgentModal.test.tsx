@@ -107,6 +107,8 @@ function mockFetch(
     /** What the server resolved for the item: the profile and where it came from. */
     resolved?: { profile_id: string | null; profile_source: string | null };
     runSettings?: Record<string, unknown> | null;
+    /** Where the card came from; absent answers none, as an item the server never labelled. */
+    itemSource?: string;
     /** Holds the item back, so the runners land before the project's settings are applied. */
     itemDelayMs?: number;
     /** The item's brief; absent answers 404, as an item with no brief does. */
@@ -146,7 +148,7 @@ function mockFetch(
     if (url.endsWith('/items/item-1')) {
       if (opts.itemDelayMs) await new Promise((r) => setTimeout(r, opts.itemDelayMs));
       if (init?.method === 'PATCH') lastItemPatch = JSON.parse(String(init.body));
-      return new Response(JSON.stringify({ item: { id: 'item-1', run_settings: opts.runSettings ?? null }, id: 'item-1', run_settings: opts.runSettings ?? null }), { status: 200, headers: { ETag: '"1"' } });
+      return new Response(JSON.stringify({ item: { id: 'item-1', source: opts.itemSource, run_settings: opts.runSettings ?? null }, id: 'item-1', source: opts.itemSource, run_settings: opts.runSettings ?? null }), { status: 200, headers: { ETag: '"1"' } });
     }
     if (url.includes('/agent-context')) {
       // As the server resolves it: the project's default, else the only profile there is.
@@ -1159,6 +1161,38 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [sandboxed('none')], fleets: [], runSettings: { approvals: 'auto' } });
     await flush(); await flush();
     expect(ask()).toBe(false);
+  });
+
+  it('an_imported_card_starts_asking_and_without_web_tools_says_why_and_the_person_can_raise_it', async () => {
+    const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', tool_policy: { network: true }, default_network: { codex: true } };
+    const sandboxed = runnerRow('runner-7', 'Box', runnerCapabilitySnapshot({
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], decisions: { support: 'supported', reason: null }, sandbox: 'bwrap' }],
+    }));
+    const opts = { runners: [sandboxed], fleets: [], agentProfiles: [researcher], project: { ...PROJECT, default_profile_id: 'profile-net' } };
+    const ask = () => (document.querySelector('input[name="approvals"]') as HTMLInputElement);
+    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
+    const reason = () => document.querySelector('[data-testid="untrusted-reason"]')?.textContent ?? null;
+    mount({}, { ...opts, itemSource: 'github' });
+    await flush(); await flush();
+    expect(ask().checked).toBe(true);
+    expect(web().checked).toBe(false);
+    expect(reason()).toBe('This card was imported, so the agent asks before each action and has no web tools.');
+    // The person raises both; the run goes out as they set it, and the sentence has nothing left to say.
+    web().click();
+    ask().click();
+    await flush();
+    expect(reason()).toBeNull();
+    submitButton().click();
+    await flush(); await flush();
+    expect(lastCreateBody).toMatchObject({ permission_policy: { network: true } });
+    expect(JSON.stringify(lastCreateBody)).not.toContain('"approvals"');
+    teardown();
+    // The person's own card keeps the sandbox rule and the profile's network, and says nothing.
+    mount({}, { ...opts, itemSource: 'manual' });
+    await flush(); await flush();
+    expect(ask().checked).toBe(false);
+    expect(web().checked).toBe(true);
+    expect(reason()).toBeNull();
   });
 
   it('the_web_tools_box_starts_at_the_profiles_network_and_a_remembered_or_touched_value_wins', async () => {

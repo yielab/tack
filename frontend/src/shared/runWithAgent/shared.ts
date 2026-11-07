@@ -438,6 +438,20 @@ export function profileNetworkFor(profile: { default_network?: Record<string, bo
   return profile?.default_network?.[harness] === true;
 }
 
+/** Whether a card did not come from a person typing it (an import, a plan, an outline): the run then
+ *  starts asking before each action and without web tools, as the server does. `undefined` while the
+ *  card loads, which counts as trusted so nothing is announced that is not yet known. */
+export function isUntrustedSource(source: string | undefined): boolean {
+  return source !== undefined && source !== 'manual';
+}
+
+/** The sentence under "Ask before each action" for a card that came from outside. opencode's web
+ *  tools stay on whatever the card, so it is not told they are off. */
+export function untrustedReason(harness: string): string {
+  const webTools = webToolsLockedReason(harness) === null ? ' and has no web tools' : '';
+  return `This card was imported, so the agent asks before each action${webTools}.`;
+}
+
 /** Why the Web tools box cannot be turned off, or null when it can. */
 export function webToolsLockedReason(harness: string): string | null {
   return harness === 'opencode' ? 'opencode reaches the network on every run' : null;

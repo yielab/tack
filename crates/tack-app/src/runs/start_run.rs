@@ -864,6 +864,7 @@ async fn load_profile(
     repo: &Repository,
     profile_id: &str,
     provisional: Option<u64>,
+    trusted: bool,
     input: &mut RunRequest,
 ) -> Result<Value, Refusal> {
     let row = queries::agent_profiles::profile_by_id(repo, profile_id)
@@ -886,12 +887,12 @@ async fn load_profile(
     let limits = serde_json::from_str::<Value>(&row.limits).unwrap_or_else(|_| json!({}));
     let tool_policy = serde_json::from_str::<Value>(&row.tool_policy).unwrap_or_else(|_| json!({}));
     // A request that does not say `network` gets what the profile's role and its tools for this
-    // agent need; one that does, true or false, keeps its own.
+    // agent need, less the web tools when the item is not trusted; one that does, true or false,
+    // keeps its own.
     let agent = input.requested_harness_kind.clone().unwrap_or_default();
-    input
-        .permission_policy
-        .network
-        .get_or_insert_with(|| tack_core::run_defaults::profile_network_for(&tool_policy, &agent));
+    input.permission_policy.network.get_or_insert_with(|| {
+        tack_core::run_defaults::network_for_item(&tool_policy, &agent, trusted)
+    });
     let (budgets, timeout_seconds, source) = run_limits(input, &agent, &limits, provisional)?;
     input.budgets = budgets;
     input.timeout_seconds = Some(timeout_seconds);
@@ -1356,6 +1357,15 @@ pub async fn start_run(
             metadata.insert("rework_base".into(), json!(branch));
         }
     }
+    // Text a person did not write reaches the agent as instructions, so a request that says
+    // nothing starts it asking before each action (and, in `load_profile`, without web tools),
+    // whichever agent runs it; what the request does say is the person's own choice and stands.
+    if !item.source.is_trusted() {
+        input
+            .permission_policy
+            .approvals
+            .get_or_insert(Approvals::Ask);
+    }
     if let Some(metadata) = input.metadata.as_object_mut() {
         metadata.insert(
             "item".into(),
@@ -1410,7 +1420,14 @@ pub async fn start_run(
             )
         })?
         .and_then(|n| u64::try_from(n).ok());
-    let profile = load_profile(repo, &resolved.profile_id, provisional, &mut input).await?;
+    let profile = load_profile(
+        repo,
+        &resolved.profile_id,
+        provisional,
+        item.source.is_trusted(),
+        &mut input,
+    )
+    .await?;
     enqueue_run(repo, now, principal, input, profile, repository).await
 }
 
