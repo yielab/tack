@@ -85,6 +85,41 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
   priced_models: 0,
   cost_by_model: [],
   cost_by_team: [],
+  work_quality: {
+    success_rate: { numerator: 8, denominator: 10, value: 0.8 },
+    first_pass_acceptance: { numerator: 3, denominator: 4, value: 0.75 },
+    rework_per_item: { numerator: 1, denominator: 10, value: 0.1 },
+    revert_after_merge: { numerator: 1, denominator: 3, value: 1 / 3 },
+    verifier_agreement: {
+      verifier: 'prill',
+      agreed: 2,
+      false_approvals: 1,
+      false_rejections: 1,
+      handed_to_a_person: 0,
+      without_a_pack: 0,
+      false_approval_rate: { numerator: 1, denominator: 2, value: 0.5 },
+      false_rejection_rate: { numerator: 0, denominator: 0, value: null, null_reason: 'denominator_zero' },
+    },
+    pass_pow_k: { k: 3, tasks_measured: 1, tasks_too_short: 0, value: 0.25 },
+    questions: [
+      { harness: 'claude-code', class: 'approval', asked: 2, actions: 4, per_100_actions: 50, granted: { numerator: 1, denominator: 2, value: 0.5 } },
+    ],
+    stops: [{ reason: 'timeout', count: 2, not_started: false }],
+    cuts: [
+      {
+        by: 'harness',
+        rows: [
+          {
+            name: 'claude-code',
+            attempts: 9,
+            success_rate: { numerator: 8, denominator: 9, value: 8 / 9 },
+            first_pass_acceptance: { numerator: 3, denominator: 4, value: 0.75 },
+            revert_after_merge: { numerator: 1, denominator: 3, value: 1 / 3 },
+          },
+        ],
+      },
+    ],
+  },
   outcomes: {
     opened: 15,
     merged: 12,
@@ -392,5 +427,76 @@ describe('FactoryMetrics sources and cost', () => {
     await flush();
 
     expect(container.textContent).toContain("Merged and not reverted (Tack's own)");
+  });
+});
+
+describe('FactoryMetrics quality of the work', () => {
+  const openQuality = (container: HTMLElement) => {
+    const header = container.querySelector<HTMLButtonElement>('[data-testid="quality-figures"] button');
+    header!.click();
+  };
+
+  it('is shut at first and says the success rate beside its title', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const fold = container.querySelector('[data-testid="quality-figures"]')!;
+    expect(fold.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
+    expect(fold.textContent).toContain('Quality of the work');
+    expect(fold.textContent).toContain('Success 80.0% (8 of 10)');
+    // Nothing of its tables is drawn until it is opened.
+    expect(fold.querySelector('table')).toBeNull();
+  });
+
+  it('opens into the rates with their counts, and a rate with nothing to count says so', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+    openQuality(container);
+    await flush();
+
+    const text = container.querySelector('[data-testid="quality-figures"]')!.textContent ?? '';
+    expect(text).toContain('75.0% (3 of 4)');
+    expect(text).toContain('0.10 (1 extra run over 10 tasks)');
+    expect(text).toContain('33.3% (1 of 3)');
+    expect(text).toContain('50.0% (1 of 2)');
+    expect(text).toContain('Not measured');
+    expect(text).toContain('25.0% (1 recurring task)');
+    expect(text).toContain('The verifier agreed on 2, approved 1 bad and rejected 1 good');
+  });
+
+  it('lists the questions, why runs stopped and the cuts', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+    openQuality(container);
+    await flush();
+
+    const text = container.querySelector('[data-testid="quality-figures"]')!.textContent ?? '';
+    expect(text).toContain('claude-code');
+    expect(text).toContain('approval');
+    expect(text).toContain('50.0');
+    expect(text).toContain('timeout');
+    expect(text).toContain('88.9% (8 of 9)');
+    expect(text).not.toContain('$');
+  });
+
+  it('asks for the period it is read over', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+    const select = container.querySelector('select')!;
+    select.value = '7';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    await flush();
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/metrics/factory?since='))).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ export const BOOK = {
   runnerSettings: `${BOOK_BASE}admin-guide/runners.html#standalone-mode-tack-serve---with-runner`,
   verifier: `${BOOK_BASE}admin-guide/runners.html#after-a-succeeded-attempt`,
   decisionToken: `${BOOK_BASE}admin-guide/administration.html#authentication`,
+  workQuality: `${BOOK_BASE}user-guide/reviewing-runs.html#quality-of-the-work`,
   importFiles: `${BOOK_BASE}user-guide/import-export.html#the-project-file`,
 };
 

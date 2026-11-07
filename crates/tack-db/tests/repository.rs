@@ -48,6 +48,8 @@ mod item_facts;
 mod item_types;
 #[path = "repository/notifications.rs"]
 mod notifications;
+#[path = "repository/quality_rows.rs"]
+mod quality_rows;
 #[path = "repository/rate_card.rs"]
 mod rate_card;
 #[path = "repository/routing_queries.rs"]

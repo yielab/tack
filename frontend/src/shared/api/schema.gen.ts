@@ -5000,6 +5000,14 @@ export interface components {
             updated_at: string;
             value: unknown;
         };
+        CutRow: {
+            /** Format: int64 */
+            attempts: number;
+            first_pass_acceptance: components["schemas"]["Ratio"];
+            name: string;
+            revert_after_merge: components["schemas"]["Ratio"];
+            success_rate: components["schemas"]["Ratio"];
+        };
         /** @description What a person decides about a memory entry of a team. */
         DecideMemoryRequest: {
             decision: components["schemas"]["MemoryDecision"];
@@ -5358,6 +5366,8 @@ export interface components {
             runs_by_start: components["schemas"]["RunsByStart"];
             since?: string | null;
             verification_tax: components["schemas"]["VerificationTax"];
+            /** @description How well the work came out: rates over the window's attempts, and the same cut by who did it. */
+            work_quality: components["schemas"]["WorkQuality"];
         };
         FailedRun: {
             /** Format: date-time */
@@ -6197,6 +6207,25 @@ export interface components {
             /** @description The key of its type in the project's catalog. */
             type: string;
         };
+        /** @description Of the recurring tasks with at least `k` runs, the average chance that `k` of their runs all succeed. */
+        PassPowK: {
+            /** Format: int64 */
+            k: number;
+            /** @description `denominator_zero` when no recurring task has `k` runs. */
+            null_reason?: string | null;
+            /**
+             * Format: int64
+             * @description Recurring tasks with at least `k` runs in the window.
+             */
+            tasks_measured: number;
+            /**
+             * Format: int64
+             * @description Recurring tasks with fewer runs, left out.
+             */
+            tasks_too_short: number;
+            /** Format: double */
+            value?: number | null;
+        };
         PostMessage: {
             body: string;
             /** @description Items, change sets and decisions the message is about. */
@@ -6410,6 +6439,32 @@ export interface components {
             repositories: components["schemas"]["RepositoryQuality"][];
             /** @description Always `prill`. */
             source: string;
+        };
+        QualityCut: {
+            /** @description `profile`, `harness`, `model`, `team` or `template`. */
+            by: string;
+            rows: components["schemas"]["CutRow"][];
+        };
+        /** @description What one kind of agent asked a person, and how it went. */
+        QuestionNoise: {
+            /**
+             * Format: int64
+             * @description Steps the agent reported in all, whatever it asked: what the rate is over.
+             */
+            actions: number;
+            /** Format: int64 */
+            asked: number;
+            /** @description What was asked (the decision's kind). */
+            class: string;
+            /** @description Answered with a go-ahead ÷ answered by a person. */
+            granted: components["schemas"]["Ratio"];
+            /** @description The agent; `Not recorded` when the run never named one. */
+            harness: string;
+            /**
+             * Format: double
+             * @description Questions of this kind per hundred steps; absent without a step.
+             */
+            per_100_actions?: number | null;
         };
         RateCard: {
             /** @description The date the prices were read, as the operator wrote it. */
@@ -7075,6 +7130,14 @@ export interface components {
             /** Format: int32 */
             order: number;
             wip_limit?: number | null;
+        };
+        StopCount: {
+            /** Format: int64 */
+            count: number;
+            /** @description The run was turned away before the agent did anything. */
+            not_started: boolean;
+            /** @description The code the run ended with, `ceiling` for a team's ceiling that sent no code, `cancelled`, or `unspecified`. */
+            reason: string;
         };
         /** @description What a team is doing, as its agent last reported it. */
         TeamActivityEntry: {
@@ -7932,6 +7995,44 @@ export interface components {
             verification_tokens: number;
         };
         /**
+         * @description How often the verifier's word matched what became of the work. A task is *bad* when a person
+         *     rejected it or its pull request was reverted, and *good* when a person accepted it and it was
+         *     not reverted; any other task has no label and is not counted.
+         */
+        VerifierAgreement: {
+            /**
+             * Format: int64
+             * @description Said merge on good work, or reject on bad work.
+             */
+            agreed: number;
+            /** @description False approvals ÷ bad work the verifier judged. */
+            false_approval_rate: components["schemas"]["Ratio"];
+            /**
+             * Format: int64
+             * @description Said merge on bad work.
+             */
+            false_approvals: number;
+            /** @description False rejections ÷ good work the verifier judged. */
+            false_rejection_rate: components["schemas"]["Ratio"];
+            /**
+             * Format: int64
+             * @description Said reject on good work.
+             */
+            false_rejections: number;
+            /**
+             * Format: int64
+             * @description Labelled work the verifier handed to a person (`review`): neither right nor wrong.
+             */
+            handed_to_a_person: number;
+            /** @description Always `prill`: the pack Tack reads is the verifier's. */
+            verifier: string;
+            /**
+             * Format: int64
+             * @description Labelled work with no readable pack.
+             */
+            without_a_pack: number;
+        };
+        /**
          * @description What a person is waited for to do.
          * @enum {string}
          */
@@ -7995,6 +8096,24 @@ export interface components {
          * @enum {string}
          */
         WaitsOn: "approval" | "answer";
+        WorkQuality: {
+            /** @description The success, first-pass and revert rates by each way of cutting the runs. */
+            cuts: components["schemas"]["QualityCut"][];
+            /** @description Tasks whose first attempt a person accepted ÷ tasks whose first attempt a person reviewed. */
+            first_pass_acceptance: components["schemas"]["Ratio"];
+            pass_pow_k: components["schemas"]["PassPowK"];
+            /** @description Questions put to a person, by agent and kind. */
+            questions: components["schemas"]["QuestionNoise"][];
+            /** @description Pull requests reverted ÷ pull requests merged or reverted. */
+            revert_after_merge: components["schemas"]["Ratio"];
+            /** @description Attempts after a task's first ÷ tasks with an attempt. A value above 1 is more than one extra round per task. */
+            rework_per_item: components["schemas"]["Ratio"];
+            /** @description Runs that did not succeed, by the reason they gave. */
+            stops: components["schemas"]["StopCount"][];
+            /** @description Runs that succeeded ÷ runs that ended after starting (failed or succeeded). */
+            success_rate: components["schemas"]["Ratio"];
+            verifier_agreement: components["schemas"]["VerifierAgreement"];
+        };
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {
             statuses: components["schemas"]["StatusDef"][];

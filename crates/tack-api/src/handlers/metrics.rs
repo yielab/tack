@@ -10,20 +10,24 @@ use crate::extract::{Json, Path, Query};
 use axum::extract::State;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tack_protocol::mrp::MergeDecision;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use tack_db::queries::metrics as quality_rows;
 use tack_db::repo::metrics::{self as rows, WaitRow};
 use tack_db::repo::rate_card::SpendRow;
 
+use super::metrics_quality::{WorkQuality, work_quality};
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use crate::router::AppState;
 
 const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
-const DENOMINATOR_ZERO: &str = "denominator_zero";
+pub(super) const DENOMINATOR_ZERO: &str = "denominator_zero";
 const NOT_MEASURED: &str = "not_measured";
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -186,6 +190,8 @@ pub struct FactoryMetrics {
     pub cost_by_model: Vec<CostByModel>,
     /// Tokens and attempts per docket team; `No team` for runs that name none.
     pub cost_by_team: Vec<CostByTeam>,
+    /// How well the work came out: rates over the window's attempts, and the same cut by who did it.
+    pub work_quality: WorkQuality,
 }
 
 /// One model's tokens in the window. `tokens_in` and `tokens_out` are counted
@@ -261,7 +267,7 @@ fn cost_lines(
     lines.into_values().collect()
 }
 
-fn ratio(numerator: i64, denominator: i64, null_reason: &str) -> Ratio {
+pub(super) fn ratio(numerator: i64, denominator: i64, null_reason: &str) -> Ratio {
     if denominator == 0 {
         return Ratio {
             numerator,
@@ -497,6 +503,7 @@ pub async fn factory_metrics(
             usd: line.usd,
         })
         .collect();
+    let work_quality = quality_figures(&state, &storage, &project, since).await?;
     let (quality, quality_unavailable) = match prill_quality(&state, &project).await {
         Ok((version, found)) => {
             let repositories = found
@@ -584,5 +591,50 @@ pub async fn factory_metrics(
         priced_models: i64::try_from(priced_models).unwrap_or(i64::MAX),
         cost_by_model,
         cost_by_team,
+        work_quality,
     }))
+}
+
+/// The pack's word on each labelled attempt in `attempts` that left a readable one.
+async fn pack_decisions(
+    storage: &ArtifactStorage,
+    attempts: &[quality_rows::QualityAttempt],
+) -> HashMap<String, MergeDecision> {
+    let mut decisions = HashMap::new();
+    for attempt in attempts {
+        let labelled =
+            attempt.verdict.is_some() || attempt.pull_request.as_deref() == Some("reverted");
+        let Some(reference) = attempt.pack_reference.as_deref().filter(|_| labelled) else {
+            continue;
+        };
+        let Ok(mut file) = storage.open_for_read(reference).await else {
+            continue;
+        };
+        let mut bytes = Vec::new();
+        if file.read_to_end(&mut bytes).await.is_err() {
+            continue;
+        }
+        let word = serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .and_then(|pack| pack.pointer("/recommendation/decision").cloned())
+            .and_then(|word| serde_json::from_value::<MergeDecision>(word).ok());
+        if let Some(word) = word {
+            decisions.insert(attempt.attempt_id.clone(), word);
+        }
+    }
+    decisions
+}
+
+async fn quality_figures(
+    state: &AppState,
+    storage: &ArtifactStorage,
+    project: &str,
+    since: Option<&str>,
+) -> ApiResult<WorkQuality> {
+    let repo = &state.repo;
+    let attempts = quality_rows::quality_attempts(repo, project, MRP_MEDIA_TYPE, since).await?;
+    let questions = quality_rows::question_rows(repo, project, since).await?;
+    let actions = quality_rows::action_counts(repo, project, since).await?;
+    let packs = pack_decisions(storage, &attempts).await;
+    Ok(work_quality(&attempts, &packs, &questions, &actions))
 }
