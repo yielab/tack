@@ -19,6 +19,7 @@ pub mod item_types;
 pub mod items;
 pub mod local_runner;
 pub mod metrics;
+pub mod metrics_quality;
 pub mod mrp;
 pub mod notifications;
 pub mod outline;

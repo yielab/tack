@@ -331,7 +331,7 @@ pub(crate) fn live_usage_step(
         return None;
     }
     Some(StreamSignal::Progress(Progress {
-        kind: "agent.model_call".to_owned(),
+        kind: tack_protocol::event_kind::AGENT_MODEL_CALL.to_owned(),
         text: format!(
             "Model call used {} tokens",
             tack_core::run_defaults::token_count(
