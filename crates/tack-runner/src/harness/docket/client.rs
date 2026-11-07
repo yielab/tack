@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::wire::ErrorBody;
-use crate::config::DocketConfig;
+use crate::{config::DocketConfig, harness::redact::SecretMaterial};
 
 /// How long one request may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -106,6 +106,15 @@ impl Client {
     fn token(&self) -> Option<String> {
         let text = std::fs::read_to_string(self.token_file.as_ref()?).ok()?;
         Some(text.trim().to_owned()).filter(|token| !token.is_empty())
+    }
+
+    /// The secrets this client holds, to strip from any text docket sent back.
+    pub fn secrets(&self) -> SecretMaterial {
+        let mut material = SecretMaterial::new();
+        if let Some(token) = self.token() {
+            material.register(token);
+        }
+        material
     }
 
     async fn send(
