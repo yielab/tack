@@ -1,6 +1,15 @@
 use std::{path::PathBuf, process::Command as SyncCommand};
 
 use super::*;
+use crate::client::engine::HarnessAdapter;
+use crate::harness::{
+    claude_code::ClaudeCodeGrammar,
+    codex::CodexGrammar,
+    local_process::{BinaryLocator, HarnessGrammar, LocalProcessHarness},
+    opencode::OpencodeGrammar,
+    process::ProcessLimits,
+    test_support::{clock, scratch, secret_store, spec},
+};
 use crate::{
     client::{AttemptId, WorkspaceId},
     config::VerifyKind,
@@ -1003,4 +1012,118 @@ async fn a_signing_refusal_fails_the_verification_and_is_not_retried_unsigned() 
     assert!(!verified.scratch.join("evidence/mrp.json").exists());
     let argv = fs::read_to_string(verified.scratch.join("evidence/prill/argv")).expect("argv");
     assert!(argv.contains("--sign"), "{argv}");
+}
+
+// -----------------------------------------------------------------
+// The family the evidence names, from each harness's own fixture run.
+// -----------------------------------------------------------------
+
+/// Runs `fixture` through `grammar` as a harness would, with `requested` as the profile's
+/// model, and returns the `attempt-evidence/v0` document the verifier is given.
+async fn attempt_document_of_fixture<G: HarnessGrammar>(
+    grammar: G,
+    kind: &str,
+    fixture: &str,
+    requested: Option<&str>,
+) -> Value {
+    let state = scratch(kind);
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/harness/fixtures")
+        .join(fixture);
+    // opencode reads its config and data paths before it runs; every other call prints the fixture.
+    let body = format!(
+        "case \"$2\" in config) echo '{{}}';; paths) echo 'data {}';; *) cat '{}';; esac",
+        state.path().display(),
+        fixture.display()
+    );
+    // An executable of its own, since opencode runs its binary directly to read its config.
+    let program = state.path().join("harness");
+    fs::write(&program, format!("#!/bin/sh\n{body}\n")).expect("shim");
+    fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .expect("chmod");
+    let harness = LocalProcessHarness::new(
+        grammar,
+        BinaryLocator::Fixed {
+            program,
+            prefix_args: Vec::new(),
+        },
+        clock(),
+        ProcessLimits::new(1_000_000, 1_000_000, std::time::Duration::from_secs(10)),
+        state.path().join("staging"),
+        secret_store(state.path()),
+    )
+    .with_host_env(crate::config::ProcessEnv::from_pairs([
+        ("HOME", state.path().as_os_str()),
+        ("PATH", std::ffi::OsStr::new("/usr/bin:/bin")),
+    ]));
+    let mut request = spec(kind, state.path());
+    request.work.request.requested_model = requested.map(str::to_owned);
+    // opencode reaches its provider on every run, so its request must allow the network.
+    request.work.request.permission_policy.network = true;
+    harness.validate(&request).await.expect("validate");
+    let handle = harness.start(&request).await.expect("start");
+    let outcome = harness.wait(&handle).await.expect("wait");
+    attempt_evidence(
+        &tack_evidence("att_family", &"a".repeat(40), outcome.evidence_usage()),
+        &"b".repeat(40),
+        None,
+    )
+}
+
+/// Claude Code's init line names the model that answered.
+#[tokio::test]
+async fn claude_code_fixture_run_names_its_family_in_the_attempt_evidence() {
+    let document = attempt_document_of_fixture(
+        ClaudeCodeGrammar,
+        "claude-code",
+        "claude_code/2.1.302/live-usage.jsonl",
+        None,
+    )
+    .await;
+    assert_eq!(document["generator"]["model"], "claude-sonnet-5-5");
+    assert_eq!(document["generator"]["family"], "anthropic");
+}
+
+/// Codex's `exec --json` never names the model, so the one the profile asked for stands in.
+#[tokio::test]
+async fn codex_fixture_run_names_its_family_in_the_attempt_evidence() {
+    let document = attempt_document_of_fixture(
+        CodexGrammar,
+        "codex",
+        "codex/0.149.1/exec-tool-call.jsonl",
+        Some("gpt-5-codex"),
+    )
+    .await;
+    assert_eq!(document["generator"]["model"], "gpt-5-codex");
+    assert_eq!(document["generator"]["family"], "openai");
+}
+
+/// opencode's event stream never names the model either; the profile's model stands in, and its
+/// provider prefix is the family.
+#[tokio::test]
+async fn opencode_fixture_run_names_its_family_in_the_attempt_evidence() {
+    let document = attempt_document_of_fixture(
+        OpencodeGrammar,
+        "opencode",
+        "opencode/1.18.30/completed.ndjson",
+        Some("anthropic/claude-haiku-5-5"),
+    )
+    .await;
+    assert_eq!(document["generator"]["family"], "anthropic");
+}
+
+/// A run whose model nobody named has no family, and the document says nothing about one.
+#[tokio::test]
+async fn a_run_without_a_family_has_no_generator_family_in_the_attempt_evidence() {
+    let document = attempt_document_of_fixture(
+        CodexGrammar,
+        "codex",
+        "codex/0.149.1/exec-tool-call.jsonl",
+        None,
+    )
+    .await;
+    assert!(document.get("generator").is_none(), "{document}");
 }
