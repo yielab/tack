@@ -236,16 +236,11 @@ It shows:
 
 A section the verifier did not run says **Not run**. That is not a pass: nothing was checked.
 
-To record your verdict, write a reason, then choose **Accept** or **Reject**. Both stay disabled until the
-reason has text, and the line "Write a reason to enable Accept and Reject" says so. The first review is
-final; a second one is refused. While the run waits for your verdict, this is the one block at the top of
-the run, and the one reason is saved with the run's verdict, whether you accept or reject (which clears
-**Needs your review**), and with the pack. Once it is given, **Your review** shows it here.
-
-If the pack's review is saved but the run's verdict cannot be (for instance, the connection dropped between
-the two), the block does not ask for a reason again and does not offer **Reject**: it says the pack was
-accepted or rejected and offers **Save the verdict on the run**, which gives the run the pack's verdict and
-reason. If saving fails again, the block shows why, and you can press it again.
+To record your verdict, choose **Accept** or **Reject**. A rejection needs a reason: **Reject** stays
+disabled until the reason has text, and the line "Write a reason to enable Reject" says so. An acceptance
+may carry one too. The first review is final; a second one is refused. A run has one review, which covers
+the pack as well: while the run waits for your verdict, it is the one block at the top of the run, and
+giving it clears **Needs your review**. Once it is given, **Your review** shows it here.
 
 When the verifier rejects a change, a project can send it back to the agent with the list of what to fix;
 see [Sending a rejected change back to the agent](merging.md#sending-a-rejected-change-back-to-the-agent).

@@ -130,8 +130,8 @@ succeeded.
 
 ## When the pull request opens
 
-Never at completion. A pull request opens when you accept the attempt, in the attempt
-review or in the merge-readiness pack review, and only if the runner pushed the branch
+Never at completion. A pull request opens when you accept the attempt in its
+review, and only if the runner pushed the branch
 (`push_branches = true`) and the card is linked to a GitHub issue. Until you accept,
 nothing has been proposed to anyone.
 

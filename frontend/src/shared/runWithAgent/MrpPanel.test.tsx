@@ -38,16 +38,18 @@ function mount(merge?: AttemptMerge, doneWhen?: AcceptanceCriterion[]) {
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
-/** Routes the three MRP calls; returns the spy for call counting. */
-function mockFetch(pack: unknown, review: unknown = null) {
+/** Routes the pack's reads and the run's one review; returns the spy for call counting. */
+function mockFetch(pack: unknown, review: unknown = null, viewedAt: string | null = null) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     if (url.endsWith('/mrp/viewed')) return Promise.resolve(json({ viewed_at: 'now' }));
-    if (url.endsWith('/mrp/review')) {
+    if (url.endsWith('/attempts/2/review')) {
       const body = JSON.parse(String(init?.body));
-      return Promise.resolve(json({ verdict: body.verdict, reason: body.reason }));
+      // The review is the attempt's now: the next read of the pack carries it.
+      review = { verdict: body.verdict, reason: body.reason ?? null, reviewed_by: 'operator:local', reviewed_at: '2026-11-07T10:00:00Z' };
+      return Promise.resolve(json(review));
     }
-    return Promise.resolve(json({ pack, review }));
+    return Promise.resolve(json({ pack, viewed_at: viewedAt, review }));
   });
 }
 
@@ -84,22 +86,24 @@ describe('MrpPanel', () => {
     expect(el.textContent!.match(/Not run/g)?.length ?? 0).toBe(nullSections);
   });
 
-  it('accept is disabled until the reason is non-blank, then records the verdict', async () => {
+  it('Reject needs a reason, Accept does not, and the review goes to the run\'s one endpoint', async () => {
     const spy = mockFetch(ready);
     const el = mount();
     await flush();
-    const accept = [...el.querySelectorAll('button')].find((b) => b.textContent === 'Accept')!;
-    expect(accept.disabled).toBe(true);
+    const button = (label: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === label)!;
+    expect(button('Accept').disabled).toBe(false);
+    expect(button('Reject').disabled).toBe(true);
     const input = el.querySelector('input')!;
     input.value = '   ';
     input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    expect(accept.disabled).toBe(true);
+    expect(button('Reject').disabled).toBe(true);
     input.value = 'looks right';
     input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    expect(accept.disabled).toBe(false);
-    accept.click();
+    expect(button('Reject').disabled).toBe(false);
+    button('Accept').click();
     await flush();
-    expect(JSON.parse(String(calls(spy, '/mrp/review')[0][1]!.body))).toEqual({ verdict: 'accept', reason: 'looks right' });
+    expect(JSON.parse(String(calls(spy, '/attempts/2/review')[0][1]!.body))).toEqual({ verdict: 'accepted', reason: 'looks right' });
+    expect(calls(spy, '/mrp/review')).toHaveLength(0);
     expect(el.querySelector('[data-testid="mrp-review"]')!.textContent).toContain('looks right');
   });
 
@@ -110,7 +114,7 @@ describe('MrpPanel', () => {
     expect(calls(spy, '/mrp/viewed')).toHaveLength(1);
     disposers.pop()!();
     spy.mockRestore();
-    const spy2 = mockFetch(ready, { verdict: null, viewed_at: 'earlier' });
+    const spy2 = mockFetch(ready, null, 'earlier');
     mount();
     await flush();
     expect(calls(spy2, '/mrp/viewed')).toHaveLength(0);

@@ -89,7 +89,7 @@ interval too. The Merge button reads the same GitHub signals; see
 
 ## Pull requests
 
-When an attempt is accepted, in the attempt review or the merge-readiness pack review, or by a
+When an attempt is accepted in its review, or by a
 project's automatic merge, and the runner pushed its branch, Tack opens a pull request from that branch
 to the repository's default branch, with the same token as the push (the project's own, else
 `TACK_GITHUB_TOKEN`). The item must be linked to a GitHub issue; an item with no link, or no token,

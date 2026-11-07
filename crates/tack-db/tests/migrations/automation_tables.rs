@@ -67,7 +67,14 @@ async fn migration_082_creates_automation_schema() {
             .await
             .unwrap_or_else(|e| panic!("pragma_table_info(attempt_reviews): {e}"));
 
-    let attempt_reviews_expected = &["attempt_id", "verdict", "note", "reviewed_at"];
+    let attempt_reviews_expected = &[
+        "attempt_id",
+        "verdict",
+        "reason",
+        "reviewed_by",
+        "artifact_id",
+        "reviewed_at",
+    ];
 
     for column in attempt_reviews_expected {
         assert!(

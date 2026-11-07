@@ -170,6 +170,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("106_template_teams", &MIGRATION_106[..]),
         ordinary("107_item_types", &MIGRATION_107[..]),
         ordinary("108_drop_boards", &MIGRATION_108[..]),
+        ordinary("109_one_review", &MIGRATION_109[..]),
     ]
 }
 
@@ -2272,4 +2273,31 @@ const MIGRATION_107: [&str; 10] = [
 const MIGRATION_108: [&str; 2] = [
     "DROP TABLE boards",
     "ALTER TABLE project_templates DROP COLUMN default_boards",
+];
+
+// 109: a person's review of an attempt is one record, `attempt_reviews`, with a reason and the principal
+// who gave it; the pack's own table goes. The pack's verdict joins the run's row when there is one (the
+// run's verdict and time stand, the pack adds its reason and the pack it was given on) and otherwise
+// becomes the row. `reviewed_by` of a pack review was the constant "operator", which names nobody, so
+// it is not carried. That a pack was opened moves onto the pack's own row.
+const MIGRATION_109: [&str; 8] = [
+    "ALTER TABLE attempt_reviews RENAME COLUMN note TO reason",
+    "ALTER TABLE attempt_reviews ADD COLUMN reviewed_by TEXT",
+    "ALTER TABLE attempt_reviews ADD COLUMN artifact_id TEXT",
+    "ALTER TABLE execution_artifacts ADD COLUMN viewed_at TEXT",
+    "UPDATE execution_artifacts SET viewed_at = (
+        SELECT m.viewed_at FROM mrp_reviews m
+         WHERE m.attempt_id = execution_artifacts.attempt_id AND m.artifact_id = execution_artifacts.artifact_id)",
+    "UPDATE attempt_reviews SET
+        reason = COALESCE(reason, (SELECT m.reason FROM mrp_reviews m WHERE m.attempt_id = attempt_reviews.attempt_id)),
+        reviewed_by = (SELECT NULLIF(m.reviewed_by, 'operator') FROM mrp_reviews m WHERE m.attempt_id = attempt_reviews.attempt_id),
+        artifact_id = (SELECT m.artifact_id FROM mrp_reviews m WHERE m.attempt_id = attempt_reviews.attempt_id)",
+    "INSERT INTO attempt_reviews (attempt_id, verdict, reason, reviewed_by, artifact_id, reviewed_at)
+        SELECT m.attempt_id, CASE m.verdict WHEN 'accept' THEN 'accepted' ELSE 'rejected' END, m.reason,
+               NULLIF(m.reviewed_by, 'operator'), m.artifact_id,
+               COALESCE(m.reviewed_at, m.viewed_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+          FROM mrp_reviews m
+         WHERE m.verdict IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM attempt_reviews r WHERE r.attempt_id = m.attempt_id)",
+    "DROP TABLE mrp_reviews",
 ];
