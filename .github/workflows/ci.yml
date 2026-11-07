@@ -594,7 +594,7 @@ jobs:
         run: cargo nextest run --workspace --profile ci --no-tests=fail -E 'package(tack-evals)'
       # Every task's reference solution must pass its own hidden checks without a model.
       - name: Reference solutions pass their exams
-        run: cargo run -p tack-evals -- check-solutions crates/tack-evals/tests/fixtures/tasks
+        run: cargo run -p tack-evals -- check-solutions crates/tack-evals/tests/fixtures/tasks evals/tasks
 
   e2e:
     name: E2E (Playwright)

@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tack_evals::exam::{SolutionVerdict, check_solution};
 use tack_evals::grade::{GradedTrial, grade_file, grade_trial};
-use tack_evals::record::TrialStatus;
+use tack_evals::record::{self, TrialRecord, TrialStatus};
 use tack_evals::report::{
     compare, compare_markdown, load_summary, summarize, warnings, write_summary,
 };
@@ -135,7 +135,10 @@ fn run() -> Result<ExitCode> {
             agent,
         } => {
             let batch = run_tasks(&tasks, &out, epochs, &agent, None)?;
-            write_summary(&out, &summarize(&batch.graded), None)?;
+            // The summary covers every trial in `out`, so one directory can collect the agents
+            // one run after another.
+            let all = grade_file(&record::trials_path(&out), &load_tasks(&tasks)?)?;
+            write_summary(&out, &summarize(&all), None)?;
             Ok(exit_code(batch.errors > 0))
         }
         Command::Compare {
@@ -282,6 +285,21 @@ fn run_tasks(
             .as_ref()
             .is_some_and(|all| !all.iter().any(|h| h == wanted))
         {
+            continue;
+        }
+        if let Some(reason) = task.task.not_applicable.get(wanted) {
+            for epoch in 1..=epochs {
+                let record = TrialRecord::without_run(
+                    &task,
+                    wanted,
+                    epoch,
+                    TrialStatus::NotApplicable,
+                    reason.clone(),
+                );
+                record::append(out, &record)?;
+                println!("{:<20} epoch {epoch}  NotApplicable  {reason}", record.task);
+                batch.graded.push(grade_trial(&task, &record, out));
+            }
             continue;
         }
         for epoch in 1..=epochs {

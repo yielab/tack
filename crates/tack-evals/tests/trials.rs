@@ -120,3 +120,97 @@ fn an_agent_that_writes_into_hidden_cannot_change_the_exam() {
         "the real exam ran, not the forged one: {record:?}"
     );
 }
+
+#[test]
+fn an_agent_the_task_excludes_gets_a_not_applicable_cell_with_its_reason() {
+    let root = tempfile::tempdir().unwrap();
+    write_task(
+        root.path(),
+        "no-docket",
+        "not_applicable: { docket: \"its team owns the approvals\" }",
+    );
+    let out = root.path().join("out");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_tack-evals"))
+        .arg("run")
+        .arg(root.path().join("no-docket"))
+        .args(["--harness", "docket"])
+        .args(["--out".as_ref(), out.as_os_str()])
+        .args(["--tack-bin".as_ref(), tack_bin().as_os_str()])
+        .status()
+        .expect("run tack-evals");
+    assert!(status.success());
+
+    let records = read_all(&trials_path(&out)).unwrap();
+    assert_eq!(records.len(), 1, "{records:?}");
+    assert_eq!(records[0].status, TrialStatus::NotApplicable);
+    assert_eq!(records[0].harness, "docket");
+    assert_eq!(
+        records[0].reason.as_deref(),
+        Some("its team owns the approvals")
+    );
+    assert!(records[0].request_id.is_none(), "no run was started");
+}
+
+#[test]
+fn a_planner_task_runs_the_built_in_planner_and_its_plan_is_graded() {
+    use tack_evals::grade::grade_trial;
+    use tack_evals::taxonomy::Verdict;
+
+    let root = tempfile::tempdir().unwrap();
+    let dir = write_task(root.path(), "plans", "");
+    let yaml = std::fs::read_to_string(dir.join("task.yaml"))
+        .unwrap()
+        .replace(
+            "profile: { harness: claude-code, model: claude-haiku-5-5 }",
+            "profile: { harness: claude-code, model: claude-haiku-5-5, role: Planner }",
+        )
+        .replace(
+            "outcome.hidden_tests: { command: \"sh hidden/check.sh\" }",
+            "outcome.plan: { min: 2, max: 3 }",
+        );
+    std::fs::write(dir.join("task.yaml"), yaml).unwrap();
+    let plan = r#"{"v":"1","subtasks":[
+        {"title":"Warm up","description":"Start.","acceptance":["the greeting is loud"]},
+        {"title":"Shout","description":"Say it.","acceptance":["it says HELLO"],"depends_on":[0]}]}"#;
+    let planner = FakeAgent {
+        writes: vec![("tack-plan.json".to_owned(), plan.to_owned())],
+        asks: None,
+    };
+    let options = trial_options(root.path(), install_agent(root.path(), &planner));
+    let task = load(&dir);
+
+    let record = run_and_record(&task, &options).unwrap();
+
+    assert_eq!(record.run_state.as_deref(), Some("succeeded"), "{record:?}");
+    let graded = grade_trial(&task, &record, &options.out);
+    assert_eq!(graded.judgement.verdict, Verdict::Passed, "{graded:?}");
+}
+
+#[test]
+fn a_second_run_into_the_same_directory_adds_its_agent_to_the_summary() {
+    let root = tempfile::tempdir().unwrap();
+    write_task(
+        root.path(),
+        "no-docket",
+        "not_applicable: { docket: \"its team owns the approvals\", codex: \"no\" }",
+    );
+    let out = root.path().join("out");
+    for harness in ["docket", "codex"] {
+        let status = Command::new(env!("CARGO_BIN_EXE_tack-evals"))
+            .arg("run")
+            .arg(root.path().join("no-docket"))
+            .args(["--harness", harness])
+            .args(["--out".as_ref(), out.as_os_str()])
+            .args(["--tack-bin".as_ref(), tack_bin().as_os_str()])
+            .status()
+            .expect("run tack-evals");
+        assert!(status.success());
+    }
+
+    let summary = std::fs::read_to_string(out.join("summary.json")).unwrap();
+    assert!(
+        summary.contains("docket") && summary.contains("codex"),
+        "{summary}"
+    );
+}
