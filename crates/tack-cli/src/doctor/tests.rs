@@ -430,3 +430,29 @@ fn config_names_the_file_the_doctor_reads_and_a_broken_one_is_an_error() {
     std::fs::write(&broken, "[docket\n").expect("write broken");
     assert!(read_config(Some(broken)).is_err());
 }
+
+#[test]
+fn the_sandbox_line_says_when_the_requirement_is_turned_off() {
+    let mut agent = capability("claude-code", "2.0.0", None);
+    agent.additional.insert("sandbox".into(), "none".into());
+    agent
+        .additional
+        .insert("sandbox_reason".into(), "bwrap not on PATH".into());
+    assert_eq!(
+        sandbox_line(&agent).as_deref(),
+        Some("  sandbox:     none (bwrap not on PATH)")
+    );
+    agent
+        .additional
+        .insert("sandbox_required".into(), false.into());
+    let line = sandbox_line(&agent).expect("a line");
+    assert!(
+        line.contains("[sandbox] required is false") && line.contains("asks before each action"),
+        "{line}"
+    );
+    agent.additional.insert("sandbox".into(), "bwrap".into());
+    assert_eq!(
+        sandbox_line(&agent).as_deref(),
+        Some("  sandbox:     bwrap")
+    );
+}

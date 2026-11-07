@@ -273,27 +273,29 @@ describe('AgentsPage — this computer only', () => {
     expect(row.querySelector('a')).toBeNull();
   });
 
-  it('each installed agent says whether it is sandboxed, asks first, or does not run here', async () => {
+  it('each installed agent says who contains it, that it is not contained, or that it does not run here', async () => {
     const asks = { support: 'supported', reason: null };
     mockFetch({
       '/api/local-runner': RUNNING,
       '/api/runners': runnerWith([
-        { ...CLAUDE_INSTALLED, sandbox: 'bwrap', decisions: asks },
-        { ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '0.2.0', sandbox: 'none', decisions: asks },
+        { ...CLAUDE_INSTALLED, sandbox: 'bwrap', sandbox_required: true, decisions: asks },
+        { ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '0.2.0', sandbox: 'none', sandbox_required: false, decisions: asks },
         {
-          ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.3.0', sandbox: 'none',
-          decisions: { support: 'unsupported', reason: null },
-          probe_error: 'not sandboxed on this machine (bwrap not on PATH) and this agent cannot ask before it acts',
+          ...CLAUDE_INSTALLED, harness_kind: 'opencode', installed_version: '0.3.0', sandbox: 'none', sandbox_required: true,
+          decisions: asks,
+          probe_error: 'not contained on this computer (bwrap not on PATH), so this agent does not run here; install bubblewrap',
         },
+        { ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', sandbox: 'harness' },
       ]),
     });
     const { container } = mount();
     await flush();
     await flush();
     const line = (kind: string) => container.querySelector(`[data-testid="agent-safety-${kind}"]`)?.textContent ?? '';
-    expect(line('claude-code')).toBe('Sandboxed: the agent only reaches its workspace');
-    expect(line('codex')).toContain('Not sandboxed on this computer, so the agent asks before each action');
-    expect(line('docket')).toContain("Doesn't run on this computer: it isn't sandboxed and can't ask before it acts");
+    expect(line('claude-code')).toBe('Contained by this computer (bwrap)');
+    expect(line('codex')).toBe('Not contained: the administrator turned the requirement off');
+    expect(line('opencode')).toBe("Doesn't run here: install bubblewrap to contain it");
+    expect(line('docket')).toBe('Contained by docket');
     expect(container.textContent).toContain("Installed v0.3.0 · Doesn't run here");
     expect(container.textContent).not.toContain('Could not check');
   });

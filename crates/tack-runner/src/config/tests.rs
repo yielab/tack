@@ -326,3 +326,27 @@ fn the_docket_table_reads_and_defaults_to_the_loopback_port() {
 
     assert!(load(Some("[docket]\nprovider = \"x\"\n")).is_err());
 }
+
+#[test]
+fn the_sandbox_is_required_unless_the_table_turns_it_off() {
+    let load = |toml: Option<&str>| {
+        RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: toml,
+            ..RunnerConfigSources::default()
+        })
+    };
+    assert!(load(None).expect("defaults").sandbox.required);
+    assert!(
+        load(Some("[sandbox]\n"))
+            .expect("an empty table")
+            .sandbox
+            .required
+    );
+    assert!(
+        !load(Some("[sandbox]\nrequired = false\n"))
+            .expect("an opt-out")
+            .sandbox
+            .required
+    );
+    assert!(load(Some("[sandbox]\nmode = \"off\"\n")).is_err());
+}

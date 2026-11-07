@@ -49,8 +49,14 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   tools, opencode through its permission settings, docket through its policy. Tack passes
   the run's tool list and approvals to each one. How far each honours them is reported by
   `tack runner doctor`, on the "permission policy" line of each agent.
-- **Tack's sandbox on Linux.** On top of that, where `bwrap` is installed, the runner
-  starts each agent inside it. The agent
+- **Who contains the agent.** Every agent runs contained: by this computer (bubblewrap), by its own
+  sandbox, or by docket. Claude Code and opencode bring no sandbox, so for them it is bubblewrap
+  only; Codex has its own and is also run inside bubblewrap. Where nothing contains an agent it
+  does not run, unless the administrator turned the requirement off, and then it asks before each
+  action. The run dialog's Sandbox line and the Agents page say which of these holds for each
+  agent.
+- **Tack's sandbox on Linux.** Where `bwrap` is installed, the runner starts each agent inside it.
+  The agent
   sees the workspace and a scratch home, the system directories read-only, and of the
   folders it keeps under your home (`~/.claude`, `~/.codex`) only its settings and
   instructions, read-only, and its login file, which it may refresh. It cannot rewrite
@@ -61,18 +67,20 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   your machine, and holds no Linux capabilities. The network is not
   restricted: the agent has to reach its model. The runner decides, for each agent,
   by starting it once inside `bwrap`. One that cannot start there (a program installed
-  in a virtualenv or under Homebrew, for example) runs without a sandbox, and
-  `tack runner doctor` and the run say so. Without `bwrap` the agent has your user's
-  access to the machine, and the start report says `sandbox: none`. An agent without a
-  sandbox must be able to ask before it acts, so the run dialog asks by default; one that
-  cannot ask does not run on that
-  machine, and the Agents page, the run dialog and the project's Automation settings say
-  why.
+  in a virtualenv or under Homebrew, for example) counts as not contained, and
+  `tack runner doctor` and the run say so.
+- **Turning the requirement off.** The runner's settings file requires a sandbox by default. An
+  administrator who cannot or will not install bubblewrap writes `required = false` under
+  `[sandbox]`. Without `bwrap`, an agent then runs with your user's access to the machine and
+  asks before each action; the start report says `sandbox: none`, the run's timeline says why it
+  asks, the run dialog and the Agents page say "Not contained: the administrator turned the
+  requirement off", and `tack runner doctor` shows the setting. An agent that cannot ask does not
+  run even then.
 - **docket's jail is docket's.** Tack does not wrap docket in `bwrap`: docket is a daemon with its
   own home, and it confines its agents itself, in a jail it sets up. Tack asks docket whether it
-  does: when docket says so, the run reports `sandbox: harness`, shown on screen as "Runs in an
-  isolated sandbox"; when it says it does not, or does not say, the run reports `sandbox: none`
-  and asks before each action. Tack reaches
+  does: when docket says so, the run reports `sandbox: harness`, shown on screen as "Contained by
+  docket"; when it says it does not, or does not say, Tack takes the strictest reading and the run
+  asks before each action. Tack never refuses to run docket over its answer. Tack reaches
   docket only over its loopback API with a bearer token, passes it the task, the denied tools
   and the network flag as restrictions, and holds no model key for it.
 - **The workspace.** The agent works in a clone or a branch of the project's own
@@ -89,20 +97,20 @@ A run that asks pauses before each action and waits for a person to answer in **
 run asks depends on the sandbox, and it is decided in two places:
 
 - **The Run with agent dialog.** "Ask before each action" starts switched on when any machine the run
-  could land on reports the chosen agent as not sandboxed (`sandbox: none`), and off otherwise. The
+  could land on reports the chosen agent as not contained (`sandbox: none`), and off otherwise. The
   person can switch it either way. For an agent that cannot pause to ask, the switch is disabled and the
   dialog says "This agent can't pause to ask — it always decides on its own."
 - **A task a project starts by itself.** Nobody is at the dialog, so Tack decides. The run asks unless
-  **every** machine it could land on reports the agent as sandboxed, by `bwrap` or by the agent's own
+  **every** machine it could land on reports the agent as contained, by `bwrap` or by the agent's own
   jail. A machine that reports no sandbox, or does not say, makes the run ask. The machines are the
   fleet of the profile, or the only active runner. See
   [Starting tasks by itself](runners.md#starting-tasks-by-itself).
 
-Whatever the dialog or the project says, an agent that is not sandboxed **and** cannot ask does not run
-on that machine at all. The runner refuses the attempt before starting it, with "not sandboxed on this
-machine … and this agent cannot ask before it acts, so it does not run here; install bubblewrap, or
-update the agent to a version that can ask". The Agents page, the run dialog and the project's
-Automation settings show the same reason. A run started through `tack mcp` always asks.
+Whatever the dialog or the project says, an agent that nothing contains does not run on that machine
+at all, unless the requirement is off and the agent can ask. The runner refuses the attempt before
+starting it, with "not contained on this computer … so this agent does not run here; install
+bubblewrap". The Agents page, the run dialog and the project's Automation settings show the same
+reason. A run started through `tack mcp` always asks.
 
 ## What the runner's git refuses
 

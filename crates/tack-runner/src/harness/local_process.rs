@@ -727,14 +727,23 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         HarnessError::Rejected { reason }
     }
 
-    /// The rules every harness is held to before anything is spawned.
-    /// Why this harness does not run here at all: an agent without a
-    /// sandbox must be able to ask before it acts (ADR 0018), and this one
-    /// cannot. `None` when it is sandboxed or can ask.
-    fn unconfined_and_cannot_ask(&self) -> Option<String> {
-        let can_ask =
-            || self.grammar.capabilities().decisions.support == CapabilitySupport::Supported;
-        (self.sandbox.found_none() && !can_ask()).then(|| {
+    /// Why this harness does not run here at all: it found no sandbox and either the runner
+    /// requires one, or this agent cannot ask before it acts (ADR 0018). `None` when it is
+    /// contained, or runs asking.
+    fn unconfined_and_may_not_run(&self) -> Option<String> {
+        if !self.sandbox.found_none() {
+            return None;
+        }
+        if self.sandbox.is_required() {
+            return Some(format!(
+                "not contained on this computer ({}), so this agent does not run here; install \
+                 bubblewrap, or set `required = false` under [sandbox] in the runner's settings \
+                 to run it uncontained, asking before each action",
+                self.sandbox.reason
+            ));
+        }
+        let can_ask = self.grammar.capabilities().decisions.support == CapabilitySupport::Supported;
+        (!can_ask).then(|| {
             format!(
                 "not sandboxed on this machine ({}) and this agent cannot ask before it acts, \
                  so it does not run here; install bubblewrap, or update the agent to a version \
@@ -754,8 +763,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         );
         (self.sandbox.found_none() && !asked).then(|| {
             format!(
-                "no sandbox on this machine ({}), so this agent asks before each action instead \
-                 of running on its own",
+                "no sandbox on this machine ({}) and the runner does not require one, so this \
+                 agent asks before each action instead of running on its own",
                 self.sandbox.reason
             )
         })
@@ -765,7 +774,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         if let Some(reason) = self
             .grammar
             .unsupported()
-            .or_else(|| self.unconfined_and_cannot_ask())
+            .or_else(|| self.unconfined_and_may_not_run())
         {
             return Err(self.reject(reason));
         }
@@ -1420,7 +1429,7 @@ where
                 .then(|| {
                     self.grammar
                         .unsupported()
-                        .or_else(|| self.unconfined_and_cannot_ask())
+                        .or_else(|| self.unconfined_and_may_not_run())
                 })
                 .flatten()
         });
@@ -1439,6 +1448,10 @@ where
         additional.insert(
             "sandbox_reason".to_owned(),
             serde_json::json!(self.sandbox.reason),
+        );
+        additional.insert(
+            "sandbox_required".to_owned(),
+            serde_json::json!(self.sandbox.is_required()),
         );
         if let Some(raw) = raw_output {
             additional.insert("raw_version_output".to_owned(), serde_json::json!(raw));
