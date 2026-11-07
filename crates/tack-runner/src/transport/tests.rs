@@ -1169,7 +1169,13 @@ mod slot_loop {
             .unwrap_or_default()
             .to_owned();
         match path.rsplit('/').next().unwrap_or_default() {
-            "enroll" => ok(from_fixture("enrollment.response.json")),
+            "enroll" => {
+                // The fixture's credential ends on a fixed day; one that ends in a runner's last
+                // quarter is rotated, which these tests do not look at.
+                let mut granted = from_fixture("enrollment.response.json");
+                granted["credential_expires_at"] = json!("2999-01-01T00:00:00Z");
+                ok(granted)
+            }
             "claim" => {
                 let nth = claims.fetch_add(1, Ordering::SeqCst);
                 if nth >= 2 {
@@ -1566,6 +1572,223 @@ mod slot_loop {
             "runner enrollment credential is required"
         );
         assert!(paths.lock().expect("paths").is_empty());
+    }
+
+    /// A clock that stands where the test puts it, so how near the credential is to its end
+    /// does not depend on the day the suite runs.
+    #[derive(Clone, Copy)]
+    struct StoppedClock(std::time::SystemTime);
+
+    impl Clock for StoppedClock {
+        fn now(&self) -> std::time::SystemTime {
+            self.0
+        }
+    }
+
+    /// What a rotation test's board saw: each refresh as (bearer, body), each heartbeat's bearer.
+    #[derive(Default)]
+    struct Seen {
+        refreshes: Mutex<Vec<(Option<String>, Value)>>,
+        heartbeat_bearers: Mutex<Vec<Option<String>>>,
+    }
+
+    impl Seen {
+        fn rotations(&self) -> Vec<Option<String>> {
+            self.refreshes
+                .lock()
+                .expect("refreshes")
+                .iter()
+                .filter(|(_, body)| body["rotate_credential"] == true)
+                .map(|(bearer, _)| bearer.clone())
+                .collect()
+        }
+    }
+
+    const ROTATED_CREDENTIAL: &str = "rotated-runner-credential";
+
+    /// A board that rotates when asked (or, with `refuse_rotation`, answers the retryable
+    /// conflict a lost race gets), and answers every claim with no work.
+    async fn board_rotating(refuse_rotation: bool) -> (MockServer, Arc<Seen>) {
+        let seen = Arc::new(Seen::default());
+        let claims = Arc::new(AtomicUsize::new(2));
+        let heartbeats = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let unexpected = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        let recorded = Arc::clone(&seen);
+        Mock::given(any())
+            .respond_with(move |request: &Request| {
+                let bearer = request
+                    .headers
+                    .get("authorization")
+                    .and_then(|value| value.to_str().ok())
+                    .map(|value| value.trim_start_matches("Bearer ").to_owned());
+                match request.url.path().rsplit('/').next().unwrap_or_default() {
+                    "refresh" => {
+                        let body: Value =
+                            serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+                        recorded
+                            .refreshes
+                            .lock()
+                            .expect("refreshes")
+                            .push((bearer, body.clone()));
+                        if body["rotate_credential"] != true {
+                            return ResponseTemplate::new(200).set_body_raw(
+                                fixture("refresh.response.json").into_bytes(),
+                                "application/json",
+                            );
+                        }
+                        if refuse_rotation {
+                            return ResponseTemplate::new(409).set_body_raw(
+                                fixture("errors/conflict.json").into_bytes(),
+                                "application/json",
+                            );
+                        }
+                        let mut reply: Value =
+                            serde_json::from_str(&fixture("refresh.response.json"))
+                                .expect("fixture parses");
+                        reply["runner_credential"] = json!(ROTATED_CREDENTIAL);
+                        reply["credential_expires_at"] = json!("2027-02-02T12:00:00Z");
+                        ResponseTemplate::new(200).set_body_json(reply)
+                    }
+                    "heartbeat" => {
+                        recorded
+                            .heartbeat_bearers
+                            .lock()
+                            .expect("bearers")
+                            .push(bearer);
+                        respond(request, &claims, &heartbeats, &unexpected)
+                    }
+                    _ => respond(request, &claims, &heartbeats, &unexpected),
+                }
+            })
+            .mount(&server)
+            .await;
+        (server, seen)
+    }
+
+    /// Serves a runner whose saved session ends 2026-11-04 12:00 and whose clock stands at
+    /// `now`, until `done` holds, then stops it. Returns the state directory.
+    async fn serve_saved_session_until(
+        server: &MockServer,
+        now: &str,
+        done: impl Fn() -> bool,
+    ) -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("state dir");
+        let now = chrono::DateTime::parse_from_rfc3339(now).expect("time");
+        let clock = StoppedClock(now.into());
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let engine = RunnerEngine::with_clock(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::new(Semaphore::new(0)),
+                running: Arc::new(AtomicUsize::new(0)),
+            },
+            crate::client::journal::OwnerOnlyJournal::new(root.path().join("journal")),
+            WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
+            clock,
+        );
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.path().join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        store_session(&config.state_dir, &session()).expect("session is stored");
+        let runner = HttpRunnerClient::new(protocol, engine, config, clock, capabilities())
+            .with_renewal_interval(Duration::from_millis(20))
+            .with_rotation_retry_interval(Duration::from_millis(100));
+        let (shutdown, shutdown_handle) = Shutdown::channel();
+        let serving = tokio::spawn(async move { runner.serve(shutdown).await });
+        let reached =
+            tack_test_support::poll_until(Duration::from_secs(30), async || done().then_some(()))
+                .await;
+        assert!(
+            reached.is_some(),
+            "the runner did not get where the test waits"
+        );
+        shutdown_handle.request();
+        tokio::time::timeout(Duration::from_secs(30), serving)
+            .await
+            .expect("serve stops on shutdown")
+            .expect("serve task")
+            .expect("serve result");
+        root
+    }
+
+    /// A credential in the last quarter of its life is exchanged for a fresh one while the
+    /// runner works: the next call carries the new secret, and the saved session holds it, so
+    /// a restart resumes.
+    #[tokio::test]
+    async fn a_credential_near_its_end_is_rotated_and_the_next_call_uses_the_new_one() {
+        let (server, seen) = board_rotating(false).await;
+        let waiting = Arc::clone(&seen);
+        let root = serve_saved_session_until(&server, "2026-10-25T12:00:00Z", move || {
+            waiting
+                .heartbeat_bearers
+                .lock()
+                .expect("bearers")
+                .iter()
+                .any(|bearer| bearer.as_deref() == Some(ROTATED_CREDENTIAL))
+        })
+        .await;
+
+        assert_eq!(
+            seen.rotations(),
+            vec![Some(SECRET_CREDENTIAL.to_owned())],
+            "one rotation, asked with the credential then in force"
+        );
+        let saved = load_session(&root.path().join("state")).expect("a session is saved");
+        assert_eq!(saved.credential().expose(), ROTATED_CREDENTIAL);
+        assert_eq!(
+            saved.credential_expires_at().as_str(),
+            "2027-02-02T12:00:00Z"
+        );
+    }
+
+    /// A credential with most of its life left is never rotated: rotation spends the old
+    /// secret, so it is done only when the end is near.
+    #[tokio::test]
+    async fn a_credential_far_from_its_end_is_not_rotated() {
+        let (server, seen) = board_rotating(false).await;
+        let waiting = Arc::clone(&seen);
+        let root = serve_saved_session_until(&server, "2026-08-06T12:00:00Z", move || {
+            waiting.heartbeat_bearers.lock().expect("bearers").len() >= 5
+        })
+        .await;
+
+        assert!(seen.rotations().is_empty(), "{:?}", seen.rotations());
+        let saved = load_session(&root.path().join("state")).expect("a session is saved");
+        assert_eq!(saved.credential().expose(), SECRET_CREDENTIAL);
+    }
+
+    /// A rotation the board does not complete (a lost race, a hiccup) leaves the runner working
+    /// on the credential it has, and is asked again later. When the board did commit and the
+    /// runner never learnt the new secret, the old one is gone for good: nothing the runner can
+    /// do mends that without a new enrollment token, which is the case
+    /// `a_refused_session_without_an_enrollment_credential_says_the_session_was_refused` covers.
+    #[tokio::test]
+    async fn a_rotation_that_does_not_complete_is_asked_again_and_the_runner_keeps_working() {
+        let (server, seen) = board_rotating(true).await;
+        let waiting = Arc::clone(&seen);
+        let root = serve_saved_session_until(&server, "2026-10-25T12:00:00Z", move || {
+            waiting.rotations().len() >= 6
+                && waiting.heartbeat_bearers.lock().expect("bearers").len() >= 10
+        })
+        .await;
+
+        assert!(
+            seen.rotations()
+                .iter()
+                .all(|bearer| bearer.as_deref() == Some(SECRET_CREDENTIAL)),
+            "every try is made with the credential still held"
+        );
+        assert!(
+            seen.heartbeat_bearers
+                .lock()
+                .expect("bearers")
+                .iter()
+                .all(|bearer| bearer.as_deref() == Some(SECRET_CREDENTIAL)),
+            "the runner keeps working on the credential it has"
+        );
+        let saved = load_session(&root.path().join("state")).expect("a session is saved");
+        assert_eq!(saved.credential().expose(), SECRET_CREDENTIAL);
     }
 
     /// A restart finds one agent still running and one journal behind it. The
