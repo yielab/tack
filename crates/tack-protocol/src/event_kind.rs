@@ -3,6 +3,8 @@
 
 /// A docket hop began.
 pub const AGENT_HOP_STARTED: &str = "agent.hop_started";
+/// A local agent made a model call; the step carries what it used.
+pub const AGENT_MODEL_CALL: &str = "agent.model_call";
 /// A docket hop ended; its text carries the verdict and the tokens.
 pub const AGENT_HOP_FINISHED: &str = "agent.hop_finished";
 /// Files docket did not commit are left out of the evidence.

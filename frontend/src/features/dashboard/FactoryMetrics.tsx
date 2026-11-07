@@ -1,11 +1,12 @@
-import { createResource, For, Show } from 'solid-js';
+import { createResource, createSignal, For, Show } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { Skeleton } from '../../shared/ui';
+import { Select, Skeleton } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { JSX } from 'solid-js';
 import RateCardForm from './RateCardForm';
 import Card from '../../shared/ui/Card';
+import QualityFigures from './QualityFigures';
 
 type FactoryMetrics = components['schemas']['FactoryMetrics'];
 type Ratio = components['schemas']['Ratio'];
@@ -38,11 +39,24 @@ function dollars(v: number): string {
   return `≈ $${v.toFixed(2)} (estimated)`;
 }
 
+/** The windows the page can be read over, in days; `all` is all time. */
+const WINDOWS = [
+  { value: 'all', label: 'All time' },
+  { value: '7', label: 'Last 7 days' },
+  { value: '28', label: 'Last 28 days' },
+  { value: '90', label: 'Last 90 days' },
+];
+
+function sinceOf(period: string): string | undefined {
+  return period === 'all' ? undefined : new Date(Date.now() - Number(period) * 86_400_000).toISOString();
+}
+
 export default function FactoryMetrics() {
   const params = useParams();
   const projectId = params.id!;
 
-  const [metrics, { refetch }] = createResource(() => api.metrics.factoryMetrics(projectId));
+  const [period, setPeriod] = createSignal('all');
+  const [metrics, { refetch }] = createResource(period, (w) => api.metrics.factoryMetrics(projectId, sinceOf(w)));
 
   return (
     <div class="flex flex-col gap-[18px]">
@@ -54,6 +68,9 @@ export default function FactoryMetrics() {
         <p class="mt-0.5 text-small text-content-muted">
           Agent work, verification, and outcomes
         </p>
+        <div class="mt-2 w-48">
+          <Select label="Period" options={WINDOWS} value={period()} onChange={(e) => setPeriod(e.currentTarget.value)} />
+        </div>
       </div>
 
       {/* Loading */}
@@ -111,6 +128,9 @@ export default function FactoryMetrics() {
       </Show>
 
       <Show when={!metrics.loading && metrics()}>
+        <Card class="px-5 py-[18px]">
+          <QualityFigures quality={metrics()!.work_quality} />
+        </Card>
         <CostTable
           title="Cost by model"
           label="Model"

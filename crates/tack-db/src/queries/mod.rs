@@ -27,6 +27,7 @@ pub mod execution_requests;
 pub mod github_links;
 pub mod item_types;
 pub mod items;
+pub mod metrics;
 pub mod migrations;
 pub mod prill_records;
 pub mod projects;

@@ -274,7 +274,7 @@ every run with a rate card you enter once.
 ## Factory metrics
 
 **Factory metrics** is in a project's sidebar. It summarises all the
-runs, questions and verification in a project, as one card per measure. The page covers all time. Each card
+runs, questions and verification in a project, as one card per measure. **Period** at the top reads it over all time or the last 7, 28 or 90 days. Each card
 shows a figure, or **Not measured** with its reason when there is nothing to measure.
 
 | Card | What it tells you |
@@ -290,6 +290,10 @@ shows a figure, or **Not measured** with its reason when there is nothing to mea
 | **Quality** | The figures the verifier reports for each repository. Tack shows them and does not compute them. Where the verifier cannot answer, the card says why |
 
 When a card has nothing to count, it says **Not measured** and why, never `0`.
+
+### Quality of the work
+
+Under the cards, the folded section **Quality of the work** reads the period's runs as rates, each with the counts behind it, and opens into small tables: how often a run succeeded (a run turned away before it started is left out), how often the first run of a task was accepted, how many extra runs a task needed, how often a merged pull request was reverted, and how often the verifier's word agreed with what happened to the work (work you rejected, or whose pull request was reverted, is bad; work you accepted and kept is good), plus, for a task that repeats, how often any three of its runs all succeed. It also lists the questions each agent asked you per hundred steps and how often you allowed them, why runs stopped, and the same rates cut by profile, agent, model, team and prompt fingerprint. Every figure counts runs or tokens, never money, and a figure with nothing to count says **Not measured**.
 
 ### Cost by model and by team
 

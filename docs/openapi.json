@@ -12532,6 +12532,34 @@
           "value": {}
         }
       },
+      "CutRow": {
+        "type": "object",
+        "required": [
+          "name",
+          "attempts",
+          "success_rate",
+          "first_pass_acceptance",
+          "revert_after_merge"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "first_pass_acceptance": {
+            "$ref": "#/components/schemas/Ratio"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revert_after_merge": {
+            "$ref": "#/components/schemas/Ratio"
+          },
+          "success_rate": {
+            "$ref": "#/components/schemas/Ratio"
+          }
+        }
+      },
       "DecideMemoryRequest": {
         "type": "object",
         "description": "What a person decides about a memory entry of a team.",
@@ -13294,7 +13322,8 @@
           "models",
           "priced_models",
           "cost_by_model",
-          "cost_by_team"
+          "cost_by_team",
+          "work_quality"
         ],
         "properties": {
           "attempts": {
@@ -13425,6 +13454,10 @@
           },
           "verification_tax": {
             "$ref": "#/components/schemas/VerificationTax"
+          },
+          "work_quality": {
+            "$ref": "#/components/schemas/WorkQuality",
+            "description": "How well the work came out: rates over the window's attempts, and the same cut by who did it."
           }
         }
       },
@@ -15685,6 +15718,45 @@
           }
         }
       },
+      "PassPowK": {
+        "type": "object",
+        "description": "Of the recurring tasks with at least `k` runs, the average chance that `k` of their runs all succeed.",
+        "required": [
+          "k",
+          "tasks_measured",
+          "tasks_too_short"
+        ],
+        "properties": {
+          "k": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "null_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`denominator_zero` when no recurring task has `k` runs."
+          },
+          "tasks_measured": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Recurring tasks with at least `k` runs in the window."
+          },
+          "tasks_too_short": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Recurring tasks with fewer runs, left out."
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "PostMessage": {
         "type": "object",
         "required": [
@@ -16296,6 +16368,67 @@
           "source": {
             "type": "string",
             "description": "Always `prill`."
+          }
+        }
+      },
+      "QualityCut": {
+        "type": "object",
+        "required": [
+          "by",
+          "rows"
+        ],
+        "properties": {
+          "by": {
+            "type": "string",
+            "description": "`profile`, `harness`, `model`, `team` or `template`."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CutRow"
+            }
+          }
+        }
+      },
+      "QuestionNoise": {
+        "type": "object",
+        "description": "What one kind of agent asked a person, and how it went.",
+        "required": [
+          "harness",
+          "class",
+          "asked",
+          "actions",
+          "granted"
+        ],
+        "properties": {
+          "actions": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Steps the agent reported in all, whatever it asked: what the rate is over."
+          },
+          "asked": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "class": {
+            "type": "string",
+            "description": "What was asked (the decision's kind)."
+          },
+          "granted": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "Answered with a go-ahead ÷ answered by a person."
+          },
+          "harness": {
+            "type": "string",
+            "description": "The agent; `Not recorded` when the run never named one."
+          },
+          "per_100_actions": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Questions of this kind per hundred steps; absent without a step."
           }
         }
       },
@@ -18077,6 +18210,28 @@
               "null"
             ],
             "minimum": 0
+          }
+        }
+      },
+      "StopCount": {
+        "type": "object",
+        "required": [
+          "reason",
+          "count",
+          "not_started"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "not_started": {
+            "type": "boolean",
+            "description": "The run was turned away before the agent did anything."
+          },
+          "reason": {
+            "type": "string",
+            "description": "The code the run ended with, `ceiling` for a team's ceiling that sent no code, `cancelled`, or `unspecified`."
           }
         }
       },
@@ -20404,6 +20559,59 @@
           }
         }
       },
+      "VerifierAgreement": {
+        "type": "object",
+        "description": "How often the verifier's word matched what became of the work. A task is *bad* when a person\nrejected it or its pull request was reverted, and *good* when a person accepted it and it was\nnot reverted; any other task has no label and is not counted.",
+        "required": [
+          "verifier",
+          "agreed",
+          "false_approvals",
+          "false_rejections",
+          "handed_to_a_person",
+          "without_a_pack",
+          "false_approval_rate",
+          "false_rejection_rate"
+        ],
+        "properties": {
+          "agreed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Said merge on good work, or reject on bad work."
+          },
+          "false_approval_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "False approvals ÷ bad work the verifier judged."
+          },
+          "false_approvals": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Said merge on bad work."
+          },
+          "false_rejection_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "False rejections ÷ good work the verifier judged."
+          },
+          "false_rejections": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Said reject on good work."
+          },
+          "handed_to_a_person": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Labelled work the verifier handed to a person (`review`): neither right nor wrong."
+          },
+          "verifier": {
+            "type": "string",
+            "description": "Always `prill`: the pack Tack reads is the verifier's."
+          },
+          "without_a_pack": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Labelled work with no readable pack."
+          }
+        }
+      },
       "WaitKind": {
         "type": "string",
         "description": "What a person is waited for to do.",
@@ -20569,6 +20777,65 @@
           "approval",
           "answer"
         ]
+      },
+      "WorkQuality": {
+        "type": "object",
+        "required": [
+          "success_rate",
+          "first_pass_acceptance",
+          "rework_per_item",
+          "revert_after_merge",
+          "verifier_agreement",
+          "pass_pow_k",
+          "questions",
+          "stops",
+          "cuts"
+        ],
+        "properties": {
+          "cuts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QualityCut"
+            },
+            "description": "The success, first-pass and revert rates by each way of cutting the runs."
+          },
+          "first_pass_acceptance": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "Tasks whose first attempt a person accepted ÷ tasks whose first attempt a person reviewed."
+          },
+          "pass_pow_k": {
+            "$ref": "#/components/schemas/PassPowK"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionNoise"
+            },
+            "description": "Questions put to a person, by agent and kind."
+          },
+          "revert_after_merge": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "Pull requests reverted ÷ pull requests merged or reverted."
+          },
+          "rework_per_item": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "Attempts after a task's first ÷ tasks with an attempt. A value above 1 is more than one extra round per task."
+          },
+          "stops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StopCount"
+            },
+            "description": "Runs that did not succeed, by the reason they gave."
+          },
+          "success_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "Runs that succeeded ÷ runs that ended after starting (failed or succeeded)."
+          },
+          "verifier_agreement": {
+            "$ref": "#/components/schemas/VerifierAgreement"
+          }
+        }
       },
       "WorkflowConfig": {
         "type": "object",
