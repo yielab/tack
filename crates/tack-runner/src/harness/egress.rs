@@ -12,25 +12,33 @@
 //! `OPTIONS` to a URL of at most [`MAX_URL_BYTES`] pass.
 //!
 //! The runner sets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the agent (a request cannot:
-//! see `env_policy`). Until the sandbox also closes every other way out, a program that ignores
-//! the variables is not held by the proxy.
+//! see `env_policy`). Where the agent runs in `bwrap` it has no network of its own and the proxy
+//! also listens on a Unix socket the sandbox shows (see [`bridge`]), so a program that ignores
+//! the variables has nowhere to go. Without `bwrap` the variables are all there is, and a program
+//! that ignores them is not held.
 
 use std::{
     collections::HashSet,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU32, Ordering},
+    },
     time::Duration,
 };
 
 use async_trait::async_trait;
 use tack_protocol::execution::EgressMode;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::mpsc,
     task::{JoinHandle, JoinSet},
 };
+
+pub mod bridge;
 
 /// The longest URL a plain HTTP request may carry through the proxy.
 pub const MAX_URL_BYTES: usize = 2048;
@@ -197,6 +205,8 @@ pub struct EgressProxy {
     address: SocketAddr,
     refusals: Option<mpsc::Receiver<NetworkRefusal>>,
     accepting: JoinHandle<()>,
+    /// The directory holding the Unix socket, when the proxy also listens on one.
+    socket_dir: Option<SocketDir>,
 }
 
 impl Drop for EgressProxy {
@@ -206,16 +216,62 @@ impl Drop for EgressProxy {
     }
 }
 
+/// A private directory that holds the proxy's socket and is removed with it. The path is kept
+/// short: a socket's path may not pass about a hundred bytes, which the runner's state
+/// directory can.
+struct SocketDir(PathBuf);
+
+impl SocketDir {
+    fn create() -> io::Result<Self> {
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        #[allow(clippy::disallowed_methods)] // a short path is the point; the OS temp dir is one
+        let root = std::env::temp_dir();
+        let path = root.join(format!(
+            "tack-egress-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut directory = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut directory, 0o700);
+        directory.create(&path)?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for SocketDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 impl EgressProxy {
     /// Listens on a free loopback port.
     pub async fn start(policy: EgressPolicy) -> io::Result<Self> {
-        Self::start_over(policy, Arc::new(SystemNetwork)).await
+        Self::start_over(policy, Arc::new(SystemNetwork), false).await
     }
 
-    /// [`Self::start`] over a network of the caller's.
-    pub async fn start_over(policy: EgressPolicy, network: Arc<dyn Network>) -> io::Result<Self> {
+    /// [`Self::start`] over `network`. With `socket`, the proxy also listens on a
+    /// Unix socket in a directory of its own ([`Self::socket_dir`]), for an agent that has no
+    /// network to reach a loopback port with.
+    pub async fn start_over(
+        policy: EgressPolicy,
+        network: Arc<dyn Network>,
+        socket: bool,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let address = listener.local_addr()?;
+        let (socket_dir, unix) = if socket {
+            let directory = SocketDir::create()?;
+            let unix = bind_unix(
+                &directory
+                    .0
+                    .join(crate::harness::sandbox::BRIDGE_SOCKET_NAME),
+            )?;
+            (Some(directory), Some(unix))
+        } else {
+            (None, None)
+        };
         let (refused, refusals) = mpsc::channel(REFUSAL_BUFFER);
         let shared = Arc::new(Shared {
             policy,
@@ -237,6 +293,16 @@ impl EgressProxy {
                             break;
                         }
                     },
+                    accepted = accept_unix(unix.as_ref()) => match accepted {
+                        Ok(stream) => {
+                            let shared = Arc::clone(&shared);
+                            connections.spawn(async move { serve(stream, &shared).await });
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "the egress proxy could not accept a connection");
+                            break;
+                        }
+                    },
                     Some(_) = connections.join_next(), if !connections.is_empty() => {}
                 }
             }
@@ -245,7 +311,15 @@ impl EgressProxy {
             address,
             refusals: Some(refusals),
             accepting,
+            socket_dir,
         })
+    }
+
+    /// The directory holding the Unix socket, when the proxy was started with one.
+    pub fn socket_dir(&self) -> Option<&Path> {
+        self.socket_dir
+            .as_ref()
+            .map(|directory| directory.0.as_path())
     }
 
     /// Where the agent is told to send its traffic.
@@ -256,7 +330,13 @@ impl EgressProxy {
     /// The variables that send an agent's traffic here. Loopback is not sent through the proxy,
     /// which would refuse it.
     pub fn environment(&self) -> Vec<(String, String)> {
-        let url = format!("http://{}", self.address);
+        Self::environment_at(self.address)
+    }
+
+    /// The variables that send an agent's traffic to a proxy at `address`: this one's, or the
+    /// forwarder to it inside a sandbox.
+    pub fn environment_at(address: SocketAddr) -> Vec<(String, String)> {
+        let url = format!("http://{address}");
         let no_proxy = "127.0.0.1,localhost,::1";
         ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
             .into_iter()
@@ -272,6 +352,38 @@ impl EgressProxy {
     /// The destinations refused, one per destination and reason. Taken once.
     pub fn take_refusals(&mut self) -> Option<mpsc::Receiver<NetworkRefusal>> {
         self.refusals.take()
+    }
+}
+
+/// The proxy's Unix socket. Only the user the runner runs as can connect to it: the directory it
+/// lies in is private. Where there are no Unix sockets there is no sandbox to bridge into, and
+/// the types stand in for the ones that would be.
+#[cfg(unix)]
+mod socket {
+    pub use tokio::net::{UnixListener as Listener, UnixStream as Stream};
+}
+
+#[cfg(not(unix))]
+mod socket {
+    pub use tokio::net::{TcpListener as Listener, TcpStream as Stream};
+
+    pub fn bind(_: &std::path::Path) -> std::io::Result<Listener> {
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
+}
+
+fn bind_unix(path: &Path) -> io::Result<socket::Listener> {
+    #[cfg(unix)]
+    return socket::Listener::bind(path);
+    #[cfg(not(unix))]
+    return socket::bind(path);
+}
+
+/// The next connection on the Unix socket; never resolves when there is none.
+async fn accept_unix(listener: Option<&socket::Listener>) -> io::Result<socket::Stream> {
+    match listener {
+        Some(listener) => listener.accept().await.map(|(stream, _)| stream),
+        None => std::future::pending().await,
     }
 }
 
@@ -357,7 +469,7 @@ enum Request {
     },
 }
 
-async fn serve(mut client: TcpStream, shared: &Shared) {
+async fn serve<S: AsyncRead + AsyncWrite + Unpin>(mut client: S, shared: &Shared) {
     let (head, rest) = match read_head(&mut client).await {
         Ok(read) => read,
         Err(reply) => {
@@ -418,7 +530,9 @@ const ESTABLISHED: &str = "HTTP/1.1 200 Connection Established\r\n\r\n";
 
 /// Reads up to the end of the request head. What came after it in the same reads is returned
 /// too. An `Err` is the reply to send.
-async fn read_head(client: &mut TcpStream) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
+async fn read_head<S: AsyncRead + Unpin>(
+    client: &mut S,
+) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     let mut buffer = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
     let read = async {

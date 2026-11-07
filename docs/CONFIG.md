@@ -282,7 +282,8 @@ model_hosts = ["openrouter.ai", "*.example.com"]
 
 The proxy refuses this computer's own address, private networks, link-local addresses and the cloud metadata
 addresses in every mode, judged on the address a name resolves to. The agent is told through `HTTP_PROXY`,
-`HTTPS_PROXY` and `NO_PROXY`; a program that ignores them is not held. docket's traffic is not affected: docket
+`HTTPS_PROXY` and `NO_PROXY`. In the `bwrap` sandbox the agent has no network of its own and the proxy is its only way
+out, so a program that ignores them reaches nothing; without `bwrap` they are a request only. docket's traffic is not affected: docket
 confines its own. What each mode covers, and what it cannot, is in
 [What the Agent Can Reach](https://yielab.github.io/tack/admin-guide/what-the-agent-can-reach.html#web-access).
 
@@ -379,7 +380,7 @@ unless the administrator turned the requirement off, and then it asks before eac
 When `bwrap` is on the runner's `PATH`, each agent that can
 start inside it runs inside it, seeing the workspace and a scratch home read-write, the
 directories it needs from your home (`~/.claude`, `~/.codex`) and the system
-directories read-only. The sandbox does not close the network; see `[egress]`. An agent that cannot start inside
+directories read-only. The sandbox closes the network only when `[egress]` enforces web access. An agent that cannot start inside
 `bwrap` (a program in a virtualenv or under Homebrew, whose loader or runtime lives where the
 sandbox does not reach) counts as not contained. docket is not wrapped: it confines its own agents, and the
 probe asks it (`isolationPosture` in its `/health`): `sandbox: harness` only when docket says it

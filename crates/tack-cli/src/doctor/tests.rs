@@ -479,9 +479,25 @@ fn the_web_access_line_says_whether_the_runner_holds_a_run_to_its_profiles_mode(
 
     cap.additional.insert(
         "egress".to_owned(),
-        serde_json::json!({"enforced": true, "model_endpoints": []}),
+        serde_json::json!({"enforced": false, "proxy": true, "model_endpoints": []}),
+    );
+    let asked = egress_line(&cap).unwrap();
+    assert!(
+        asked.contains("not enforced")
+            && asked.contains("only asked")
+            && asked.contains("no sandbox"),
+        "{asked}"
+    );
+
+    cap.additional.insert(
+        "egress".to_owned(),
+        serde_json::json!({"enforced": true, "proxy": true, "model_endpoints": []}),
     );
     let on = egress_line(&cap).unwrap();
+    assert!(
+        on.contains("enforced:") && !on.contains("not enforced"),
+        "{on}"
+    );
     assert!(
         on.contains("closed") && on.contains("listed") && on.contains("open"),
         "{on}"
