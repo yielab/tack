@@ -159,5 +159,5 @@ Decision 4 names "the next column's WIP limit" among the gates for auto-start. N
 unfinished blockers, on the daily budget being spent, and on the room left under the project's cap
 of open runs (`max_open`, from `auto_start_max_open`). Nothing counts the tasks in a column, and
 auto-start does not read a column's `wip_limit`. The only cap on auto-start is `max_open`. Phase 94
-card GR13 adds one gate (a profile that went over its token limit does not start by itself) and no
-WIP limit.
+card GR13 adds one gate (a profile whose agent reports no usage while it runs, and whose last run went
+over its token limit, does not start by itself) and no WIP limit.

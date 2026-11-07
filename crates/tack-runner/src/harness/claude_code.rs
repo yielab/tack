@@ -80,10 +80,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
         ),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),
-        (
-            ParityRule::KillEverythingOnCancel,
-            ParityCell::missing("GR13: cancel signals the process group, not the session"),
-        ),
+        (ParityRule::KillEverythingOnCancel, ParityCell::Runner),
         (ParityRule::OutputRules, ParityCell::Runner),
         (
             ParityRule::ChecksChangedHoldsMerge,

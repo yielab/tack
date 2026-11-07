@@ -28,7 +28,7 @@ mod outcome;
 #[path = "engine/resume.rs"]
 mod resume;
 
-use outcome::{changed_config_path, runner_token_limit, token_limit_reached};
+use outcome::{cancel_failed_reason, changed_config_path, runner_token_limit, token_limit_reached};
 pub use outcome::{fail_beyond_the_plan, fail_without_change};
 
 /// One thing a harness's own protocol asked the operator, read off a line of
@@ -265,6 +265,14 @@ pub trait HarnessAdapter: Send + Sync {
     async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError>;
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError>;
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError>;
+
+    /// The second try after a cancel that left something running: no grace, SIGKILL at once for
+    /// a local process. An agent that stops over an API has nothing harder to send, so its
+    /// default is the same cancel.
+    async fn kill(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        self.cancel(handle).await
+    }
+
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError>;
     async fn reconcile(
         &self,
@@ -1097,6 +1105,7 @@ where
         let limit = runner_token_limit(&spec.work.request);
         let mut counted = 0u64;
         let mut stopped_by_limit = false;
+        let mut cancel_failed = false;
         let mut flush = tokio::time::interval_at(
             tokio::time::Instant::now() + PROGRESS_FLUSH_INTERVAL,
             PROGRESS_FLUSH_INTERVAL,
@@ -1128,6 +1137,9 @@ where
                         if let (true, Some(limit)) = (stopped_by_limit, limit) {
                             token_limit_reached(&mut outcome, limit, counted);
                         }
+                        if cancel_failed {
+                            cancel_failed_reason(&mut outcome);
+                        }
                         outcome
                     });
                 }
@@ -1145,8 +1157,13 @@ where
                         if limit.is_some_and(|limit| counted >= limit)
                             && !stopped_by_limit
                             && !stopped_by_cancel
+                            && !cancel_failed
                         {
                             stopped_by_limit = self.stop_at_limit(handle, record, counted).await;
+                            if !stopped_by_limit {
+                                cancel_failed = true;
+                                self.report_cancel_failed(session, record).await;
+                            }
                         }
                     }
                     None => progress = None,
@@ -1154,17 +1171,11 @@ where
                 _ = flush.tick(), if !steps.is_empty() => {
                     self.submit_progress(session, record, &mut steps, prompt).await;
                 }
-                Ok(()) = cancel.changed(), if !stopped_by_cancel && !stopped_by_limit => {
-                    match self.adapter.cancel(handle).await {
-                        Ok(evidence) => {
-                            stopped_by_cancel =
-                                evidence.observation == CancelObservation::ProcessStopped;
-                        }
-                        Err(error) => tracing::warn!(
-                            %error,
-                            attempt_id = record.attempt_id.as_str(),
-                            "a cancellation asked mid-run could not reach the harness"
-                        ),
+                Ok(()) = cancel.changed(), if !stopped_by_cancel && !stopped_by_limit && !cancel_failed => {
+                    stopped_by_cancel = self.stop_process(handle, record).await;
+                    if !stopped_by_cancel {
+                        cancel_failed = true;
+                        self.report_cancel_failed(session, record).await;
                     }
                 }
                 () = tokio::time::sleep(DECISION_POLL_INTERVAL), if waiting_for_an_answer => {
@@ -1182,18 +1193,55 @@ where
         record: &AttemptJournal,
         counted: u64,
     ) -> bool {
+        let stopped = self.stop_process(handle, record).await;
+        if !stopped {
+            tracing::warn!(
+                counted,
+                attempt_id = record.attempt_id.as_str(),
+                "the token limit was reached but the harness could not be stopped"
+            );
+        }
+        stopped
+    }
+
+    /// Asks the harness to stop. A stop that did not hold (a signal that failed, or something
+    /// still alive after it) is tried again with SIGKILL; only a stop that held on one of the two
+    /// tries counts. When neither does, the run is marked `cancel_failed`.
+    async fn stop_process(&self, handle: &LocalRunHandle, record: &AttemptJournal) -> bool {
+        let attempt_id = record.attempt_id.as_str();
         match self.adapter.cancel(handle).await {
-            Ok(evidence) => evidence.observation == CancelObservation::ProcessStopped,
+            Ok(evidence) if evidence.observation == CancelObservation::ProcessStopped => {
+                return true;
+            }
+            Ok(_) => {}
+            Err(error) => tracing::warn!(
+                %error,
+                attempt_id,
+                "a cancellation could not reach the harness"
+            ),
+        }
+        match self.adapter.kill(handle).await {
+            Ok(evidence) if evidence.observation == CancelObservation::ProcessStopped => true,
+            Ok(evidence) => {
+                tracing::warn!(attempt_id, details = ?evidence.details, "the harness outlived SIGKILL");
+                false
+            }
             Err(error) => {
-                tracing::warn!(
-                    %error,
-                    counted,
-                    attempt_id = record.attempt_id.as_str(),
-                    "the token limit was reached but the harness could not be stopped"
-                );
+                tracing::warn!(%error, attempt_id, "the harness could not be killed");
                 false
             }
         }
+    }
+
+    /// Tells the board, as one event, that the agent's processes outlived the second try.
+    async fn report_cancel_failed(&self, session: &RunnerSession, record: &mut AttemptJournal) {
+        self.submit_event(
+            session,
+            record,
+            "attempt.cancel_failed",
+            serde_json::json!({ "code": "cancel_failed" }),
+        )
+        .await;
     }
 
     /// Whether the attempt works in the repository itself, with no copy made.

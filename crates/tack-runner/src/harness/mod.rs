@@ -721,6 +721,13 @@ impl HarnessAdapter for AdapterRegistry {
             .await
     }
 
+    async fn kill(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        let (kind, inner) = decode_handle(&handle.process_id).ok_or(HarnessError::Process)?;
+        self.resolve(&kind)?
+            .kill(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
         let (kind, inner) = decode_handle(&handle.process_id).ok_or(HarnessError::Process)?;
         self.resolve(&kind)?

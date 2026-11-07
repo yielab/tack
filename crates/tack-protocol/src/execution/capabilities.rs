@@ -930,6 +930,17 @@ pub struct EmbeddedCapabilitySnapshot {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
+/// The agents whose CLI reports no usage until it ends, so a token limit cannot stop them while
+/// they run. The runner's descriptors own the fact (`reports_progress`); a runner test keeps this
+/// list equal to them, for the board has no descriptors.
+pub const WITHOUT_LIVE_USAGE: &[&str] = &["codex"];
+
+/// Whether the agent reports its usage while it runs, which is what lets a token limit stop it
+/// before it has gone past the limit.
+pub fn reports_usage_while_running(harness: &str) -> bool {
+    !WITHOUT_LIVE_USAGE.contains(&harness)
+}
+
 /// A rule every agent must meet for a run to be contained the same way whichever one the profile
 /// names. One row of the parity matrix: each harness descriptor says, per rule, who meets it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -606,6 +606,10 @@ fn project_repository(project: &models::Project) -> Result<Value, Refusal> {
 /// What a run is given when neither the request nor its profile sets a time limit.
 const DEFAULT_TIMEOUT_SECONDS: u64 = 3600;
 
+/// The same for an agent that reports no usage while it runs: its token limit cannot stop it, so
+/// the clock does the stopping, sooner.
+const UNMEASURED_TIMEOUT_SECONDS: u64 = 1800;
+
 /// Who set a run's token limit.
 pub enum LimitSource {
     Profile,
@@ -643,11 +647,13 @@ pub fn unset_tokens(
 
 /// A run's limits, from the one rule: the request's value, else the profile's `limits`, else the
 /// project's provisional token limit, else none (tokens); the request's, else the profile's, else
-/// `DEFAULT_TIMEOUT_SECONDS` (time). A request that says `null` for its tokens takes the profile's
+/// `DEFAULT_TIMEOUT_SECONDS`, or `UNMEASURED_TIMEOUT_SECONDS` for an agent that reports no usage while
+/// it runs (time). A request that says `null` for its tokens takes the profile's
 /// or the provisional limit like one that leaves them out, so a run has a limit while the provisional
 /// one is on. The snapshot's two copies of `budgets` both take what this returns.
 fn run_limits(
     input: &RunRequest,
+    agent: &str,
     profile_limits: &Value,
     provisional: Option<u64>,
 ) -> Result<(Value, u64, LimitSource), Refusal> {
@@ -695,7 +701,13 @@ fn run_limits(
     let timeout = input
         .timeout_seconds
         .or_else(|| profile_limits["timeout_seconds"].as_u64())
-        .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
+        .unwrap_or(
+            if tack_protocol::execution::reports_usage_while_running(agent) {
+                DEFAULT_TIMEOUT_SECONDS
+            } else {
+                UNMEASURED_TIMEOUT_SECONDS
+            },
+        );
     Ok((budgets, timeout, source))
 }
 
@@ -880,7 +892,7 @@ async fn load_profile(
         .permission_policy
         .network
         .get_or_insert_with(|| tack_core::run_defaults::profile_network_for(&tool_policy, &agent));
-    let (budgets, timeout_seconds, source) = run_limits(input, &limits, provisional)?;
+    let (budgets, timeout_seconds, source) = run_limits(input, &agent, &limits, provisional)?;
     input.budgets = budgets;
     input.timeout_seconds = Some(timeout_seconds);
     if let Some(metadata) = input.metadata.as_object_mut() {

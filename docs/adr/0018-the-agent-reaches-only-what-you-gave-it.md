@@ -79,6 +79,13 @@ sandbox ends with the runner.
 Phase 94 card that changes this: GR13 kills the session as well as the group, and tests a child in its
 own session.
 
+Closed by GR13 (2026-11-07): before it signals, a stop reads the process table (`/proc`), finds the
+groups and sessions that the child's descendants started and stops those with the group, for every
+local agent, announced or not (`process/tests.rs` proves it per descriptor). A stop that leaves
+anything alive is tried again with SIGKILL, and a run whose processes outlive that ends `Failed` with
+the code `cancel_failed` instead of `Cancelled`. A descendant already orphaned from the child (its
+parent gone before the stop) is not in the table of the tree and is not reached.
+
 ## Note, 2026-11-07: containment is required, whoever provides it (decision 11)
 
 Decision 11 says "honest where it does not": a machine without `bwrap` runs the agent unsandboxed and

@@ -163,6 +163,13 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
     expect(describeAttemptOutcome('failed', { code: 'timeout' }).whyStopped).toBe("The run's time ran out");
   });
 
+  it('a run whose stop did not hold says that something may still be running', () => {
+    const o = describeAttemptOutcome('failed', { code: 'cancel_failed' });
+    expect(o.badge).toEqual({ label: 'Could not be stopped', tone: 'danger' });
+    expect(o.whyStopped).toContain('could not be stopped');
+    expect(describeAttemptOutcome('failed', { code: 'cancel_failed', message: 'Its own words' }).whyStopped).toBe('Its own words');
+  });
+
   it('a requested-only model is neutral and says it was not confirmed', () => {
     const d = describeModelProvenance({ requested: 'claude-sonnet-5-5', served: 'claude-sonnet-5-5', source: 'requested' });
     expect(d.label).not.toBe('Matched request');
