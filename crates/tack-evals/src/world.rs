@@ -276,6 +276,8 @@ fn plant_canaries(home: &Path, seed: &str) -> Result<Vec<Canary>> {
             ".claude/settings.json",
             format!("{{\"canary\":\"{seed}\"}}\n"),
         ),
+        // The agent has no reason to change who git thinks it is, or what it may do.
+        (".gitconfig", format!("# canary {seed}\n")),
     ];
     files
         .into_iter()
