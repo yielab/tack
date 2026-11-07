@@ -1809,7 +1809,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The parsed pack and its review record",
+            "description": "The parsed pack, when it was opened and the attempt's review",
             "content": {
               "application/json": {
                 "schema": {
@@ -1820,88 +1820,6 @@
           },
           "404": {
             "description": "No pack for this attempt",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/executions/{request_id}/attempts/{attempt_number}/mrp/review": {
-      "post": {
-        "tags": [
-          "mrp"
-        ],
-        "summary": "POST /api/executions/:request_id/attempts/:attempt_number/mrp/review",
-        "operationId": "review_mrp",
-        "parameters": [
-          {
-            "name": "request_id",
-            "in": "path",
-            "description": "Execution request ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "attempt_number",
-            "in": "path",
-            "description": "1-based attempt number",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MrpReviewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "The recorded review; an accepted attempt that pushed its branch adds `pull_request_url`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Blank reason",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No pack for this attempt",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The pack was already reviewed",
             "content": {
               "application/json": {
                 "schema": {
@@ -1943,11 +1861,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The review record, with viewed_at stamped once",
+            "description": "When the pack was first opened, stamped once",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MrpViewed"
                 }
               }
             }
@@ -1970,7 +1888,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`POST /api/executions/{request_id}/attempts/{attempt_number}/review` —\nrecords the operator's verdict on one attempt. One verdict per attempt: a\nsecond is `409` with `details.reason = \"already_reviewed\"`. Accepting an\nattempt that pushed its branch opens its pull request and returns the URL.",
+        "summary": "`POST /api/executions/{request_id}/attempts/{attempt_number}/review` —\nrecords a person's verdict on one attempt (and on its merge-readiness pack, when it has\none), with the caller as reviewer. One verdict per attempt: a second is `409` with\n`details.reason = \"already_reviewed\"`. Accepting an attempt that pushed its branch opens its\npull request and returns the URL.",
         "operationId": "review_execution_attempt",
         "parameters": [
           {
@@ -2015,7 +1933,7 @@
             }
           },
           "400": {
-            "description": "invalid_request (verdict is not accepted or rejected)",
+            "description": "invalid_request (verdict is not accepted or rejected, or a rejection has no reason)",
             "content": {
               "application/json": {
                 "schema": {
@@ -10022,18 +9940,12 @@
       },
       "AttemptReview": {
         "type": "object",
-        "description": "An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.",
+        "description": "A person's verdict on one attempt: `verdict` is `accepted` or `rejected`. A rejection always\ncarries its `reason`. `reviewed_by` is the principal who gave it (`<kind>:<id>`), `null` for a\nreview recorded before the reviewer was kept.",
         "required": [
           "verdict",
           "reviewed_at"
         ],
         "properties": {
-          "note": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "pull_request_url": {
             "type": [
               "string",
@@ -10041,8 +9953,20 @@
             ],
             "description": "The pull request an accepted attempt opened, when it opened one."
           },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reviewed_at": {
             "type": "string"
+          },
+          "reviewed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "verdict": {
             "type": "string"
@@ -14784,36 +14708,35 @@
             "description": "The parsed Merge-Readiness Pack (`docs/contracts/mrp-v1/`)."
           },
           "review": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttemptReview",
+                "description": "The attempt's review; `null` until a person has given a verdict."
+              }
+            ]
+          },
+          "viewed_at": {
             "type": [
-              "object",
+              "string",
               "null"
             ],
-            "description": "The review record; absent until the pack is viewed or reviewed."
+            "description": "When the operator first opened the pack; `null` until then."
           }
         }
       },
-      "MrpReviewRequest": {
+      "MrpViewed": {
         "type": "object",
-        "required": [
-          "verdict",
-          "reason"
-        ],
         "properties": {
-          "reason": {
-            "type": "string",
-            "description": "Required; a blank reason is a 400."
-          },
-          "verdict": {
-            "$ref": "#/components/schemas/MrpVerdict"
+          "viewed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
-      },
-      "MrpVerdict": {
-        "type": "string",
-        "enum": [
-          "accept",
-          "reject"
-        ]
       },
       "NobodyReason": {
         "type": "string",
@@ -16624,11 +16547,12 @@
           "verdict"
         ],
         "properties": {
-          "note": {
+          "reason": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Required to reject, optional to accept; a blank one counts as none."
           },
           "verdict": {
             "type": "string",

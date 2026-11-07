@@ -692,23 +692,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/executions/{request_id}/attempts/{attempt_number}/mrp/review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** POST /api/executions/:request_id/attempts/:attempt_number/mrp/review */
-        post: operations["review_mrp"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/executions/{request_id}/attempts/{attempt_number}/mrp/viewed": {
         parameters: {
             query?: never;
@@ -737,9 +720,10 @@ export interface paths {
         put?: never;
         /**
          * `POST /api/executions/{request_id}/attempts/{attempt_number}/review` —
-         *     records the operator's verdict on one attempt. One verdict per attempt: a
-         *     second is `409` with `details.reason = "already_reviewed"`. Accepting an
-         *     attempt that pushed its branch opens its pull request and returns the URL.
+         *     records a person's verdict on one attempt (and on its merge-readiness pack, when it has
+         *     one), with the caller as reviewer. One verdict per attempt: a second is `409` with
+         *     `details.reason = "already_reviewed"`. Accepting an attempt that pushed its branch opens its
+         *     pull request and returns the URL.
          */
         post: operations["review_execution_attempt"];
         delete?: never;
@@ -4075,12 +4059,17 @@ export interface components {
             enabled: boolean;
             reason?: string | null;
         };
-        /** @description An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`. */
+        /**
+         * @description A person's verdict on one attempt: `verdict` is `accepted` or `rejected`. A rejection always
+         *     carries its `reason`. `reviewed_by` is the principal who gave it (`<kind>:<id>`), `null` for a
+         *     review recorded before the reviewer was kept.
+         */
         AttemptReview: {
-            note?: string | null;
             /** @description The pull request an accepted attempt opened, when it opened one. */
             pull_request_url?: string | null;
+            reason?: string | null;
             reviewed_at: string;
+            reviewed_by?: string | null;
             verdict: string;
         };
         /**
@@ -5885,16 +5874,13 @@ export interface components {
         MrpResponse: {
             /** @description The parsed Merge-Readiness Pack (`docs/contracts/mrp-v1/`). */
             pack: Record<string, never>;
-            /** @description The review record; absent until the pack is viewed or reviewed. */
-            review?: Record<string, never> | null;
+            review?: null | components["schemas"]["AttemptReview"];
+            /** @description When the operator first opened the pack; `null` until then. */
+            viewed_at?: string | null;
         };
-        MrpReviewRequest: {
-            /** @description Required; a blank reason is a 400. */
-            reason: string;
-            verdict: components["schemas"]["MrpVerdict"];
+        MrpViewed: {
+            viewed_at?: string | null;
         };
-        /** @enum {string} */
-        MrpVerdict: "accept" | "reject";
         /**
          * @description Why nobody would take a card.
          * @enum {string}
@@ -6536,7 +6522,8 @@ export interface components {
             key?: string | null;
         };
         ReviewAttemptRequest: {
-            note?: string | null;
+            /** @description Required to reject, optional to accept; a blank one counts as none. */
+            reason?: string | null;
             /** @description `accepted` or `rejected`. */
             verdict: string;
         };
@@ -9260,7 +9247,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The parsed pack and its review record */
+            /** @description The parsed pack, when it was opened and the attempt's review */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -9271,62 +9258,6 @@ export interface operations {
             };
             /** @description No pack for this attempt */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    review_mrp: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Execution request ID */
-                request_id: string;
-                /** @description 1-based attempt number */
-                attempt_number: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MrpReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description The recorded review; an accepted attempt that pushed its branch adds `pull_request_url` */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Blank reason */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description No pack for this attempt */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The pack was already reviewed */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9350,13 +9281,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The review record, with viewed_at stamped once */
+            /** @description When the pack was first opened, stamped once */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MrpViewed"];
                 };
             };
             /** @description No pack for this attempt */
@@ -9397,7 +9328,7 @@ export interface operations {
                     "application/json": components["schemas"]["AttemptReview"];
                 };
             };
-            /** @description invalid_request (verdict is not accepted or rejected) */
+            /** @description invalid_request (verdict is not accepted or rejected, or a rejection has no reason) */
             400: {
                 headers: {
                     [name: string]: unknown;

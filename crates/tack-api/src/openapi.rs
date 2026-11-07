@@ -923,7 +923,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── MRP review ────────────────────────────────────────────────────
         handlers::mrp::get_mrp,
         handlers::mrp::mark_viewed,
-        handlers::mrp::review_mrp,
         // ── Factory metrics ───────────────────────────────────────────────
         handlers::auto_start::get_auto_start,
         handlers::autonomy::get_autonomy,
@@ -1157,8 +1156,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         crate::rate_card::RateCard,
         crate::rate_card::ModelPrice,
         handlers::mrp::MrpResponse,
-        handlers::mrp::MrpVerdict,
-        handlers::mrp::MrpReviewRequest,
+        handlers::mrp::MrpViewed,
         handlers::executions::RunnerV1ErrorEnvelope,
         handlers::executions::RunnerV1Error,
         PaginatedItems,

@@ -59,35 +59,6 @@ pub enum ArtifactContentCommitResult {
 
 // ─── Runtime retention and observability ───────────────────────────────────
 
-/// One `mrp_reviews` row: the human verdict on an attempt's Merge-Readiness
-/// Pack. `verdict` is `None` until the pack has been reviewed; a row with only
-/// `viewed_at` set records that the operator opened it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct MrpReviewRow {
-    pub attempt_id: String,
-    pub artifact_id: String,
-    pub verdict: Option<String>,
-    pub reason: Option<String>,
-    pub viewed_at: Option<String>,
-    pub reviewed_at: Option<String>,
-    pub reviewed_by: Option<String>,
-}
-
-const MRP_REVIEW_COLUMNS: &str =
-    "attempt_id, artifact_id, verdict, reason, viewed_at, reviewed_at, reviewed_by";
-
-fn mrp_review_row(row: &sqlx::sqlite::SqliteRow) -> MrpReviewRow {
-    MrpReviewRow {
-        attempt_id: row.get("attempt_id"),
-        artifact_id: row.get("artifact_id"),
-        verdict: row.get("verdict"),
-        reason: row.get("reason"),
-        viewed_at: row.get("viewed_at"),
-        reviewed_at: row.get("reviewed_at"),
-        reviewed_by: row.get("reviewed_by"),
-    }
-}
-
 impl Repository {
     #[instrument(skip(self, artifact))]
     pub async fn record_execution_artifact(
@@ -355,75 +326,41 @@ impl Repository {
         Ok(result.rows_affected())
     }
 
-    /// The review record for an attempt's pack, if the operator has viewed or
-    /// reviewed it.
+    /// When the operator first opened the pack, `None` while nobody has.
     #[instrument(skip(self))]
-    pub async fn get_mrp_review(
+    pub async fn pack_viewed_at(
         &self,
         attempt_id: &str,
-    ) -> Result<Option<MrpReviewRow>, StoreError> {
-        let row = sqlx::query(AssertSqlSafe(format!(
-            "SELECT {MRP_REVIEW_COLUMNS} FROM mrp_reviews WHERE attempt_id = ?"
-        )))
+        artifact_id: &str,
+    ) -> Result<Option<String>, StoreError> {
+        Ok(sqlx::query_scalar(
+            "SELECT viewed_at FROM execution_artifacts WHERE attempt_id = ? AND artifact_id = ?",
+        )
         .bind(attempt_id)
+        .bind(artifact_id)
         .fetch_optional(self.pool())
-        .await?;
-        Ok(row.as_ref().map(mrp_review_row))
+        .await?
+        .flatten())
     }
 
-    /// Stamps the first time the pack was opened. Idempotent: a second call
-    /// keeps the first `viewed_at` and changes nothing else.
+    /// Stamps the first time the pack was opened and returns that time. Idempotent: a second call
+    /// keeps the first.
     #[instrument(skip(self))]
-    pub async fn mark_mrp_viewed(
+    pub async fn mark_pack_viewed(
         &self,
         attempt_id: &str,
         artifact_id: &str,
         now: DateTime<Utc>,
-    ) -> Result<MrpReviewRow, StoreError> {
-        let row = sqlx::query(AssertSqlSafe(format!(
-            "INSERT INTO mrp_reviews (attempt_id, artifact_id, viewed_at) VALUES (?, ?, ?) \
-             ON CONFLICT(attempt_id) DO UPDATE SET viewed_at = COALESCE(mrp_reviews.viewed_at, excluded.viewed_at) \
-             RETURNING {MRP_REVIEW_COLUMNS}"
-        )))
-        .bind(attempt_id)
-        .bind(artifact_id)
+    ) -> Result<Option<String>, StoreError> {
+        Ok(sqlx::query_scalar(
+            "UPDATE execution_artifacts SET viewed_at = COALESCE(viewed_at, ?) \
+             WHERE attempt_id = ? AND artifact_id = ? RETURNING viewed_at",
+        )
         .bind(now.to_rfc3339())
-        .fetch_one(self.pool())
-        .await?;
-        Ok(mrp_review_row(&row))
-    }
-
-    /// Records the verdict. The first review is the record: `Ok(None)` means
-    /// the pack was already reviewed and nothing was written.
-    #[instrument(skip(self))]
-    pub async fn record_mrp_review(
-        &self,
-        attempt_id: &str,
-        artifact_id: &str,
-        verdict: &str,
-        reason: &str,
-        reviewed_by: &str,
-        now: DateTime<Utc>,
-    ) -> Result<Option<MrpReviewRow>, StoreError> {
-        let now = now.to_rfc3339();
-        let row = sqlx::query(AssertSqlSafe(format!(
-            "INSERT INTO mrp_reviews (attempt_id, artifact_id, verdict, reason, viewed_at, reviewed_at, reviewed_by) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) \
-             ON CONFLICT(attempt_id) DO UPDATE SET verdict = excluded.verdict, reason = excluded.reason, \
-               viewed_at = COALESCE(mrp_reviews.viewed_at, excluded.viewed_at), \
-               reviewed_at = excluded.reviewed_at, reviewed_by = excluded.reviewed_by \
-             WHERE mrp_reviews.verdict IS NULL \
-             RETURNING {MRP_REVIEW_COLUMNS}"
-        )))
         .bind(attempt_id)
         .bind(artifact_id)
-        .bind(verdict)
-        .bind(reason)
-        .bind(&now)
-        .bind(&now)
-        .bind(reviewed_by)
         .fetch_optional(self.pool())
-        .await?;
-        Ok(row.as_ref().map(mrp_review_row))
+        .await?
+        .flatten())
     }
 }

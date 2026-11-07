@@ -403,7 +403,7 @@ async fn review(
     common::send(
         app,
         "POST",
-        &format!("{base}/review"),
+        &format!("{}/review", base.trim_end_matches("/mrp")),
         json!({"verdict": verdict, "reason": reason}),
         &operator_headers(),
     )
@@ -442,6 +442,7 @@ async fn get_returns_the_uploaded_pack_parsed() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{viewed}");
+    assert!(viewed["viewed_at"].is_string(), "{viewed}");
     let (_, again) = common::send(
         &app,
         "POST",
@@ -457,23 +458,52 @@ async fn get_returns_the_uploaded_pack_parsed() {
 }
 
 #[tokio::test]
-async fn a_review_with_a_blank_reason_is_400() {
+async fn a_rejection_without_a_reason_is_400_and_records_nothing() {
     let root = tempfile::tempdir().unwrap();
     let (app, _repo, _item, base) = with_pack(root.path()).await;
-    let (status, body) = review(&app, &base, "accept", "   ").await;
+    for blank in ["", "   "] {
+        let (status, body) = review(&app, &base, "rejected", blank).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    let (status, body, _) = common::send_with_raw(
+        &app,
+        "POST",
+        &format!("{}/review", base.trim_end_matches("/mrp")),
+        json!({"verdict": "rejected"}),
+        &operator_headers(),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["details"]["field"], "reason", "{body}");
+    let (_, got) = common::send(&app, "GET", &base, Value::Null, &operator_headers()).await;
+    assert!(got["review"].is_null(), "{got}");
+}
+
+/// The one review carries its reason and who gave it, and the pack reads it back.
+#[tokio::test]
+async fn the_review_names_its_reviewer_and_the_pack_reads_it_back() {
+    let root = tempfile::tempdir().unwrap();
+    let (app, _repo, _item, base) = with_pack(root.path()).await;
+    let (status, body) = review(&app, &base, "accepted", "  looks right ").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let by = body["reviewed_by"].as_str().expect("a reviewer");
+    assert!(by.starts_with("operator:") && by != "operator", "{body}");
+    let (_, got) = common::send(&app, "GET", &base, Value::Null, &operator_headers()).await;
+    assert_eq!(got["review"]["verdict"], "accepted", "{got}");
+    assert_eq!(got["review"]["reason"], "looks right", "{got}");
+    assert_eq!(got["review"]["reviewed_by"], body["reviewed_by"], "{got}");
 }
 
 #[tokio::test]
 async fn a_second_review_is_409_and_the_first_stays() {
     let root = tempfile::tempdir().unwrap();
     let (app, _repo, _item, base) = with_pack(root.path()).await;
-    let (status, body) = review(&app, &base, "reject", "tests are thin").await;
+    let (status, body) = review(&app, &base, "rejected", "tests are thin").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let (status, body) = review(&app, &base, "accept", "changed my mind").await;
+    let (status, body) = review(&app, &base, "accepted", "changed my mind").await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     let (_, got) = common::send(&app, "GET", &base, Value::Null, &operator_headers()).await;
-    assert_eq!(got["review"]["verdict"], "reject");
+    assert_eq!(got["review"]["verdict"], "rejected");
     assert_eq!(got["review"]["reason"], "tests are thin");
 }
 
@@ -481,7 +511,7 @@ async fn a_second_review_is_409_and_the_first_stays() {
 async fn accept_does_not_move_the_item() {
     let root = tempfile::tempdir().unwrap();
     let (app, repo, item_id, base) = with_pack(root.path()).await;
-    let (status, body) = review(&app, &base, "accept", "looks right").await;
+    let (status, body) = review(&app, &base, "accepted", "looks right").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(item_status(&repo, &item_id).await, "To Do");
 }
@@ -584,7 +614,7 @@ async fn review_attempt(
         app,
         "POST",
         &format!("/api/executions/{}/attempts/1/review", attempt.request_id),
-        json!({"verdict": verdict}),
+        json!({"verdict": verdict, "reason": "checked by hand"}),
         &operator_headers(),
     )
     .await
@@ -633,33 +663,6 @@ async fn accepting_a_pushed_attempt_opens_one_pull_request_whose_body_is_the_ren
     assert_eq!(
         attempts["data"][0]["pull_request"],
         json!({"number": 7, "url": "https://github.com/acme/widgets/pull/7", "state": "open"})
-    );
-}
-
-/// Accepting the pack opens the pull request once; when `/review` accept
-/// already opened it, the pack's accept returns that URL and calls GitHub no more.
-#[tokio::test]
-async fn accepting_the_pack_opens_the_pull_request_once() {
-    let gh = fake_github(1).await;
-    let root = tempfile::tempdir().unwrap();
-    let (app, repo, attempt) = complete_with_pushed_branch(&gh, root.path()).await;
-    let base = format!("/api/executions/{}/attempts/1/mrp", attempt.request_id);
-    let (status, review) = review(&app, &base, "accept", "looks right").await;
-    assert_eq!(status, StatusCode::OK, "{review}");
-    assert_eq!(
-        review["pull_request_url"],
-        "https://github.com/acme/widgets/pull/7"
-    );
-    let stored =
-        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
-            .await
-            .unwrap();
-    assert!(stored.is_some());
-    let (status, again) = review_attempt(&app, &attempt, "accepted").await;
-    assert_eq!(status, StatusCode::OK, "{again}");
-    assert_eq!(
-        again["pull_request_url"],
-        "https://github.com/acme/widgets/pull/7"
     );
 }
 

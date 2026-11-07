@@ -3,8 +3,9 @@ import { Badge, Button, Field, RunState } from '../ui';
 import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
 import type { AcceptanceCriterion } from '../api/briefs';
-import { mrpApi, type MrpCriterionStatus, type MrpPack, type MrpReview } from '../execution/api';
-import type { AttemptMerge } from '../execution/attempts';
+import { mrpApi, type MrpCriterionStatus, type MrpPack } from '../execution/api';
+import { attemptsApi, type AttemptMerge } from '../execution/attempts';
+import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import { LEVEL_MEANING } from '../help/texts';
 import { plainLine } from './plainWords';
 
@@ -188,37 +189,40 @@ export function createMrp(source: () => { requestId: string; attemptNumber: numb
     equals: (a, b) => a?.requestId === b?.requestId && a?.attemptNumber === b?.attemptNumber,
   });
   const [data, { refetch }] = createResource(which, (s) => mrpApi.get(s.requestId, s.attemptNumber));
-  const [reviewed, setReviewed] = createSignal<MrpReview | null>(null);
   const [reason, setReason] = createSignal('');
   const [busy, setBusy] = createSignal(false);
 
   // Reading `data()` of a failed load throws, so every read goes through the error first.
   const response = () => (data.error ? undefined : data());
   const pack = () => response()?.pack;
-  const review = () => reviewed() ?? response()?.review ?? null;
+  const review = () => response()?.review ?? null;
 
   // One `viewed` call for as long as the pack is on screen.
   let viewedSent = false;
   createEffect(() => {
     const r = response();
     const s = which();
-    if (!r || !s || viewedSent || r.review?.viewed_at || r.review?.verdict) return;
+    if (!r || !s || viewedSent || r.viewed_at || r.review) return;
     viewedSent = true;
     mrpApi.markViewed(s.requestId, s.attemptNumber).catch(() => {
       /* best effort */
     });
   });
 
-  const submit = async (verdict: 'accept' | 'reject') => {
+  /** Records the attempt's one review. A rejection needs its reason; a blank one counts as none. */
+  const submit = async (verdict: 'accepted' | 'rejected') => {
     const s = which();
-    if (!s || !reason().trim() || busy()) return;
+    const why = reason().trim();
+    if (!s || busy() || (verdict === 'rejected' && !why)) return;
     setBusy(true);
     try {
-      setReviewed(await mrpApi.review(s.requestId, s.attemptNumber, verdict, reason().trim()));
-      toast.success(verdict === 'accept' ? 'Pack accepted.' : 'Pack rejected.');
+      await attemptsApi.review(s.requestId, s.attemptNumber, { verdict, ...(why ? { reason: why } : {}) });
+      toast.success(verdict === 'accepted' ? 'Accepted.' : 'Rejected.');
+      window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
+      await refetch();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        toast.error('This pack was already reviewed.');
+        toast.error('This run was already reviewed.');
         void refetch();
       } else {
         toast.error(err instanceof Error ? err.message : 'Could not save the review.');
@@ -228,7 +232,7 @@ export function createMrp(source: () => { requestId: string; attemptNumber: numb
     }
   };
 
-  return { data, enabled: () => which() !== undefined, pack, review, reason, setReason, busy, submit };
+  return { data, enabled: () => which() !== undefined, pack, review, refresh: () => void refetch(), reason, setReason, busy, submit };
 }
 
 export type Mrp = ReturnType<typeof createMrp>;
@@ -461,10 +465,10 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
               </div>
             </details>
 
-            <Show when={!props.verdictAbove || mrp().review()?.verdict}>
+            <Show when={!props.verdictAbove || mrp().review()}>
             <Section title="Your review">
               <Show
-                when={mrp().review()?.verdict}
+                when={mrp().review()}
                 fallback={
                   <form
                     class="space-y-3"
@@ -473,13 +477,12 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                     }}
                   >
                     <Field
-                      label="Reason"
+                      label="Reason (required to reject)"
                       value={mrp().reason()}
                       onInput={(e) => mrp().setReason(e.currentTarget.value)}
-                      required
                     />
                     <div class="flex flex-wrap items-center gap-2">
-                      <Button type="button" size="sm" disabled={mrp().busy() || !mrp().reason().trim()} onClick={() => mrp().submit('accept')}>
+                      <Button type="button" size="sm" disabled={mrp().busy()} onClick={() => mrp().submit('accepted')}>
                         Accept
                       </Button>
                       <Button
@@ -487,13 +490,13 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                         size="sm"
                         variant="secondary"
                         disabled={mrp().busy() || !mrp().reason().trim()}
-                        onClick={() => mrp().submit('reject')}
+                        onClick={() => mrp().submit('rejected')}
                       >
                         Reject
                       </Button>
                       <Show when={!mrp().reason().trim()}>
                         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                          Write a reason to enable Accept and Reject.
+                          Write a reason to enable Reject.
                         </span>
                       </Show>
                     </div>
@@ -501,8 +504,8 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                 }
               >
                 <p class="text-sm" data-testid="mrp-review">
-                  <Badge tone={mrp().review()?.verdict === 'accept' ? 'success' : 'danger'}>
-                    {mrp().review()?.verdict === 'accept' ? 'Accepted' : 'Rejected'}
+                  <Badge tone={mrp().review()?.verdict === 'accepted' ? 'success' : 'danger'}>
+                    {mrp().review()?.verdict === 'accepted' ? 'Accepted' : 'Rejected'}
                   </Badge>{' '}
                   {mrp().review()?.reason}
                 </p>

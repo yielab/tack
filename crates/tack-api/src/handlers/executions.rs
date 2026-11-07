@@ -117,7 +117,7 @@ fn error(
     crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
-fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
+pub(super) fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
     headers
         .get("x-tack-principal")
         .and_then(|value| value.to_str().ok())
@@ -647,15 +647,30 @@ pub struct MergedBy {
     pub policy_snapshot: Option<serde_json::Value>,
 }
 
-/// An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.
+/// A person's verdict on one attempt: `verdict` is `accepted` or `rejected`. A rejection always
+/// carries its `reason`. `reviewed_by` is the principal who gave it (`<kind>:<id>`), `null` for a
+/// review recorded before the reviewer was kept.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AttemptReview {
     pub verdict: String,
-    pub note: Option<String>,
+    pub reason: Option<String>,
+    pub reviewed_by: Option<String>,
     pub reviewed_at: String,
     /// The pull request an accepted attempt opened, when it opened one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_request_url: Option<String>,
+}
+
+impl From<tack_db::queries::attempt_reviews::AttemptReviewRow> for AttemptReview {
+    fn from(row: tack_db::queries::attempt_reviews::AttemptReviewRow) -> Self {
+        Self {
+            verdict: row.verdict,
+            reason: row.reason,
+            reviewed_by: row.reviewed_by,
+            reviewed_at: row.reviewed_at,
+            pull_request_url: None,
+        }
+    }
 }
 
 /// The pull request an attempt opened: `state` is `open`, `merged`, `closed` or
@@ -1581,12 +1596,7 @@ pub async fn list_execution_attempts(
                 url: pr.url,
                 state: pr.state,
             }),
-            review.map(|review| AttemptReview {
-                verdict: review.verdict,
-                note: review.note,
-                reviewed_at: review.reviewed_at,
-                pull_request_url: None,
-            }),
+            review.map(AttemptReview::from),
             AttemptMerge {
                 enabled,
                 reason,

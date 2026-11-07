@@ -41,21 +41,22 @@ pub async fn attempts_with_outcomes(
     .collect();
     let mut reviews: HashMap<String, AttemptReviewRow> = sqlx::query_as::<
         _,
-        (String, String, Option<String>, String),
+        (String, String, Option<String>, Option<String>, String),
     >(
-        "SELECT attempt_id, verdict, note, reviewed_at FROM attempt_reviews WHERE attempt_id IN \
+        "SELECT attempt_id, verdict, reason, reviewed_by, reviewed_at FROM attempt_reviews WHERE attempt_id IN \
              (SELECT id FROM execution_attempts WHERE request_id = ?)",
     )
     .bind(request_id)
     .fetch_all(repo.pool())
     .await?
     .into_iter()
-    .map(|(attempt_id, verdict, note, reviewed_at)| {
+    .map(|(attempt_id, verdict, reason, reviewed_by, reviewed_at)| {
         (
             attempt_id,
             AttemptReviewRow {
                 verdict,
-                note,
+                reason,
+                reviewed_by,
                 reviewed_at,
             },
         )

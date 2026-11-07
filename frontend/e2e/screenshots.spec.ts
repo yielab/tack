@@ -431,8 +431,8 @@ test.describe.serial('README screenshots', () => {
 
   test('factory-metrics', async ({ page, request }) => {
     // The pack was opened in the previous capture; record its verdict.
-    const review = await request.post(`${API}/executions/${seeded.mrpRequestId}/attempts/1/mrp/review`, {
-      data: { verdict: 'accept', reason: 'Every criterion passed; the coverage report matches the diff.' },
+    const review = await request.post(`${API}/executions/${seeded.mrpRequestId}/attempts/1/review`, {
+      data: { verdict: 'accepted', reason: 'Every criterion passed; the coverage report matches the diff.' },
     });
     expect(review.ok(), `review: ${review.status()}`).toBeTruthy();
     await page.goto(`/projects/${projectId}/factory`);
