@@ -107,12 +107,16 @@ no ADR: ADR 0013 and ADR 0018 decisions 11 and 12 are amended where their text b
 **Proposed, not accepted:** the plan's §11 decisions 1 to 4 are the maintainer's, and rounds 3 and 4
 wait on them).
 
-**Built 2026-11-07, in `develop`:** round 0 (C0-1, C0-2, C0-3) and round 1 except GR10 and GR11 (GR0,
-GR1, GR4, GR7, GR8, GR14, GR18, P1), the full pre-push gate green after each round. The parity test
-carries a list of the cells still pending, each with its card; a card deletes its entries as it
-lands. GR10 and GR11 wait on decisions 3 and 4. Left open by GR14, for the maintainer: the embedded
-runner never rotates its credential and stops with `SessionRefused` after its 90 days; runner rows and
-pending decisions that predate the default expiry never expire.
+**Built 2026-11-07, in `develop`:** round 0 (C0-1, C0-2, C0-3) and round 1 (GR0, GR1, GR4, GR7, GR8,
+GR10, GR11, GR14, GR18, P1), the full pre-push gate green after each round. The parity test carries a
+list of the cells still pending, each with its card; a card deletes its entries as it lands. Decided
+the same day: `tack mcp` refuses without an agent credential (decision 3); the Merge button over a
+`reject` asks for a written reason (decision 4); the runner rotates its own credential before it
+expires (a card of its own, since a runner would stop with `SessionRefused` after its 90 days). Still
+open for the maintainer: runner rows and pending decisions that predate the default expiry never
+expire; a merge over a `reject` on an attempt that already has a review does not store the reason.
+Decisions 1 and 2 are not taken: a runner-supplied sandbox required whoever else supplies one, and
+egress in three modes per profile (closed, listed hosts, open web for researchers).
 
 An audit of the four harnesses found that the board contains an agent well (scopes, change sets, a
 second secret for decisions, demotion after a revert) and the machine does not: the network is never
