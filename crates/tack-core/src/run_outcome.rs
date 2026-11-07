@@ -35,6 +35,17 @@ pub fn never_started(state: ExecutionState, terminal_reason: Option<&Value>) -> 
         .is_some_and(names_a_ceiling)
 }
 
+/// How an attempt came out as work: `Some(true)` it succeeded, `Some(false)` it failed after
+/// starting, `None` it is still going, was cancelled, or was turned away before it started
+/// (see [`never_started`]). The quality figures and the trend notification count the same runs.
+pub fn work_outcome(state: ExecutionState, terminal_reason: Option<&Value>) -> Option<bool> {
+    match state {
+        ExecutionState::Succeeded => Some(true),
+        ExecutionState::Failed => (!never_started(state, terminal_reason)).then_some(false),
+        _ => None,
+    }
+}
+
 /// Whether `message` names the level a team's ceiling stopped at: the word "ceiling" (any case),
 /// whitespace, `L` and a digit, on a word boundary (`ceiling L3`, not `ceiling Lx` or `ceilings L3`).
 fn names_a_ceiling(message: &str) -> bool {

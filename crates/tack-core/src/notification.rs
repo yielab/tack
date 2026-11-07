@@ -31,6 +31,8 @@ pub enum Kind {
     ChildrenFinished,
     /// A team holds something it learnt and waits for a person to approve it.
     Memory,
+    /// A cut of the work (a profile, an agent) succeeds clearly less often than it did.
+    QualityTrend,
 }
 
 impl Kind {
@@ -43,6 +45,7 @@ impl Kind {
             Kind::DueSoon => "due_soon",
             Kind::ChildrenFinished => "children_finished",
             Kind::Memory => "memory",
+            Kind::QualityTrend => "quality_trend",
         }
     }
 }
@@ -69,7 +72,8 @@ impl Level {
 
 /// The situation a notification is about, so the same situation is never open twice and the
 /// fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`.
+/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,
+/// `trend:<project>:<cut>:<name>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -107,6 +111,12 @@ impl Key {
     /// the entry is no longer pending.
     pub fn memory(project_id: Uuid, team: &str, entry_id: &str) -> Key {
         Key(format!("memory:{project_id}:{team}:{entry_id}"))
+    }
+
+    /// A drop in the success rate of one cut of a project's work (`by` is `profile`, `agent`, ...),
+    /// until the rate recovers.
+    pub fn quality_trend(project_id: Uuid, by: &str, name: &str) -> Key {
+        Key(format!("trend:{project_id}:{by}:{name}"))
     }
 
     /// The project and the team a [`Key::memory`] names, or `None` for any other key.
@@ -295,6 +305,74 @@ pub fn memory_waiting(
         title: format!("Team {team} waits for you to approve what it learnt about {subject}"),
         cause: crate::principal::Principal::runner(reporter).label(),
     }
+}
+
+/// Runs that ended after starting, and how many of them succeeded, in one window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Outcomes {
+    pub succeeded: u32,
+    pub ended: u32,
+}
+
+impl Outcomes {
+    fn rate(self) -> f64 {
+        f64::from(self.succeeded) / f64::from(self.ended)
+    }
+}
+
+/// The z of a 95 % interval.
+const Z95: f64 = 1.959_963_984_540_054;
+
+/// The Wilson score interval for `succeeded` of `ended` at 95 %; `None` for no runs.
+pub fn wilson(outcomes: Outcomes) -> Option<(f64, f64)> {
+    let Outcomes { succeeded, ended } = outcomes;
+    if ended == 0 || succeeded > ended {
+        return None;
+    }
+    let n = f64::from(ended);
+    let p = f64::from(succeeded) / n;
+    let z2 = Z95 * Z95;
+    let denominator = 1.0 + z2 / n;
+    let center = (p + z2 / (2.0 * n)) / denominator;
+    let half = Z95 * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denominator;
+    Some(((center - half).max(0.0), (center + half).min(1.0)))
+}
+
+/// The notice for a cut whose success rate in the last seven days is clearly below the one in the
+/// 28 days before, or `None`. "Clearly" is the 95 % Wilson intervals of the two windows not
+/// overlapping, with the recent one below: a few runs give wide intervals, so a small sample
+/// warns only when it is extreme. `by` and `name` are the cut (`profile`, `Reviewer`).
+pub fn quality_trend(
+    project_id: Uuid,
+    by: &str,
+    name: &str,
+    recent: Outcomes,
+    before: Outcomes,
+) -> Option<Notice> {
+    let (_, recent_high) = wilson(recent)?;
+    let (before_low, _) = wilson(before)?;
+    // Equal bounds count as overlapping.
+    if recent_high >= before_low {
+        return None;
+    }
+    Some(Notice {
+        kind: Kind::QualityTrend,
+        level: Level::NeedsYou,
+        key: Key::quality_trend(project_id, by, name),
+        project_id,
+        item_id: None,
+        request_id: None,
+        title: format!(
+            "Success for {by} \"{name}\" fell to {:.0}% ({} of {}) in the last 7 days, from {:.0}% ({} of {}) in the 28 before",
+            recent.rate() * 100.0,
+            recent.succeeded,
+            recent.ended,
+            before.rate() * 100.0,
+            before.succeeded,
+            before.ended,
+        ),
+        cause: crate::principal::Principal::system().label(),
+    })
 }
 
 #[cfg(test)]

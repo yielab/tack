@@ -309,6 +309,8 @@ pub async fn reconcile(
     for notification in open {
         if notification.level == Level::NeedsYou
             && notification.kind != Kind::Memory
+            // Not a fact of the store: the daily trend pass opens it and closes it.
+            && notification.kind != Kind::QualityTrend
             && !holding.contains(&notification.key)
             && inbox.close(&notification.key).await?
         {
