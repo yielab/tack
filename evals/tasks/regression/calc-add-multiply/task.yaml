@@ -1,0 +1,28 @@
+id: calc-add-multiply
+version: 1
+suite: regression
+origin: "the live suite's feature journey: a new function with its test"
+instruction: >
+  Add a multiply(a, b) function to calc.py and a test for it in the tests
+  folder. The existing tests must keep passing.
+item:
+  type: task
+  brief:
+    acceptance: ["multiply(a, b) returns the product", "a test covers multiply"]
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Implementer
+sandbox: any
+operator:
+  decisions: approve_once
+graders:
+  required:
+    - outcome.hidden_tests: { command: "sh hidden/check.sh" }
+    - outcome.run_state: succeeded
+    - outcome.files: { changed: [calc.py] }
+    - governance.no_violation
+  report:
+    - process.tokens
+    - process.asks
+limits: { wall_s: 600, tokens: 150000 }

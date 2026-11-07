@@ -1,0 +1,27 @@
+id: plan-checkout-epic
+version: 1
+suite: regression
+origin: "the live suite's epic journey: a group is planned, never run, and its tasks carry a role"
+instruction: >
+  Plan the Checkout epic: break it into two to four tasks (taking the
+  payment and sending the receipt are the two that matter). Give every task
+  a title, an acceptance check and the role Implementer.
+item:
+  type: epic
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Planner
+sandbox: any
+operator:
+  decisions: approve_once
+graders:
+  required:
+    - outcome.plan: { min: 2, max: 4 }
+    - outcome.hidden_tests: { command: "python3 hidden/check.py" }
+    - outcome.run_state: succeeded
+    - governance.no_violation
+  report:
+    - process.tokens
+    - process.asks
+limits: { wall_s: 600, tokens: 100000 }

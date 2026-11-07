@@ -1,0 +1,31 @@
+id: calc-evaluate
+version: 1
+suite: regression
+origin: "the calc fixture: a small feature over the code already there"
+instruction: >
+  Add evaluate(text) to calc.py. The text is "<number> <operator> <number>"
+  with single spaces and an operator of + - * or /. It returns the result,
+  using the functions already in calc.py. An unknown operator raises
+  ValueError. The tests must pass.
+item:
+  type: task
+  brief:
+    acceptance: ["python3 -m unittest discover -s tests passes"]
+    constraints: ["do not change the existing tests"]
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Implementer
+sandbox: any
+operator:
+  decisions: approve_once
+graders:
+  required:
+    - outcome.hidden_tests: { command: "python3 -m unittest hidden.test_evaluate" }
+    - outcome.run_state: succeeded
+    - outcome.files: { only: [calc.py] }
+    - governance.no_violation
+  report:
+    - process.tokens
+    - process.asks
+limits: { wall_s: 900, tokens: 200000 }

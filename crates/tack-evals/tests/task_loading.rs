@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tack_evals::task::LoadedTask;
 
-use crate::common::{task_yaml, write_task};
+use crate::common::{load, task_yaml, write_task};
 
 fn refusal(dir: &Path) -> String {
     LoadedTask::load(dir)
@@ -66,4 +66,36 @@ fn a_check_is_a_bare_name_or_a_name_with_its_argument() {
     assert_eq!(task.hidden_command(), Some("sh hidden/check.sh"));
     assert_eq!(required[1].args, "succeeded");
     assert!(required[2].args.is_null());
+}
+
+#[test]
+fn a_cell_that_is_not_applicable_needs_a_known_agent_and_its_reason() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = write_task(
+        root.path(),
+        "n-a",
+        "not_applicable: { docket: \"its team decides\" }",
+    );
+    assert_eq!(
+        load(&dir)
+            .task
+            .not_applicable
+            .get("docket")
+            .map(String::as_str),
+        Some("its team decides")
+    );
+
+    std::fs::write(
+        dir.join("task.yaml"),
+        task_yaml("n-a", "not_applicable: { dockett: \"typo\" }"),
+    )
+    .unwrap();
+    assert!(refusal(&dir).contains("not_applicable names \"dockett\""));
+
+    std::fs::write(
+        dir.join("task.yaml"),
+        task_yaml("n-a", "not_applicable: { docket: \"\" }"),
+    )
+    .unwrap();
+    assert!(refusal(&dir).contains("needs its reason"));
 }

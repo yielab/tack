@@ -212,20 +212,39 @@ fn start_run(
     }
 
     let role = spec.profile.role.as_deref().unwrap_or("Implementer");
-    let profile = api.post(
-        "/api/agent-profiles",
-        &json!({
-            "name": format!("eval {}", spec.id),
-            "instructions": format!("You are the {role}. Do the item you are given."),
-            "kind": profile_kind(role),
-        }),
-    )?;
-    let profile_id = profile["agent_profile_id"]
-        .as_str()
-        .context("the profile has no id")?;
+    let kind = profile_kind(role);
+    // A Planner, Researcher or Reviewer is the built-in one, with the instructions (and the plan
+    // format) the product ships; an Implementer has no built-in worth measuring.
+    let builtin = if kind == "implementer" {
+        None
+    } else {
+        api.get("/api/agent-profiles")?["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["builtin"] == true && p["kind"] == kind)
+            .and_then(|p| p["agent_profile_id"].as_str().map(str::to_owned))
+    };
+    let uses_builtin = builtin.is_some();
+    let profile_id = match builtin {
+        Some(id) => id,
+        None => api.post(
+            "/api/agent-profiles",
+            &json!({
+                "name": format!("eval {}", spec.id),
+                "instructions": format!("You are the {role}. Do the item you are given."),
+                "kind": kind,
+            }),
+        )?["agent_profile_id"]
+            .as_str()
+            .context("the profile has no id")?
+            .to_owned(),
+    };
+    let profile_id = profile_id.as_str();
 
+    // The built-in profile brings its own tools, which a wildcard would override.
     let tools: Vec<&str> = if spec.profile.tools.is_empty() {
-        vec!["*"]
+        if uses_builtin { Vec::new() } else { vec!["*"] }
     } else {
         spec.profile.tools.iter().map(String::as_str).collect()
     };

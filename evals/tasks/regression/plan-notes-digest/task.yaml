@@ -1,0 +1,28 @@
+id: plan-notes-digest
+version: 1
+suite: regression
+origin: "the live suite's proposals journey: a plan whose tasks are nested and ordered"
+instruction: >
+  Plan the weekly digest of the team's notes in notes/. Propose three or
+  four tasks: collect the notes, tidy what was collected (it belongs under
+  collecting and needs it done), and publish one digest page. Give every
+  task a title and an acceptance check.
+item:
+  type: task
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Planner
+sandbox: any
+operator:
+  decisions: approve_once
+graders:
+  required:
+    - outcome.plan: { min: 3, max: 4 }
+    - outcome.hidden_tests: { command: "python3 hidden/check.py" }
+    - outcome.run_state: succeeded
+    - governance.no_violation
+  report:
+    - process.tokens
+    - process.asks
+limits: { wall_s: 600, tokens: 100000 }

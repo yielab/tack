@@ -1,0 +1,28 @@
+{
+  "v": "1",
+  "subtasks": [
+    {
+      "title": "Take the payment",
+      "description": "Charge the order in take_payment.",
+      "acceptance": [
+        "take_payment charges the order total once"
+      ],
+      "role": "Implementer",
+      "estimate": "M",
+      "type": "task"
+    },
+    {
+      "title": "Send the receipt",
+      "description": "Mail the customer in send_receipt.",
+      "acceptance": [
+        "send_receipt mails the paid order"
+      ],
+      "role": "Implementer",
+      "depends_on": [
+        0
+      ],
+      "estimate": "S",
+      "type": "task"
+    }
+  ]
+}
