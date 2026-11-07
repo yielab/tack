@@ -15,7 +15,7 @@ import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   isAnsweringRunner, runnerSummaryToCapabilities, silentRunnerLabel, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
-  isDecisionsAttested, profileNetworkFor, profileToolsFor, silentRunnersText, LEVEL_NEEDS_DOCKET, webToolsLockedReason,
+  isDecisionsAttested, isUntrustedSource, untrustedReason, profileNetworkFor, profileToolsFor, silentRunnersText, LEVEL_NEEDS_DOCKET, webToolsLockedReason,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow from './RunFlow';
@@ -338,7 +338,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // The Web tools box starts at what the server says a run of the chosen agent with the chosen profile
   // needs; a value the task remembers or the person sets wins, and until then it follows them. An
   // agent that always reaches the network has the box on and shut.
-  const defaultNetwork = () => profileNetworkFor(selectedAgentProfile(), form.harnessKind);
+  // A card that came from outside starts without them; the person can turn them on.
+  const untrusted = () => item.error === undefined && isUntrustedSource(item()?.source);
+  const defaultNetwork = () => profileNetworkFor(selectedAgentProfile(), form.harnessKind) && !untrusted();
   const networkLocked = () => webToolsLockedReason(form.harnessKind);
   let networkChosen = false;
   createEffect(() => { if (props.isOpen) networkChosen = false; });
@@ -357,7 +359,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     const safety = agentSafety(chosenHarnessReports());
     return safety && { text: safety.text, unsandboxed: safety.tone !== 'ok' };
   };
-  const defaultApprovals = (): 'auto' | 'ask' => (unsandboxed() ? 'ask' : 'auto');
+  const defaultApprovals = (): 'auto' | 'ask' => (unsandboxed() || untrusted() ? 'ask' : 'auto');
   let approvalsChosen = false;
   createEffect(() => { if (props.isOpen) approvalsChosen = false; });
   createEffect(() => { if (!approvalsChosen) setForm('approvals', defaultApprovals()); });
@@ -612,6 +614,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             sandboxLine={sandboxLine}
             onApprovals={() => { approvalsChosen = true; }}
             onNetwork={() => { networkChosen = true; }}
+            untrustedReason={() => (untrusted() ? untrustedReason(form.harnessKind) : null)}
             networkLocked={networkLocked}
             verifyConfigured={verifyConfigured}
             pushConfigured={pushConfigured}

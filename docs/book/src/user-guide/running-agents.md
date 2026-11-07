@@ -223,14 +223,15 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   task's collapsed **For the agent** block. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent).
 - **Start run** sits in a footer that stays in view while the dialog scrolls, beside **Cancel** and the run's
   token limit, on the dialog's lower edge with no field showing beneath it. When something blocks the run, the footer gives the link that fixes it in its place.
-- **Ask before each action.** On when the agent is not sandboxed, off otherwise. When on, the agent pauses
+- **Ask before each action.** On when the agent is not sandboxed or the card was imported, off otherwise. When on, the agent pauses
   and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
   pause, the switch is disabled and says why.
 - **Web tools.** Off by default, unless the profile says its role needs the network (the profile's box on
   the Agents page) or, for any agent but docket, the profile's tools for the agent you picked include the
   web tools, in which case the switch starts on and you can turn it off for this run. opencode reaches the
   network on every run, so for it the switch is on, disabled, and says why. A choice the
-  task remembered wins over the profile. Turning it on lets the agent fetch pages and search the web. Off
+  task remembered wins over the profile. A card that was imported (from GitHub, Linear or a file) starts with
+  it off, and the dialog says why under **Ask before each action**; you can turn both on or off for the run. Turning it on lets the agent fetch pages and search the web. Off
   turns those tools off, but the agent's shell can still reach the network. A line under the switches says
   whether the agent is sandboxed or has your user's access to this machine; see
   [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md).
