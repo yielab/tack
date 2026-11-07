@@ -1,10 +1,18 @@
 //! Environment names a request may never set.
 //!
-//! These change what a spawned program loads, where it looks for its
-//! configuration, or where its traffic goes, so a request that sets one is
-//! steering the runner's machine rather than describing its own work. An
-//! operator who wants one of them grants it in the runner's own
-//! `[environment]` table, which is not subject to this list.
+//! The list covers the names that change what a spawned program runs or
+//! loads: the search path (`PATH`), the home directory its configuration and
+//! credentials are read from (`HOME`), code a loader or an interpreter injects
+//! before the program starts (`LD_*`, `DYLD_*`, `NODE_OPTIONS`, `PYTHON*`,
+//! `PERL5OPT`, `RUBYOPT`), a shell's start-up file (`BASH_ENV`, `ENV`), and how
+//! git and ssh behave (`GIT_*`, `SSH_*`). A name ending in `_BASE_URL` is
+//! refused because it redirects where a program sends its requests. Proxy
+//! variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are not on
+//! the list, so a request can route a program's traffic through a proxy.
+//!
+//! Names are matched without regard to case. An operator who wants one of them
+//! grants it in the runner's own `[environment]` table, which this list does
+//! not apply to.
 
 const EXACT: &[(&str, &str)] = &[
     (

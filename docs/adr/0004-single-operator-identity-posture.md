@@ -152,3 +152,17 @@ naming the scope it lacks. `operator_principal_value` is replaced by the resolve
 `x-tack-principal` header the execution routes read still carries `operator:token:<hash>` or
 `operator:local` for the operator, and is still overwritten by the server on every request.
 
+
+## Note, 2026-11-07: loopback has a token (ADR 0018, decision 1)
+
+The loopback paragraphs above (the "no token" description in Context, and the "Loopback with no
+token: unchanged" bullet under Safety posture) describe the state before ADR 0018 decision 1. Today a
+loopback bind always has a token. `AppConfig::ensure_api_token` (`crates/tack-api/src/config.rs`)
+reads, or creates with mode 0600, the file `api-token` beside the database when no token is
+configured, and `require_token` (`crates/tack-api/src/middleware.rs`) checks it on every route. The
+branch that lets a request through without a token is reached only when
+`TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1` is set on a non-loopback bind. An in-memory database
+keeps its token in the process only.
+
+The single-operator decision and the rejected alternatives stand. Phase 94 cards that change this:
+none.
