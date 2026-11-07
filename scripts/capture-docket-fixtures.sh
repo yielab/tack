@@ -2,7 +2,7 @@
 # Records what a real docket answers to every request Tack's docket client sends, into
 # crates/tack-runner/src/harness/fixtures/docket/v5/, one `<name>.json` per answer with a
 # `<name>.json.provenance` beside it (and `<name>.request.json` when the request has a body).
-# `tests/fake_docket/` answers from these files, and `tests/docket_v5.rs` fails when a route
+# `tests/fake_docket/` answers from these files, and `tests/docket_api.rs` fails when a route
 # the client sends has no capture.
 #
 # docket runs in a throwaway HOME and DOCKET_HOME (a mktemp -d under /var/tmp) with no model,

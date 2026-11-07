@@ -1,7 +1,7 @@
 //! The operator's rate card: what a million tokens of each model cost, and what
 //! a CI minute and a human hour cost. Tack prices; prill and the harnesses do
-//! not, and a harness's own `cost_usd` is never read. The metrics page and the
-//! scheduler's dollar budget both price through [`price`].
+//! not, and a harness's own `cost_usd` is never read. The metrics page prices
+//! through [`price`].
 
 use std::collections::BTreeMap;
 

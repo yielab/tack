@@ -28,7 +28,7 @@ pub const MIN_API_VERSION: u32 = 6;
 /// The profile a team must hold to run without a person.
 const LIGHTS_OUT: &str = "lights-out";
 
-fn needs_beta_6(found: &str) -> String {
+fn api_below_minimum(found: &str) -> String {
     format!("needs docket 0.3.0-beta.1 (API {MIN_API_VERSION}); this docket answers API {found}")
 }
 
@@ -66,7 +66,7 @@ pub(super) async fn status(client: &Client) -> Result<Status, String> {
         .map_err(|why| format!("docket's status could not be read: {why}"))?;
     let api = match answer.api_version.parse::<u32>() {
         Ok(found) if found >= MIN_API_VERSION => found,
-        _ => return Err(needs_beta_6(&answer.api_version)),
+        _ => return Err(api_below_minimum(&answer.api_version)),
     };
     let models: BTreeSet<String> = answer
         .agents

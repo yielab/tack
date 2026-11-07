@@ -1,8 +1,8 @@
-//! Redaction primitives shared by [`super::process`] and [`super::event_sink`].
+//! Redaction primitives shared by [`super::process`] and the local harnesses.
 //! Credentials, prompt bodies, query strings and environment values must
 //! never reach a log line or a harness event. Two independent mechanisms
-//! enforce this: **structural avoidance** ([`RedactedEnv`]/[`PromptSummary`]
-//! give `Debug`-safe stand-ins so a future `tracing::debug!(?spec)` can't
+//! enforce this: **structural avoidance** ([`RedactedEnv`] gives a
+//! `Debug`-safe stand-in so a future `tracing::debug!(?spec)` can't
 //! accidentally print a secret) and **content scrubbing**
 //! ([`SecretMaterial`] replaces every exact occurrence of a known secret in
 //! text a harness produced) — needed because a buggy or malicious harness
@@ -51,10 +51,6 @@ impl SecretMaterial {
             self.register(value);
         }
         self
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
     }
 
     /// Replaces every occurrence of every registered secret with
@@ -112,35 +108,6 @@ impl std::fmt::Debug for RedactedEnv<'_> {
     }
 }
 
-/// A safe, non-reversible stand-in for a prompt body: byte length plus a
-/// truncated SHA-256 fingerprint (via [`super::sha256`]), enough to correlate
-/// "was this the same prompt" across logs without ever printing the prompt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PromptSummary {
-    pub byte_len: usize,
-    pub sha256_prefix: String,
-}
-
-impl PromptSummary {
-    pub fn of(prompt: &str) -> Self {
-        let digest = super::sha256::sha256_hex(prompt.as_bytes());
-        Self {
-            byte_len: prompt.len(),
-            sha256_prefix: digest[..16].to_owned(),
-        }
-    }
-}
-
-impl std::fmt::Display for PromptSummary {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "prompt({} bytes, sha256:{}…)",
-            self.byte_len, self.sha256_prefix
-        )
-    }
-}
-
 /// Strips a query string (and its leading `?`) from a URL-shaped string.
 /// Query strings are a common place for a leaked API key (`?api_key=...`),
 /// so any URL that might reach a log or event must go through this first.
@@ -178,14 +145,13 @@ mod tests {
     fn scrub_is_a_no_op_when_nothing_is_registered() {
         let material = SecretMaterial::new();
         assert_eq!(material.scrub("nothing secret here"), "nothing secret here");
-        assert!(material.is_empty());
     }
 
     #[test]
     fn empty_secret_values_are_never_registered() {
         let mut material = SecretMaterial::new();
         material.register("");
-        assert!(material.is_empty());
+        assert_eq!(material.scrub("nothing secret here"), "nothing secret here");
     }
 
     #[test]
@@ -232,23 +198,6 @@ mod tests {
         assert!(formatted.contains("TACK_TEST_SECRET"), "keys are visible");
         assert!(!formatted.contains("canary-env-value"));
         assert!(!formatted.contains("also-secret"));
-    }
-
-    #[test]
-    fn prompt_summary_never_contains_the_prompt_text() {
-        let prompt = "do the canary-prompt-body thing";
-        let summary = PromptSummary::of(prompt);
-
-        assert_eq!(summary.byte_len, prompt.len());
-        assert_eq!(summary.sha256_prefix.len(), 16);
-        assert!(!format!("{summary}").contains("canary-prompt-body"));
-        assert!(!format!("{summary:?}").contains("canary-prompt-body"));
-    }
-
-    #[test]
-    fn prompt_summary_is_deterministic_and_distinguishes_content() {
-        assert_eq!(PromptSummary::of("same"), PromptSummary::of("same"));
-        assert_ne!(PromptSummary::of("a"), PromptSummary::of("b"));
     }
 
     #[test]
