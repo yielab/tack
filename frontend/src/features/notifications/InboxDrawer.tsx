@@ -14,13 +14,14 @@ import {
   unreadCount,
 } from '../../shared/state/notifications';
 
-/** Where a notification leads: a change set to the panel that applies it, a team's memory to the team's sheet, anything else to its item (on the run, when it is about one). */
+/** Where a notification leads: a change set to the panel that applies it, a team's memory to the team's sheet, a fall in quality to the project's metrics, anything else to its item (on the run, when it is about one). */
 export function notificationHref(n: InboxNotification): string | null {
   if (n.kind === 'memory') {
     // memory:<project>:<team>:<entry>
     const team = n.key.split(':').slice(2, -1).join(':');
     return `/agents#team-${encodeURIComponent(team)}`;
   }
+  if (n.kind === 'quality_trend') return `/projects/${n.project_id}/factory`;
   if (n.kind === 'change_set') {
     const id = n.key.slice('change_set:'.length);
     return `/projects/${n.project_id}/change-sets?open=${encodeURIComponent(id)}`;
