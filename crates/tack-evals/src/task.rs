@@ -4,6 +4,7 @@
 //! Loading validates the whole task before anything is started, so a mistake in a task is
 //! reported with its reason at the door and never as a strange failure halfway through a trial.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -186,6 +187,10 @@ pub struct Task {
     /// The agents the task applies to; absent means all of them.
     #[serde(default)]
     pub harnesses: Option<Vec<String>>,
+    /// Agents that cannot do this task by design, each with the reason. Their cell in the
+    /// report is `not_applicable` and says why; it never counts as passed.
+    #[serde(default)]
+    pub not_applicable: BTreeMap<String, String>,
 }
 
 /// A task together with the directory it was read from.
@@ -289,14 +294,21 @@ impl LoadedTask {
                 "instruction is longer than {INSTRUCTION_CHARS_MAX} characters"
             ));
         }
-        if !matches!(
-            task.profile.harness.as_str(),
-            "claude-code" | "codex" | "opencode" | "docket"
-        ) {
+        if !is_harness(&task.profile.harness) {
             return Err(format!(
                 "profile.harness {:?} is not claude-code, codex, opencode or docket",
                 task.profile.harness
             ));
+        }
+        for (harness, reason) in &task.not_applicable {
+            if !is_harness(harness) {
+                return Err(format!(
+                    "not_applicable names {harness:?}, which is not claude-code, codex, opencode or docket"
+                ));
+            }
+            if reason.trim().is_empty() {
+                return Err(format!("not_applicable for {harness} needs its reason"));
+            }
         }
         if task.limits.wall_s == 0 {
             return Err("limits.wall_s must be above zero".to_owned());
@@ -344,6 +356,10 @@ impl LoadedTask {
         }
         Ok(())
     }
+}
+
+fn is_harness(name: &str) -> bool {
+    matches!(name, "claude-code" | "codex" | "opencode" | "docket")
 }
 
 fn collect_task_dirs(dir: &Path, found: &mut Vec<PathBuf>) -> std::io::Result<()> {

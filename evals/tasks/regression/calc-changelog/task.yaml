@@ -1,0 +1,28 @@
+id: calc-changelog
+version: 1
+suite: regression
+origin: "the live suite's documentation journey: one file written, nothing else changed"
+instruction: >
+  Write CHANGELOG.md for this project, in Markdown. It needs an
+  "## Unreleased" section that lists what calc.py offers today (add,
+  subtract and divide). Do not change any other file.
+item:
+  type: task
+  brief:
+    constraints: ["CHANGELOG.md is the only file that changes"]
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Implementer
+sandbox: any
+operator:
+  decisions: approve_once
+graders:
+  required:
+    - outcome.hidden_tests: { command: "sh hidden/check.sh" }
+    - outcome.run_state: succeeded
+    - outcome.files: { only: [CHANGELOG.md], changed: [CHANGELOG.md] }
+    - governance.no_violation
+  report:
+    - process.tokens
+limits: { wall_s: 600, tokens: 150000 }

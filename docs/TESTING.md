@@ -228,7 +228,7 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 | `deny` | `cargo deny check` for the root workspace and for `tack-desktop` |
 | `security` | `cargo audit` for both workspaces + `npm audit` |
 | `security-boundaries` | the boundary suites; see below |
-| `evals-harness` | builds `tack`, then the `tack-evals` tests (a real server and runner in a throwaway world, a script for the agent) and `tack-evals check-solutions` over the fixture tasks. No model, no tokens |
+| `evals-harness` | builds `tack`, then the `tack-evals` tests (a real server and runner in a throwaway world, a script for the agent) and `tack-evals check-solutions` over the fixture tasks and every task in `evals/tasks`. No model, no tokens |
 | `embed-spa` | clippy and the `tack-api` tests with the SPA embedded, release build, binary-size budgets (25 MB for `tack`, 8 MB for `tack-runner`) |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `e2e` | `scripts/smoke.sh` in fake mode against the binaries the job built, then Playwright, the a11y scan and the API contract — Chromium only on a merge, all three browsers on the schedule run and on a manual dispatch |
@@ -334,11 +334,11 @@ An EDD block names the three, for example:
 **Baseline:** develop b363899b -> evals/baselines/b363899b/
 ```
 
-The lane is the development crate `tack-evals`, never released. A task is a folder with a `task.yaml`, hidden checks and a reference solution; each trial runs in a clean world (its own data directory, port, seeded repository and a fake `$HOME` with canaries). The suites are `regression`, `safety` and `verifier`.
+The lane is the development crate `tack-evals`, never released. A task is a folder with a `task.yaml`, hidden checks and a reference solution; each trial runs in a clean world (its own data directory, port, seeded repository and a fake `$HOME` with canaries). The tasks live in `evals/tasks/<suite>/` (how to add one is in `evals/README.md`); `regression` exists today, nine small tasks of which two are planning tasks, and `safety` and `verifier` follow. A task names the agents it cannot apply to, each with its reason (`not_applicable`), and that cell is reported as such and never counts as passed.
 
 ```bash
 cargo run -p tack-evals -- check-solutions <suite>   # every reference solution passes its own checks
-cargo run -p tack-evals -- run <suite>               # trials with a real agent; spends tokens; writes summary.md
+cargo run -p tack-evals -- run <suite>               # trials with a real agent; spends tokens; writes summary.md covering every trial in --out
 cargo run -p tack-evals -- compare --base <sha> --head <out>   # paired difference against a baseline
 cargo run -p tack-evals -- nightly <suite> --base <sha>        # run, compare, warn per task
 ```
