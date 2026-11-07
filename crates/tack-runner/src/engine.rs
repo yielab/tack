@@ -337,6 +337,13 @@ pub trait HarnessAdapter: Send + Sync {
         None
     }
 
+    /// Why the run's web access is only asked for: the runner enforces it but the agent is not in
+    /// a sandbox that closes its network. `None` when the run is held to its mode, or the runner
+    /// does not enforce one.
+    async fn egress_not_held(&self, _handle: &LocalRunHandle) -> Option<String> {
+        None
+    }
+
     /// The steps a running harness reports as it goes, for the attempt's
     /// timeline. `None` for a harness that reports none. Taken once per
     /// handle, like [`Self::decision_channels`].
@@ -727,6 +734,11 @@ where
                 payload,
             )
             .await;
+        }
+        if let Some(reason) = self.adapter.egress_not_held(&handle).await {
+            let payload = serde_json::json!({"reason": reason});
+            self.submit_event(session, &mut record, "attempt.network_not_held", payload)
+                .await;
         }
         if install_skipped {
             let payload = serde_json::json!({"reason": crate::prepare::NO_INSTALL_REASON});

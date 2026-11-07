@@ -317,8 +317,8 @@ fn sandbox_line(capability: &HarnessCapability) -> Option<String> {
     })
 }
 
-/// One line on the web access the runner gives a run of this agent: held to the profile's mode
-/// (closed, listed or open) by the runner's proxy, or not enforced. docket reports none: it
+/// One line on the web access the runner gives a run of this agent: enforced (no network but the
+/// runner's proxy, in the profile's mode: closed, listed or open), only asked for, or not enforced. docket reports none: it
 /// confines its own.
 fn egress_line(capability: &HarnessCapability) -> Option<String> {
     let egress = capability.additional.get("egress")?;
@@ -335,7 +335,11 @@ fn egress_line(capability: &HarnessCapability) -> Option<String> {
         .unwrap_or_else(|| "none named (list them under [egress] model_hosts)".to_owned());
     Some(if egress["enforced"] == true {
         format!(
-            "  web access:  held to each profile's mode (closed: the model only; listed: and its hosts; open: any public host); never loopback or private networks. model: {endpoints}"
+            "  web access:  enforced: no network but the runner's proxy, held to each profile's mode (closed: the model only; listed: and its hosts; open: any public host); never loopback or private networks. model: {endpoints}"
+        )
+    } else if egress["proxy"] == true {
+        format!(
+            "  web access:  not enforced: no sandbox to close the network, so the agent is only asked to use the runner's proxy. model: {endpoints}"
         )
     } else {
         format!(

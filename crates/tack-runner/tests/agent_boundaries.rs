@@ -2299,7 +2299,10 @@ mod egress {
     };
 
     use async_trait::async_trait;
-    use tack_runner::harness::egress::{Network, NetworkRefusal};
+    use tack_runner::harness::{
+        HarnessProbe,
+        egress::{Network, NetworkRefusal},
+    };
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
@@ -2605,6 +2608,435 @@ mod egress {
         let run = live(Some("closed"), &[], false).await;
         assert!(run.harness.network_refusals(&run.handle).await.is_none());
         run.stop().await;
+    }
+
+    /// A CLI stand-in for a sandbox with no network: it tries to leave directly, then through the
+    /// proxy it was told, and writes both results for the test to read.
+    const CLI_IN_BWRAP: &str = r#"#!/usr/bin/python3
+import json, os, socket, sys, time
+if sys.argv[1:2] == ["--version"]:
+    print("1.0.0")
+    sys.exit(0)
+
+def direct(target):
+    host, port = target.rsplit(":", 1)
+    try:
+        socket.create_connection((host, int(port)), timeout=3).close()
+        return "connected"
+    except OSError:
+        return "failed"
+
+def via_proxy(target):
+    host, port = os.environ["HTTPS_PROXY"].removeprefix("http://").rsplit(":", 1)
+    s = socket.create_connection((host, int(port)), timeout=5)
+    s.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+    head = b""
+    while not head.endswith(b"\r\n\r\n"):
+        c = s.recv(1)
+        if not c:
+            break
+        head += c
+    status = head.split(b"\r\n")[0].decode()
+    echo = None
+    if " 200 " in status:
+        s.sendall(b"ping")
+        echo = s.recv(4).decode()
+    return [status, echo]
+
+try:
+    out = {
+        "direct": {t: direct(t) for t in os.environ["DIRECT"].split(",")},
+        "proxy": {t: via_proxy(t) for t in os.environ["TARGETS"].split(",")},
+        "proxy_env": os.environ["HTTPS_PROXY"],
+    }
+except Exception as error:
+    out = {"error": repr(error)}
+tmp = os.environ["OUT"] + ".tmp"
+open(tmp, "w").write(json.dumps(out))
+os.rename(tmp, os.environ["OUT"])
+time.sleep(60)
+"#;
+
+    /// Whether this machine has a `bwrap` to run the real-sandbox tests with (unless
+    /// `TACK_REQUIRE_BWRAP=1`, which makes that a failure) and the interpreter the stand-in needs.
+    fn real_bwrap_here() -> Option<sandbox::Sandbox> {
+        let path = tack_runner::ProcessEnv::from_process().search_path();
+        let found = sandbox::detect(path.as_deref(), None);
+        let usable = found.kind == sandbox::SandboxKind::Bwrap
+            && std::path::Path::new("/usr/bin/python3").is_file();
+        if !usable {
+            if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+                panic!("bwrap and /usr/bin/python3 required by TACK_REQUIRE_BWRAP");
+            }
+            println!("skipped: bwrap or /usr/bin/python3 is not here");
+            return None;
+        }
+        Some(found)
+    }
+
+    /// What the stand-in CLI saw from inside a real sandbox: what it could reach directly, and
+    /// what the proxy answered for each of `targets`.
+    struct Inside {
+        out: serde_json::Value,
+        network: Arc<Fake>,
+        capability: serde_json::Value,
+        sandbox: Option<String>,
+    }
+
+    async fn inside_bwrap(mode: &str, listed: &[&str], targets: &[&str]) -> Option<Inside> {
+        real_bwrap_here()?;
+        let dir = root("egress-bwrap");
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let program = dir.path().join("cli.py");
+        std::fs::write(&program, CLI_IN_BWRAP).unwrap();
+        std::fs::set_permissions(
+            &program,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+            kind: "egress-fake",
+            program: Box::leak(program.display().to_string().into_boxed_str()),
+            model_endpoints: &["api.model.test"],
+            ..FAKE
+        }));
+        let echo = echo_server().await;
+        let network = Arc::new(Fake {
+            names: HashMap::from([
+                ("api.model.test", vec!["203.0.113.10".parse().unwrap()]),
+                ("docs.listed.test", vec!["203.0.113.20".parse().unwrap()]),
+                ("blog.public.test", vec!["203.0.113.30".parse().unwrap()]),
+                ("rebind.test", vec!["10.0.0.9".parse().unwrap()]),
+            ]),
+            echo,
+            dialled: Mutex::new(Vec::new()),
+        });
+        let machine = sandbox::detect(
+            tack_runner::ProcessEnv::from_process()
+                .search_path()
+                .as_deref(),
+            Some(&home),
+        )
+        .requiring(true);
+        assert_eq!(machine.kind, sandbox::SandboxKind::Bwrap);
+        let harness = sandboxed_harness(ScriptGrammar(descriptor), dir.path(), machine)
+            .with_egress(tack_runner::EgressConfig {
+                enforce: true,
+                model_hosts: Vec::new(),
+            })
+            .with_egress_network(network.clone())
+            .with_egress_helper(env!("CARGO_BIN_EXE_tack-runner").into());
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let out_file = workspace.join("out.json");
+        let direct = format!(
+            "1.1.1.1:443,10.0.0.9:80,169.254.169.254:80,{echo},{}",
+            echo.to_string().replace("127.0.0.1", "localhost")
+        );
+        let mut spec = spec(
+            workspace,
+            &[
+                ("OUT", literal(&out_file.display().to_string())),
+                ("DIRECT", literal(&direct)),
+                ("TARGETS", literal(&targets.join(","))),
+            ],
+        );
+        spec.work.request.requested_harness_kind =
+            tack_protocol::execution::HarnessKind::new(descriptor.kind);
+        let profile = &mut spec.work.request.resolved_agent_profile;
+        profile
+            .additional
+            .insert("egress_mode".into(), serde_json::json!(mode));
+        profile.tool_policy = serde_json::json!({"allowed_hosts": listed});
+        let handle = harness.start(&spec).await.expect("the run starts");
+        let sandbox = harness.sandbox(&handle).await;
+        let mut out: Option<serde_json::Value> = None;
+        for _ in 0..200 {
+            if let Ok(text) = std::fs::read_to_string(&out_file) {
+                out = Some(serde_json::from_str(&text).unwrap());
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let capability = harness.probe().await.additional["egress"].clone();
+        harness.cancel(&handle).await.expect("the run stops");
+        let out = out.expect("the CLI inside the sandbox reported");
+        assert!(out.get("error").is_none(), "the CLI failed: {out}");
+        Some(Inside {
+            out,
+            network,
+            capability,
+            sandbox,
+        })
+    }
+
+    fn answers(inside: &Inside, target: &str) -> (String, Option<String>) {
+        let answer = &inside.out["proxy"][target];
+        (
+            answer[0].as_str().unwrap().to_owned(),
+            answer[1].as_str().map(str::to_owned),
+        )
+    }
+
+    fn cannot_go_around(inside: &Inside) {
+        assert_eq!(inside.sandbox.as_deref(), Some("bwrap"));
+        let direct: Vec<&str> = inside.out["direct"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|result| result.as_str().unwrap())
+            .collect();
+        assert_eq!(direct.len(), 5, "{:?}", inside.out);
+        assert!(
+            direct.iter().all(|result| *result == "failed"),
+            "the agent connected without the proxy: {:?}",
+            inside.out["direct"]
+        );
+        assert!(
+            inside.out["proxy_env"]
+                .as_str()
+                .unwrap()
+                .starts_with("http://127.0.0.1:"),
+            "{:?}",
+            inside.out
+        );
+        assert_eq!(inside.capability["enforced"], true);
+    }
+
+    #[tokio::test]
+    async fn in_bwrap_closed_has_no_way_out_but_the_proxy_and_the_proxy_lets_only_the_model_through()
+     {
+        let Some(inside) = inside_bwrap(
+            "closed",
+            &["docs.listed.test"],
+            &[
+                "api.model.test:443",
+                "blog.public.test:443",
+                "docs.listed.test:443",
+            ],
+        )
+        .await
+        else {
+            return;
+        };
+        cannot_go_around(&inside);
+        // The twin: the CLI still reaches its model, and what it sends comes back.
+        assert_eq!(
+            answers(&inside, "api.model.test:443"),
+            (
+                "HTTP/1.1 200 Connection Established".to_owned(),
+                Some("ping".to_owned())
+            )
+        );
+        assert!(answers(&inside, "blog.public.test:443").0.contains("403"));
+        assert!(answers(&inside, "docs.listed.test:443").0.contains("403"));
+        assert_eq!(
+            *inside.network.dialled.lock().unwrap(),
+            ["203.0.113.10:443".parse::<SocketAddr>().unwrap()]
+        );
+    }
+
+    #[tokio::test]
+    async fn in_bwrap_listed_lets_the_model_and_the_profiles_hosts_through_and_nothing_else() {
+        let Some(inside) = inside_bwrap(
+            "listed",
+            &["docs.listed.test"],
+            &[
+                "api.model.test:443",
+                "docs.listed.test:443",
+                "blog.public.test:443",
+            ],
+        )
+        .await
+        else {
+            return;
+        };
+        cannot_go_around(&inside);
+        assert_eq!(
+            answers(&inside, "api.model.test:443").1.as_deref(),
+            Some("ping")
+        );
+        assert_eq!(
+            answers(&inside, "docs.listed.test:443").1.as_deref(),
+            Some("ping")
+        );
+        assert!(answers(&inside, "blog.public.test:443").0.contains("403"));
+    }
+
+    #[tokio::test]
+    async fn in_bwrap_open_reaches_public_hosts_through_the_proxy_and_still_refuses_private_addresses()
+     {
+        let Some(inside) = inside_bwrap(
+            "open",
+            &[],
+            &[
+                "blog.public.test:443",
+                "127.0.0.1:3210",
+                "10.1.2.3:443",
+                "169.254.169.254:80",
+                "rebind.test:443",
+            ],
+        )
+        .await
+        else {
+            return;
+        };
+        cannot_go_around(&inside);
+        assert_eq!(
+            answers(&inside, "blog.public.test:443").1.as_deref(),
+            Some("ping")
+        );
+        for target in [
+            "127.0.0.1:3210",
+            "10.1.2.3:443",
+            "169.254.169.254:80",
+            "rebind.test:443",
+        ] {
+            assert!(answers(&inside, target).0.contains("403"), "{target}");
+        }
+        assert_eq!(
+            *inside.network.dialled.lock().unwrap(),
+            ["203.0.113.30:443".parse::<SocketAddr>().unwrap()],
+            "only the public host was dialled"
+        );
+    }
+
+    /// Without the runner's switch nothing changes: the sandbox keeps the network it always had.
+    #[test]
+    fn without_enforcement_the_sandbox_keeps_its_network() {
+        let Some(machine) = real_bwrap_here() else {
+            return;
+        };
+        let dir = root("egress-bwrap-off");
+        let (workspace, scratch) = (dir.path().join("w"), dir.path().join("s"));
+        for path in [&workspace, &scratch] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        let (_, plain) = machine
+            .wrap(
+                std::path::Path::new("/bin/true"),
+                &[],
+                &workspace,
+                &scratch,
+                &[],
+                sandbox::SharedFiles::default(),
+            )
+            .unwrap();
+        assert!(!plain.iter().any(|arg| arg == "--unshare-net"), "{plain:?}");
+        let (_, bridged) = machine
+            .bridged(sandbox::Bridge {
+                helper: "/bin/true".into(),
+                socket_dir: scratch.clone(),
+            })
+            .wrap(
+                std::path::Path::new("/bin/true"),
+                &[],
+                &workspace,
+                &scratch,
+                &[],
+                sandbox::SharedFiles::default(),
+            )
+            .unwrap();
+        assert!(
+            bridged.iter().any(|arg| arg == "--unshare-net"),
+            "{bridged:?}"
+        );
+    }
+
+    /// The twin of the boundary: what a run needs besides the network still starts behind the
+    /// forwarder, and the forwarder hands back the program's own exit status.
+    #[test]
+    fn behind_the_forwarder_git_node_and_python_still_start_and_the_exit_status_is_kept() {
+        if real_bwrap_here().is_none() {
+            return;
+        }
+        let dir = root("egress-bwrap-tools");
+        let (workspace, scratch, sockets) = (
+            dir.path().join("workspace"),
+            dir.path().join("scratch"),
+            dir.path().join("sockets"),
+        );
+        for path in [&workspace, &scratch, &sockets, &dir.path().join("home")] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        let machine = sandbox::detect(
+            tack_runner::ProcessEnv::from_process()
+                .search_path()
+                .as_deref(),
+            Some(&dir.path().join("home")),
+        )
+        .bridged(sandbox::Bridge {
+            helper: env!("CARGO_BIN_EXE_tack-runner").into(),
+            socket_dir: sockets,
+        });
+        assert_eq!(machine.kind, sandbox::SandboxKind::Bwrap);
+        let search: Vec<PathBuf> = ["/usr/bin", "/bin"]
+            .map(PathBuf::from)
+            .into_iter()
+            .chain(std::env::split_paths(
+                &std::env::var_os("PATH").unwrap_or_default(),
+            ))
+            .collect();
+        let run = |program: &std::path::Path, args: &[&str]| {
+            let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+            let (bwrap, argv) = machine
+                .wrap(
+                    program,
+                    &args,
+                    &workspace,
+                    &scratch,
+                    &[],
+                    sandbox::SharedFiles::default(),
+                )
+                .unwrap();
+            std::process::Command::new(bwrap)
+                .args(argv)
+                .current_dir(&workspace)
+                .output()
+                .expect("bwrap runs")
+        };
+        for tool in ["git", "node", "python3"] {
+            let Some(program) = search
+                .iter()
+                .map(|directory| directory.join(tool))
+                .find(|candidate| candidate.is_file())
+            else {
+                println!("skipped: {tool} is not installed");
+                continue;
+            };
+            let output = run(&program, &["--version"]);
+            assert!(
+                output.status.success(),
+                "{tool} does not start behind the forwarder: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let failed = run(std::path::Path::new("/bin/sh"), &["-c", "exit 7"]);
+        assert_eq!(failed.status.code(), Some(7));
+    }
+
+    /// With the switch on and no `bwrap`, the proxy is a request the agent can ignore: the
+    /// capability says it is not held and the run says so.
+    #[tokio::test]
+    async fn without_bwrap_the_runner_says_the_proxy_is_not_held() {
+        let run = live(Some("closed"), &[], true).await;
+        let capability = run.harness.probe().await.additional["egress"].clone();
+        assert_eq!(capability["enforced"], false);
+        assert_eq!(capability["proxy"], true);
+        let reason = run
+            .harness
+            .egress_not_held(&run.handle)
+            .await
+            .expect("an unheld proxy is reported");
+        assert!(
+            reason.contains("no sandbox") && reason.contains("nothing stops"),
+            "{reason}"
+        );
+        run.stop().await;
+        let off = live(Some("closed"), &[], false).await;
+        assert!(off.harness.egress_not_held(&off.handle).await.is_none());
+        off.stop().await;
     }
 
     #[test]

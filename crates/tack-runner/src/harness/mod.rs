@@ -809,6 +809,14 @@ impl HarnessAdapter for AdapterRegistry {
             .await
     }
 
+    async fn egress_not_held(&self, handle: &LocalRunHandle) -> Option<String> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .egress_not_held(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
     async fn approvals_forced_ask(&self, handle: &LocalRunHandle) -> Option<String> {
         let (kind, inner) = decode_handle(&handle.process_id)?;
         self.resolve(&kind)
