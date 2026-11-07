@@ -407,6 +407,9 @@ struct FakeAdapter {
     start_after_journal: Arc<AtomicBool>,
     cancel_calls: Arc<AtomicUsize>,
     cancellation_evidence: CancellationEvidence,
+    /// What `kill` answers; `None` answers as `cancel` does.
+    kill_evidence: Option<CancellationEvidence>,
+    kill_calls: Arc<AtomicUsize>,
     recovery_observation: RecoveryObservation,
     reconcile_fails: bool,
     /// Whether `resume` hands back the running task, as docket's does; every
@@ -471,6 +474,14 @@ impl HarnessAdapter for FakeAdapter {
     async fn cancel(&self, _handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         self.cancel_calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.cancellation_evidence.clone())
+    }
+
+    async fn kill(&self, _handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        self.kill_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self
+            .kill_evidence
+            .clone()
+            .unwrap_or_else(|| self.cancellation_evidence.clone()))
     }
 
     async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
@@ -769,6 +780,8 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
                 ("signal".into(), serde_json::json!("SIGTERM")),
             ]),
         },
+        kill_evidence: None,
+        kill_calls: Arc::new(AtomicUsize::new(0)),
         recovery_observation: RecoveryObservation::ProcessStopped,
         reconcile_fails: false,
         resumable: false,
@@ -4724,6 +4737,102 @@ async fn a_run_that_counts_its_token_limit_is_stopped_and_fails() {
             assert_eq!(reason["code"], "token_limit");
             // The third step reaches the limit; the 5 000 cache reads of the second are not counted.
             assert_eq!(reason["counted_tokens"], 900 + 500);
+        }
+    }
+}
+
+/// A stop that did not hold is tried again with SIGKILL. When the second try holds the run ends
+/// as the stop meant it to; when it does not, the run ends failed as `cancel_failed`, says so in
+/// plain words, and the board is told once as an event.
+#[tokio::test(start_paused = true)]
+async fn a_stop_that_does_not_hold_is_killed_and_then_marked_cancel_failed() {
+    let step = || Progress {
+        kind: "agent.model_call".to_owned(),
+        text: "Model call".to_owned(),
+        usage: Some(
+            serde_json::from_value(serde_json::json!({
+                "tokens_in": {"value": 600, "source": "measured"},
+                "tokens_out": {"value": 0, "source": "measured"},
+                "duration_ms": {"value": null, "source": "not_measured"},
+                "cost_usd": {"value": null, "source": "not_measured"},
+            }))
+            .expect("usage"),
+        ),
+    };
+    let ambiguous = |text: &str| CancellationEvidence {
+        observation: CancelObservation::Ambiguous,
+        observed_at: Timestamp::new("2026-08-06T12:24:00Z"),
+        details: serde_json::Map::from_iter([("process_outcome".into(), text.into())]),
+    };
+    let rows = [
+        // The kill holds: the limit stopped the run.
+        (Some(CancelObservation::ProcessStopped), "token_limit", 0),
+        // Neither holds: the run could not be stopped.
+        (None, "cancel_failed", 1),
+    ];
+    for (kill_holds, code, events) in rows {
+        let (root_dir, journal) = fresh_journal("cancel-failed");
+        let mut claimed = work();
+        claimed.request.requested_harness_kind =
+            tack_protocol::execution::HarnessKind::new("claude-code");
+        claimed.request.budgets = serde_json::json!({"tokens": 1_000});
+        let (steps_tx, steps_rx) = mpsc::channel(8);
+        for _ in 0..3 {
+            steps_tx.send(step()).await.expect("send");
+        }
+        drop(steps_tx);
+        let mut fake_adapter = FakeAdapter {
+            wait_delay: PROGRESS_FLUSH_INTERVAL * 3,
+            progress: Arc::new(Mutex::new(Some(steps_rx))),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        fake_adapter.cancellation_evidence = ambiguous("survived");
+        if let Some(observation) = kill_holds {
+            fake_adapter.kill_evidence = Some(CancellationEvidence {
+                observation,
+                ..ambiguous("killed")
+            });
+        } else {
+            fake_adapter.kill_evidence = Some(ambiguous("survived"));
+        }
+        let (cancel_calls, kill_calls) = (
+            fake_adapter.cancel_calls.clone(),
+            fake_adapter.kill_calls.clone(),
+        );
+        let fake_protocol = protocol(claimed, false, false);
+        let reported = fake_protocol.reported_completions.clone();
+        let data_protocol = FakeDataProtocol::new();
+        let engine = runner_engine(fake_protocol, fake_adapter, journal, root_dir.path())
+            .with_data_protocol(Arc::new(data_protocol.clone()));
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle");
+
+        assert_eq!(cancel_calls.load(Ordering::SeqCst), 1, "{code}");
+        assert_eq!(kill_calls.load(Ordering::SeqCst), 1, "{code}");
+        let completions = reported.lock().expect("lock").clone();
+        assert_eq!(
+            completions[0].terminal_state,
+            AttemptState::Failed.execution_state(),
+            "{code}"
+        );
+        assert_eq!(completions[0].terminal_reason["code"], code);
+        let told = data_protocol
+            .state
+            .lock()
+            .expect("lock")
+            .events
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .filter(|event| event.kind == "attempt.cancel_failed")
+            .count();
+        assert_eq!(told, events, "{code}");
+        if code == "cancel_failed" {
+            let message = completions[0].terminal_reason["message"]
+                .as_str()
+                .expect("a sentence");
+            assert!(message.contains("could not be stopped"), "{message}");
         }
     }
 }

@@ -286,6 +286,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         add_profile(&board.repo, &id, "{}", limits).await;
         let mut request = bare_request(board.item_id, &format!("k-limits-{n}"));
         request.agent_profile_id = Some(id);
+        request.requested_harness_kind = Some("claude-code".into());
         request.budgets = budgets;
         request.timeout_seconds = timeout;
         let started = start(&board, request).await.unwrap();
@@ -306,6 +307,29 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
             stored["resolved_agent_profile"]["timeout_seconds"], seconds,
             "row {n}"
         );
+    }
+}
+
+/// An agent that reports no usage while it runs gets the shorter default clock; a profile's or a
+/// request's own time still wins.
+#[tokio::test]
+async fn an_agent_that_reports_no_usage_while_it_runs_gets_a_shorter_default_clock() {
+    let board = board().await;
+    add_profile(&board.repo, "profile-clock", "{}", "{}").await;
+    // (agent, request timeout, seconds it runs with)
+    let rows = [
+        ("codex", None, 1800),
+        ("claude-code", None, 3600),
+        ("codex", Some(7200), 7200),
+    ];
+    for (n, (agent, timeout, seconds)) in rows.into_iter().enumerate() {
+        let mut request = bare_request(board.item_id, &format!("k-clock-{n}"));
+        request.agent_profile_id = Some("profile-clock".into());
+        request.requested_harness_kind = Some(agent.into());
+        request.timeout_seconds = timeout;
+        let started = start(&board, request).await.unwrap();
+        let stored = snapshot(&board.repo, &started).await;
+        assert_eq!(stored["timeout_seconds"], seconds, "{agent} {timeout:?}");
     }
 }
 

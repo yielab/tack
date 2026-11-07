@@ -378,6 +378,9 @@ export interface AttemptOutcome {
 /** What a run that ended with the code `needs_human` says when the agent gave no sentence of its own. */
 export const NEEDS_A_PERSON_TEXT = 'The agent needed a person to decide, and nobody did';
 
+/** What a run that ended with the code `cancel_failed` says when the runner gave no sentence of its own. */
+export const CANCEL_FAILED_TEXT = "The run was asked to stop, but some of the agent's processes could not be stopped; check this computer for leftovers";
+
 /** `terminal_reason` is untyped on the wire; read it defensively. */
 export function describeAttemptOutcome(state: string, terminalReason: unknown): AttemptOutcome {
   const reason = (terminalReason && typeof terminalReason === 'object' ? terminalReason : {}) as {
@@ -394,7 +397,7 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
     const text =
       str(reason.message) ??
-      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'cancelled' ? 'It was stopped before it finished' : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
+      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'cancelled' ? 'It was stopped before it finished' : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : reason.code === 'cancel_failed' ? CANCEL_FAILED_TEXT : str(reason.code)) ??
       'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
     if (reason.reason === 'exit_status') {
@@ -415,6 +418,9 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   let badge: AttemptOutcome['badge'] = null;
   if (state === 'failed' && reason.code === 'needs_human') {
     badge = { label: 'Needs a person', tone: 'warning' };
+  } else if (state === 'failed' && reason.code === 'cancel_failed') {
+    // The stop did not hold: something of the run may still be running on the computer.
+    badge = { label: 'Could not be stopped', tone: 'danger' };
   } else if (state === 'failed' && reason.code === 'capability_missing') {
     // The team stopped on its own setup, not on the work: the message names the change that closes it.
     badge = { label: 'Team setup incomplete', tone: 'warning' };

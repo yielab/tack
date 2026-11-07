@@ -301,6 +301,98 @@ async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
     );
 }
 
+/// The fixture's `spawn_detached` mode: the harness shell with a `sleep` that started its own
+/// session, which a signal to the shell's group never reaches. `announce` is whether the shell
+/// tells the runner about it, as a harness that reports its process groups does.
+async fn spawn_in_own_session(
+    label: &str,
+    announce: bool,
+) -> (tempfile::TempDir, SupervisedProcess, u32) {
+    let workspace_dir = temp_workspace(label);
+    let pidfile = workspace_dir.path().join("session.pid");
+    let mut env = env_with_mode("spawn_detached");
+    env.insert(
+        "TACK_FAKE_HARNESS_PIDFILE".to_owned(),
+        pidfile.to_str().expect("utf8 pidfile path").to_owned(),
+    );
+    env.insert(
+        "TACK_FAKE_HARNESS_ANNOUNCE".to_owned(),
+        if announce { "1" } else { "0" }.to_owned(),
+    );
+    let process = spec(workspace_dir.path(), env)
+        .spawn()
+        .await
+        .expect("spawn");
+    let child = wait_for_pidfile(&pidfile).await;
+    assert!(process_alive(child), "the child is running before the stop");
+    (workspace_dir, process, child)
+}
+
+/// What a harness that reports its process groups says on stdout.
+fn announced(line: &str) -> Option<StreamSignal> {
+    let pgid = line.strip_prefix("process_started ")?.parse().ok()?;
+    Some(StreamSignal::ProcessStarted { pgid })
+}
+
+/// Acceptance: a cancel reaches a child that started its own session, whether or not the harness
+/// announced it, for every agent that runs as a local process. What differs per descriptor is
+/// only whether the child is announced; the stop must not depend on it.
+#[tokio::test]
+async fn cancel_kills_a_child_that_started_its_own_session_for_each_descriptor() {
+    let local: Vec<_> = crate::harness::all_descriptors()
+        .iter()
+        .filter(|descriptor| !descriptor.cancels_over_api)
+        .collect();
+    assert!(!local.is_empty());
+    for descriptor in local {
+        let (_workspace, process, child) =
+            spawn_in_own_session("cancel-session", descriptor.reports_process_groups).await;
+        let (outcome, groups) = process
+            .cancel(Duration::from_secs(2), |line| {
+                descriptor
+                    .reports_process_groups
+                    .then(|| announced(line))
+                    .flatten()
+            })
+            .await
+            .expect("cancel");
+        assert_ne!(outcome, CancelOutcome::Survived, "{}", descriptor.kind);
+        assert_eq!(groups.survived, 0, "{}", descriptor.kind);
+        assert!(
+            wait_until_dead(child, Duration::from_secs(5)).await,
+            "{}: the child in its own session must be gone after the cancel",
+            descriptor.kind
+        );
+    }
+}
+
+/// The stop of a run another task is waiting on, and the SIGKILL that follows a stop that did not
+/// hold, reach the child in its own session too.
+#[tokio::test]
+async fn stop_and_kill_reach_a_child_in_its_own_session() {
+    for kill in [false, true] {
+        let (_workspace, process, child) = spawn_in_own_session("stop-session", false).await;
+        let canceller = process.canceller();
+        let waiter = tokio::spawn(async move {
+            process
+                .wait_with_capture(&generous_limits(), &SecretMaterial::new())
+                .await
+        });
+        let (outcome, _) = if kill {
+            canceller.kill().await
+        } else {
+            canceller.stop(Duration::from_secs(2)).await
+        }
+        .expect("the stop");
+        assert_ne!(outcome, CancelOutcome::Survived, "kill: {kill}");
+        assert!(
+            wait_until_dead(child, Duration::from_secs(5)).await,
+            "kill: {kill}: the child in its own session must be gone"
+        );
+        let _ = waiter.await;
+    }
+}
+
 /// Acceptance: timeouts. A process that runs longer than the configured
 /// timeout is killed and reported as `TimedOut` rather than hanging the
 /// caller or being reported as any other terminal shape.

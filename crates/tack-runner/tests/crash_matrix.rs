@@ -1119,10 +1119,9 @@ async fn time_out_with_an_announced_detached_group(
 }
 
 /// Docket reports progress, so its attempts take the line-reading wait, which
-/// reads the announcement and kills the group on timeout. The plain wait never
-/// reads a line, so a group is never announced to it: the second row records
-/// that as it is (nothing tracked, the group survives), and no harness can
-/// reach it while one that announces groups also reports progress.
+/// reads the announcement and counts the group it kills on timeout. The plain wait never
+/// reads a line, so a group is never announced to it: the second row counts nothing, but the
+/// timeout still finds the group in the process table and kills it.
 #[tokio::test]
 async fn timeout_stops_every_group_the_harness_announced() {
     use tack_runner::harness::process::ProcessGroups;
@@ -1133,7 +1132,7 @@ async fn timeout_stops_every_group_the_harness_announced() {
     };
     for (path, progress, expected, stopped) in [
         ("line-reading wait", true, reached, true),
-        ("plain wait", false, ProcessGroups::default(), false),
+        ("plain wait", false, ProcessGroups::default(), true),
     ] {
         let (groups, grandchild, outcome) =
             time_out_with_an_announced_detached_group(progress).await;
@@ -1171,18 +1170,18 @@ async fn cancel_reaches_a_detached_group_the_harness_announced() {
     );
 }
 
-/// The honest `Advisory` case: nothing announced the group, so nothing
-/// reaches it and the evidence claims nothing about it.
+/// Nothing announced the group, but its leader was started by the harness's own process, so the
+/// stop finds it in the process table and the evidence counts none of the announced groups.
 #[tokio::test]
-async fn cancel_cannot_reach_a_detached_group_nobody_announced() {
+async fn cancel_reaches_a_detached_group_nobody_announced() {
     let (evidence, grandchild) = cancel_with_a_detached_grandchild(false).await;
     assert_eq!(evidence.observation, CancelObservation::ProcessStopped);
-    let survived = tack_runner::harness::process::process_alive(grandchild);
-    // Reap it before asserting: this test started it.
+    let gone = gone_within(grandchild, Duration::from_secs(10)).await;
+    // Reap it before asserting, should the assertion fail: this test started it.
     let _ = std::process::Command::new("kill")
         .arg(grandchild.to_string())
         .status();
-    assert!(survived, "a group nobody announced is not reached");
+    assert!(gone, "a group in its own session is reached unannounced");
     assert_eq!(
         evidence.details["groups"],
         serde_json::json!({"tracked": 0, "killed": 0, "survived": 0})

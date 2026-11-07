@@ -134,6 +134,24 @@ async fn plan(
             .ok()
             .flatten()
             .filter(|resolved| resolved.harness.is_some() || project.default_harness.is_some());
+        // An agent that reports nothing while it runs cannot be stopped at its limit: once a run
+        // of its profile has gone past it, the next is left to a person.
+        let went_over_unmeasured = match &profile {
+            Some(resolved) => {
+                let harness = resolved
+                    .harness
+                    .as_deref()
+                    .or(project.default_harness.as_deref())
+                    .unwrap_or_default();
+                !tack_protocol::execution::reports_usage_while_running(harness)
+                    && queries::agent_profiles::last_run_went_over_its_limit(
+                        repo,
+                        &resolved.profile_id,
+                    )
+                    .await?
+            }
+            None => false,
+        };
         let has_machine = match &profile {
             Some(resolved) => default_selector(repo, resolved.fleet_id.clone(), clock.now())
                 .await
@@ -152,6 +170,7 @@ async fn plan(
                 .len(),
             profile,
             has_machine,
+            went_over_unmeasured,
         });
     }
     let limits = Limits {
