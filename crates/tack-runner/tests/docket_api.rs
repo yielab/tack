@@ -6473,8 +6473,15 @@ fn tack_server() -> (String, Arc<std::sync::Mutex<Vec<(String, Value)>>>) {
                     serde_json::from_slice(&buffer[head_end..]).unwrap_or(Value::Null);
                 recorded.lock().unwrap().push((path.clone(), body));
                 let payload = match path.rsplit('/').next().unwrap_or_default() {
+                    // The fixture's credential ends on a fixed day; one that ends in a runner's
+                    // last quarter is rotated, which these tests do not look at.
                     "enroll" => {
-                        include_str!("../../../docs/contracts/runner-v1/enrollment.response.json")
+                        let mut granted: Value = serde_json::from_str(include_str!(
+                            "../../../docs/contracts/runner-v1/enrollment.response.json"
+                        ))
+                        .expect("fixture parses");
+                        granted["credential_expires_at"] = json!("2999-01-01T00:00:00Z");
+                        &*Box::leak(granted.to_string().into_boxed_str())
                     }
                     "refresh" => {
                         include_str!("../../../docs/contracts/runner-v1/refresh.response.json")

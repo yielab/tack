@@ -30,12 +30,13 @@
 //! `expose()` outside the exact place the byte is written onto the wire.
 
 use std::{
+    collections::HashMap,
     fs,
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -162,6 +163,10 @@ pub struct HttpPullProtocol {
     http: Client,
     base_url: String,
     retry: RetryPolicy,
+    /// Each credential the board replaced by rotation, with the one that replaced it. An attempt
+    /// that began before a rotation goes on holding the session it began with; its calls are
+    /// sent with the credential in force instead of one the board no longer knows.
+    succession: Mutex<HashMap<String, RunnerCredential>>,
 }
 
 impl HttpPullProtocol {
@@ -188,7 +193,33 @@ impl HttpPullProtocol {
             http,
             base_url: normalize_base_url(api_base_url),
             retry,
+            succession: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// The credential in force for one a session holds: the session's own unless rotation
+    /// replaced it, then its latest successor.
+    fn in_force(&self, held: &RunnerCredential) -> RunnerCredential {
+        let succession = self
+            .succession
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut current = held;
+        // One step per rotation at most; the bound only keeps a corrupt map from looping.
+        for _ in 0..succession.len() {
+            let Some(next) = succession.get(current.expose()) else {
+                break;
+            };
+            current = next;
+        }
+        current.clone()
+    }
+
+    fn record_rotation(&self, replaced: &RunnerCredential, successor: &RunnerCredential) {
+        self.succession
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(replaced.expose().to_owned(), successor.clone());
     }
 
     fn url(&self, path: &str) -> String {
@@ -282,7 +313,7 @@ impl HttpPullProtocol {
             if let Some(credential) = credential {
                 // The only place a runner credential is written onto the
                 // wire. It is never formatted anywhere else.
-                request = request.bearer_auth(credential.expose());
+                request = request.bearer_auth(self.in_force(credential).expose());
             }
             if let Some(timeout) = timeout {
                 request = request.timeout(timeout);
@@ -496,7 +527,11 @@ impl PullProtocol for HttpPullProtocol {
         // rotation was requested. Retaining the current credential in that
         // case is the fixture's own documented meaning — not a fallback.
         let credential = match accepted.runner_credential {
-            Some(rotated) => RunnerCredential::new(rotated),
+            Some(rotated) => {
+                let rotated = RunnerCredential::new(rotated);
+                self.record_rotation(session.credential(), &rotated);
+                rotated
+            }
             None => session.credential().clone(),
         };
         Ok(RefreshResponse {
@@ -1062,7 +1097,7 @@ impl AttemptDataProtocol for HttpPullProtocol {
         let mut request = self
             .http
             .request(method, &url)
-            .bearer_auth(session.credential().expose())
+            .bearer_auth(self.in_force(session.credential()).expose())
             .header(REQUEST_ID_HEADER, new_request_id())
             .header(ARTIFACT_FENCING_TOKEN_HEADER, fencing_token.0.to_string())
             .body(content);
@@ -1183,6 +1218,19 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), RunnerError> {
 /// or an agent added after it started reaches the board without a restart.
 pub const CAPABILITY_REPROBE_INTERVAL: Duration = Duration::from_secs(300);
 
+/// How long after a rotation the board did not complete the runner waits before asking again.
+const ROTATION_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+
+/// The days a credential the board issues lives; the runner reads its end from the session, and
+/// this is only the length it measures the margin against.
+const CREDENTIAL_LIFETIME: chrono::Duration = chrono::Duration::days(90);
+
+/// How long before its end the runner exchanges its credential for a fresh one: the last quarter
+/// of its life, and never less than a day.
+fn rotation_margin() -> chrono::Duration {
+    (CREDENTIAL_LIFETIME / 4).max(chrono::Duration::days(1))
+}
+
 /// How often the runner asks its harnesses what their teams are doing and sends what changed.
 pub const ACTIVITY_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -1207,6 +1255,8 @@ pub struct HttpRunnerClient<A, W, C> {
     sequence: AtomicU64,
     /// How often the one ticker heartbeats every lease held.
     renewal_interval: Duration,
+    /// How long after a rotation the board did not complete the runner waits to ask again.
+    rotation_retry_interval: Duration,
     /// How often, and how, the harnesses are probed again; `None` reports once.
     /// How often, and how, the teams' activity is read; `None` reports none.
     #[allow(clippy::type_complexity)] // an interval and one boxed async reader
@@ -1254,6 +1304,7 @@ where
             capabilities,
             sequence: AtomicU64::new(0),
             renewal_interval: LEASE_RENEWAL_INTERVAL,
+            rotation_retry_interval: ROTATION_RETRY_INTERVAL,
             activity: None,
             operations: None,
             reprobe: None,
@@ -1302,6 +1353,13 @@ where
     #[cfg(test)]
     fn with_renewal_interval(mut self, interval: Duration) -> Self {
         self.renewal_interval = interval;
+        self
+    }
+
+    /// A shorter wait before a rotation is asked again, so a test need not wait out the real one.
+    #[cfg(test)]
+    fn with_rotation_retry_interval(mut self, interval: Duration) -> Self {
+        self.rotation_retry_interval = interval;
         self
     }
 
@@ -1411,6 +1469,50 @@ where
         }
     }
 
+    /// Whether the session's credential ends within the margin. An end the runner cannot read is
+    /// not due: a credential the board gave no end has nothing to rotate before.
+    fn rotation_due(&self, session: &RunnerSession) -> bool {
+        chrono::DateTime::parse_from_rfc3339(session.credential_expires_at().as_str())
+            .is_ok_and(|ends| ends.to_utc() - self.now() <= rotation_margin())
+    }
+
+    /// Exchanges the credential for a fresh one when it is near its end, saves the new session
+    /// and carries on with it. The board keeps no earlier secret: once it has rotated, the old
+    /// one is refused, so the new one is saved the moment it arrives. A rotation the board does
+    /// not complete changes nothing (the credential in hand still works until it ends) and is
+    /// asked again after `rotation_retry_interval`.
+    async fn rotate_credential_if_due(
+        &self,
+        session: &mut RunnerSession,
+        last_sent: &RunnerCapabilities,
+        not_before: &mut tokio::time::Instant,
+    ) {
+        if tokio::time::Instant::now() < *not_before || !self.rotation_due(session) {
+            return;
+        }
+        let request = RefreshRequest {
+            runner_name: self.config.runner_id.clone(),
+            runner_version: env!("CARGO_PKG_VERSION").to_owned(),
+            rotate_credential: true,
+            capabilities: last_sent.clone(),
+        };
+        match self.engine.refresh(session, request).await {
+            Ok(rotated) => {
+                tracing::info!(runner_id = %rotated.session.runner_id, "runner credential rotated");
+                *session = rotated.session;
+                if let Err(error) = store_session(&self.config.state_dir, session) {
+                    // The runner goes on with the new credential in memory; a restart before it
+                    // is saved would find the old one refused.
+                    tracing::error!(%error, "the rotated runner credential could not be saved");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the runner credential could not be rotated; trying again later");
+                *not_before = tokio::time::Instant::now() + self.rotation_retry_interval;
+            }
+        }
+    }
+
     /// Resumes a persisted session, or enrolls. A persisted session is
     /// validated with a non-rotating `refresh` before it is trusted; if the
     /// server no longer recognises it, and only then, the enrollment token is
@@ -1515,7 +1617,7 @@ where
     C: Clock + 'static,
 {
     async fn serve(&self, mut shutdown: Shutdown) -> Result<(), RunnerError> {
-        let session = self.establish_session().await?;
+        let mut session = self.establish_session().await?;
 
         let claim_wait = Duration::from_secs(10);
         let total = self.engine.active().total().max(1) as usize;
@@ -1578,6 +1680,7 @@ where
         });
         let mut unsent = TeamActivityBatch::new();
         let mut last_sent = self.capability_report();
+        let mut rotation_not_before = tokio::time::Instant::now();
         loop {
             if shutdown.is_requested() {
                 return Ok(());
@@ -1605,6 +1708,7 @@ where
                     if let Err(error) = self.heartbeat_all(&session).await {
                         tracing::warn!(%error, "heartbeat failed");
                     }
+                    self.rotate_credential_if_due(&mut session, &last_sent, &mut rotation_not_before).await;
                 }
                 () = async {
                     match activity_ticker.as_mut() {
