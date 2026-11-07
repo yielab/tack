@@ -2003,10 +2003,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::EgressByAllowList, "claude-code", "GR5"),
     (ParityRule::EgressByAllowList, "codex", "GR5"),
     (ParityRule::EgressByAllowList, "opencode", "GR5"),
-    (ParityRule::ChecksChangedHoldsMerge, "claude-code", "GR9"),
-    (ParityRule::ChecksChangedHoldsMerge, "codex", "GR9"),
-    (ParityRule::ChecksChangedHoldsMerge, "opencode", "GR9"),
-    (ParityRule::ChecksChangedHoldsMerge, "docket", "GR9"),
 ];
 
 /// What is wrong with the matrix, one line per problem; empty when it holds.

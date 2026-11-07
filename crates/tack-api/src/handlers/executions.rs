@@ -640,6 +640,11 @@ pub struct AttemptMerge {
     /// What the attempt's merge-readiness pack recommends, when it has one. Over `reject` the
     /// Merge button asks for a written reason.
     pub pack_decision: Option<tack_protocol::mrp::MergeDecision>,
+    /// What the change altered of the way the work is checked (the pack's flags, or the files
+    /// the runner recorded when there is no pack). Not empty, the Merge button asks for a
+    /// written reason too. Left out when there is nothing.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks_changed: Vec<String>,
 }
 
 /// The merge that happened for an attempt: `trigger` is what asked for it
@@ -1586,6 +1591,12 @@ pub async fn list_execution_attempts(
             }
             _ => None,
         };
+        let checks_changed = match (&state.app, enabled) {
+            (Some(app), true) => {
+                tack_app::merge::attempt_checks_changed(&app.repo, &app.ports(), &attempt.id).await
+            }
+            _ => Vec::new(),
+        };
         let merged = merge.and_then(|row| {
             row.merged_at.map(|merged_at| MergedBy {
                 trigger: row.trigger,
@@ -1623,6 +1634,7 @@ pub async fn list_execution_attempts(
                 reason,
                 merged,
                 pack_decision,
+                checks_changed,
             },
             rerun_at_l3,
         ));
@@ -1741,15 +1753,16 @@ fn attempt_summary(
 /// The Merge button's press.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MergeAttemptRequest {
-    /// Required when the attempt's pack recommends `reject`; a blank one counts as none.
+    /// Required when the attempt's pack recommends `reject` or the change altered how the work
+    /// is checked; a blank one counts as none.
     pub reason: Option<String>,
 }
 
 /// `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
 /// attempt's pull request at its head commit, opening the pull request first when
 /// it is missing; a refusal is a `409` carrying the reason, already recorded on
-/// the item. When the pack recommends `reject` the person still decides, but writes
-/// why: the press is a `400` without a `reason`, and a merge that goes through is
+/// the item. When the pack recommends `reject`, or the change altered how the work is checked,
+/// the person still decides, but writes why: the press is a `400` without a `reason`, and a merge that goes through is
 /// kept as the attempt's accepting review, with that reason.
 #[utoipa::path(
     post,
@@ -1759,7 +1772,7 @@ pub struct MergeAttemptRequest {
     request_body = MergeAttemptRequest,
     responses(
         (status = 200, description = "Merged; carries the merge commit's sha", body = serde_json::Value),
-        (status = 400, description = "invalid_request (the pack recommends reject and no reason was written)", body = RunnerV1ErrorEnvelope),
+        (status = 400, description = "invalid_request (the pack recommends reject, or the checks changed, and no reason was written)", body = RunnerV1ErrorEnvelope),
         (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
         (status = 409, description = "conflict: the merge was held, the message says why", body = RunnerV1ErrorEnvelope),
     ),
@@ -1788,13 +1801,30 @@ pub async fn merge_attempt(
         .filter(|reason| !reason.is_empty());
     let over_reject = tack_app::merge::pack_decision(&app.repo, &app.ports(), &attempt_id).await
         == Some(tack_protocol::mrp::MergeDecision::Reject);
-    if over_reject && reason.is_none() {
-        return Err(error(
-            StatusCode::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "The pack recommends rejecting this change: write why you are merging it anyway",
-            json!({"field": "reason"}),
-        ));
+    let checks_changed =
+        tack_app::merge::attempt_checks_changed(&app.repo, &app.ports(), &attempt_id).await;
+    if reason.is_none() {
+        let needs = if over_reject {
+            Some(
+                "The pack recommends rejecting this change: write why you are merging it anyway"
+                    .to_owned(),
+            )
+        } else if !checks_changed.is_empty() {
+            Some(format!(
+                "{} Write why you are merging it.",
+                tack_core::autonomy::Hold::ChecksChanged(checks_changed.clone())
+            ))
+        } else {
+            None
+        };
+        if let Some(message) = needs {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                &message,
+                json!({"field": "reason"}),
+            ));
+        }
     }
     let reviewed_by = principal(&headers)?;
     match tack_app::merge::attempt(
@@ -1808,7 +1838,7 @@ pub async fn merge_attempt(
     .await
     {
         Ok(sha) => {
-            if over_reject {
+            if over_reject || !checks_changed.is_empty() {
                 // An attempt a person already reviewed keeps that verdict.
                 let recorded = state
                     .repo

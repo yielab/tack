@@ -17,21 +17,28 @@ export interface MergeButtonProps {
  * Merges the attempt's pull request. Disabled with its reason when it cannot;
  * when it can, `merge.reason` is what held the last press. A refusal (409)
  * shows the server's words, which are also on the task. Over a pack that
- * recommends reject the person still decides, but writes why first.
+ * recommends reject, or a change to a file that decides how the work is
+ * checked, the person still decides, but writes why first.
  */
 const MergeButton: Component<MergeButtonProps> = (props) => {
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [reason, setReason] = createSignal('');
   const overReject = () => props.merge.pack_decision === 'reject';
+  const checksChanged = () => props.merge.checks_changed ?? [];
+  const needsReason = () => overReject() || checksChanged().length > 0;
+  const question = () =>
+    overReject()
+      ? 'Why merge although the pack recommends rejecting this change?'
+      : `Why merge although a file that decides how the work is checked changed (${checksChanged().join(', ')})?`;
   const press = async () => {
     if (busy() || !props.merge.enabled) return;
     const why = reason().trim();
-    if (overReject() && !why) return;
+    if (needsReason() && !why) return;
     setBusy(true);
     setRefusal(null);
     try {
-      await attemptsApi.merge(props.attemptId, overReject() ? why : undefined);
+      await attemptsApi.merge(props.attemptId, needsReason() ? why : undefined);
       toast.success('Merged.');
       props.onMerged?.();
     } catch (err) {
@@ -46,9 +53,9 @@ const MergeButton: Component<MergeButtonProps> = (props) => {
   const note = () => refusal() ?? props.merge.reason ?? null;
   return (
     <div class="flex flex-wrap items-center gap-2" data-testid="merge-button">
-      <Show when={overReject() && props.merge.enabled}>
+      <Show when={needsReason() && props.merge.enabled}>
         <div class="w-full space-y-1" data-testid="merge-over-reject">
-          <Field label="Why merge although the pack recommends rejecting this change?" value={reason()} onInput={(e) => setReason(e.currentTarget.value)} />
+          <Field label={question()} value={reason()} onInput={(e) => setReason(e.currentTarget.value)} />
           <Show when={!reason().trim()}>
             <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               Write a reason to enable Merge.
@@ -56,7 +63,7 @@ const MergeButton: Component<MergeButtonProps> = (props) => {
           </Show>
         </div>
       </Show>
-      <Button type="button" size="sm" variant={props.variant} disabled={!props.merge.enabled || busy() || (overReject() && !reason().trim())} loading={busy()} onClick={() => void press()}>
+      <Button type="button" size="sm" variant={props.variant} disabled={!props.merge.enabled || busy() || (needsReason() && !reason().trim())} loading={busy()} onClick={() => void press()}>
         Merge
       </Button>
       <Show when={note()}>

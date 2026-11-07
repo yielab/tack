@@ -12,8 +12,6 @@
 //! `evidence.json`, with `captured: false` and a reason, and never changes the
 //! attempt's outcome.
 
-pub mod checked_files;
-
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -104,6 +102,10 @@ pub struct AttemptEvidence {
     pub head_commit: Option<String>,
     pub worktree_dirty: Option<bool>,
     pub files: Vec<FileChange>,
+    /// The changed files that decide how the work is checked (the list is
+    /// `tack_protocol::checked_files`); the key is left out when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks_changed: Vec<String>,
     pub patch: Option<PatchManifest>,
     pub brief: Option<serde_json::Value>,
     pub branch: Option<serde_json::Value>,
@@ -256,6 +258,16 @@ pub async fn capture<P: WorktreeProvisioner>(
         files: git
             .as_ref()
             .map(|git| git.files.clone())
+            .unwrap_or_default(),
+        checks_changed: git
+            .as_ref()
+            .map(|git| {
+                git.files
+                    .iter()
+                    .filter(|file| tack_protocol::checked_files::matches(&file.path))
+                    .map(|file| file.path.clone())
+                    .collect()
+            })
             .unwrap_or_default(),
         patch: git
             .as_ref()

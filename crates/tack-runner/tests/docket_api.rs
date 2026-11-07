@@ -9282,7 +9282,7 @@ async fn a_docket_run_that_touches_tests_reaches_the_evidence_the_checked_files_
     assert!(
         paths
             .iter()
-            .all(|path| tack_runner::evidence::checked_files::matches(path)),
+            .all(|path| tack_protocol::checked_files::matches(path)),
         "the file is one that decides how the work is checked"
     );
 }

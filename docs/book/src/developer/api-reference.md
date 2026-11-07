@@ -1814,7 +1814,7 @@ the Merge button. Merges the
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Merged; carries the merge commit's sha | — |
-| 400 | invalid_request (the pack recommends reject and no reason was written) | `RunnerV1ErrorEnvelope` |
+| 400 | invalid_request (the pack recommends reject, or the checks changed, and no reason was written) | `RunnerV1ErrorEnvelope` |
 | 404 | not_found | `RunnerV1ErrorEnvelope` |
 | 409 | conflict: the merge was held, the message says why | `RunnerV1ErrorEnvelope` |
 

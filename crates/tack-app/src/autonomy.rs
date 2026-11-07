@@ -262,7 +262,7 @@ async fn gather(
         return None;
     }
 
-    let paths: Vec<String> =
+    let evidence: Option<Value> =
         match queries::autonomy::newest_artifact_of_kind(repo, attempt_id, "evidence")
             .await
             .ok()?
@@ -271,18 +271,19 @@ async fn gather(
                 .artifacts
                 .read(&reference)
                 .await
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                .and_then(|evidence| {
-                    evidence["files"].as_array().map(|files| {
-                        files
-                            .iter()
-                            .filter_map(|f| f["path"].as_str().map(str::to_owned))
-                            .collect()
-                    })
-                })
-                .unwrap_or_default(),
-            None => Vec::new(),
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
+            None => None,
         };
+    let paths: Vec<String> = evidence
+        .as_ref()
+        .and_then(|evidence| evidence["files"].as_array())
+        .map(|files| {
+            files
+                .iter()
+                .filter_map(|f| f["path"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
     let (level, domain) = level_for(
         settings.level,
         &settings.domains,
@@ -294,6 +295,7 @@ async fn gather(
         level,
         domain,
         pack_artifact_id: Some(pack_id),
+        checks_changed: crate::merge::checks_changed(Some(&pack), evidence.as_ref()),
         policy: json!({
             "trigger": "auto",
             "project_level": settings.level.to_string(),

@@ -92,6 +92,7 @@ fn tack_evidence(attempt_id: &str, base_commit: &str, usage: Value) -> AttemptEv
         head_commit: Some(base_commit.to_owned()),
         worktree_dirty: Some(true),
         files: Vec::new(),
+        checks_changed: Vec::new(),
         patch: None,
         brief: None,
         branch: None,
@@ -356,6 +357,48 @@ fn prills_coverage_section_is_not_translated_but_its_stage_is() {
     );
     let stages = translated.stages.as_deref().expect("stages");
     assert!(stages.iter().any(|stage| stage.name == "coverage"));
+}
+
+#[test]
+fn prill_flags_reach_the_pack_as_data_and_a_missing_key_is_not_an_empty_list() {
+    let evidence = tack_evidence("att_9", &"a".repeat(40), Value::Null);
+    let mut document = prill_fixture("m2-sections");
+    document["flags"] = json!([
+        {"code": "tautological_test", "detail": "assert true in tests/x.rs"},
+        {"code": "no_sandbox", "detail": "Commands ran on the host."}
+    ]);
+    let flagged = pack(&document, &evidence, &"e".repeat(64), None);
+    assert_eq!(
+        flagged.flags,
+        Some(vec![
+            Flag {
+                code: "tautological_test".to_owned(),
+                detail: "assert true in tests/x.rs".to_owned()
+            },
+            Flag {
+                code: "no_sandbox".to_owned(),
+                detail: "Commands ran on the host.".to_owned()
+            },
+        ])
+    );
+    let examining: Vec<&str> = flagged
+        .examination_flags()
+        .expect("reported")
+        .iter()
+        .map(|flag| flag.code.as_str())
+        .collect();
+    assert_eq!(examining, ["tautological_test"]);
+
+    document["flags"] = json!([]);
+    assert_eq!(
+        pack(&document, &evidence, &"e".repeat(64), None).flags,
+        Some(Vec::new())
+    );
+    document.as_object_mut().unwrap().remove("flags");
+    assert_eq!(
+        pack(&document, &evidence, &"e".repeat(64), None).flags,
+        None
+    );
 }
 
 #[test]
