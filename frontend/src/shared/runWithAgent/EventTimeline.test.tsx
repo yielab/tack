@@ -54,6 +54,18 @@ describe('EventTimeline', () => {
     expect(c.textContent).not.toContain('{"reason"');
   });
 
+  it('attempt.approvals_forced_ask is named, and its reason is shown', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.approvals_forced_ask', payload: { reason: 'no sandbox on this machine (bwrap not on PATH), so this agent asks before each action instead of running on its own' }, occurred_at: '2026-11-07T12:00:00Z', created_at: '2026-11-07T12:00:00Z' }]),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Asks before each action');
+    expect(c.textContent).toContain('no sandbox on this machine');
+    expect(c.textContent).not.toContain('{"reason"');
+  });
+
   it('shows the paths an event names inside the project, not the runner\'s workspace', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([step(1, 'agent.tool_call', 'Read /var/tmp/ws-1/src/app.ts')]));
     const c = mount('exec_1', 1, undefined, '/var/tmp/ws-1');

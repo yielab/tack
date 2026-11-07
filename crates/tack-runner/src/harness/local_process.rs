@@ -27,7 +27,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tack_protocol::execution::{
-    ActualExecution, CapabilitySupport, CapabilityValue, DocsLinks, FeatureCapabilities,
+    ActualExecution, Approvals, CapabilitySupport, CapabilityValue, DocsLinks, FeatureCapabilities,
     HarnessCapability, HarnessKind as DomainHarnessKind, Measurement, MeasurementSource,
     ModelListSource, ModelsReport, NEED_SIGN_IN, ParityColumn, SignInReport, SignInState,
     TeamMisfit, TeamNeeds, TeamReport, Usage, WorkspaceId as DomainWorkspaceId,
@@ -744,6 +744,23 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         })
     }
 
+    /// Why this request runs as `ask` although it asked for `auto`: the runner found no sandbox,
+    /// so nothing but a person's answer stands between the agent and the machine. `None` when the
+    /// request runs as it asked.
+    fn forced_ask_reason(&self, spec: &ExecutionSpec) -> Option<String> {
+        let asked = matches!(
+            spec.work.request.permission_policy.approvals,
+            Some(Approvals::Ask)
+        );
+        (self.sandbox.found_none() && !asked).then(|| {
+            format!(
+                "no sandbox on this machine ({}), so this agent asks before each action instead \
+                 of running on its own",
+                self.sandbox.reason
+            )
+        })
+    }
+
     fn check_request(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
         if let Some(reason) = self
             .grammar
@@ -887,8 +904,17 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         let scratch = self.scratch_dir(spec);
         std::fs::create_dir_all(&scratch)
             .map_err(|error| HarnessError::Io(IoKind(error.kind())))?;
+        let asking;
+        let spec_for_grammar = if self.forced_ask_reason(spec).is_some() {
+            let mut forced = spec.clone();
+            forced.work.request.permission_policy.approvals = Some(Approvals::Ask);
+            asking = forced;
+            &asking
+        } else {
+            spec
+        };
         let invocation = self.grammar.invocation(&RunContext {
-            spec,
+            spec: spec_for_grammar,
             scratch: &scratch,
             program: Some(&program),
             host: &self.host_env,
@@ -1556,6 +1582,11 @@ where
 
     async fn sandbox(&self, _handle: &LocalRunHandle) -> Option<String> {
         Some(self.sandbox.kind.as_str().to_owned())
+    }
+
+    async fn approvals_forced_ask(&self, handle: &LocalRunHandle) -> Option<String> {
+        let running = self.running.lock().await;
+        self.forced_ask_reason(&running.get(&handle.process_id)?.record.spec)
     }
 
     async fn progress_channel(&self, handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {

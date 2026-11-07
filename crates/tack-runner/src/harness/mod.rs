@@ -780,6 +780,14 @@ impl HarnessAdapter for AdapterRegistry {
             .await
     }
 
+    async fn approvals_forced_ask(&self, handle: &LocalRunHandle) -> Option<String> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .approvals_forced_ask(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
     async fn progress_channel(
         &self,
         handle: &LocalRunHandle,

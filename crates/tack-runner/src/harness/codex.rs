@@ -43,12 +43,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                 "GR2: bwrap only when installed, otherwise Codex's own sandbox alone",
             ),
         ),
-        (
-            ParityRule::NoSandboxMeansAsk,
-            ParityCell::missing(
-                "GR1: exec never asks, the runner does not force app-server without a sandbox",
-            ),
-        ),
+        (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
         (
             ParityRule::EgressByAllowList,
             ParityCell::missing(
