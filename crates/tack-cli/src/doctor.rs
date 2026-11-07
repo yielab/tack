@@ -99,14 +99,7 @@ async fn probe(
     // The secret store is the one the same file's state directory names, so
     // the backend this reports is the one a live runner would actually pick.
     let secrets = config.open_secret_store();
-    let report = bootstrap::probe(
-        &staging_root,
-        &PROCESS_LIMITS,
-        &secrets,
-        &config.docket,
-        &config.process,
-    )
-    .await;
+    let report = bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config).await;
     let daemon = if config.docket.configured() {
         Some(tack_runner::harness::docket::daemon::describe(&config.docket).await)
     } else {
@@ -298,15 +291,27 @@ fn declared_lines(declared: &FeatureCapabilities) -> Vec<String> {
     ]
 }
 
-/// One line: `sandbox: bwrap`, or `sandbox: none (<why>)`.
+/// One line: `sandbox: bwrap`, or `sandbox: none (<why>)`, saying when the runner's settings turned
+/// the requirement off.
 fn render_sandbox(capability: &HarnessCapability) {
-    let field = |name: &str| capability.additional.get(name).and_then(|v| v.as_str());
-    match (field("sandbox"), field("sandbox_reason")) {
-        (Some("bwrap"), _) => println!("  sandbox:     bwrap"),
-        (Some(kind), Some(reason)) => println!("  sandbox:     {kind} ({reason})"),
-        (Some(kind), None) => println!("  sandbox:     {kind}"),
-        (None, _) => {}
+    if let Some(line) = sandbox_line(capability) {
+        println!("{line}");
     }
+}
+
+fn sandbox_line(capability: &HarnessCapability) -> Option<String> {
+    let field = |name: &str| capability.additional.get(name).and_then(|v| v.as_str());
+    let opted_out =
+        capability.additional.get("sandbox_required") == Some(&serde_json::json!(false));
+    Some(match (field("sandbox"), field("sandbox_reason")) {
+        (Some("bwrap"), _) => "  sandbox:     bwrap".to_owned(),
+        (Some("none"), Some(reason)) if opted_out => format!(
+            "  sandbox:     none ({reason}); [sandbox] required is false, so the agent runs uncontained and asks before each action"
+        ),
+        (Some(kind), Some(reason)) => format!("  sandbox:     {kind} ({reason})"),
+        (Some(kind), None) => format!("  sandbox:     {kind}"),
+        (None, _) => return None,
+    })
 }
 
 /// The `signed in:` and `models:` lines of one harness.

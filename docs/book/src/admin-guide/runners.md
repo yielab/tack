@@ -32,6 +32,7 @@ makes the runner refuse to start.
 | `max_concurrent_attempts` | How many attempts at once. See [below](#running-several-attempts-at-once). |
 | `[verify]`, `[git]` | The verifier and the branch push. See [After a succeeded attempt](#after-a-succeeded-attempt). |
 | `[secrets]`, `[environment]` | What a run may reference and the variables every run gets. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
+| `[sandbox]` | `required = false` lets an agent run without `bubblewrap`, asking before each action. The default requires it. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
 | `[docket]` | Where docket's API is. See [docket teams](#docket-teams). |
 
 Every variable and key is in the [Configuration](configuration-reference.md). Run
@@ -154,7 +155,7 @@ running.
   every start, including a service installed by `tack service install`. Wiping the board's data
   folder leaves it in place. To use another file, pass `tack serve --runner-config <path>` (or set
   `TACK_LOCAL_RUNNER_CONFIG`). It is the same file `tack runner start --config` reads. It is the only
-  way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[environment]` or `[docket]`
+  way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]` or `[docket]`
   table, because those have no environment variable. With no file the embedded runner runs on
   defaults: no verifier, no branch push and no docket. The Agents page says which file it read, or
   that it read none, and so does `tack runner doctor`.
@@ -392,7 +393,7 @@ the machine has not granted. `tack runner doctor` shows, per team, what is left.
 ### Where docket's sandbox comes from
 
 Tack does not wrap docket in `bwrap`. docket confines its own agents in a jail it sets up, and the
-run reports `sandbox: harness` when docket says it jails them. A docket that says it does not, or does not say, reads as `sandbox: none` with the reason, and the run dialog and tasks that start by themselves then ask before each action. See [What the Agent Can Reach](what-the-agent-can-reach.md).
+run reports `sandbox: harness` when docket says it jails them. A docket that says it does not, or does not say, reads as `sandbox: none` with the reason, and the run dialog and tasks that start by themselves then ask before each action; docket itself is never refused. See [What the Agent Can Reach](what-the-agent-can-reach.md).
 
 ## Workspace and artifact storage
 
@@ -526,7 +527,7 @@ is about the part you run. It happens **in the board's process**, not in a runne
   The task's own Automation row says so: "By hand: it would start when it reaches Backlog, but 2
   computers could run it and its profile names no group of computers to choose from".
 - **Whether it asks.** A started run asks before each action unless **every** machine it could land on
-  reports the agent as sandboxed, by `bwrap` or by the agent's own jail (docket). A machine that
+  reports the agent as contained, by `bwrap` or by the agent's own jail (docket). A machine that
   reports no sandbox, or says nothing, makes it ask. The person answers in **Waiting for you**.
 - **With no active runner,** or with several and no fleet, nothing starts. Enroll a runner or name a
   fleet first.

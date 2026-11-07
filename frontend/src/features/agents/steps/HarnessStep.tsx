@@ -107,12 +107,8 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                   </Show>
                   <Show when={isInstalled(harness()) ? agentSafety([harness()!]) : null}>
                     {(safety) => (
-                      <span
-                        class="basis-full pl-[52px] text-xs"
-                        data-testid={`agent-safety-${kind.value}`}
-                        style={{ color: safety().tone === 'blocked' ? 'var(--color-danger-600)' : 'var(--color-text-secondary)' }}
-                      >
-                        {safety().text}
+                      <span data-testid={`agent-safety-${kind.value}`}>
+                        <Badge tone={safety().tone === 'ok' ? 'success' : safety().tone === 'asks' ? 'warning' : 'danger'}>{safety().text}</Badge>
                       </span>
                     )}
                   </Show>

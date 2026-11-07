@@ -187,6 +187,9 @@ export interface HarnessCapability {
   sandbox?: 'bwrap' | 'none';
   /** Why the harness is not sandboxed, when `sandbox` is `"none"`. */
   sandbox_reason?: string;
+  /** Whether the runner's settings require a sandbox for this agent; `false` is the administrator's
+   *  opt-out. Absent on an older runner and on docket, which brings its own. */
+  sandbox_required?: boolean;
   /** Who applies each containment rule for this agent. Optional: older runners omit it. */
   parity?: ParityLine[];
 }

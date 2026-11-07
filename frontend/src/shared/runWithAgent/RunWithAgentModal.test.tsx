@@ -1156,7 +1156,7 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [sandboxed('bwrap')], fleets: [] });
     await flush(); await flush();
     expect(ask()).toBe(false);
-    expect(line()).toContain('Sandboxed: the agent only reaches its workspace');
+    expect(line()).toContain('Contained by this computer (bwrap)');
     teardown();
     mount({}, { runners: [sandboxed('none')], fleets: [], runSettings: { approvals: 'auto' } });
     await flush(); await flush();
@@ -1263,6 +1263,27 @@ describe('RunWithAgentModal', () => {
     expect(web().checked).toBe(true);
     expect(web().disabled).toBe(true);
     expect(document.querySelector('[data-testid="web-tools-locked"]')!.textContent).toContain('opencode reaches the network on every run');
+  });
+
+  it('the_sandbox_line_names_who_contains_each_of_the_four_agents', async () => {
+    const only = (harness_kind: string, extra: Record<string, unknown>) => runnerRow('runner-9', 'Box', runnerCapabilitySnapshot({
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind, decisions: { support: 'supported', reason: null }, ...extra }],
+    }));
+    const line = () => document.querySelector('[data-testid="sandbox-line"]')?.textContent ?? '';
+    const cases: [string, Record<string, unknown>, string][] = [
+      ['claude-code', { sandbox: 'bwrap', sandbox_required: true }, 'Contained by this computer (bwrap)'],
+      ['opencode', { sandbox: 'bwrap', sandbox_required: true }, 'Contained by this computer (bwrap)'],
+      ['codex', { sandbox: 'bwrap', sandbox_required: true }, 'Contained by this computer (bwrap) and by the agent itself'],
+      ['docket', { sandbox: 'harness' }, 'Contained by docket'],
+      ['claude-code', { sandbox: 'none', sandbox_required: false }, 'Not contained: the administrator turned the requirement off'],
+      ['opencode', { sandbox: 'none', sandbox_required: true, probe_error: 'not contained on this computer (bwrap not on PATH), so this agent does not run here; install bubblewrap' }, "Doesn't run here: install bubblewrap"],
+    ];
+    for (const [kind, extra, said] of cases) {
+      mount({}, { runners: [only(kind, extra)], fleets: [] });
+      await flush(); await flush();
+      expect(line(), `${kind} ${JSON.stringify(extra)}`).toContain(said);
+      teardown();
+    }
   });
 
   it('an agent with no sandbox that cannot ask says it does not run here, and Run stays off', async () => {
@@ -1540,7 +1561,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     expect(line('Works').textContent).toContain('on a new branch of ~/src/app');
     expect(line('Prepares').textContent).toContain('Replaced: npm ci');
     expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('2 Done when · 2 agent checks · verifier on');
-    expect(line('Sandbox').textContent).toContain('Sandboxed: the agent only reaches its workspace');
+    expect(line('Sandbox').textContent).toContain('Contained by this computer (bwrap)');
     expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');
     // Each line has an icon that is hidden from a screen reader, which reads the word instead.
     for (const li of section.querySelectorAll('li')) {

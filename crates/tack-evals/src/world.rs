@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use tack_test_support::poll_until_sync;
 use tempfile::TempDir;
 
-use crate::task::{LoadedTask, Verify};
+use crate::task::{LoadedTask, SandboxMode, Verify};
 
 /// The operator token every server in a world starts with.
 pub const API_TOKEN: &str = "tack-evals-operator-token";
@@ -119,6 +119,11 @@ impl World {
     fn write_runner_config(&self, task: &LoadedTask) -> Result<()> {
         let mut toml = String::new();
         toml.push_str("[secrets]\nplatform_store = \"off\"\n\n");
+        // A task that runs with or without a jail needs the runner not to refuse an agent that
+        // finds none; one that requires a jail keeps the runner's default.
+        if task.task.sandbox == SandboxMode::Any {
+            toml.push_str("[sandbox]\nrequired = false\n\n");
+        }
         if task.task.verify == Verify::Prill {
             toml.push_str("[verify]\nenabled = true\n\n");
         }

@@ -216,3 +216,31 @@ fn a_second_run_into_the_same_directory_adds_its_agent_to_the_summary() {
         "{summary}"
     );
 }
+
+/// The runner refuses an agent it cannot contain unless its settings say otherwise, so a world
+/// turns the requirement off for a task that runs with or without a jail and leaves it on for one
+/// that needs a jail.
+#[test]
+fn a_world_asks_the_runner_for_a_sandbox_only_as_the_task_does() {
+    use tack_evals::world::{World, WorldOptions};
+
+    let root = tempfile::tempdir().unwrap();
+    let options = WorldOptions {
+        tack_bin: tack_bin(),
+        agent_path: Vec::new(),
+        env_secrets: Vec::new(),
+        keep: false,
+    };
+    let any = write_task(root.path(), "either-way", "");
+    let required = write_task(root.path(), "needs-a-jail", "");
+    let yaml = required.join("task.yaml");
+    let text = std::fs::read_to_string(&yaml).unwrap();
+    std::fs::write(&yaml, text.replace("sandbox: any", "sandbox: required")).unwrap();
+
+    let settings = |dir: &std::path::Path| {
+        let world = World::build(&load(dir), &options).expect("a world");
+        std::fs::read_to_string(world.root.join("runner.toml")).unwrap()
+    };
+    assert!(settings(&any).contains("[sandbox]\nrequired = false"));
+    assert!(!settings(&required).contains("[sandbox]"));
+}
