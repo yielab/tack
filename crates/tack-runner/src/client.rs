@@ -211,7 +211,8 @@ pub enum WorkspaceMode {
     Clone,
     /// A git worktree of the user's repository; the branch outlives the attempt.
     LocalBranch,
-    /// Parsed so the request is understood; not provisioned yet.
+    /// The attempt works in the user's own folder: nothing is copied, and the folder is only
+    /// checked and its starting state recorded.
     InPlace,
     /// The user's repository itself, with no copy made: the harness works in
     /// its own checkout and leaves commits here, which are read as they are.

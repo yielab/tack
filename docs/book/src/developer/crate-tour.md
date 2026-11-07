@@ -555,7 +555,7 @@ event (`attempt.verify_failed`, `attempt.push_failed`) and the attempt still com
 ### `harness/`
 
 The adapter layer: `process.rs` (bounded output capture, timeouts, process-group
-cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and
+cancellation), `redact.rs`, `artifact.rs`, and
 `local_process.rs` — the one lifecycle every local CLI harness shares: locating the
 binary, the version probe, the request policy, environment and secrets, spawn, cancel, reconcile, log staging and the outcome. A CLI harness adds a
 `HarnessDescriptor` (data) and a `HarnessGrammar` (its command line, how its

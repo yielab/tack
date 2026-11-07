@@ -15,7 +15,6 @@ pub mod claude_code;
 pub mod codex;
 pub mod docket;
 pub mod env_policy;
-pub mod event_sink;
 pub mod fixtures;
 pub mod local_process;
 pub mod locate;

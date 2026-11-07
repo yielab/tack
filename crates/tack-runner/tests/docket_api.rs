@@ -6950,7 +6950,7 @@ const NOT_READ_YET: [&str; 0] = [];
 #[test]
 fn no_fixture_is_left_that_nothing_reads() {
     let sources = [
-        include_str!("docket_v5.rs"),
+        include_str!("docket_api.rs"),
         include_str!("fake_docket/mod.rs"),
     ]
     .concat();

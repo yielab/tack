@@ -197,7 +197,8 @@ impl Principal {
         })
     }
 
-    /// The operator (a person with the token) or Tack itself decides without scopes.
+    /// The operator (a person with the token) decides without scopes. Tack itself is a `System`
+    /// principal, not the operator, and holds no scopes of its own.
     pub fn is_operator(&self) -> bool {
         self.kind == PrincipalKind::Operator
     }

@@ -168,7 +168,7 @@ chmod +x "$SHIMS/claude"
 cp "$SHIMS/claude" "$SHIMS/codex"
 chmod +x "$SHIMS/codex"
 
-# docket is a daemon the runner reaches over HTTP (API 6), not a binary it runs per attempt, so there is no shim here: tests/docket_v5.rs proves it against the in-process fake.
+# docket is a daemon the runner reaches over HTTP (API 6), not a binary it runs per attempt, so there is no shim here: tests/docket_api.rs proves it against the in-process fake.
 
 # opencode has no run shim (step 8 says why); this one only answers the probe,
 # so the runner never reaches a real opencode install or its login.
@@ -304,7 +304,7 @@ fi
 step 8 "The same neutral request through each harness kind, per kind, never rounded up"
 # opencode (the fourth harness kind) needs an npm install and network per attempt, so it has no small shim here.
 printf '   %-12s not covered in fake mode — installs an npm package per attempt and needs network; no small shim can stand in for it\n' "opencode:"
-printf '   %-12s not covered here — a daemon over HTTP; proved against the fake docket in tests/docket_v5.rs\n' "docket:"
+printf '   %-12s not covered here — a daemon over HTTP; proved against the fake docket in tests/docket_api.rs\n' "docket:"
 declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=sonnet )
 declare -A S8_BINARY=( [codex]=codex [claude-code]=claude )
 for kind in codex claude-code; do
