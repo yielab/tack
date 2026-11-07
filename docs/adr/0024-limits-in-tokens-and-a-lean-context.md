@@ -71,3 +71,13 @@ Blocking: none.
 1. The comment budget: 4 000 characters, newest first.
 2. The daily bar's warning: at 80%.
 3. A project file that still says `usd_per_day`: imported without it, with a warning in the preview.
+
+## Note, 2026-11-07: the provisional limit is in the code (decision 1)
+
+Decision 1 says nothing has a limit by default. Its superseded clause is replaced by ADR 0027
+decision 5, and the code does what that decision says: a project with no budget row runs under a
+provisional limit of 2 000 000 tokens per run (`DEFAULT_PROVISIONAL_TOKENS` in
+`crates/tack-db/src/repo/budgets.rs`). The project can change it (`provisional_tokens_per_run`, where
+`None` turns it off). The run's request records the limit as provisional
+(`metadata.limit_source`), so a run stopped by it can be told apart from one with a limit of its own.
+Decisions 2 to 4 are unchanged. Phase 94 cards that change this: none.

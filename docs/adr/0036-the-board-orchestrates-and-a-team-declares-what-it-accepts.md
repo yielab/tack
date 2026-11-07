@@ -192,3 +192,12 @@ anti-overengineering list refuses.
   a shape, not a shape.
 - **A "manager" type, or automatic status moves.** Decided in ADR 0034 and Phase 86.
 - **Dollars anywhere.** ADR 0024.
+
+## Note, 2026-11-07: who refuses a misfit (decision 4)
+
+Decision 4 says a misfit is refused before sending and shown on the board. The refusal is the
+runner's. The docket harness calls `team_misfits` before it sends the task and returns the sentence as
+the rejection (`crates/tack-runner/src/harness/docket.rs`, around line 1894). The local harness refuses
+its unmet needs the same way (`crates/tack-runner/src/harness/local_process.rs`, around line 789). The
+board computes the same misfits for `GET /api/teams` (`crates/tack-api/src/handlers/teams.rs`, around
+lines 148-150) and shows them on the profile. Phase 94 cards that change this: none.

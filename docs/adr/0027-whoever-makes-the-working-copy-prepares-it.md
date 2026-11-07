@@ -74,3 +74,17 @@ none does.
   GitHub's Copilot coding agent has `copilot-setup-steps.yml`; Cursor's cloud agents have an
   `install` step kept in a build; Claude Code copies ignored files into its worktrees with
   `.worktreeinclude`.
+
+## Note, 2026-11-07: the agent keeps the network (decision 4)
+
+Decision 4 says that after the install "the agent then has its team's network". For the three local
+agents that is the whole network. The runner gives the agent no network namespace: the sandbox
+"leaves the network alone" (`crates/tack-runner/src/harness/sandbox.rs`). `network: false` only
+removes the web tools from Claude Code's tool list, and its Bash tool still reaches the network
+(`crates/tack-runner/src/harness/claude_code.rs`). The install runs in the checkout with the runner's
+own environment, network included (`crates/tack-runner/src/prepare.rs`). For a docket run the network
+is the team's, set on the pod.
+
+Phase 94 cards that change this: GR5a (an egress proxy with a per-run list) and GR5b (`--unshare-net`
+in bwrap) for the agent's network; GR6 for the install, which moves into the sandbox with network only
+to the package registry.

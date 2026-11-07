@@ -78,3 +78,11 @@ routes (see ADR 0031's evidence), which `works_in` reads first, falling back to 
 - **The project file as the proposal format.** It carries configuration and has no "these, not
   those"; it stays the way to move a whole project.
 - **A pipeline chooser per task, or `variables`.** ADR 0031 stands: `pipeline_by_type` is the lever.
+
+## Note, 2026-11-07: the premise of the MCP bullet (ADR 0018, decision 1)
+
+The bullet "Letting a run create items itself" (lines 71-73) gives as its first reason that the
+board's API has no authentication on loopback. That is no longer so: a loopback bind always has a
+token, and `require_token` checks it on every route (`crates/tack-api/src/middleware.rs`; see the
+note on ADR 0004 of the same date). The second reason, that items would appear without anyone
+choosing them, does not depend on it, and decision 4 stands. Phase 94 cards that change this: none.

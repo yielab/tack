@@ -62,3 +62,19 @@ rest are plumbing.
   start the work it planned. Forcing `ask` keeps the person in every step without a new state.
 - **Sign commits and tags.** Worth doing; not a rule of this ADR because it is the maintainer's
   key and workflow, not the product's. Listed in the plan's Wave 0.
+
+## Note, 2026-11-07: what a stop reaches (decision 10)
+
+Decision 10 says the process group and the session are killed on every exit. The code signals the
+process group only. `ProcessSpec::spawn` gives the harness its own group (`process_group(0)`,
+`crates/tack-runner/src/harness/process.rs`), and each stop signals that group and the groups the
+harness announces. Outside the sandbox nothing calls `setsid` or signals a session, so a descendant
+that leaves the group by starting its own session or group survives the stop. The audit
+(`docs/audits/evals-y-guardrails-2026-11-06.es.md`, section 7.3) found that Claude Code's Bash
+subprocesses survive a stop when there is no sandbox; this note takes that from the audit and does
+not re-run it. Inside bwrap the harness also runs with `--unshare-pid` and `--die-with-parent`
+(`crates/tack-runner/src/harness/sandbox.rs`): its processes live in their own PID namespace, and the
+sandbox ends with the runner.
+
+Phase 94 card that changes this: GR13 kills the session as well as the group, and tests a child in its
+own session.
