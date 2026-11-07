@@ -705,6 +705,109 @@ async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
     );
 }
 
+/// `program args…` wrapped by the real `bwrap` as a harness would be, or `None` when this
+/// machine has no `bwrap` (unless `TACK_REQUIRE_BWRAP=1`, which makes that a failure).
+fn real_bwrap_command(
+    dir: &std::path::Path,
+    program: &std::path::Path,
+    args: &[String],
+) -> Option<std::process::Command> {
+    let path = tack_runner::ProcessEnv::from_process().search_path();
+    let found = sandbox::detect(path.as_deref(), Some(&dir.join("home")));
+    if found.kind != sandbox::SandboxKind::Bwrap {
+        if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+            panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
+        }
+        println!("skipped: bwrap is not on PATH");
+        return None;
+    }
+    let (workspace, scratch) = (dir.join("workspace"), dir.join("scratch"));
+    for path in [&workspace, &scratch] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    let (bwrap, argv) = found
+        .wrap(
+            program,
+            args,
+            &workspace,
+            &scratch,
+            &[],
+            sandbox::SharedFiles::default(),
+        )
+        .expect("wrapped");
+    let mut command = std::process::Command::new(bwrap);
+    command.args(argv).current_dir(&workspace);
+    Some(command)
+}
+
+#[test]
+fn sandbox_shares_neither_ipc_nor_hostname_namespace_and_holds_no_capabilities() {
+    let dir = root("sandbox-namespaces");
+    let script = "readlink /proc/self/ns/ipc /proc/self/ns/uts; \
+                  grep -E '^Cap(Eff|Prm|Bnd):' /proc/self/status";
+    let Some(mut command) = real_bwrap_command(
+        dir.path(),
+        std::path::Path::new("/bin/sh"),
+        &["-c".to_owned(), script.to_owned()],
+    ) else {
+        return;
+    };
+    let output = command.output().expect("bwrap runs");
+    assert!(
+        output.status.success(),
+        "the probe ran: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let inside = String::from_utf8_lossy(&output.stdout).into_owned();
+    let mut lines = inside.lines();
+    for namespace in ["ipc", "uts"] {
+        let host = std::fs::read_link(format!("/proc/self/ns/{namespace}")).expect("host ns");
+        assert_ne!(
+            lines.next().expect("namespace line"),
+            host.display().to_string(),
+            "the sandbox shares the host's {namespace} namespace"
+        );
+    }
+    for line in lines {
+        let (name, value) = line.split_once(':').expect("capability line");
+        assert_eq!(value.trim(), "0000000000000000", "{name} is not empty");
+    }
+}
+
+#[test]
+fn sandbox_still_starts_git_node_and_python() {
+    let dir = root("sandbox-tools");
+    // System directories first: the sandbox shows `/usr` and `/bin`, so a tool found there
+    // brings its libraries; one from a version manager is bound by itself.
+    let search: Vec<std::path::PathBuf> = ["/usr/bin", "/bin"]
+        .map(std::path::PathBuf::from)
+        .into_iter()
+        .chain(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ))
+        .collect();
+    for tool in ["git", "node", "python3"] {
+        let Some(program) = search
+            .iter()
+            .map(|directory| directory.join(tool))
+            .find(|candidate| candidate.is_file())
+        else {
+            println!("skipped: {tool} is not installed");
+            continue;
+        };
+        let Some(mut command) = real_bwrap_command(dir.path(), &program, &["--version".to_owned()])
+        else {
+            return;
+        };
+        let output = command.output().expect("bwrap runs");
+        assert!(
+            output.status.success(),
+            "{tool} does not start in the sandbox: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 #[tokio::test]
 async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
     let path = tack_runner::ProcessEnv::from_process().search_path();
