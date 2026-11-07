@@ -341,6 +341,16 @@ async fn env_policy_refuses_opencode_config_from_a_request() {
 }
 
 #[tokio::test]
+async fn env_policy_refuses_opencode_config_dir_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("OPENCODE_CONFIG_DIR", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: OPENCODE_CONFIG_DIR ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
 async fn env_policy_refuses_xdg_base_directories_from_a_request() {
     let fixture = fixture(&[]);
     let reason = rejected_reason(&fixture, &[("XDG_CONFIG_HOME", literal("x"))]).await;

@@ -3,8 +3,8 @@
 //! The list covers the names that change what a spawned program runs, loads or
 //! reads: the search path (`PATH`), the home directory its configuration and
 //! credentials are read from (`HOME`), the configuration homes a harness reads
-//! its settings from (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG` and
-//! the `XDG_*` base directories), the package manager's settings
+//! its settings from (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG`,
+//! `OPENCODE_CONFIG_DIR` and the `XDG_*` base directories), the package manager's settings
 //! (`npm_config_*`), code a loader or an interpreter injects before the program
 //! starts (`LD_*`, `DYLD_*`, `NODE_OPTIONS`, `NODE_PATH`, `JAVA_TOOL_OPTIONS`,
 //! `PYTHON*`, `PERL5OPT`, `RUBYOPT`), a shell's start-up file (`BASH_ENV`,
@@ -62,6 +62,10 @@ const EXACT: &[(&str, &str)] = &[
     (
         "OPENCODE_CONFIG",
         "it loads a configuration file from another place",
+    ),
+    (
+        "OPENCODE_CONFIG_DIR",
+        "it moves where opencode reads its settings",
     ),
     (
         "HTTP_PROXY",
