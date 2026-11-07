@@ -251,6 +251,25 @@ pub struct StageRun {
     pub reason: Option<String>,
 }
 
+/// One thing the verifier flags about the change, as it reports it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Flag {
+    pub code: String,
+    pub detail: String,
+}
+
+/// The flag codes that say the change altered what examines the agent: a test that proves
+/// nothing, a deleted test, changed test or analysis configuration or dependencies, a
+/// configuration changed in the head commit. A pack carrying one holds the automatic merge.
+pub const EXAMINATION_FLAGS: &[&str] = &[
+    "tautological_test",
+    "tests_deleted",
+    "test_config_changed",
+    "analysis_suppressed",
+    "dependencies_changed",
+    "config_changed_in_head",
+];
+
 /// The Merge Readiness Pack.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MergeReadinessPack {
@@ -289,6 +308,10 @@ pub struct MergeReadinessPack {
     /// does not report stages)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stages: Option<Vec<StageRun>>,
+    /// What the verifier flags, as data (absent when the producer does not report flags, which
+    /// is not the same as reporting none)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flags: Option<Vec<Flag>>,
 }
 
 impl MergeReadinessPack {
@@ -313,6 +336,18 @@ impl MergeReadinessPack {
                 None => Some(format!("The required stage {name} is not in the pack")),
             },
         )
+    }
+
+    /// The flags that say the change altered what examines the agent, when the pack reports
+    /// flags: `Some(empty)` is a verifier that looked and found none, `None` one that does
+    /// not report them.
+    pub fn examination_flags(&self) -> Option<Vec<&Flag>> {
+        self.flags.as_ref().map(|flags| {
+            flags
+                .iter()
+                .filter(|flag| EXAMINATION_FLAGS.contains(&flag.code.as_str()))
+                .collect()
+        })
     }
 
     /// What the agent is asked to fix after a rejection: the verifier's own

@@ -65,6 +65,21 @@ describe('MergeButton', () => {
     expect(done).toHaveBeenCalled();
   });
 
+  it('merge_over_changed_checks_asks_for_a_reason_naming_the_files', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ merged: true }));
+    const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: true, pack_decision: 'merge', checks_changed: ['tests/x.rs', 'go.mod'] }} />);
+    expect(el.querySelector('[data-testid="merge-over-reject"]')?.textContent).toContain('tests/x.rs, go.mod');
+    const b = el.querySelector('button')!;
+    expect(b.disabled).toBe(true);
+    const input = el.querySelector('input, textarea') as HTMLInputElement;
+    input.value = 'The test was renamed';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    b.click();
+    await flush();
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ reason: 'The test was renamed' });
+  });
+
   it('the_merge_button_is_disabled_with_its_reason', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
     const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: false, reason: 'No branch was pushed' }} />);

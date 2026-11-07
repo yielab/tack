@@ -138,6 +138,10 @@ pub(crate) struct Setup {
     pub(crate) pack_decision: &'static str,
     /// The word prill signed into the statement for the same pack.
     pub(crate) statement_decision: &'static str,
+    /// The flags the translated pack carries as data (`None`: a producer that reports none).
+    pub(crate) pack_flags: Option<Vec<(&'static str, &'static str)>>,
+    /// The files the runner recorded as deciding how the work is checked.
+    pub(crate) checks_changed: Vec<&'static str>,
 }
 
 impl Default for Setup {
@@ -153,6 +157,8 @@ impl Default for Setup {
             merges_per_day: Some(5),
             pack_decision: "merge",
             statement_decision: "auto-merge-eligible",
+            pack_flags: None,
+            checks_changed: Vec::new(),
         }
     }
 }
@@ -274,6 +280,12 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
     .await;
     let mut pack: Value = serde_json::from_str(READY).unwrap();
     pack["recommendation"]["decision"] = json!(setup.pack_decision);
+    if let Some(flags) = &setup.pack_flags {
+        pack["flags"] = flags
+            .iter()
+            .map(|(code, detail)| json!({"code": code, "detail": detail}))
+            .collect();
+    }
     pack["stages"] = setup
         .pack_stages
         .iter()
@@ -289,7 +301,11 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
         pack.to_string().as_bytes(),
     )
     .await;
-    let evidence = json!({"v": "1", "files": [{"path": "src/new.rs", "op": "added"}]}).to_string();
+    let mut evidence = json!({"v": "1", "files": [{"path": "src/new.rs", "op": "added"}]});
+    if !setup.checks_changed.is_empty() {
+        evidence["checks_changed"] = json!(setup.checks_changed);
+    }
+    let evidence = evidence.to_string();
     upload(
         &b.app,
         &a,
@@ -586,6 +602,22 @@ async fn holds_table() {
                 ..Setup::default()
             },
             Some("does not say what the pack says"),
+        ),
+        (
+            "the pack flags a test that proves nothing",
+            Setup {
+                pack_flags: Some(vec![("tautological_test", "assert true in tests/x.rs")]),
+                ..Setup::default()
+            },
+            Some("tautological_test (assert true in tests/x.rs). Confirm before it merges"),
+        ),
+        (
+            "a pack that reports no flags, and the runner recorded a changed test",
+            Setup {
+                checks_changed: vec!["tests/x.rs"],
+                ..Setup::default()
+            },
+            Some("changed: tests/x.rs. Confirm before it merges"),
         ),
         (
             "merge budget spent",

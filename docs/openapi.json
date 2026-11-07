@@ -576,7 +576,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the\nattempt's pull request at its head commit, opening the pull request first when\nit is missing; a refusal is a `409` carrying the reason, already recorded on\nthe item. When the pack recommends `reject` the person still decides, but writes\nwhy: the press is a `400` without a `reason`, and a merge that goes through is\nkept as the attempt's accepting review, with that reason.",
+        "summary": "`POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the\nattempt's pull request at its head commit, opening the pull request first when\nit is missing; a refusal is a `409` carrying the reason, already recorded on\nthe item. When the pack recommends `reject`, or the change altered how the work is checked,\nthe person still decides, but writes why: the press is a `400` without a `reason`, and a merge that goes through is\nkept as the attempt's accepting review, with that reason.",
         "operationId": "merge_attempt",
         "parameters": [
           {
@@ -609,7 +609,7 @@
             }
           },
           "400": {
-            "description": "invalid_request (the pack recommends reject and no reason was written)",
+            "description": "invalid_request (the pack recommends reject, or the checks changed, and no reason was written)",
             "content": {
               "application/json": {
                 "schema": {
@@ -9896,6 +9896,13 @@
           "enabled"
         ],
         "properties": {
+          "checks_changed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the change altered of the way the work is checked (the pack's flags, or the files\nthe runner recorded when there is no pack). Not empty, the Merge button asks for a\nwritten reason too. Left out when there is nothing."
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -14583,7 +14590,7 @@
               "string",
               "null"
             ],
-            "description": "Required when the attempt's pack recommends `reject`; a blank one counts as none."
+            "description": "Required when the attempt's pack recommends `reject` or the change altered how the work\nis checked; a blank one counts as none."
           }
         }
       },

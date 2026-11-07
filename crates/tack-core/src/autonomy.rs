@@ -151,6 +151,10 @@ pub struct Facts {
     /// The decision inside the signed statement, read once the signature held;
     /// `None` when it was not read. The automatic merge needs it to equal `decision`.
     pub statement_decision: Option<MergeDecision>,
+    /// What the change altered of the way the work is checked: the files or flags the caller
+    /// read from the pack, or from the evidence when there is no pack. Not empty holds the
+    /// automatic merge.
+    pub checks_changed: Vec<String>,
 }
 
 /// The first condition that stops a merge. One variant per condition; the
@@ -163,6 +167,7 @@ pub enum Hold {
     HarnessCeiling { ceiling: Level, wanted: Level },
     CeilingUnknown,
     DecisionMismatch,
+    ChecksChanged(Vec<String>),
     TeamNotReported(String),
     Require(String),
     Attestation(String),
@@ -192,6 +197,11 @@ impl fmt::Display for Hold {
             ),
             Hold::DecisionMismatch => f.write_str(
                 "The signed statement does not say what the pack says; merge it with the Merge button after reading it",
+            ),
+            Hold::ChecksChanged(changed) => write!(
+                f,
+                "A file that decides how the work is checked changed: {}. Confirm before it merges.",
+                changed.join(", ")
             ),
             Hold::TeamNotReported(reason)
             | Hold::Require(reason)
@@ -248,6 +258,9 @@ pub fn evaluate(f: &Facts) -> Result<(), Hold> {
             if f.statement_decision.as_ref() != Some(&f.decision) {
                 return Err(Hold::DecisionMismatch);
             }
+            if !f.checks_changed.is_empty() {
+                return Err(Hold::ChecksChanged(f.checks_changed.clone()));
+            }
             check(&f.budget).map_err(Hold::Budget)?;
         }
     }
@@ -265,6 +278,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_hold_for_changed_checks_names_the_files_and_asks_for_confirmation() {
+        assert_eq!(
+            Hold::ChecksChanged(vec!["tests/x.rs".into(), "go.mod".into()]).to_string(),
+            "A file that decides how the work is checked changed: tests/x.rs, go.mod. Confirm before it merges."
+        );
+    }
+
+    #[test]
     fn evaluate_table() {
         let base = |trigger| Facts {
             trigger,
@@ -278,6 +299,7 @@ mod tests {
             ci: CiState::Green,
             ceiling: Ok(Some(Level::L5)),
             statement_decision: Some(MergeDecision::Merge),
+            checks_changed: Vec::new(),
         };
         let fail = |s: &str| Check::Fail(s.to_string());
         let rows: Vec<(&str, Facts, Result<(), Hold>)> = vec![
@@ -474,6 +496,25 @@ mod tests {
                     ..base(Trigger::Auto)
                 },
                 Err(Hold::DecisionMismatch),
+            ),
+            (
+                "auto, a file that decides how the work is checked changed",
+                Facts {
+                    checks_changed: vec!["tests/x.rs".into(), "pyproject.toml".into()],
+                    ..base(Trigger::Auto)
+                },
+                Err(Hold::ChecksChanged(vec![
+                    "tests/x.rs".into(),
+                    "pyproject.toml".into(),
+                ])),
+            ),
+            (
+                "button, changed checks do not hold the Merge button",
+                Facts {
+                    checks_changed: vec!["tests/x.rs".into()],
+                    ..base(Trigger::Button)
+                },
+                Ok(()),
             ),
             (
                 "button, an unknown ceiling and a differing statement do not hold the Merge button",

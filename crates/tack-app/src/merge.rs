@@ -32,6 +32,8 @@ pub struct FactsExtra {
     pub ceiling: Result<Option<Level>, String>,
     /// The decision inside the signed statement; see `Facts::statement_decision`.
     pub statement_decision: Option<MergeDecision>,
+    /// See `Facts::checks_changed`.
+    pub checks_changed: Vec<String>,
     /// The settings that decided, kept with the row.
     pub policy: Value,
 }
@@ -49,6 +51,7 @@ impl Default for FactsExtra {
             pack_artifact_id: None,
             ceiling: Ok(None),
             statement_decision: None,
+            checks_changed: Vec::new(),
             policy: Value::Null,
         }
     }
@@ -130,6 +133,7 @@ pub async fn attempt(
         ci: CiState::Green,
         ceiling: extra.ceiling,
         statement_decision: extra.statement_decision,
+        checks_changed: extra.checks_changed,
     };
 
     // Everything that does not need GitHub first, in the policy's order.
@@ -281,13 +285,48 @@ pub async fn disabled_reason(repo: &Repository, ports: &Ports, attempt_id: &str)
     None
 }
 
-/// What the attempt's newest merge-readiness pack recommends; `None` when it has no pack or the
-/// pack cannot be read.
-pub async fn pack_decision(
+/// What the change altered of the way the work is checked. One owner per case: a pack that
+/// reports flags is the verifier's word, read as data (`code (detail)` for each flag that says
+/// so); with no pack, or a pack whose producer reports no flags, it is the list in the
+/// evidence's `checks_changed`.
+pub fn checks_changed(pack: Option<&MergeReadinessPack>, evidence: Option<&Value>) -> Vec<String> {
+    if let Some(flags) = pack.and_then(MergeReadinessPack::examination_flags) {
+        return flags
+            .into_iter()
+            .map(|flag| match flag.detail.trim() {
+                "" => flag.code.clone(),
+                detail => format!("{} ({detail})", flag.code),
+            })
+            .collect();
+    }
+    evidence
+        .and_then(|evidence| evidence["checks_changed"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|path| path.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// [`checks_changed`] for an attempt, reading its newest pack and its evidence.
+pub async fn attempt_checks_changed(
     repo: &Repository,
     ports: &Ports,
     attempt_id: &str,
-) -> Option<MergeDecision> {
+) -> Vec<String> {
+    let pack = pack_of(repo, ports, attempt_id).await;
+    let evidence =
+        match queries::autonomy::newest_artifact_of_kind(repo, attempt_id, "evidence").await {
+            Ok(Some((_, reference))) => ports
+                .artifacts
+                .read(&reference)
+                .await
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok()),
+            _ => None,
+        };
+    checks_changed(pack.as_ref(), evidence.as_ref())
+}
+
+async fn pack_of(repo: &Repository, ports: &Ports, attempt_id: &str) -> Option<MergeReadinessPack> {
     let (_, reference) = queries::autonomy::newest_artifact_of_media_type(
         repo,
         attempt_id,
@@ -295,9 +334,22 @@ pub async fn pack_decision(
     )
     .await
     .ok()??;
-    let pack: MergeReadinessPack =
-        serde_json::from_slice(&ports.artifacts.read(&reference).await?).ok()?;
-    Some(pack.recommendation.decision)
+    serde_json::from_slice(&ports.artifacts.read(&reference).await?).ok()
+}
+
+/// What the attempt's newest merge-readiness pack recommends; `None` when it has no pack or the
+/// pack cannot be read.
+pub async fn pack_decision(
+    repo: &Repository,
+    ports: &Ports,
+    attempt_id: &str,
+) -> Option<MergeDecision> {
+    Some(
+        pack_of(repo, ports, attempt_id)
+            .await?
+            .recommendation
+            .decision,
+    )
 }
 
 /// The button as the attempts list draws it: enabled when nothing local stops
@@ -386,5 +438,52 @@ pub async fn tell(repo: &Repository, item_id: &str, text: String) {
         let _ = repo
             .create_system_comment(item, text, tack_core::models::CommentType::System)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const PACK: &str = include_str!("../../../docs/contracts/mrp-v1/fixtures/ready.json");
+
+    fn pack(flags: Option<Value>) -> MergeReadinessPack {
+        let mut pack: Value = serde_json::from_str(PACK).unwrap();
+        if let Some(flags) = flags {
+            pack["flags"] = flags;
+        }
+        serde_json::from_value(pack).unwrap()
+    }
+
+    #[test]
+    fn the_pack_owns_the_case_when_it_reports_flags_and_the_evidence_when_it_does_not() {
+        let evidence = json!({"checks_changed": ["tests/x.rs", "go.mod"]});
+        let weak = pack(Some(json!([
+            {"code": "tautological_test", "detail": "assert true in tests/x.rs"},
+            {"code": "no_sandbox", "detail": "Commands ran on the host."},
+            {"code": "tests_deleted", "detail": ""}
+        ])));
+        assert_eq!(
+            checks_changed(Some(&weak), Some(&evidence)),
+            [
+                "tautological_test (assert true in tests/x.rs)",
+                "tests_deleted"
+            ]
+        );
+        // A verifier that looked and found nothing is the owner, whatever the evidence lists.
+        let clean = pack(Some(json!([])));
+        assert!(checks_changed(Some(&clean), Some(&evidence)).is_empty());
+        // No pack, or a producer that does not report flags: the runner's list.
+        let silent = pack(None);
+        assert_eq!(
+            checks_changed(Some(&silent), Some(&evidence)),
+            ["tests/x.rs", "go.mod"]
+        );
+        assert_eq!(
+            checks_changed(None, Some(&evidence)),
+            ["tests/x.rs", "go.mod"]
+        );
+        assert!(checks_changed(None, None).is_empty());
     }
 }

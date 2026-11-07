@@ -27,6 +27,11 @@
         }
       }
     },
+    "checks_changed": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "The changed files that decide how the work is checked (tests, test and build configuration, CI). Optional: absent when there are none."
+    },
     "patch": {
       "type": ["object", "null"],
       "additionalProperties": false,
