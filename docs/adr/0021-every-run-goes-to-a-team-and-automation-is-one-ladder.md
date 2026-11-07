@@ -151,3 +151,13 @@ Blocking: none.
 7. The recurrence half of decision 7 can be deferred without touching anything else.
 8. A docket task blocked by its budget ends the attempt with docket's text as the reason, rather
    than writing `waiting_reason`, which only the scheduler writes for queued requests today.
+
+## Note, 2026-11-07: there is no work-in-progress limit (decision 4)
+
+Decision 4 names "the next column's WIP limit" among the gates for auto-start. No such limit exists.
+`tack_core::auto_start::pick` (`crates/tack-core/src/auto_start.rs`) gates a waiting task on its
+unfinished blockers, on the daily budget being spent, and on the room left under the project's cap
+of open runs (`max_open`, from `auto_start_max_open`). Nothing counts the tasks in a column, and
+auto-start does not read a column's `wip_limit`. The only cap on auto-start is `max_open`. Phase 94
+card GR13 adds one gate (a profile that went over its token limit does not start by itself) and no
+WIP limit.
