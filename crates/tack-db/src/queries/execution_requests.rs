@@ -78,6 +78,9 @@ pub struct RequestDetailRow {
     /// The agent the run asked for; `None` when it left the choice to the computer.
     pub requested_harness_kind: Option<String>,
     pub instructions: Option<String>,
+    /// The fingerprint of the prompt templates the run was composed with; `None` for a run made
+    /// before it was kept.
+    pub prompt_template_sha: Option<String>,
 }
 
 /// The detail of one execution request, or `None` when no request has this id.
@@ -86,7 +89,7 @@ pub async fn request_detail(
     request_id: &str,
 ) -> Result<Option<RequestDetailRow>, StoreError> {
     let row = sqlx::query(
-        "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?",
+        "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions, prompt_template_sha FROM execution_requests WHERE id = ?",
     )
     .bind(request_id)
     .fetch_optional(repo.pool())
@@ -109,6 +112,7 @@ pub async fn request_detail(
             agent_profile_id: row.get("agent_profile_id"),
             requested_harness_kind: row.get("requested_harness_kind"),
             instructions: row.get("instructions"),
+            prompt_template_sha: row.get("prompt_template_sha"),
         })
     })
     .transpose()

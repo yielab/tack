@@ -2,4 +2,5 @@
 //! filter one with `-E 'test(/^<module>::/)'`.
 
 mod mrp_contract;
+mod prompt_templates;
 mod runner_contract;

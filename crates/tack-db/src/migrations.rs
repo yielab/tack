@@ -171,6 +171,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("107_item_types", &MIGRATION_107[..]),
         ordinary("108_drop_boards", &MIGRATION_108[..]),
         ordinary("109_one_review", &MIGRATION_109[..]),
+        ordinary("110_prompt_template_sha", &MIGRATION_110[..]),
     ]
 }
 
@@ -2301,3 +2302,8 @@ const MIGRATION_109: [&str; 8] = [
            AND NOT EXISTS (SELECT 1 FROM attempt_reviews r WHERE r.attempt_id = m.attempt_id)",
     "DROP TABLE mrp_reviews",
 ];
+
+// 110: a run keeps the fingerprint of the prompt templates it was composed with, so a quality change
+// between two runs can be traced to a change in the wording. Runs made before have none.
+const MIGRATION_110: [&str; 1] =
+    ["ALTER TABLE execution_requests ADD COLUMN prompt_template_sha TEXT"];

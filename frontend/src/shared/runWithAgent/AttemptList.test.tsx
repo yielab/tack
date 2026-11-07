@@ -669,10 +669,11 @@ describe('AttemptList', () => {
   });
   describe('what the agent got', () => {
     const FENCED = 'work safely\n\n<<<card-text id=abc123>>>\nFix the build\n<<</card-text id=abc123>>>\n';
+    const SHA = '79aa4e10dcf3536792fd0df88068a79fc468a7ec93956dae82ced71c6a435781';
     const mockExecution = () =>
       vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
         const url = String(input);
-        if (url.endsWith('/executions/exec_1')) return Promise.resolve(new Response(JSON.stringify({ request_id: 'exec_1', instructions: FENCED })));
+        if (url.endsWith('/executions/exec_1')) return Promise.resolve(new Response(JSON.stringify({ request_id: 'exec_1', instructions: FENCED, prompt_template_sha: SHA })));
         return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] })));
       });
 
@@ -710,6 +711,10 @@ describe('AttemptList', () => {
       const pre = c.querySelector('pre[data-testid="agent-read"]')!;
       expect(pre.textContent).toBe(FENCED);
       expect(pre.textContent).toContain('<<<card-text id=');
+      const fingerprint = c.querySelector('[data-testid="agent-read-fingerprint"]')!;
+      expect(fingerprint.textContent).toContain('79aa4e10');
+      expect(fingerprint.textContent).not.toContain('79aa4e10d');
+      expect(fingerprint.querySelector('span[title]')?.getAttribute('title')).toBe(SHA);
     });
 
     it('says_what_ended_the_run_in_the_deciding_words', () => {
