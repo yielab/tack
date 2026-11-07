@@ -522,6 +522,9 @@ pub struct ExecutionDetailResponse {
     pub created_at: String,
     /// The composed prompt the agent is given, as stored with the request; null when absent.
     pub instructions: Option<String>,
+    /// The fingerprint (SHA-256, hex) of the prompt templates the instructions were composed with;
+    /// null for a run made before it was kept.
+    pub prompt_template_sha: Option<String>,
     /// Why no runner has claimed this request yet, as a plain sentence; null once claimed.
     pub waiting_reason: Option<String>,
     /// When a runner's poll first found the request unclaimable; null once claimed.
@@ -1488,6 +1491,7 @@ pub async fn get_execution(
         cancellation_requested_at: row.cancellation_requested_at,
         created_at: row.created_at,
         instructions: row.instructions,
+        prompt_template_sha: row.prompt_template_sha,
         waiting_behind,
         waiting_reason: queued_reason(
             request_state,

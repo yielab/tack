@@ -15,8 +15,9 @@ use tack_db::repo::execution::{EnqueueResult, NewExecutionRequest, RunnerListing
 use tack_db::{Repository, queries};
 use tack_orch::scheduler::select::SchedulingPolicy;
 use tack_protocol::execution::{
-    Approvals, AutonomyLevel, ExecutionRequestSnapshot, PermissionPolicy, RunnerId, RunnerSelector,
-    StableErrorCode, TaskDocument, fence_card_text,
+    Approvals, AutonomyLevel, BRIEF_HEADING, COMMENT_LABEL, DEFINITION_OF_DONE_HEADING,
+    ExecutionRequestSnapshot, PermissionPolicy, RunnerId, RunnerSelector, StableErrorCode,
+    TaskDocument, fence_card_text,
 };
 use uuid::Uuid;
 
@@ -285,7 +286,7 @@ pub fn task_document(
         .rev()
         .take_while(|comment| {
             let fenced = fence_card_text(FENCE_ID_FOR_MEASURING, comment);
-            used += "\nComment:\n".len() + fenced.chars().count();
+            used += COMMENT_LABEL.len() + fenced.chars().count();
             used <= COMMENTS_BUDGET_CHARS
         })
         .count();
@@ -336,11 +337,12 @@ pub fn render_instructions(task: &TaskDocument) -> String {
         // The rendering opens with the item's title as `# …`, already given above.
         let rendered = tack_core::brief::render_titled(&task.title, &brief);
         let body = rendered.split_once('\n').map_or("", |(_, rest)| rest);
-        out.push_str("\n## The brief\n\n");
+        out.push_str(BRIEF_HEADING);
         out.push_str(&fence_card_text(id, body));
     }
     if let Some(dod) = &task.definition_of_done {
-        out.push_str(&format!("\n\n## Definition of done\n{dod}"));
+        out.push_str(DEFINITION_OF_DONE_HEADING);
+        out.push_str(dod);
     }
     out
 }

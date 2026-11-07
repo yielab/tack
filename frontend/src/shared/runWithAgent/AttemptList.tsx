@@ -1,5 +1,5 @@
 import { type Component, For, type JSX, Show, createMemo, createResource, createSignal } from 'solid-js';
-import { Badge, Button, Fold, LoadError, Modal, type DocketRunWord, type RunStateName } from '../ui';
+import { Badge, Button, Fold, HelpHint, LoadError, Modal, type DocketRunWord, type RunStateName } from '../ui';
 import { toast } from '../ui/toast';
 import { truncateMiddle } from '../ui/truncateMiddle';
 import { api } from '../api';
@@ -26,7 +26,7 @@ import {
 import ArtifactDownloadPanel, { ArtifactView } from './ArtifactDownloadPanel';
 import { invoke } from '@tauri-apps/api/core';
 import { request } from '../api/client';
-import { SANDBOX_TEXT } from '../help/texts';
+import { HELP, SANDBOX_TEXT } from '../help/texts';
 import { inDesktop } from './desktop';
 import { parseRunLog } from './runLog';
 import DiffView from './DiffView';
@@ -98,20 +98,32 @@ export function attemptRunState(
   return changedNoFile(attempt) && !isFolderRun(attempt.terminal_reason) ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
 }
 
-/** The exact prompt the agent read, fetched when its fold first opens. */
+/** The exact prompt the agent read, fetched when its fold first opens, with the fingerprint of
+ *  the wording around the card's text. */
 const AgentRead: Component<{ requestId: string }> = (props) => {
-  const [instructions, { refetch: refetchInstructions }] = createResource(
+  const [read, { refetch: refetchRead }] = createResource(
     () => props.requestId,
-    async (id) =>
-      (await request<{ instructions?: string | null }>(`/executions/${encodeURIComponent(id)}`)).instructions ?? null,
+    async (id) => {
+      const run = await request<{ instructions?: string | null; prompt_template_sha?: string | null }>(`/executions/${encodeURIComponent(id)}`);
+      return { instructions: run.instructions ?? null, sha: run.prompt_template_sha ?? null };
+    },
   );
   return (
     <>
-      <Show when={instructions.loading}><p class="text-xs">Loading the prompt…</p></Show>
-      <Show when={instructions.error}>
-        <LoadError what="what the agent read" error={instructions.error} onRetry={() => void refetchInstructions()} />
+      <Show when={read.loading}><p class="text-xs">Loading the prompt…</p></Show>
+      <Show when={read.error}>
+        <LoadError what="what the agent read" error={read.error} onRetry={() => void refetchRead()} />
       </Show>
-      <Show when={!instructions.error && instructions()}>
+      <Show when={!read.error && read()?.sha}>
+        {(sha) => (
+          <p data-testid="agent-read-fingerprint" class="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            Prompt fingerprint{' '}
+            <span title={sha()} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{sha().slice(0, 8)}</span>
+            <HelpHint label="Prompt fingerprint" help={HELP.promptFingerprint} />
+          </p>
+        )}
+      </Show>
+      <Show when={!read.error && read()?.instructions}>
         {(text) => (
           <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs"
             style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>

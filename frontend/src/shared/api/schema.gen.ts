@@ -5223,6 +5223,11 @@ export interface components {
              *     carries (read through `tack_app::runs::run_facts`, the one rule).
              */
             never_started: boolean;
+            /**
+             * @description The fingerprint (SHA-256, hex) of the prompt templates the instructions were composed with;
+             *     null for a run made before it was kept.
+             */
+            prompt_template_sha?: string | null;
             /** Format: int32 */
             protocol_version: number;
             request_id: string;
