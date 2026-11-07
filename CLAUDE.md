@@ -135,19 +135,17 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   epic routes its tasks), the Board in lanes, the List as the tree with Move under…, the Timeline, Dashboard and Orchestration reading
   the same helpers, and the saved boards deleted. Cards A to H, each through the pre-push gate. Left: the live suite against docket and
   prill (`docket-prill.spec.ts` test 30 was rewritten and has not been run).
-- **Proposed 2026-11-06, not accepted:** Phase 94 (`docs/plans/evals-y-guardrails-2026-11-06.es.md`, from
-  `docs/audits/evals-y-guardrails-2026-11-06.es.md`; no ADR, ADRs 0013 and 0018 amended where false) — the agent
-  is contained the same way in the four harnesses (a parity matrix test; no sandbox means `ask`; the sandbox,
-  the network and the install step become the runner's rules, not a CLI's flags; docket's sandbox asked, not
-  assumed), the merge holds on an unknown ceiling and on changed checks, MCP is an agent, and a development
-  crate `tack-evals` measures regression, safety and verifier agreement with Claude Haiku 5.5 through Anthropic
-  at integration only, never in CI; production gets quality figures by profile/harness/model and a trend
-  notification. Four rounds, Sonnet and Haiku cards; decisions 1–4 were taken 2026-11-07 (containment is
-  required whoever provides it: `bwrap` for Claude Code and opencode, Codex's own plus `bwrap`, docket's only
-  asked; web access is a mode per profile, `closed`, `listed` or `open`, ADR 0018's notes). Asks to
-  prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`. Rounds 0 and 1 are built in `develop` (2026-11-07);
-  round 2 is under way; the pending parity cells are listed in `agent_boundaries.rs` (`PENDING_CELLS`),
-  each with its card.
+- **Built 2026-11-07, in `develop`:** Phase 94 (`docs/plans/evals-y-guardrails-2026-11-06.es.md`, from
+  `docs/audits/evals-y-guardrails-2026-11-06.es.md`; no ADR, ADR 0018's notes of that date amend its decisions 11
+  and 12) — the agent is contained the same way in the four harnesses (a parity matrix test with an empty
+  pending list; containment is required whoever supplies it; web access is a mode per profile, `closed`, `listed`
+  or `open`, enforced only with the runner's `[egress] enforce`), the merge holds on an unknown ceiling and on
+  changed checks, MCP is an agent, and the development crate `tack-evals` runs regression, safety and verifier
+  suites (`evals/`, baselines in `evals/baselines/`, Claude Code with Haiku 5.5: both suites saturated) with
+  Anthropic at integration only, never in CI; production gets quality figures and a trend notice. Left: the
+  live suite against docket and prill, the verifier-set labels (a person, about an hour), Codex/opencode/docket
+  baselines, the Reviewer verdict stored, an `allowed_hosts` editor, C4-1's L6 after `v0.2.0-beta.1`, the plan's
+  decision 8. Asks to prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
