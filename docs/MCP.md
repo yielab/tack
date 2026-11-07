@@ -20,12 +20,19 @@ server offers no HTTP or SSE MCP endpoint.
 running Tack server; point it at one with the same flags/env as any CLI command:
 
 ```sh
-# Defaults to http://127.0.0.1:3210, no token
-tack mcp
+# An agent credential (Settings → Agent credentials), against the default http://127.0.0.1:3210
+TACK_API_TOKEN=tack_agent_... tack mcp
 
-# Explicit server + token
-TACK_API_URL=http://127.0.0.1:3210 TACK_API_TOKEN=secret tack mcp
+# Explicit server
+TACK_API_URL=http://127.0.0.1:3210 TACK_API_TOKEN=tack_agent_... tack mcp
+
+# As the operator, with every scope and no one asked: only when you mean it
+tack mcp --operator
 ```
+
+Without an agent credential, `tack mcp` exits with code 2 and "use an agent credential or
+`--operator`". The operator's own token, which `tack` finds on this machine, is not a credential:
+a model on the other end of the pipe would be you.
 
 > **stdout is the protocol channel** — the MCP server prints only JSON-RPC. Do not
 > pipe anything else into its stdin or expect human-readable output.
@@ -42,7 +49,7 @@ Add Tack to your project's `.mcp.json` (or the global Claude Code MCP config):
       "args": ["mcp"],
       "env": {
         "TACK_API_URL": "http://127.0.0.1:3210",
-        "TACK_API_TOKEN": "your-token-if-set"
+        "TACK_API_TOKEN": "tack_agent_..."
       }
     }
   }
@@ -140,7 +147,7 @@ fenced as card text, as below.
 ### Under an agent credential
 
 A token that starts with `tack_agent_` is an [agent credential](https://yielab.github.io/tack/admin-guide/administration.html#agent-credentials),
-and `tack mcp` knows it from the token alone. An agent changes the board only through a change
+and `tack mcp` knows it from the token alone; the server knows it too, and treats every request that carries one as an MCP request, whatever headers it sends. An agent changes the board only through a change
 set, so under one:
 
 - `create_item`, `create_outline`, `update_item`, `move_item` and `add_comment` build a change
@@ -193,7 +200,7 @@ Everything but `item_id` is optional. Left out, the server chooses as it does fo
 from the board: the profile (the item's role, else the project default), its agent and fleet, the
 timeout, and the model (the project's default for its default agent, else the agent's own).
 
-`create_execution` always starts a run that asks the person before every action, with network access off and the default tool set. The request sends `permission_policy: {approvals: "ask", network: false}`; an agent cannot choose another policy. `environment`, `repository` and `agent_profile_snapshot` are refused with `unknown argument`. The server fills the repository from the item's project (its folder, default branch and workspace mode, set under Settings → Automation). An item that holds work (an epic, or a task with items under it) is run only with a planner or researcher profile; any other is refused with `group_not_runnable`, and nothing is created. The request carries `origin: "mcp"`: such a run is never merged automatically or by a move to Done, only by the Merge button.
+`create_execution` always starts a run that asks the person before every action, with network access off and the default tool set. The server fixes `permission_policy.approvals` to `ask` and `network` to `false` for a request that comes through MCP, whatever the request says; an agent cannot choose another policy. `environment`, `repository` and `agent_profile_snapshot` are refused with `unknown argument`. The server fills the repository from the item's project (its folder, default branch and workspace mode, set under Settings → Automation). An item that holds work (an epic, or a task with items under it) is run only with a planner or researcher profile; any other is refused with `group_not_runnable`, and nothing is created. The server marks the run `origin: "mcp"`: such a run is never merged automatically or by a move to Done, only by the Merge button.
 
 A run never changes the item's status; a person does. A call that sends `status_map_policy_id` is accepted, the field is ignored and the answer carries `notice: "ignored: the status is set by a person"`.
 

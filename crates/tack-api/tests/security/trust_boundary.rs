@@ -5,7 +5,7 @@
 //! driven over a raw TCP connection authorizes via the subprotocol-embedded
 //! credential with no token in the query string.
 
-use super::chaos_recovery::{decision_body, ready_running_attempt};
+use super::chaos_recovery::{chaos_common, decision_body, ready_running_attempt};
 use crate::common;
 use axum::{
     Router,
@@ -692,4 +692,109 @@ async fn decision_with_explicit_expiry_keeps_it() {
         .expect("the decision is stored");
     let stored = chrono::DateTime::parse_from_rfc3339(row.expires_at.as_deref().unwrap()).unwrap();
     assert_eq!(stored, requested);
+}
+
+/// `X-Tack-Client: mcp` is written by the client, so it proves nothing about who calls: an agent
+/// credential that sends it, or asks for `auto` approvals and the network, still has no way to
+/// start a run: the route is the operator's alone.
+#[tokio::test]
+async fn a_forged_client_header_and_a_permissive_policy_give_an_agent_credential_no_run() {
+    let (app, _) = common::test_app_with_config(protected_config()).await;
+    let operator = format!("Bearer {API_TOKEN}");
+    let item_id = common::create_project_and_item(
+        &app,
+        "https://example.test/g10.git",
+        &[("authorization", &operator)],
+    )
+    .await;
+    let (status, issued) = common::send(
+        &app,
+        "POST",
+        "/api/agent-credentials",
+        serde_json::json!({"name": "Writer", "scopes": [{
+            "all_projects": true,
+            "capabilities": ["read", "propose", "act", "converse"],
+        }]}),
+        &[("authorization", &operator)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{issued}");
+    let agent = format!("Bearer {}", issued["secret"].as_str().unwrap());
+
+    let body = permissive_run_body(&item_id, "forged", "runner-1", "profile-1");
+    for headers in [
+        vec![("authorization", agent.as_str())],
+        vec![("authorization", agent.as_str()), ("x-tack-client", "mcp")],
+    ] {
+        let (status, refused) =
+            common::send(&app, "POST", "/api/executions", body.clone(), &headers).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{refused}");
+    }
+}
+
+fn permissive_run_body(
+    item_id: &str,
+    key: &str,
+    runner_id: &str,
+    profile_id: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "item_id": item_id,
+        "idempotency_key": key,
+        "selector_kind": "exact_runner",
+        "selector_id": runner_id,
+        "agent_profile_id": profile_id,
+        "requested_harness_kind": "codex",
+        "repository_snapshot": {"kind": "git", "remote": "https://example.test/g10.git",
+            "base_revision": chaos_common::BASE_REVISION, "subdirectory": null},
+        "permission_policy": {"tools": ["shell"], "network": true, "approvals": "auto"},
+        "timeout_seconds": 60,
+        "budgets": {}, "environment": {}, "metadata": {},
+    })
+}
+
+/// The operator's own run asks for `auto` and the network and gets them; the same request that
+/// says it came through `tack mcp` (the operator's explicit `--operator`) is made to ask first,
+/// with no network, and carries the mark that keeps it from merging by itself, whatever the body
+/// said. The server decides this from who calls, not from what the body claims.
+#[tokio::test]
+async fn an_operator_over_mcp_gets_the_mcp_policy_and_without_it_keeps_its_own() {
+    let storage = chaos_common::distinctive_temp_dir("g10-mcp-");
+    let (app, repo) = chaos_common::app_in_memory(storage.path()).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g10.git", &[]).await;
+    let profile = chaos_common::agent_profile(&app, "g10").await;
+    let runner = chaos_common::enroll_runner(&app, "G10 runner").await;
+
+    let mut stored = Vec::new();
+    for (key, headers) in [
+        ("plain", vec![]),
+        ("over-mcp", vec![("x-tack-client", "mcp")]),
+    ] {
+        let (status, created) = common::send_large(
+            &app,
+            "POST",
+            "/api/executions",
+            permissive_run_body(&item_id, key, &runner.runner_id, &profile),
+            &headers,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let raw = tack_db::queries::execution_requests::request_snapshot(
+            &repo,
+            created["request_id"].as_str().unwrap(),
+        )
+        .await
+        .expect("read the snapshot")
+        .expect("the request exists");
+        stored.push(serde_json::from_str::<serde_json::Value>(&raw).unwrap());
+    }
+    let [plain, over_mcp] = &stored[..] else {
+        unreachable!()
+    };
+    assert_eq!(plain["permission_policy"]["approvals"], "auto");
+    assert_eq!(plain["permission_policy"]["network"], true);
+    assert_eq!(plain["origin"], serde_json::Value::Null);
+    assert_eq!(over_mcp["permission_policy"]["approvals"], "ask");
+    assert_eq!(over_mcp["permission_policy"]["network"], false);
+    assert_eq!(over_mcp["origin"], "mcp");
 }

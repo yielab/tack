@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tack_core::hierarchy::{Node, runnable};
 use tack_core::models;
+use tack_core::principal::{Principal, PrincipalKind};
 use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
 use tack_db::repo::execution::{EnqueueResult, NewExecutionRequest, RunnerListingRow};
 use tack_db::{Repository, queries};
@@ -55,6 +56,17 @@ pub struct RunRequest {
     /// exist; `unprocessable` when it belongs to another project or left no branch to continue
     /// from.
     pub from_run: Option<String>,
+}
+
+impl RunRequest {
+    /// Makes this the run an MCP caller gets, whatever it asked for: every action asks first, no
+    /// network, and the `mcp` origin that keeps it from merging by itself. The server applies it
+    /// to an agent credential's request and to the operator's that came through `tack mcp`.
+    pub fn make_mcp_run(&mut self) {
+        self.origin = Some("mcp".into());
+        self.permission_policy.approvals = Some(Approvals::Ask);
+        self.permission_policy.network = Some(false);
+    }
 }
 
 /// The permissions a caller asks for. It is the protocol's [`PermissionPolicy`] but for
@@ -1293,6 +1305,11 @@ pub async fn start_run(
     principal: &str,
     mut input: RunRequest,
 ) -> Result<Started, Refusal> {
+    // A run an agent credential starts is an MCP run, whatever the request says: it asks before
+    // each action, has no network, and is never merged by itself.
+    if Principal::from_label(principal).is_some_and(|who| who.kind == PrincipalKind::Agent) {
+        input.make_mcp_run();
+    }
     if input.agent_profile_snapshot.is_some() {
         return Err(error(
             StableErrorCode::InvalidRequest,
