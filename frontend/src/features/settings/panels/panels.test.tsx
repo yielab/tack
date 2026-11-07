@@ -435,14 +435,14 @@ describe('Settings panels', () => {
       const asks = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      expect(line(asks.container)).toContain('Not sandboxed on this computer, so the agent asks before each action');
+      expect(line(asks.container)).toContain('Not contained, as far as docket says');
       asks.dispose();
       asks.container.remove();
       docket = { ...DOCKET, sandbox: 'none', decisions: { support: 'unsupported' } };
-      const blocked = mount(() => <AutomationPanel />);
+      const never = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      expect(line(blocked.container)).toContain("Doesn't run on this computer: it isn't sandboxed and can't ask before it acts");
+      expect(line(never.container)).toContain('Not contained, as far as docket says');
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }

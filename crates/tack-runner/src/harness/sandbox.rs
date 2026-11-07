@@ -75,6 +75,9 @@ pub struct Sandbox {
     /// Whether the runner looked for a sandbox, rather than having none
     /// because it never asked (a test, or before discovery).
     looked: bool,
+    /// Whether an agent that finds none must not run: the administrator's `[sandbox]` setting.
+    /// Off, an agent without a sandbox runs but asks before each action.
+    required: bool,
 }
 
 impl Sandbox {
@@ -87,7 +90,20 @@ impl Sandbox {
             bwrap: None,
             home: self.home.clone(),
             looked: true,
+            required: self.required,
         }
+    }
+
+    /// This machine's sandbox under the administrator's setting: with `required`, an agent that
+    /// finds no sandbox does not run here; without it, that agent asks before each action.
+    pub fn requiring(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
+    /// Whether an agent that finds no sandbox must not run.
+    pub fn is_required(&self) -> bool {
+        self.required
     }
 
     /// No sandbox, for a runner that has not looked or a test that wants none.
@@ -98,6 +114,7 @@ impl Sandbox {
             bwrap: None,
             home: None,
             looked: false,
+            required: false,
         }
     }
 
@@ -235,6 +252,7 @@ pub fn detect(path: Option<&OsStr>, home: Option<&Path>) -> Sandbox {
             bwrap: Some(bwrap),
             home: home.map(Path::to_path_buf),
             looked: true,
+            required: false,
         },
         None => Sandbox {
             looked: true,

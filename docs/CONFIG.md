@@ -111,7 +111,7 @@ runner does not know makes it refuse to start.
 | `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` | `max_concurrent_attempts` | `--max-concurrent-attempts` (the `tack-runner` executable only) | `1` | How many attempts the runner works at once. Below `1`, or a value that is not a whole number, is refused at start. A folder worked in place runs one attempt at a time whatever this says; parallel attempts need a branch or a clone |
 | `TACK_RUNNER_SECRET_VALUE` | — | — | _(none)_ | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable: the store keeps it (OS keychain, or an owner-only file where none answers within three seconds; `tack runner doctor` reports which backend a given boot picked) |
 
-Tables `[verify]`, `[git]`, `[secrets]`, `[environment]` and `[docket]` have no environment variable;
+Tables `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]` and `[docket]` have no environment variable;
 they are described in the sections below. Runner credentials are redacted in every log and error.
 
 ## Embedded runner (`tack serve --with-runner`)
@@ -131,7 +131,7 @@ The settings:
 - **Configuration file.** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`) names the
   TOML file the embedded runner loads, the same file `tack runner start --config` reads. Without it the
   runner reads `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on Linux) when
-  that file exists. It is the only way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`,
+  that file exists. It is the only way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[sandbox]`,
   `[environment]` or `[docket]` table, since those have no environment variable. With no file it runs on
   defaults: no verifier, no branch push and no docket. `GET /api/local-runner` names the file it read
   (`config_file`, `null` with none), and `tack runner doctor` prints it first.
@@ -330,12 +330,22 @@ settings.
 
 ## Agent sandbox
 
-There is nothing to configure. When `bwrap` is on the runner's `PATH`, each agent that can
+Every agent runs contained: by this computer (bubblewrap), by its own sandbox, or by docket;
+Claude Code and opencode only by bubblewrap. Where nothing contains an agent it does not run,
+unless the administrator turned the requirement off, and then it asks before each action.
+
+When `bwrap` is on the runner's `PATH`, each agent that can
 start inside it runs inside it, seeing the workspace and a scratch home read-write, the
 directories it needs from your home (`~/.claude`, `~/.codex`) and the system
 directories read-only. The network is not restricted. An agent that cannot start inside
 `bwrap` (a program in a virtualenv or under Homebrew, whose loader or runtime lives where the
-sandbox does not reach) runs unsandboxed. docket is not wrapped: it confines its own agents, and the
+sandbox does not reach) counts as not contained. docket is not wrapped: it confines its own agents, and the
 probe asks it (`isolationPosture` in its `/health`): `sandbox: harness` only when docket says it
-jails them, `sandbox: none` when it says not, or says nothing. `tack runner doctor` prints `sandbox: bwrap`, `sandbox: harness (…)` or
+jails them, `sandbox: none` when it says not, or says nothing, and then the run asks; docket is never
+refused. `tack runner doctor` prints `sandbox: bwrap`, `sandbox: harness (…)` or
 `sandbox: none (<why>)` for each agent, and the attempt's start report carries the same word.
+
+| Setting | Effect |
+|---|---|
+| `[sandbox] required = true` | The default. An agent that finds no containment on this computer does not run: the probe says "install bubblewrap" and nothing schedules it. |
+| `[sandbox] required = false` | The opt-out for a computer that cannot have `bwrap`. The agent runs without it, asking before each action, and the run's timeline, the run dialog, the Agents page and `tack runner doctor` say so. An agent that cannot ask does not run even then. |
