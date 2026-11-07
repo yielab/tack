@@ -9,6 +9,7 @@ change needs an eval are in `CONTRIBUTING.md` and `docs/TESTING.md`.
 evals/
   tasks/<suite>/<id>/     one task: task.yaml, repo/, hidden/, solution/
   baselines/<sha>/        summary.json of a run of `develop` at <sha>, one cell per agent
+  candidates/<id>/        git-ignored: refused work from a real run, waiting for its exam
 ```
 
 ## Run
@@ -100,3 +101,27 @@ their diffs; read each `diff.patch` against its `reference.yaml`, and either set
 or correct `expected` first. `score-verifier --verdicts <file>` refuses to score while any label is
 unconfirmed (`--allow-unconfirmed` gives a provisional figure). Do not regenerate over a confirmed
 set; the generator refuses to write into a directory that has files.
+
+## Promote a refused run
+
+The `capability` suite comes from real work a person refused, never from a task someone imagined.
+`tack-evals promote <attempt-id>` reads the attempt from a running server and writes
+`evals/candidates/<attempt-id>/` (git-ignored, because it comes from a real project):
+
+```text
+candidate.json   the verdict, the agent and where the real evidence is (paths on that server)
+item.json        the item; brief.json its brief; reason.txt why the work was refused
+repo.bundle      git bundle: the base commit, one commit, branch `base`, no history
+docket.yaml      only for a docket run: the `task` fields Tack sent it
+```
+
+Everything is anonymised: known secrets and token shapes, private keys, home directories, the
+repository's location (`/repo`) and the project's name (`My SaaS`). Add what it cannot know with
+`--name` and `--env-secret`, and read the candidate: a name in prose that nobody told it about
+stays. Work that was merged and then reverted has no reason on the board, so give one with
+`--reason`.
+
+To make it a task, write what no tool may invent: unbundle `repo.bundle` into `repo/`
+(`git clone -b base repo.bundle repo`, then delete `repo/.git`), write the `hidden/` exam and the
+`solution/`, add the `task.yaml`, check that the exam fails on the seed, and move the folder into
+`tasks/capability/<id>/` with the wording "My SaaS". Until then `check-solutions` refuses it.

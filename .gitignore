@@ -94,3 +94,6 @@ api-token
 # links here), the live Tack + docket + prill suite and its fixtures. Local only; it
 # names the maintainer's real projects and spends model calls.
 /onboarding-lab/
+
+# Candidates made by `tack-evals promote`: anonymised, but they come from real runs
+/evals/candidates/
