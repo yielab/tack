@@ -567,19 +567,26 @@ fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_no
         ("codex", vec!["*"], none.clone(), None, true),
         ("opencode", vec!["webfetch"], none.clone(), None, false),
         ("opencode", vec!["edit"], none.clone(), None, true),
-        // My SaaS's researcher writes a document: its explicit list names `write`.
+        // `write` on a docket researcher is the same plan file it is on a local one, not a change.
         (
             "docket",
             vec![],
             serde_json::json!({"tools": {"docket": ["read", "fetch", "write"]}}),
             Some("researcher"),
-            true,
+            false,
         ),
         (
             "docket",
             vec!["read", "fetch", "write"],
             none.clone(),
             Some("researcher"),
+            false,
+        ),
+        (
+            "docket",
+            vec!["read", "write", "bash"],
+            none.clone(),
+            Some("planner"),
             true,
         ),
         (
@@ -669,6 +676,26 @@ fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_no
             expected,
             "{harness} {tools:?} {policy} {kind:?}"
         );
+    }
+}
+
+/// The plan-only rule belongs to the profile's kind, whichever agent runs it.
+#[test]
+fn a_planner_or_researcher_writes_only_the_plan_on_every_agent() {
+    for harness in ["claude-code", "codex", "opencode", "docket"] {
+        for (kind, expected) in [
+            (Some("planner"), true),
+            (Some("researcher"), true),
+            (Some("implementer"), false),
+            (None, false),
+        ] {
+            let request = request_for(harness, &[], serde_json::json!({}), kind);
+            assert_eq!(
+                request.writes_only_the_plan(),
+                expected,
+                "{harness} {kind:?}"
+            );
+        }
     }
 }
 
