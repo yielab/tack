@@ -10,7 +10,7 @@ import { EGRESS_MODES, HELP, defaultEgressMode, egressEnforced } from '../help/t
 import { teamOf, type AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
-import { installLine } from './install';
+import { installContainment, installLine } from './install';
 import { gateHarnessModelSelection } from './shared';
 import { spaced } from './runLimit';
 import type { RunForm } from './RunWithAgentModal';
@@ -300,6 +300,15 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 <SummaryLine icon={<IconPackage />} label="Prepares">
                   <Show when={line()} fallback={<span data-testid="run-dialog-nothing-installed">Nothing is installed</span>}>
                     {(text) => <span data-testid="run-dialog-install">{text()}</span>}
+                  </Show>
+                  <Show when={installContainment(line(), props.harnessReports())}>
+                    {(where) => (
+                      <span class="inline-flex flex-wrap items-center gap-x-2" data-testid="run-dialog-install-sandbox">
+                        {' · '}
+                        <span>{where()}</span>
+                        <HelpHint label="Install" help={HELP.prepare} />
+                      </span>
+                    )}
                   </Show>
                 </SummaryLine>
               );

@@ -128,3 +128,15 @@ fn the_setting_travels_as_a_tagged_object() {
     let off: PrepareSetting = serde_json::from_value(serde_json::json!({"mode": "off"})).unwrap();
     assert_eq!(off, PrepareSetting::Off);
 }
+
+#[test]
+fn only_a_board_replacement_needs_the_runners_permission() {
+    let replace = PrepareSetting::Replace {
+        command: "make deps".into(),
+    };
+    assert_eq!(replace.refusal(false), Some(REPLACE_REFUSED));
+    assert_eq!(replace.refusal(true), None);
+    for setting in [PrepareSetting::Detect, PrepareSetting::Off] {
+        assert_eq!(setting.refusal(false), None);
+    }
+}
