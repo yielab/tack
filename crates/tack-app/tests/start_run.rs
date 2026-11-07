@@ -11,8 +11,11 @@ use support::{
 };
 use tack_app::runs::start_run::start_run;
 use tack_core::models::{CodeOrigin, CreateRole, UpdateProject, UpdateRole, WorkspaceMode};
+use tack_db::queries;
 use tack_protocol::SystemClock;
-use tack_protocol::execution::{AutonomyLevel, ExecutionState, StableErrorCode};
+use tack_protocol::execution::{
+    AutonomyLevel, ExecutionState, PROMPT_TEMPLATE_SHA, StableErrorCode,
+};
 use tack_test_support::seed::{self, AttemptSeed};
 use tack_test_support::{create_test_workspace, make_item, make_project};
 
@@ -222,6 +225,23 @@ async fn the_request_snapshot_carries_the_item_as_data_beside_the_composed_prose
     assert!(prose.contains("## The item"));
     // A first run has no previous attempt to carry answers from.
     assert!(stored["metadata"].get("previous_answers").is_none());
+}
+
+#[tokio::test]
+async fn a_run_keeps_the_fingerprint_of_the_prompt_templates_it_was_composed_with() {
+    let board = board().await;
+    add_profile(&board.repo, "profile-sha", "{}", "{}").await;
+    let mut request = bare_request(board.item_id, "k-sha");
+    request.agent_profile_id = Some("profile-sha".into());
+    let started = start(&board, request).await.unwrap();
+    let detail = queries::execution_requests::request_detail(&board.repo, &started.request_id)
+        .await
+        .unwrap()
+        .expect("request exists");
+    assert_eq!(
+        detail.prompt_template_sha.as_deref(),
+        Some(PROMPT_TEMPLATE_SHA.as_str())
+    );
 }
 
 #[tokio::test]

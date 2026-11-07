@@ -13095,6 +13095,13 @@
             "type": "boolean",
             "description": "The run's newest attempt ended without ever starting work, the same flag the run list\ncarries (read through `tack_app::runs::run_facts`, the one rule)."
           },
+          "prompt_template_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The fingerprint (SHA-256, hex) of the prompt templates the instructions were composed with;\nnull for a run made before it was kept."
+          },
           "protocol_version": {
             "type": "integer",
             "format": "int32",
