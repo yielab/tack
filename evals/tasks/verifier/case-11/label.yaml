@@ -1,0 +1,10 @@
+# The answer key. Read diff.patch, then set `confirmed: true` if `expected` is right
+# (correct `expected` first when it is not). The verifier never sees this file.
+expected: reject
+confirmed: false
+kind: mutant
+family: logic
+operator: "drop_raise"
+reason: "calc.py: line 21: `raise ValueError(f\"unknown operator {operator}\")` becomes `pass`. Hidden tests: fail. Visible tests: pass."
+proof: { hidden_tests_passed: false, visible_tests_passed: true, within_scope: true }
+seed: 1

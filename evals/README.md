@@ -84,3 +84,19 @@ small model.
 The two planning tasks stand in for a suite of their own. Where the table says "none", a cell
 that cannot run for a reason of the machine (no sandbox where a task requires one) is still
 recorded `not_applicable` with that reason by the harness.
+
+## The verifier set
+
+`tasks/verifier/` is not a suite of tasks but thirty labelled diffs of the regression tasks, to
+measure the verifier: fifteen that should merge (the reference solutions and harmless variants of
+them) and fifteen that should be rejected (a fault the hidden tests catch, tests weakened to hide
+it, a config that hides the tests, a change outside the allowed files). A case is `diff.patch`,
+`reference.yaml` (what the verifier is told) and `label.yaml` (the answer key).
+
+`tack-evals gen-verifier-set tasks/regression` makes the set from a seed and proves every diff by
+running its task's checks, so a mutant is always one the checks refuse. Every label starts as
+`confirmed: false`. Labelling takes about an hour: `tack-evals verifier-labels` lists them with
+their diffs; read each `diff.patch` against its `reference.yaml`, and either set `confirmed: true`
+or correct `expected` first. `score-verifier --verdicts <file>` refuses to score while any label is
+unconfirmed (`--allow-unconfirmed` gives a provisional figure). Do not regenerate over a confirmed
+set; the generator refuses to write into a directory that has files.

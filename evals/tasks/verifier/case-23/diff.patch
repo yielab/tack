@@ -1,0 +1,13 @@
+diff --git a/calc.py b/calc.py
+index 1e70b2a..fff0347 100644
+--- a/calc.py
++++ b/calc.py
+@@ -2,7 +2,7 @@
+ 
+ 
+ def add(a, b):
+-    return a * b
++    return a - b
+ 
+ 
+ def subtract(a, b):

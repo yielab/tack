@@ -5,11 +5,14 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tack_evals::exam::{SolutionVerdict, check_solution};
 use tack_evals::grade::{GradedTrial, grade_file, grade_trial};
+use tack_evals::graders::verifier::{Verdicts, score_markdown, score_set};
 use tack_evals::record::{self, TrialRecord, TrialStatus};
 use tack_evals::report::{
     compare, compare_markdown, load_summary, summarize, warnings, write_summary,
 };
 use tack_evals::trial::{TrialOptions, run_and_record};
+use tack_evals::verifier_set::generate::{Options, check_set, generate};
+use tack_evals::verifier_set::{Expected, load_set, unconfirmed};
 use tack_evals::world::WorldOptions;
 use tack_evals::{load_tasks, locate_tack_bin};
 
@@ -81,6 +84,46 @@ enum Command {
         #[arg(required = true)]
         tasks: Vec<PathBuf>,
     },
+    /// Make the verifier set from the reference solutions of the regression tasks: good cases
+    /// (reference solutions and harmless variants) and mutants, each proved by running the
+    /// task's own checks. Every label starts unconfirmed. With --check, re-prove a written set
+    /// instead and exit 1 when a case no longer holds.
+    GenVerifierSet {
+        /// Task directories, or directories holding task directories.
+        #[arg(required = true)]
+        tasks: Vec<PathBuf>,
+        #[arg(long, default_value = "evals/tasks/verifier")]
+        out: PathBuf,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Cases that should merge.
+        #[arg(long, default_value_t = 15)]
+        good: usize,
+        /// Cases that should be rejected.
+        #[arg(long, default_value_t = 15)]
+        bad: usize,
+        #[arg(long)]
+        check: bool,
+    },
+    /// List the verifier-set labels no person has confirmed yet.
+    VerifierLabels {
+        #[arg(default_value = "evals/tasks/verifier")]
+        set: PathBuf,
+    },
+    /// Score verdicts (a JSON file of case id to `{prill, reviewer}` words) against the set's
+    /// labels: false approval and false rejection per verifier. Refuses a set with unconfirmed
+    /// labels unless --allow-unconfirmed.
+    ScoreVerifier {
+        #[arg(default_value = "evals/tasks/verifier")]
+        set: PathBuf,
+        #[arg(long)]
+        verdicts: PathBuf,
+        #[arg(long)]
+        allow_unconfirmed: bool,
+        /// Also write verifier-score.json and verifier-score.md here.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 /// How trials are run: which agent, with which binary, under which secrets.
@@ -128,6 +171,21 @@ fn main() -> ExitCode {
 fn run() -> Result<ExitCode> {
     match Cli::parse().command {
         Command::CheckSolutions { tasks } => check_solutions(&tasks),
+        Command::GenVerifierSet {
+            tasks,
+            out,
+            seed,
+            good,
+            bad,
+            check,
+        } => gen_verifier_set(&tasks, &out, &Options { seed, good, bad }, check),
+        Command::VerifierLabels { set } => verifier_labels(&set),
+        Command::ScoreVerifier {
+            set,
+            verdicts,
+            allow_unconfirmed,
+            out,
+        } => score_verifier(&set, &verdicts, allow_unconfirmed, out.as_deref()),
         Command::Run {
             tasks,
             out,
@@ -255,6 +313,91 @@ fn check_solutions(paths: &[PathBuf]) -> Result<ExitCode> {
     } else {
         ExitCode::from(1)
     })
+}
+
+fn gen_verifier_set(
+    paths: &[PathBuf],
+    out: &std::path::Path,
+    options: &Options,
+    check: bool,
+) -> Result<ExitCode> {
+    let tasks = load_tasks(paths)?;
+    if check {
+        let problems = check_set(out, &tasks)?;
+        for problem in &problems {
+            println!("STALE    {problem}");
+        }
+        if problems.is_empty() {
+            println!("ok       every case still holds");
+        }
+        return Ok(exit_code(!problems.is_empty()));
+    }
+    let written = generate(&tasks, out, options)?;
+    for case in &written {
+        println!(
+            "{}  {:<6}  {:<14}  {}",
+            case.id,
+            match case.label.expected {
+                Expected::Merge => "merge",
+                Expected::Reject => "reject",
+            },
+            case.label.family.as_deref().unwrap_or("-"),
+            case.task
+        );
+    }
+    println!(
+        "{} cases written to {}; every label is unconfirmed: see `tack-evals verifier-labels`",
+        written.len(),
+        out.display()
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+fn verifier_labels(set: &std::path::Path) -> Result<ExitCode> {
+    let cases = load_set(set)?;
+    let waiting = unconfirmed(&cases);
+    for case in &waiting {
+        println!(
+            "{}  expected {:<6}  {}\n    {}\n    {}",
+            case.id,
+            match case.label.expected {
+                Expected::Merge => "merge",
+                Expected::Reject => "reject",
+            },
+            case.reference.task,
+            case.diff_path().display(),
+            case.label.reason
+        );
+    }
+    println!(
+        "{} of {} labels unconfirmed; set `confirmed: true` in a case's label.yaml once its diff \
+         is read and `expected` is right",
+        waiting.len(),
+        cases.len()
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+fn score_verifier(
+    set: &std::path::Path,
+    verdicts: &std::path::Path,
+    allow_unconfirmed: bool,
+    out: Option<&std::path::Path>,
+) -> Result<ExitCode> {
+    let cases = load_set(set)?;
+    let verdicts: Verdicts = serde_json::from_slice(&std::fs::read(verdicts)?)?;
+    let score = score_set(&cases, &verdicts, allow_unconfirmed)?;
+    let text = score_markdown(&score);
+    print!("{text}");
+    if let Some(out) = out {
+        std::fs::create_dir_all(out)?;
+        std::fs::write(out.join("verifier-score.md"), &text)?;
+        std::fs::write(
+            out.join("verifier-score.json"),
+            serde_json::to_vec_pretty(&score)?,
+        )?;
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 struct Batch {

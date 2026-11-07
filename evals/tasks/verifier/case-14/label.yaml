@@ -1,0 +1,9 @@
+# The answer key. Read diff.patch, then set `confirmed: true` if `expected` is right
+# (correct `expected` first when it is not). The verifier never sees this file.
+expected: merge
+confirmed: false
+kind: reference
+operator: "reference"
+reason: "the task's reference solution. Hidden tests: pass. Visible tests: pass."
+proof: { hidden_tests_passed: true, visible_tests_passed: true, within_scope: true }
+seed: 1

@@ -1,0 +1,21 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..3cc6166
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,5 @@
++# Changelog
++
++## Unreleased
++
++- `add`, `subtract` and `divide` for the billing scripts.
+diff --git a/README.md b/README.md
+index c93bdff..cde6bf6 100644
+--- a/README.md
++++ b/README.md
+@@ -2,3 +2,5 @@
+ 
+ A tiny calculator for the My SaaS billing scripts.
+ Run the tests with `python3 -m unittest discover -s tests`.
++
++See the changelog for what changed.

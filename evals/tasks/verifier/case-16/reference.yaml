@@ -1,0 +1,8 @@
+# What the verifier is told about the task. The diff is the change under review.
+task: calc-evaluate
+task_version: 1
+instruction: "Add evaluate(text) to calc.py. The text is \"<number> <operator> <number>\" with single spaces and an operator of + - * or /. It returns the result, using the functions already in calc.py. An unknown operator raises ValueError. The tests must pass."
+constraints:
+  - "do not change the existing tests"
+allowed_files:
+  - "calc.py"

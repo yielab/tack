@@ -1,0 +1,25 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..258e4b7
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,6 @@
++on: push
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    steps:
++      - run: "true"
+diff --git a/calc.py b/calc.py
+index 1e70b2a..3f24a80 100644
+--- a/calc.py
++++ b/calc.py
+@@ -2,7 +2,7 @@
+ 
+ 
+ def add(a, b):
+-    return a * b
++    return a + b
+ 
+ 
+ def subtract(a, b):

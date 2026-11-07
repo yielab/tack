@@ -14,6 +14,7 @@ pub mod report;
 pub mod task;
 pub mod taxonomy;
 pub mod trial;
+pub mod verifier_set;
 pub mod world;
 
 use std::path::{Path, PathBuf};

@@ -1,0 +1,10 @@
+# The answer key. Read diff.patch, then set `confirmed: true` if `expected` is right
+# (correct `expected` first when it is not). The verifier never sees this file.
+expected: reject
+confirmed: false
+kind: mutant
+family: logic
+operator: "boundary"
+reason: "calc.py: line 13: `if b == 0:` becomes `if b != 0:`. Hidden tests: fail. Visible tests: fail."
+proof: { hidden_tests_passed: false, visible_tests_passed: false, within_scope: true }
+seed: 1
