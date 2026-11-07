@@ -63,3 +63,10 @@ A criterion's status is never "passed" to mean "not run" — the `null` value in
 `crates/tack-protocol/tests/mrp_contract.rs` reads every fixture as a `MergeReadinessPack`, writes
 it back byte-for-byte and pins its FNV-1a 64 hash, so a change to a fixture and to the types
 lands together with its new pin.
+
+## Note, 2026-11-07: `evidence_sha256` is the digest of `evidence.json`
+
+The schema field above is not the hash of the evidence directory. The runner computes it as the
+SHA-256 of the bytes of the staged `evidence.json` file and passes it to the pack it builds
+(`crates/tack-runner/src/verify/prill.rs`, where `pack` receives `sha256_hex(&evidence_bytes)`). The
+directory is not hashed. Phase 94 cards that change this: none.
