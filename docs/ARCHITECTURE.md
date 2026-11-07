@@ -32,8 +32,10 @@ crates/
 │                  connection to the docket daemon
 ├── tack-cli/      The single `tack` binary — runs the server (tack serve, the
 │                  composition root) and the CLI client
-└── tack-test-support/  Test helpers shared by the other crates' tests: setup_test_db(),
-                   seed, ControllableClock, fixtures
+├── tack-test-support/  Test helpers shared by the other crates' tests: setup_test_db(),
+│                  seed, ControllableClock, fixtures, a fake `claude`
+└── tack-evals/    Development harness (not released): runs a task through a real
+                   server and runner in a throwaway world and records what it left
 
 crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar; excluded
                        from this workspace (own Cargo.toml/lockfile) so Tauri's GTK/WebKit
