@@ -266,6 +266,7 @@ async fn ended(
         converse: None,
         thread: None,
         notice: None,
+        secrets: Default::default(),
     };
     let task: TaskView = serde_json::from_value(json!({
         "status": "failed", "failureKind": failure_kind, "reason": reason, "hops": [],

@@ -8958,3 +8958,149 @@ async fn the_fake_answers_the_task_list_as_the_constructed_files_do() {
     let (status, _) = ask(&fake, "GET", &format!("/tasks/{POD}?updatedSince=x"), None).await;
     assert_eq!(status, 400);
 }
+
+// ── Redaction: docket's text passes through the same scrub as a local agent's output ──────────
+
+/// A value the request carries into the run, which no timeline line, step, question or row may
+/// repeat.
+const SEEDED_SECRET: &str = "sk-seeded-0123456789abcdef";
+
+/// The request of `attempt-1` with [`SEEDED_SECRET`] among its environment.
+fn spec_with_secret(scene: &Scene) -> ExecutionSpec {
+    let mut spec = spec(scene, "attempt-1", 1);
+    spec.work.request.environment.insert(
+        "SERVICE_KEY".to_owned(),
+        tack_protocol::execution::EnvironmentValue {
+            value: Some(SEEDED_SECRET.to_owned()),
+            secret_reference: None,
+            additional: Default::default(),
+        },
+    );
+    spec
+}
+
+fn hop_saying(role: &str, summary: &str, assumption: &str) -> (String, Value) {
+    let mut payload = hop_finished(role, "local/qwen2.5-coder:7b", 0, json!("approve"));
+    payload["artifact"] = json!({
+        "summary": summary,
+        "verdict": "approve",
+        "assumptions": [assumption],
+        "questions": [],
+    });
+    ("hop_finished".to_owned(), payload)
+}
+
+#[tokio::test]
+async fn redact_a_secret_in_a_step_reads_redacted_and_its_benign_twin_is_untouched() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        after: vec![
+            hop_saying(
+                "implementer",
+                &format!("Logged in with {SEEDED_SECRET} and fixed it."),
+                &format!("The key {SEEDED_SECRET} stays valid."),
+            ),
+            hop_saying(
+                "reviewer",
+                "Logged in with the project key and fixed it.",
+                "The key stays valid.",
+            ),
+        ],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec_with_secret(&scene)).await;
+
+    let steps = outcome.terminal_reason["steps"].as_array().expect("steps");
+    assert_eq!(
+        steps[0]["summary"],
+        "Logged in with [REDACTED] and fixed it."
+    );
+    assert_eq!(
+        steps[0]["assumptions"],
+        json!(["The key [REDACTED] stays valid."])
+    );
+    assert_eq!(
+        steps[1]["summary"],
+        "Logged in with the project key and fixed it."
+    );
+    assert_eq!(steps[1]["assumptions"], json!(["The key stays valid."]));
+    let everything = serde_json::to_string(&outcome.terminal_reason).expect("JSON");
+    assert!(!everything.contains(SEEDED_SECRET), "{everything}");
+}
+
+#[tokio::test]
+async fn redact_a_secret_in_an_outward_call_reads_redacted_and_the_rest_of_the_call_is_shown() {
+    let fake = pods_fake().await;
+    let call =
+        format!("send_email\nto: ana@example.com\nsubject: Your order\n\nUse {SEEDED_SECRET}.\n");
+    fake.script(Script {
+        gate: outward(&call),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec_with_secret(&scene)).await;
+    let question = parked.question().await;
+    let shown = question.metadata["call"].as_str().expect("the call");
+    assert_eq!(
+        shown,
+        "send_email\nto: ana@example.com\nsubject: Your order\n\nUse [REDACTED].\n"
+    );
+    parked.answer(granting("approve_once")).await;
+    let (outcome, _) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+}
+
+#[tokio::test]
+async fn redact_a_secret_in_a_record_row_reads_redacted_and_the_other_rows_are_untouched() {
+    let fake = folder_fake().await;
+    fake.script(Script {
+        records: vec![
+            (
+                "leads".into(),
+                lead(&format!("{SEEDED_SECRET}@example.test")),
+            ),
+            ("leads".into(), lead("bo@example.test")),
+        ],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec_with_secret(&scene)).await;
+
+    let leads = &outcome.terminal_reason["records"][0];
+    let emails: Vec<_> = leads["rows"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|row| row["email"].as_str().expect("an email"))
+        .collect();
+    assert_eq!(emails, ["[REDACTED]@example.test", "bo@example.test"]);
+    let everything = serde_json::to_string(&outcome.terminal_reason).expect("JSON");
+    assert!(!everything.contains(SEEDED_SECRET), "{everything}");
+}
+
+#[tokio::test]
+async fn redact_the_token_docket_is_read_with_never_reaches_a_teams_activity() {
+    let fake = pods_fake().await;
+    let mut finished = hop_finished("reviewer", "local/qwen2.5-coder:7b", 0, json!("approve"));
+    finished["artifact"] = json!({
+        "summary": format!("The call used {}.", fake_docket::TOKEN),
+        "verdict": "approve",
+        "assumptions": [],
+        "questions": [],
+    });
+    fake.script(Script {
+        after: vec![("hop_finished".into(), finished)],
+        ..Script::default()
+    });
+    enqueue(&fake, &format!("{ITEM}/attempt-1")).await;
+    let scene = scene();
+    let tasks = activity_of(&adapter(&fake, &scene)).await;
+    let [task] = tasks.as_slice() else {
+        panic!("one task, got {tasks:?}");
+    };
+    assert_eq!(
+        task.finished_steps[0].summary.as_deref(),
+        Some("The call used [REDACTED].")
+    );
+}

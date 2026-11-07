@@ -17,6 +17,8 @@ use tack_protocol::execution::{
     ActivityState, ActivityTask, CurrentStep, FinishedStep, TeamActivity, WaitsOn,
 };
 
+use crate::harness::redact::SecretMaterial;
+
 use super::{
     client::Client,
     wire::{HealthAnswer, PodList, TaskHop, Tokens, TracePage},
@@ -75,6 +77,8 @@ pub(super) async fn read(
     cursors: &mut HashMap<String, TeamCursor>,
     now: DateTime<Utc>,
 ) -> Vec<TeamActivity> {
+    // These tasks belong to no run, so the only secret known here is the token docket is read with.
+    let secrets = client.secrets();
     let features = Features::of(client).await;
     let teams = match client.pods().await {
         Ok(reply) if reply.status == 200 => reply
@@ -87,10 +91,15 @@ pub(super) async fn read(
     for team in teams {
         let cursor = cursors.entry(team.name.clone()).or_default();
         match changed(client, &team.name, cursor, features, now).await {
-            Ok(tasks) if !tasks.is_empty() => report.push(TeamActivity {
-                team: team.name,
-                tasks,
-            }),
+            Ok(mut tasks) if !tasks.is_empty() => {
+                for step in tasks.iter_mut().flat_map(|task| &mut task.finished_steps) {
+                    scrub(step, &secrets);
+                }
+                report.push(TeamActivity {
+                    team: team.name,
+                    tasks,
+                });
+            }
             Ok(_) => {}
             Err(why) => {
                 tracing::warn!(team = team.name, %why, "a team's activity could not be read")
@@ -98,6 +107,16 @@ pub(super) async fn read(
         }
     }
     report
+}
+
+/// The words a finished step carries, scrubbed as a local agent's output is.
+fn scrub(step: &mut FinishedStep, secrets: &SecretMaterial) {
+    for text in [&mut step.verdict, &mut step.summary].into_iter().flatten() {
+        *text = secrets.scrub(text);
+    }
+    for text in step.assumptions.iter_mut().chain(&mut step.questions) {
+        *text = secrets.scrub(text);
+    }
 }
 
 /// A task as `GET /tasks/<pod>` sends it: the keys Tack reads.

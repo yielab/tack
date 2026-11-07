@@ -1915,7 +1915,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::ChecksChangedHoldsMerge, "codex", "GR9"),
     (ParityRule::ChecksChangedHoldsMerge, "opencode", "GR9"),
     (ParityRule::ChecksChangedHoldsMerge, "docket", "GR9"),
-    (ParityRule::Redaction, "docket", "GR18"),
 ];
 
 /// What is wrong with the matrix, one line per problem; empty when it holds.
