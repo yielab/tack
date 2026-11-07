@@ -417,7 +417,7 @@ where
                 outcome.terminal_reason =
                     serde_json::json!({ "code": "tree_changed_after_verification" });
                 evidence.terminal_reason = outcome.terminal_reason.clone();
-                Self::restage_evidence(&evidence_path, staged, &evidence);
+                restage_evidence(&evidence_path, staged, &evidence);
                 return None;
             }
             Ok(None) => return None,
@@ -440,118 +440,8 @@ where
         // uncommitted on top of it: the patch is exactly base..head.
         evidence.head_commit = Some(published.head_commit.clone());
         evidence.worktree_dirty = Some(false);
-        Self::restage_evidence(&evidence_path, staged, &evidence);
+        restage_evidence(&evidence_path, staged, &evidence);
         Some(published)
-    }
-
-    /// A run that may change the repository, whose agent reported success and whose captured
-    /// evidence holds no change, ends failed: nothing reached review. A run that is read-only
-    /// (`ExecutionRequestSnapshot::expects_change`), or that staged a plan, delivered what it
-    /// was asked for and stays succeeded. So does a run the harness says worked outside the
-    /// repository (a folder team): it was never going to leave a change here.
-    pub(super) fn fail_without_change(
-        spec: &ExecutionSpec,
-        scratch: &std::path::Path,
-        staged: &mut [serde_json::Value],
-        outcome: &mut HarnessOutcome,
-    ) {
-        if outcome.terminal_state != AttemptState::Succeeded
-            || outcome.terminal_reason["outside_repository"] == serde_json::Value::Bool(true)
-            || !spec.work.request.expects_change()
-            || staged
-                .iter()
-                .any(|entry| entry.get("kind").and_then(|kind| kind.as_str()) == Some("plan"))
-        {
-            return;
-        }
-        let evidence_path = scratch.join("src/evidence.json");
-        let Some(mut evidence) = std::fs::read(&evidence_path)
-            .ok()
-            .and_then(|bytes| {
-                serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok()
-            })
-            .filter(|evidence| {
-                evidence.captured
-                    && evidence.files.is_empty()
-                    && evidence
-                        .patch
-                        .as_ref()
-                        .is_none_or(|patch| patch.size_bytes == 0)
-            })
-        else {
-            return;
-        };
-        no_change_delivered(outcome);
-        evidence.terminal_reason = outcome.terminal_reason.clone();
-        Self::restage_evidence(&evidence_path, staged, &evidence);
-    }
-
-    /// A Planner or Researcher run (`ExecutionRequestSnapshot::writes_only_the_plan`) whose agent
-    /// reported success and whose captured evidence holds any file other than `tack-plan.json`
-    /// ends failed, naming the files: it was meant only to write a plan, and a change nobody
-    /// asked for is not accepted silently. A run that worked outside the repository is left as
-    /// it is.
-    pub(super) fn fail_beyond_the_plan(
-        spec: &ExecutionSpec,
-        scratch: &std::path::Path,
-        staged: &mut [serde_json::Value],
-        outcome: &mut HarnessOutcome,
-    ) {
-        if outcome.terminal_state != AttemptState::Succeeded
-            || outcome.terminal_reason["outside_repository"] == serde_json::Value::Bool(true)
-            || !spec.work.request.writes_only_the_plan()
-        {
-            return;
-        }
-        let evidence_path = scratch.join("src/evidence.json");
-        let Some(mut evidence) = std::fs::read(&evidence_path)
-            .ok()
-            .and_then(|bytes| {
-                serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok()
-            })
-            .filter(|evidence| evidence.captured)
-        else {
-            return;
-        };
-        let others: Vec<String> = evidence
-            .files
-            .iter()
-            .map(|file| file.path.clone())
-            .filter(|path| {
-                path != crate::evidence::PLAN_FILE
-                    && path != tack_protocol::conversation::REPLY_FILE
-            })
-            .collect();
-        if others.is_empty() {
-            return;
-        }
-        changed_beyond_the_plan(outcome, &others);
-        evidence.terminal_reason = outcome.terminal_reason.clone();
-        Self::restage_evidence(&evidence_path, staged, &evidence);
-    }
-
-    /// Writes `evidence` over the staged `evidence.json`, keeping the
-    /// manifest entry's size and digest true to the file.
-    fn restage_evidence(
-        evidence_path: &std::path::Path,
-        staged: &mut [serde_json::Value],
-        evidence: &crate::evidence::AttemptEvidence,
-    ) {
-        let bytes = serde_json::to_vec_pretty(evidence).unwrap_or_default();
-        let _ = std::fs::write(evidence_path, &bytes);
-        if let Some(entry) = staged
-            .iter_mut()
-            .find(|entry| entry.get("name").and_then(|name| name.as_str()) == Some("evidence.json"))
-        {
-            let written = entry
-                .get("staged_path")
-                .and_then(|path| path.as_str())
-                .is_some_and(|path| std::fs::write(path, &bytes).is_ok());
-            if written {
-                entry["size_bytes"] = bytes.len().into();
-                entry["sha256"] = crate::harness::sha256::sha256_hex(&bytes).into();
-            }
-        }
     }
 
     /// Stages the evidence of one attempt, or nothing when no transport is
@@ -979,5 +869,110 @@ where
             let _ = self.workspaces.cleanup(&spec.workspace);
         }
         Ok(cycle)
+    }
+}
+
+/// A run that may change the repository, whose agent reported success and whose captured
+/// evidence holds no change, ends failed: nothing reached review. A run that is read-only
+/// (`ExecutionRequestSnapshot::expects_change`), or that staged a plan, delivered what it
+/// was asked for and stays succeeded. So does a run the harness says worked outside the
+/// repository (a folder team): it was never going to leave a change here.
+pub fn fail_without_change(
+    spec: &ExecutionSpec,
+    scratch: &std::path::Path,
+    staged: &mut [serde_json::Value],
+    outcome: &mut HarnessOutcome,
+) {
+    if outcome.terminal_state != AttemptState::Succeeded
+        || outcome.terminal_reason["outside_repository"] == serde_json::Value::Bool(true)
+        || !spec.work.request.expects_change()
+        || staged
+            .iter()
+            .any(|entry| entry.get("kind").and_then(|kind| kind.as_str()) == Some("plan"))
+    {
+        return;
+    }
+    let evidence_path = scratch.join("src/evidence.json");
+    let Some(mut evidence) = std::fs::read(&evidence_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok())
+        .filter(|evidence| {
+            evidence.captured
+                && evidence.files.is_empty()
+                && evidence
+                    .patch
+                    .as_ref()
+                    .is_none_or(|patch| patch.size_bytes == 0)
+        })
+    else {
+        return;
+    };
+    no_change_delivered(outcome);
+    evidence.terminal_reason = outcome.terminal_reason.clone();
+    restage_evidence(&evidence_path, staged, &evidence);
+}
+
+/// A Planner or Researcher run (`ExecutionRequestSnapshot::writes_only_the_plan`) whose agent
+/// reported success and whose captured evidence holds any file other than `tack-plan.json`
+/// ends failed, naming the files: it was meant only to write a plan, and a change nobody
+/// asked for is not accepted silently. A run that worked outside the repository is left as
+/// it is.
+pub fn fail_beyond_the_plan(
+    spec: &ExecutionSpec,
+    scratch: &std::path::Path,
+    staged: &mut [serde_json::Value],
+    outcome: &mut HarnessOutcome,
+) {
+    if outcome.terminal_state != AttemptState::Succeeded
+        || outcome.terminal_reason["outside_repository"] == serde_json::Value::Bool(true)
+        || !spec.work.request.writes_only_the_plan()
+    {
+        return;
+    }
+    let evidence_path = scratch.join("src/evidence.json");
+    let Some(mut evidence) = std::fs::read(&evidence_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok())
+        .filter(|evidence| evidence.captured)
+    else {
+        return;
+    };
+    let others: Vec<String> = evidence
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .filter(|path| {
+            path != crate::evidence::PLAN_FILE && path != tack_protocol::conversation::REPLY_FILE
+        })
+        .collect();
+    if others.is_empty() {
+        return;
+    }
+    changed_beyond_the_plan(outcome, &others);
+    evidence.terminal_reason = outcome.terminal_reason.clone();
+    restage_evidence(&evidence_path, staged, &evidence);
+}
+
+/// Writes `evidence` over the staged `evidence.json`, keeping the
+/// manifest entry's size and digest true to the file.
+fn restage_evidence(
+    evidence_path: &std::path::Path,
+    staged: &mut [serde_json::Value],
+    evidence: &crate::evidence::AttemptEvidence,
+) {
+    let bytes = serde_json::to_vec_pretty(evidence).unwrap_or_default();
+    let _ = std::fs::write(evidence_path, &bytes);
+    if let Some(entry) = staged
+        .iter_mut()
+        .find(|entry| entry.get("name").and_then(|name| name.as_str()) == Some("evidence.json"))
+    {
+        let written = entry
+            .get("staged_path")
+            .and_then(|path| path.as_str())
+            .is_some_and(|path| std::fs::write(path, &bytes).is_ok());
+        if written {
+            entry["size_bytes"] = bytes.len().into();
+            entry["sha256"] = crate::harness::sha256::sha256_hex(&bytes).into();
+        }
     }
 }
