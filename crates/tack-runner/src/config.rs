@@ -179,9 +179,26 @@ pub struct RunnerConfig {
     pub environment: BTreeMap<String, EnvValue>,
     /// The `[docket]` table: where this runner reaches docket's operator API.
     pub docket: DocketConfig,
+    /// The `[sandbox]` table: whether an agent that finds no sandbox here may run.
+    pub sandbox: SandboxConfig,
     /// The environment the runner process was started with, the one place harnesses, the verifier
     /// and the install read it from. Empty until the environment source supplies it.
     pub process: ProcessEnv,
+}
+
+/// The `[sandbox]` table.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SandboxConfig {
+    /// Whether Claude Code, opencode and Codex need `bwrap` to run here, since the first two bring
+    /// no sandbox of their own. With `false` they run without one, asking before each action.
+    pub required: bool,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self { required: true }
+    }
 }
 
 /// The `[docket]` table. docket runs as a daemon beside the runner and the
@@ -352,6 +369,7 @@ struct FileConfig {
     secrets: Option<SecretsConfig>,
     environment: Option<BTreeMap<String, EnvValue>>,
     docket: Option<DocketConfig>,
+    sandbox: Option<SandboxConfig>,
 }
 
 impl RunnerConfig {
@@ -367,6 +385,7 @@ impl RunnerConfig {
             secrets: SecretsConfig::default(),
             environment: BTreeMap::new(),
             docket: DocketConfig::default(),
+            sandbox: SandboxConfig::default(),
             process: ProcessEnv::default(),
         }
     }
@@ -413,6 +432,9 @@ impl RunnerConfig {
             }
             if let Some(docket) = file.docket {
                 config.docket = docket;
+            }
+            if let Some(sandbox) = file.sandbox {
+                config.sandbox = sandbox;
             }
             config.apply(ConfigOverrides {
                 api_base_url: file.api_base_url,

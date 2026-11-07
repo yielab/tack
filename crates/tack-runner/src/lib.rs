@@ -26,7 +26,7 @@ pub use client::{RunnerProtocolClient, UnavailableProtocolClient};
 pub use clock::{Clock, SystemClock};
 pub use config::{
     ConfigOverrides, EnrollmentCredential, PlatformStore, ProcessEnv, RunnerConfig,
-    RunnerConfigSources, VerifyConfig, VerifyKind,
+    RunnerConfigSources, SandboxConfig, VerifyConfig, VerifyKind,
 };
 pub use error::{ConfigError, RunnerError};
 pub use filesystem::{LocalFilesystem, RunnerFilesystem};

@@ -59,12 +59,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
         login: &[LOGIN_FILE],
     }],
     parity: &[
-        (
-            ParityRule::SandboxOrNoRun,
-            ParityCell::missing(
-                "GR2: bwrap only when installed, otherwise the run goes ahead unsandboxed",
-            ),
-        ),
+        (ParityRule::SandboxOrNoRun, ParityCell::Runner),
         (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
         (
             ParityRule::EgressByAllowList,

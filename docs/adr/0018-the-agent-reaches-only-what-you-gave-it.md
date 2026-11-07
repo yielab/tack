@@ -102,6 +102,11 @@ says so. The maintainer decided on 2026-11-07 that a containment layer is requir
 The honesty half of the decision stays: the run dialog's Sandbox line names who contains the agent.
 Phase 94 card that changes this: GR2.
 
+Built by GR2 (2026-11-07): `[sandbox] required` is `true` unless the runner's file says otherwise;
+Claude Code, opencode and Codex without `bwrap` report the probe error "install bubblewrap" and are
+refused before spawn; with `required = false` they run as `ask`. The probe carries `sandbox_required`,
+which the run dialog's Sandbox line, the Agents page and `tack runner doctor` read.
+
 ## Note, 2026-11-07: web access is a mode per profile (decision 12)
 
 Decision 12 renames "Allow network" to "Web tools" and keeps it advisory. The maintainer decided on

@@ -1421,15 +1421,22 @@ impl<G: HarnessGrammar> HarnessGrammar for Recording<G> {
     }
 }
 
-/// What a real agent's grammar builds for a request that asks for `approvals`, on a machine whose
-/// sandbox is `bwrap` or none: its command line, its environment, and whether the runner says it
-/// forced the run to ask.
-async fn invocation_for<G: HarnessGrammar>(
+/// A real agent's grammar under the shim program, on a machine whose sandbox is `bwrap` or none
+/// and whose runner requires one or not, with a request for `approvals` and what the grammar built.
+struct Shim<G: HarnessGrammar> {
+    harness: LocalProcessHarness<Recording<G>>,
+    spec: ExecutionSpec,
+    seen: std::sync::Arc<std::sync::Mutex<Built>>,
+    _dir: tempfile::TempDir,
+}
+
+fn shim<G: HarnessGrammar>(
     grammar: G,
     kind: &'static str,
     approvals: Option<Approvals>,
     with_bwrap: bool,
-) -> (Vec<String>, BTreeMap<String, String>, Option<String>) {
+    required: bool,
+) -> Shim<G> {
     let dir = root("approvals-without-a-sandbox");
     let (bin, home, workspace) = (
         dir.path().join("bin"),
@@ -1462,7 +1469,7 @@ async fn invocation_for<G: HarnessGrammar>(
                 .expect("a registered local agent"),
         )
     }));
-    let machine = sandbox::detect(Some(bin.as_os_str()), Some(&home));
+    let machine = sandbox::detect(Some(bin.as_os_str()), Some(&home)).requiring(required);
     assert_eq!(
         machine.kind,
         if with_bwrap {
@@ -1493,10 +1500,32 @@ async fn invocation_for<G: HarnessGrammar>(
     spec.work.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(kind);
     spec.work.request.permission_policy.network = true;
     spec.work.request.permission_policy.approvals = approvals;
-    let handle = harness.start(&spec).await.expect("the run starts");
-    let forced = harness.approvals_forced_ask(&handle).await;
-    harness.cancel(&handle).await.expect("cancel");
-    let (args, env) = seen.lock().unwrap().clone();
+    Shim {
+        harness,
+        spec,
+        seen,
+        _dir: dir,
+    }
+}
+
+/// What a real agent's grammar builds for a request that asks for `approvals`, on a machine whose
+/// sandbox is `bwrap` or none (the runner not requiring one): its command line, its environment,
+/// and whether the runner says it forced the run to ask.
+async fn invocation_for<G: HarnessGrammar>(
+    grammar: G,
+    kind: &'static str,
+    approvals: Option<Approvals>,
+    with_bwrap: bool,
+) -> (Vec<String>, BTreeMap<String, String>, Option<String>) {
+    let shim = shim(grammar, kind, approvals, with_bwrap, false);
+    let handle = shim
+        .harness
+        .start(&shim.spec)
+        .await
+        .expect("the run starts");
+    let forced = shim.harness.approvals_forced_ask(&handle).await;
+    shim.harness.cancel(&handle).await.expect("cancel");
+    let (args, env) = shim.seen.lock().unwrap().clone();
     (args, env, forced)
 }
 
@@ -1582,6 +1611,87 @@ async fn ask_without_a_sandbox_says_nothing_extra() {
     )
     .await;
     assert_eq!(forced, None);
+}
+
+/// With the requirement on (the default), an agent on a machine with no `bwrap` does not run:
+/// its probe says why, so nothing schedules it, and a request that reaches it is refused.
+async fn does_not_run_without_bwrap<G: HarnessGrammar>(grammar: G, kind: &'static str) {
+    let shim = shim(grammar, kind, Some(Approvals::Auto), false, true);
+    let probe = tack_runner::harness::HarnessProbe::probe(&shim.harness).await;
+    let reason = probe
+        .probe_error
+        .unwrap_or_else(|| panic!("{kind}: the probe says it may not run"));
+    assert!(
+        reason.contains("install bubblewrap") && reason.contains("does not run here"),
+        "{kind}: {reason}"
+    );
+    assert_eq!(probe.additional["sandbox"], "none", "{kind}");
+    assert_eq!(probe.additional["sandbox_required"], true, "{kind}");
+    match shim.harness.start(&shim.spec).await {
+        Err(HarnessError::Rejected { reason: refused }) => assert_eq!(refused, reason, "{kind}"),
+        other => panic!("{kind}: expected a refusal before spawn, got {other:?}"),
+    }
+    assert_eq!(*shim.seen.lock().unwrap(), Built::default(), "{kind}");
+}
+
+#[tokio::test]
+async fn a_required_sandbox_that_is_missing_stops_every_local_agent() {
+    does_not_run_without_bwrap(ClaudeCodeGrammar, "claude-code").await;
+    does_not_run_without_bwrap(CodexGrammar, "codex").await;
+    does_not_run_without_bwrap(OpencodeGrammar, "opencode").await;
+}
+
+/// The twin: where `bwrap` is there, the requirement changes nothing and the run is `auto`.
+#[tokio::test]
+async fn a_required_sandbox_that_is_present_runs_as_asked() {
+    let shim = shim(
+        ClaudeCodeGrammar,
+        "claude-code",
+        Some(Approvals::Auto),
+        true,
+        true,
+    );
+    let probe = tack_runner::harness::HarnessProbe::probe(&shim.harness).await;
+    assert_eq!(probe.probe_error, None);
+    assert_eq!(probe.additional["sandbox"], "bwrap");
+    let handle = shim
+        .harness
+        .start(&shim.spec)
+        .await
+        .expect("the run starts");
+    assert_eq!(shim.harness.approvals_forced_ask(&handle).await, None);
+    shim.harness.cancel(&handle).await.expect("cancel");
+}
+
+/// The explicit opt-out: with no `bwrap` the agent runs, as `ask`, and the report and the run's
+/// event both say the requirement is off.
+#[tokio::test]
+async fn opting_out_of_the_sandbox_runs_the_agent_as_ask() {
+    let has = |args: &[String], flag: &str| args.iter().any(|arg| arg == flag);
+    let shim = shim(
+        ClaudeCodeGrammar,
+        "claude-code",
+        Some(Approvals::Auto),
+        false,
+        false,
+    );
+    let probe = tack_runner::harness::HarnessProbe::probe(&shim.harness).await;
+    assert_eq!(probe.probe_error, None);
+    assert_eq!(probe.additional["sandbox"], "none");
+    assert_eq!(probe.additional["sandbox_required"], false);
+    let handle = shim
+        .harness
+        .start(&shim.spec)
+        .await
+        .expect("the run starts");
+    let forced = shim.harness.approvals_forced_ask(&handle).await;
+    assert!(
+        forced.is_some_and(|why| why.contains("does not require one")),
+        "the event says why it asks"
+    );
+    shim.harness.cancel(&handle).await.expect("cancel");
+    let (args, _) = shim.seen.lock().unwrap().clone();
+    assert!(!has(&args, "bypassPermissions") && has(&args, "--permission-prompt-tool"));
 }
 
 const MODEL_CREDENTIAL_VARIABLES: [&str; 7] = [
@@ -1997,9 +2107,6 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
 
 /// `(rule, agent, card)` for each cell that is not met today and that a card will meet.
 const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
-    (ParityRule::SandboxOrNoRun, "claude-code", "GR2"),
-    (ParityRule::SandboxOrNoRun, "codex", "GR2"),
-    (ParityRule::SandboxOrNoRun, "opencode", "GR2"),
     (ParityRule::EgressByAllowList, "claude-code", "GR5"),
     (ParityRule::EgressByAllowList, "codex", "GR5"),
     (ParityRule::EgressByAllowList, "opencode", "GR5"),

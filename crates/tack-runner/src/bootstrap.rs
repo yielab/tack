@@ -85,11 +85,10 @@ pub async fn build_runtime_with_active(
         &limits.harness_process,
         &staging_root,
         &secrets,
-        &config.secrets.request_may_reference,
         &own_environment,
-        &config.docket,
-        &config.process,
+        &config,
     );
+    warn_if_not_contained(&config);
     // The adapters that run attempts are also the ones that remember where each team's tasks
     // were last read, so the activity is read through these and not through a fresh discovery.
     let activity_adapters = adapters.clone();
@@ -117,10 +116,8 @@ pub async fn build_runtime_with_active(
                     &limits,
                     &staging_root,
                     &secrets,
-                    &config.secrets.request_may_reference,
                     &own_environment,
-                    &config.docket,
-                    &config.process,
+                    &config,
                 );
                 let mut capabilities =
                     report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts)
@@ -276,17 +273,14 @@ pub async fn probe(
     staging_root: &Path,
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
-    docket: &crate::config::DocketConfig,
-    env: &crate::config::ProcessEnv,
+    config: &RunnerConfig,
 ) -> DiscoveryReport {
     let (adapters, missing_harnesses) = crate::harness::discover(
         process_limits,
         staging_root,
         secrets,
-        &[],
         &BTreeMap::new(),
-        docket,
-        env,
+        config,
     );
     let capabilities = report_capabilities(&adapters, &SystemClock, 1).await;
     let declared = adapters.declared_capabilities();
@@ -295,6 +289,29 @@ pub async fn probe(
         missing_harnesses,
         secret_backend: secrets.backend(),
         declared,
+    }
+}
+
+/// Says once, at start, what a machine without `bwrap` costs: Claude Code, opencode and Codex do
+/// not run (the default), or run asking before each action (`[sandbox] required = false`).
+fn warn_if_not_contained(config: &RunnerConfig) {
+    let env = &config.process;
+    let machine =
+        crate::harness::sandbox::detect(env.search_path().as_deref(), env.home().as_deref());
+    if !machine.found_none() {
+        return;
+    }
+    if config.sandbox.required {
+        tracing::warn!(
+            "bubblewrap (bwrap) is not installed: Claude Code, opencode and Codex do not run on this \
+             computer until it is; install it, or set `required = false` under [sandbox] to run them \
+             asking before each action"
+        );
+    } else {
+        tracing::warn!(
+            "bubblewrap (bwrap) is not installed and [sandbox] required is false: Claude Code, \
+             opencode and Codex run uncontained and ask before each action"
+        );
     }
 }
 

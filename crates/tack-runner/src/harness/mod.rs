@@ -439,13 +439,14 @@ pub fn discover(
     limits: &process::ProcessLimits,
     staging_root: &Path,
     secrets: &SecretStore,
-    request_may_reference: &[String],
     own_environment: &BTreeMap<String, String>,
-    docket: &crate::config::DocketConfig,
-    env: &crate::config::ProcessEnv,
+    config: &crate::config::RunnerConfig,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
-    let sandbox = sandbox::detect(env.search_path().as_deref(), env.home().as_deref());
+    let (docket, env) = (&config.docket, &config.process);
+    let request_may_reference = config.secrets.request_may_reference.as_slice();
+    let sandbox = sandbox::detect(env.search_path().as_deref(), env.home().as_deref())
+        .requiring(config.sandbox.required);
     let machine = (
         &sandbox,
         limits,
