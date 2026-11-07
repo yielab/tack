@@ -34,6 +34,37 @@ describe('MergeButton', () => {
     expect(done).toHaveBeenCalled();
   });
 
+  it('merge_over_a_pack_that_says_merge_asks_for_no_reason_and_sends_an_empty_body', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ merged: true }));
+    const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: true, pack_decision: 'merge' }} />);
+    expect(el.querySelector('[data-testid="merge-over-reject"]')).toBeNull();
+    el.querySelector('button')!.click();
+    await flush();
+    expect((spy.mock.calls[0][1] as RequestInit).body).toBe('{}');
+  });
+
+  it('merge_over_a_reject_needs_a_written_reason_and_sends_it', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ merged: true }));
+    const done = vi.fn();
+    const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: true, pack_decision: 'reject' }} onMerged={done} />);
+    expect(el.querySelector('[data-testid="merge-over-reject"]')).not.toBeNull();
+    const b = el.querySelector('button')!;
+    expect(b.disabled).toBe(true);
+    b.click();
+    await flush();
+    expect(spy).not.toHaveBeenCalled();
+
+    const input = el.querySelector('input, textarea') as HTMLInputElement;
+    input.value = '  The reviewer misread the migration  ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    expect(b.disabled).toBe(false);
+    b.click();
+    await flush();
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ reason: 'The reviewer misread the migration' });
+    expect(done).toHaveBeenCalled();
+  });
+
   it('the_merge_button_is_disabled_with_its_reason', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
     const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: false, reason: 'No branch was pushed' }} />);

@@ -247,7 +247,9 @@ export interface paths {
          * `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
          *     attempt's pull request at its head commit, opening the pull request first when
          *     it is missing; a refusal is a `409` carrying the reason, already recorded on
-         *     the item.
+         *     the item. When the pack recommends `reject` the person still decides, but writes
+         *     why: the press is a `400` without a `reason`, and a merge that goes through is
+         *     kept as the attempt's accepting review, with that reason.
          */
         post: operations["merge_attempt"];
         delete?: never;
@@ -4038,6 +4040,7 @@ export interface components {
         AttemptMerge: {
             enabled: boolean;
             merged?: null | components["schemas"]["MergedBy"];
+            pack_decision?: null | components["schemas"]["MergeDecision"];
             /**
              * @description Why the button is disabled; when it is enabled, what held its last press
              *     (CI is read on the press, not to draw the button).
@@ -5786,6 +5789,11 @@ export interface components {
             /** Format: int64 */
             exit?: number | null;
             ok?: boolean | null;
+        };
+        /** @description The Merge button's press. */
+        MergeAttemptRequest: {
+            /** @description Required when the attempt's pack recommends `reject`; a blank one counts as none. */
+            reason?: string | null;
         };
         /**
          * @description Merge recommendation.
@@ -8384,7 +8392,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeAttemptRequest"];
+            };
+        };
         responses: {
             /** @description Merged; carries the merge commit's sha */
             200: {
@@ -8393,6 +8405,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description invalid_request (the pack recommends reject and no reason was written) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                 };
             };
             /** @description not_found */
