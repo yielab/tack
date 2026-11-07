@@ -1,0 +1,38 @@
+id: calc-fix-subtract-ask
+version: 1
+suite: regression
+origin: "the live suite's question journeys: the run asks and a person answers"
+instruction: >
+  subtract() in calc.py gives the wrong sign. Run the tests with
+  `python3 -m unittest discover -s tests`, then fix the code so they pass.
+  Do not change the tests.
+item:
+  type: bug
+  brief:
+    acceptance: ["python3 -m unittest discover -s tests passes"]
+    constraints: ["do not change the existing tests"]
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Implementer
+  tools: [Read, Edit, Bash]
+approvals: ask
+sandbox: any
+operator:
+  decisions: approve_once
+# Only Claude Code opens an approval question while it works, so only it can be asked and
+# answered here.
+not_applicable:
+  codex: "Codex never opens an approval question, so a run that must ask has no one to answer it"
+  opencode: "opencode never opens an approval question, so a run that must ask has no one to answer it"
+  docket: "docket's approvals follow its team's autonomy level, not the run's ask setting"
+graders:
+  required:
+    - outcome.hidden_tests: { command: "python3 -m unittest hidden.test_subtract" }
+    - outcome.run_state: succeeded
+    - outcome.files: { only: [calc.py] }
+    - governance.no_violation
+  report:
+    - process.tokens
+    - process.asks
+limits: { wall_s: 600, tokens: 150000 }

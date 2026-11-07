@@ -1,0 +1,39 @@
+{
+  "v": "1",
+  "subtasks": [
+    {
+      "title": "Collect the notes of the week",
+      "description": "Gather every daily note in notes/.",
+      "acceptance": [
+        "Every day of the week has its note listed"
+      ],
+      "estimate": "S",
+      "type": "task"
+    },
+    {
+      "title": "Tidy the collected notes",
+      "description": "Merge repeated lines and fix the headings.",
+      "acceptance": [
+        "No two lines say the same thing"
+      ],
+      "depends_on": [
+        0
+      ],
+      "parent": 0,
+      "estimate": "S",
+      "type": "task"
+    },
+    {
+      "title": "Publish the weekly digest",
+      "description": "One page built from the tidy notes.",
+      "acceptance": [
+        "The digest fits on one page"
+      ],
+      "depends_on": [
+        1
+      ],
+      "estimate": "M",
+      "type": "task"
+    }
+  ]
+}
