@@ -148,7 +148,9 @@ fn take_exam(task: &LoadedTask, world: &World, patch: Option<&[u8]>) -> Result<O
     };
     let tree = world.root.join("exam-tree");
     exam::export_revision(&world.repo, &world.base_revision, &tree)?;
-    if let Some(patch) = patch
+    // No patch is an agent that changed nothing: the exam judges the seed, which is the right
+    // answer for a review or a plan and the wrong one for a fix.
+    if let Some(patch) = patch.filter(|patch| !patch.iter().all(u8::is_ascii_whitespace))
         && let Err(failure) = exam::apply_patch(&tree, patch)
     {
         // Work that does not apply is work that fails the exam, and says why.

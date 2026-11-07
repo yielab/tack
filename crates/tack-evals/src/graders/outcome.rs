@@ -65,7 +65,15 @@ pub fn files(args: &Value, input: &GradeInput<'_>) -> CheckResult {
         return CheckResult::error(NAME, "the frozen run is missing");
     };
     // No patch is no change, which `only` allows and `changed` does not.
-    let touched = frozen.changed_files().unwrap_or_default();
+    // Running the tests leaves bytecode caches; they are not the agent's work.
+    let touched: Vec<String> = frozen
+        .changed_files()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|path| {
+            !path.split('/').any(|part| part == "__pycache__") && !path.ends_with(".pyc")
+        })
+        .collect();
     let matches = |pattern: &str, path: &str| {
         if let Some(prefix) = pattern.strip_suffix('/') {
             path.starts_with(&format!("{prefix}/"))
