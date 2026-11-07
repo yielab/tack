@@ -111,6 +111,23 @@ pub struct AttemptEvidence {
     pub usage: serde_json::Value,
 }
 
+/// The family of a model id, read the way docket reads it: the provider before the first `/` of a
+/// `provider/model` id. A bare id names no provider in its own text, so the two makers whose bare
+/// ids a local CLI reports are read from the name (`claude-*`, `gpt-*`). `None` when neither
+/// applies: the evidence then carries no family, as it always did.
+pub fn model_family(model: &str) -> Option<&str> {
+    if let Some((provider, _)) = model.split_once('/') {
+        return (!provider.is_empty()).then_some(provider);
+    }
+    if model.starts_with("claude-") {
+        Some("anthropic")
+    } else if model.starts_with("gpt-") {
+        Some("openai")
+    } else {
+        None
+    }
+}
+
 /// The file the Planner profile writes at the workspace root.
 pub const PLAN_FILE: &str = "tack-plan.json";
 /// Written beside `src/` in the scratch directory (never staged) when
