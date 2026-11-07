@@ -2630,3 +2630,303 @@ mod egress {
         }
     }
 }
+
+/// The install of a project's dependencies runs under the same rules as the agent after it.
+mod install {
+    use std::path::{Path, PathBuf};
+
+    use tack_protocol::prepare::{PrepareSetting, REPLACE_REFUSED};
+    use tack_runner::{
+        ProcessEnv,
+        harness::sandbox::{self, Sandbox, SandboxKind},
+        prepare::{Rules, prepare},
+    };
+
+    use super::root;
+
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+    /// A runner's state directory, a real home, a checkout holding a lockfile and a directory of
+    /// stand-in tools, all under one temporary directory.
+    struct Machine {
+        _dir: tempfile::TempDir,
+        home: PathBuf,
+        state: PathBuf,
+        checkout: PathBuf,
+        tools: PathBuf,
+    }
+
+    impl Machine {
+        fn new(label: &str) -> Self {
+            let dir = root(label);
+            let base = dir.path().to_path_buf();
+            let (home, state, tools) = (base.join("home"), base.join("state"), base.join("tools"));
+            let checkout = state.join("workspaces/a1");
+            for path in [&home, &checkout, &tools] {
+                std::fs::create_dir_all(path).expect("directory");
+            }
+            std::fs::write(checkout.join("package-lock.json"), "{}").expect("lockfile");
+            Self {
+                _dir: dir,
+                home,
+                state,
+                checkout,
+                tools,
+            }
+        }
+
+        /// A tool called `name` that runs `script`.
+        fn tool(&self, name: &str, script: &str) {
+            let path = self.tools.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("tool");
+            std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .expect("executable");
+        }
+
+        /// The runner's environment: its home, a `PATH` holding the tools, and a variable that
+        /// holds a credential no install needs.
+        fn env(&self) -> ProcessEnv {
+            ProcessEnv::from_pairs([
+                ("PATH", format!("{}:/usr/bin:/bin", self.tools.display())),
+                ("HOME", self.home.display().to_string()),
+                (
+                    "AWS_SECRET_ACCESS_KEY",
+                    "the-runners-own-credential".to_owned(),
+                ),
+            ])
+        }
+
+        async fn install(&self, rules: &Rules) -> Result<bool, String> {
+            prepare(
+                &self.checkout,
+                &PrepareSetting::Detect,
+                &self.state,
+                LIMIT,
+                &self.env(),
+                rules,
+            )
+            .await
+            .map_err(|error| error.to_string())
+        }
+
+        fn seen(&self, file: &str) -> String {
+            std::fs::read_to_string(self.checkout.join(file)).unwrap_or_default()
+        }
+
+        /// The sandbox of this machine under the administrator's `[sandbox]` table, or `None`
+        /// (unless `TACK_REQUIRE_BWRAP=1`, which makes that a failure) without `bwrap`.
+        fn sandbox(&self, required: bool) -> Option<Sandbox> {
+            let path = ProcessEnv::from_process().search_path();
+            let found = sandbox::detect(path.as_deref(), Some(&self.home));
+            if found.kind != SandboxKind::Bwrap {
+                if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+                    panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
+                }
+                println!("skipped: bwrap is not on PATH");
+                return None;
+            }
+            Some(found.requiring(required))
+        }
+
+        /// A machine with no `bwrap` at all.
+        fn without_sandbox(&self, required: bool) -> Sandbox {
+            sandbox::detect(Some(self.state.as_os_str()), Some(&self.home)).requiring(required)
+        }
+    }
+
+    /// What a package's `postinstall` does: writes into the home it is given and looks for the
+    /// runner's credential, then installs.
+    const POSTINSTALL: &str = "echo owned > \"$HOME/pwned\"; \
+        echo \"$AWS_SECRET_ACCESS_KEY\" > seen-credential; \
+        mkdir node_modules && echo ok > node_modules/installed";
+
+    #[tokio::test]
+    async fn a_postinstall_cannot_reach_the_real_home_or_the_runners_credentials() {
+        let machine = Machine::new("install-home");
+        machine.tool("npm", POSTINSTALL);
+        let Some(sandbox) = machine.sandbox(true) else {
+            return;
+        };
+
+        // Without the sandbox the same script does reach the home: the control for the checks below.
+        let open = Rules::default();
+        assert_eq!(machine.install(&open).await, Ok(true));
+        assert!(
+            machine.home.join("pwned").exists(),
+            "the control reaches the home"
+        );
+        std::fs::remove_file(machine.home.join("pwned")).expect("clean the control");
+        std::fs::remove_dir_all(machine.checkout.join("node_modules")).expect("clean");
+        std::fs::remove_dir_all(machine.state.join("prepare-cache")).expect("clean");
+        std::fs::remove_file(machine.checkout.join("seen-credential")).expect("clean");
+
+        let rules = Rules {
+            sandbox,
+            ..Rules::default()
+        };
+        assert_eq!(machine.install(&rules).await, Ok(true));
+        assert!(
+            !machine.home.join("pwned").exists(),
+            "the install wrote into the real home"
+        );
+        assert_eq!(
+            machine.seen("seen-credential").trim(),
+            "",
+            "the install saw a variable outside its allow-list"
+        );
+        assert_eq!(
+            machine.seen("node_modules/installed").trim(),
+            "ok",
+            "the install still installs"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_install_goes_through_the_proxy_only_when_the_runner_enforces_web_access() {
+        let machine = Machine::new("install-proxy");
+        machine.tool(
+            "npm",
+            "echo \"$HTTPS_PROXY\" > seen-proxy; mkdir node_modules",
+        );
+        let Some(sandbox) = machine.sandbox(true) else {
+            return;
+        };
+        let mut rules = Rules {
+            sandbox,
+            ..Rules::default()
+        };
+        assert_eq!(machine.install(&rules).await, Ok(true));
+        assert_eq!(machine.seen("seen-proxy").trim(), "");
+
+        std::fs::remove_dir_all(machine.checkout.join("node_modules")).expect("clean");
+        std::fs::remove_dir_all(machine.state.join("prepare-cache")).expect("clean");
+        rules.enforce_egress = true;
+        assert_eq!(machine.install(&rules).await, Ok(true));
+        assert!(
+            machine.seen("seen-proxy").starts_with("http://127.0.0.1:"),
+            "{}",
+            machine.seen("seen-proxy")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_command_the_board_replaced_is_refused_with_a_reason_unless_the_runner_allows_it() {
+        let machine = Machine::new("install-replace");
+        let replace = PrepareSetting::Replace {
+            command: "touch ran".to_owned(),
+        };
+        let run = |rules: Rules| {
+            let (machine, replace) = (&machine, replace.clone());
+            async move {
+                prepare(
+                    &machine.checkout,
+                    &replace,
+                    &machine.state,
+                    LIMIT,
+                    &machine.env(),
+                    &rules,
+                )
+                .await
+                .map_err(|error| error.to_string())
+            }
+        };
+
+        assert_eq!(run(Rules::default()).await, Err(REPLACE_REFUSED.to_owned()));
+        assert!(!machine.checkout.join("ran").exists(), "the command ran");
+
+        let allowed = Rules {
+            board_may_replace: true,
+            ..Rules::default()
+        };
+        assert_eq!(run(allowed).await, Ok(true));
+        assert!(machine.checkout.join("ran").exists());
+    }
+
+    #[tokio::test]
+    async fn a_machine_with_no_sandbox_installs_only_where_the_administrator_turned_the_requirement_off()
+     {
+        let machine = Machine::new("install-optout");
+        machine.tool("npm", "mkdir node_modules");
+
+        let required = Rules {
+            sandbox: machine.without_sandbox(true),
+            ..Rules::default()
+        };
+        let reason = machine.install(&required).await.expect_err("refused");
+        assert!(reason.contains("no sandbox"), "{reason}");
+        assert!(!machine.checkout.join("node_modules").exists());
+
+        let opted_out = Rules {
+            sandbox: machine.without_sandbox(false),
+            ..Rules::default()
+        };
+        assert!(opted_out.unsandboxed() && !required.unsandboxed());
+        assert_eq!(machine.install(&opted_out).await, Ok(true));
+        assert!(machine.checkout.join("node_modules").exists());
+    }
+
+    /// `npm ci` of a tiny project whose one dependency is a folder beside it, so no network is
+    /// needed, with the machine's own npm (found wherever the person installed it).
+    #[tokio::test]
+    async fn npm_ci_of_a_small_project_still_installs_in_the_sandbox() {
+        let machine = Machine::new("install-npm");
+        let Some(sandbox) = machine.sandbox(true) else {
+            return;
+        };
+        let process = ProcessEnv::from_process();
+        let npm_on_path = std::env::split_paths(&process.search_path().unwrap_or_default())
+            .any(|dir| dir.join("npm").is_file());
+        if !npm_on_path {
+            println!("skipped: npm is not installed");
+            return;
+        }
+        let checkout: &Path = &machine.checkout;
+        std::fs::create_dir_all(checkout.join("dep")).expect("dependency");
+        std::fs::write(
+            checkout.join("package.json"),
+            r#"{"name":"calc","version":"1.0.0","dependencies":{"dep":"file:./dep"}}"#,
+        )
+        .expect("manifest");
+        std::fs::write(
+            checkout.join("dep/package.json"),
+            r#"{"name":"dep","version":"1.0.0","main":"index.js"}"#,
+        )
+        .expect("dependency manifest");
+        std::fs::write(checkout.join("dep/index.js"), "module.exports = 1;\n").expect("source");
+        std::fs::write(
+            checkout.join("package-lock.json"),
+            r#"{"name":"calc","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"calc","version":"1.0.0","dependencies":{"dep":"file:./dep"}},"dep":{"version":"1.0.0"},"node_modules/dep":{"resolved":"dep","link":true}}}"#,
+        )
+        .expect("lockfile");
+
+        let rules = Rules {
+            sandbox,
+            enforce_egress: true,
+            ..Rules::default()
+        };
+        // The machine's own PATH and a home of its own, as a runner started by a person has.
+        let env = ProcessEnv::from_pairs([
+            ("PATH", process.path_or_standard()),
+            ("HOME", machine.home.display().to_string()),
+        ]);
+        let ran = prepare(
+            checkout,
+            &PrepareSetting::Detect,
+            &machine.state,
+            LIMIT,
+            &env,
+            &rules,
+        )
+        .await
+        .expect("npm ci installs in the sandbox");
+        assert!(ran);
+        assert!(
+            checkout.join("node_modules/dep/index.js").is_file(),
+            "the dependency is installed"
+        );
+        assert!(
+            checkout.join("node_modules/.tack-prepared").is_file(),
+            "the install is marked as the runner's own"
+        );
+    }
+}

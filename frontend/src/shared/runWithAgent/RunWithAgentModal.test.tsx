@@ -1585,6 +1585,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     const line = (label: string) => [...section.querySelectorAll('li')].find((li) => li.querySelector('.sr-only')?.textContent === `${label}: `)!;
     expect(line('Works').textContent).toContain('on a new branch of ~/src/app');
     expect(line('Prepares').textContent).toContain('Replaced: npm ci');
+    expect(line('Prepares').querySelector('[data-testid="run-dialog-install-sandbox"]')!.textContent).toContain('Installs inside the sandbox');
     expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('2 Done when · 2 agent checks · verifier on');
     expect(line('Sandbox').textContent).toContain('Contained by this computer (bwrap)');
     expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');

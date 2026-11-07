@@ -70,6 +70,15 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   by starting it once inside `bwrap`. One that cannot start there (a program installed
   in a virtualenv or under Homebrew, for example) counts as not contained, and
   `tack runner doctor` and the run say so.
+- **The install runs in the same sandbox.** The runner installs the project's dependencies before the
+  agent starts, and a package's install script runs as you. It therefore runs inside `bwrap` too, with a
+  scratch home, the few environment names it needs and the output read with the registry's tokens removed.
+  Where the runner holds agents to their [web access](#web-access), the install goes through the proxy and
+  reaches only the package registry. A command the board replaced runs only if you wrote
+  `board_may_replace = true` under `[prepare]` in the runner's settings; otherwise the run ends as failed
+  with that reason. Without a sandbox, and with the requirement off, the install runs as you do, and the run's
+  timeline and the Prepares line of the run dialog say so. See
+  [Installing the project's dependencies](runners.md#installing-the-projects-dependencies).
 - **Turning the requirement off.** The runner's settings file requires a sandbox by default. An
   administrator who cannot or will not install bubblewrap writes `required = false` under
   `[sandbox]`. Without `bwrap`, an agent then runs with your user's access to the machine and

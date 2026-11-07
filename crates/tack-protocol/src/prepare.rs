@@ -16,6 +16,9 @@ const LOCKFILES: [(&str, &str); 6] = [
     ("Cargo.lock", "cargo fetch"),
 ];
 
+/// What a run says when the project replaces the install and the runner does not let the board.
+pub const REPLACE_REFUSED: &str = "The project replaces the install command, and this runner does not let the board do that. Clear the project's install command to install from the lockfile, or ask the administrator to allow it (board_may_replace under [prepare] in the runner's configuration).";
+
 /// An install command found from a lockfile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Detected {
@@ -57,6 +60,15 @@ impl PrepareSetting {
             Some(command) => Self::Replace {
                 command: command.to_owned(),
             },
+        }
+    }
+
+    /// Why the runner must not run this setting, or `None` when it may. Only a replacement is a
+    /// command the board chose; the detected one is the repository's own lockfile's.
+    pub fn refusal(&self, board_may_replace: bool) -> Option<&'static str> {
+        match self {
+            Self::Replace { .. } if !board_may_replace => Some(REPLACE_REFUSED),
+            _ => None,
         }
     }
 

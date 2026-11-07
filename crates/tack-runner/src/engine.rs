@@ -420,6 +420,9 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     /// The environment the runner was started with: the verifier's `PATH` and what an install
     /// runs with.
     process: crate::config::ProcessEnv,
+    /// What holds the install of a run's dependencies: the sandbox, the proxy and whether the
+    /// board may replace the command.
+    install: crate::prepare::Rules,
     /// The board's address, without a path, for the links the evidence carries to its own
     /// artifacts; without one they are paths on the board.
     board_url: Option<String>,
@@ -469,6 +472,7 @@ where
             verify: None,
             git: crate::config::GitConfig::default(),
             process: crate::config::ProcessEnv::default(),
+            install: crate::prepare::Rules::default(),
             board_url: None,
             active: crate::active::ActiveAttempts::new(1),
         }
@@ -523,6 +527,12 @@ where
     /// The environment the runner was started with, for the verifier and the install.
     pub fn with_process_env(mut self, process: crate::config::ProcessEnv) -> Self {
         self.process = process;
+        self
+    }
+
+    /// The sandbox, proxy and permissions the install of a run's dependencies is held to.
+    pub fn with_install_rules(mut self, install: crate::prepare::Rules) -> Self {
+        self.install = install;
         self
     }
 
@@ -622,6 +632,7 @@ where
                 WorkspaceMode::Clone | WorkspaceMode::LocalBranch
             );
         let install_skipped = prepares && crate::prepare::needs_no_install(&spec.work.request);
+        let mut installed = false;
         // Everything from here to the first sight of the agent running ends
         // the attempt `failed` with its reason when it fails; only a failure
         // to reach the board above stays an engine error.
@@ -647,7 +658,7 @@ where
             // is prepared by docket.
             if prepares && !install_skipped {
                 let rejected = |reason: String| HarnessError::Rejected { reason };
-                crate::prepare::prepare(
+                installed = crate::prepare::prepare(
                     &spec.workspace.path,
                     &spec
                         .work
@@ -662,6 +673,7 @@ where
                         .map_err(|e| rejected(e.to_string()))?,
                     std::time::Duration::from_secs(spec.work.request.timeout_seconds),
                     &self.process,
+                    &self.install,
                 )
                 .await
                 .map_err(|e| rejected(e.to_string()))?;
@@ -719,6 +731,11 @@ where
         if install_skipped {
             let payload = serde_json::json!({"reason": crate::prepare::NO_INSTALL_REASON});
             self.submit_event(session, &mut record, "attempt.install_skipped", payload)
+                .await;
+        }
+        if installed && self.install.unsandboxed() {
+            let payload = serde_json::json!({"reason": crate::prepare::UNSANDBOXED_REASON});
+            self.submit_event(session, &mut record, "attempt.install_unsandboxed", payload)
                 .await;
         }
 
