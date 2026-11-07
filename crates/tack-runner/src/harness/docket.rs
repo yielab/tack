@@ -32,13 +32,14 @@ use tack_protocol::execution::{
 use tokio::sync::{Mutex, mpsc};
 
 use crate::{
-    client::{AttemptState, Recommendation, Timestamp},
+    client::{AttemptState, ClaimedWork, Recommendation, Timestamp},
     config::DocketConfig,
     harness::{
         AnsweredElsewhere, AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer,
         DecisionOption, ExecutionSpec, HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe,
         LocalRunHandle, ModelSource, Progress, Question, RecoveryObservation,
         local_process::{HarnessDescriptor, ModelSelection, capability, policy_capability},
+        redact::SecretMaterial,
     },
 };
 
@@ -112,10 +113,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
             ParityRule::ChecksChangedHoldsMerge,
             ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
         ),
-        (
-            ParityRule::Redaction,
-            ParityCell::missing("GR18: docket's steps, outward calls and records are not redacted"),
-        ),
+        (ParityRule::Redaction, ParityCell::Runner),
         (ParityRule::StepsVisible, ParityCell::delegated("docket")),
     ],
     readiness: None,
@@ -431,6 +429,10 @@ struct RunInfo {
     /// A line for the timeline before anything else: a turn that could not continue its task
     /// says it starts a new one.
     notice: Option<String>,
+    /// What docket's text for this run is scrubbed of before it leaves the adapter, as a local
+    /// agent's output is: the token docket is read with, the request's literal environment and
+    /// the resolved prompt.
+    secrets: SecretMaterial,
 }
 
 /// The ends of the channels `wait` drives.
@@ -1268,8 +1270,18 @@ impl DocketAdapter {
                     } else {
                         None
                     };
+                    let call = call.map(|call| info.secrets.scrub(&call));
                     match escalation_question(&record, call.as_deref()) {
-                        Ok(question) => found.next = Some(question),
+                        Ok((mut question, pending)) => {
+                            question.prompt = info.secrets.scrub(&question.prompt);
+                            let mut metadata =
+                                Value::Object(std::mem::take(&mut question.metadata));
+                            info.secrets.scrub_json(&mut metadata);
+                            if let Value::Object(metadata) = metadata {
+                                question.metadata = metadata;
+                            }
+                            found.next = Some((question, pending));
+                        }
                         Err(sentence) => found.unaskable.push((record.id.clone(), sentence)),
                     }
                 }
@@ -1295,6 +1307,18 @@ impl DocketAdapter {
             }) if !call.trim().is_empty() => Call::Shown(call),
             _ => Call::Missing,
         }
+    }
+
+    /// What the text docket sends back for this run is scrubbed of, as a local agent's output is.
+    fn run_secrets(&self, work: &ClaimedWork) -> SecretMaterial {
+        let mut secrets = self.client.secrets();
+        for value in work.request.environment.values() {
+            if let Some(literal) = &value.value {
+                secrets.register(literal.clone());
+            }
+        }
+        secrets.register(super::local_prompt(work));
+        secrets
     }
 
     /// Posts the person's answer where docket reads it. A `409` or a `404` means docket had
@@ -1376,6 +1400,7 @@ impl DocketAdapter {
                 Value::Array(steps::steps(&task.hops, hop_times)),
             );
         }
+        info.secrets.scrub_json(&mut reason);
         let ended_at = Utc::now();
         let elapsed =
             u64::try_from((ended_at - info.started_at).num_milliseconds().max(0)).unwrap_or(0);
@@ -1760,9 +1785,12 @@ impl DocketAdapter {
         // What the team wrote in this task, beside the steps. The task has ended, so no row
         // changes under the read.
         let records::Kept {
-            sets: records,
+            sets: mut records,
             proposals_unread,
         } = records::kept(&self.client, &info.pod, &info.task).await;
+        for set in &mut records {
+            info.secrets.scrub_json(set);
+        }
         if let Some(object) = outcome.terminal_reason.as_object_mut() {
             // The proposal the rows make: the capture stages it as a file's plan would be, or
             // says why it cannot. Rows the run could not read are a proposal that is not there,
@@ -2061,6 +2089,7 @@ impl HarnessAdapter for DocketAdapter {
                 converse,
                 thread: note.map(|note| note.id),
                 notice,
+                secrets: self.run_secrets(&spec.work),
             })
             .await)
     }
@@ -2234,6 +2263,7 @@ impl HarnessAdapter for DocketAdapter {
                 converse: None,
                 thread: TurnNote::of(&spec.work.request.metadata).map(|note| note.id),
                 notice: None,
+                secrets: self.run_secrets(&spec.work),
             })
             .await)
     }
@@ -2483,6 +2513,7 @@ impl DocketAdapter {
                 converse: None,
                 thread: TurnNote::of(&request.metadata).map(|note| note.id),
                 notice: None,
+                secrets: self.run_secrets(&spec.work),
             })
             .await)
     }
