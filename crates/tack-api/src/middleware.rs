@@ -95,6 +95,22 @@ fn live_websocket_is_authorized(req: &Request, state: &AppState) -> bool {
 /// without holding the token in script.
 pub const SESSION_COOKIE: &str = "tack_session";
 
+/// How long a browser keeps the session cookie: twelve hours, so a copy left on a shared machine
+/// stops working by the next day.
+const SESSION_COOKIE_MAX_AGE_SECONDS: u64 = 43_200;
+
+/// Whether the request reached the server over https: its own scheme, or the first hop named
+/// `https` in `X-Forwarded-Proto`, which the tunnel in front of the server sets.
+fn over_https(req: &Request) -> bool {
+    req.uri().scheme_str() == Some("https")
+        || req
+            .headers()
+            .get("x-forwarded-proto")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(',').next())
+            .is_some_and(|first| first.trim().eq_ignore_ascii_case("https"))
+}
+
 /// True when a `Cookie` header carries `tack_session=<expected>`.
 fn session_cookie_matches(req: &Request, expected: &str) -> bool {
     req.headers()
@@ -113,6 +129,7 @@ pub async fn set_session_cookie(
     req: Request,
     next: Next,
 ) -> Response {
+    let secure = if over_https(&req) { "; Secure" } else { "" };
     let wanted = req.method() == axum::http::Method::GET
         && !req.uri().path().starts_with("/api")
         && req
@@ -129,7 +146,7 @@ pub async fn set_session_cookie(
             .is_some_and(|v| v.starts_with("text/html"));
     if let (true, true, Some(token)) = (wanted, is_html, state.config.api_token.as_deref())
         && let Ok(value) = HeaderValue::from_str(&format!(
-            "{SESSION_COOKIE}={token}; Path=/api; HttpOnly; SameSite=Strict"
+            "{SESSION_COOKIE}={token}; Path=/api; HttpOnly; SameSite=Strict{secure}; Max-Age={SESSION_COOKIE_MAX_AGE_SECONDS}"
         ))
     {
         response.headers_mut().append(header::SET_COOKIE, value);
