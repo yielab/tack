@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde_json::{Map, Value};
 use tack_db::repo::execution::NewDecision;
 use tack_db::{Repository, queries};
@@ -25,6 +25,10 @@ pub struct DecisionRequest<'a> {
     pub recommendation: Option<&'a DecisionRecommendation>,
     pub expires_at: Option<DateTime<Utc>>,
 }
+
+/// How long a decision waits for an answer when the runner names no expiry; the sweep then settles
+/// it as expired, and the attempt resumes.
+const DEFAULT_EXPIRY_HOURS: i64 = 24;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecisionCreated {
@@ -99,7 +103,11 @@ pub async fn create_decision(
                 prompt: request.prompt,
                 options: request.options,
                 metadata: request.metadata,
-                expires_at: request.expires_at,
+                expires_at: Some(
+                    request
+                        .expires_at
+                        .unwrap_or_else(|| now + Duration::hours(DEFAULT_EXPIRY_HOURS)),
+                ),
                 recommendation: request.recommendation,
             },
             now,
@@ -126,7 +134,27 @@ pub async fn create_decision(
         .recommendation
         .as_deref()
         .and_then(|raw| serde_json::from_str(raw).ok());
-    let requested_expires_at = request.expires_at.map(|value| value.to_rfc3339());
+    // A replay without an expiry arrives later than the first call, so the default is checked
+    // against the stored creation time, not this call's clock. A row stored before the default
+    // existed has no expiry, and a replay without one still matches it.
+    let expires_at_matches = match request.expires_at {
+        Some(expires_at) => stored.expires_at.as_deref() == Some(expires_at.to_rfc3339().as_str()),
+        None => {
+            stored.expires_at.is_none()
+                || match (
+                    DateTime::parse_from_rfc3339(&stored.created_at),
+                    stored
+                        .expires_at
+                        .as_deref()
+                        .map(DateTime::parse_from_rfc3339),
+                ) {
+                    (Ok(created), Some(Ok(expires))) => {
+                        expires == created + Duration::hours(DEFAULT_EXPIRY_HOURS)
+                    }
+                    _ => false,
+                }
+        }
+    };
     // A settled decision no longer holds the call it was asked with, so a replay of the create
     // that carries it is the same request, not a different one.
     let mut requested_metadata = request.metadata.clone();
@@ -138,7 +166,7 @@ pub async fn create_decision(
         || stored_options.as_deref() != Some(request.options)
         || stored_metadata.as_ref() != Some(&requested_metadata)
         || stored_recommendation.as_ref() != request.recommendation
-        || stored.expires_at != requested_expires_at
+        || !expires_at_matches
     {
         return Ok(DecisionCreated::IdempotencyConflict);
     }

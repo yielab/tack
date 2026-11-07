@@ -5,6 +5,7 @@
 //! driven over a raw TCP connection authorizes via the subprotocol-embedded
 //! credential with no token in the query string.
 
+use super::chaos_recovery::{decision_body, ready_running_attempt};
 use crate::common;
 use axum::{
     Router,
@@ -20,6 +21,8 @@ use tokio::{
     time::{Duration, timeout},
 };
 use tower::ServiceExt;
+
+use tack_db::queries::execution_decisions;
 
 const API_TOKEN: &str = "secret-token";
 const SPLIT_ORIGIN: &str = "https://app.example.test";
@@ -503,7 +506,7 @@ async fn api_always_has_a_token() {
         .to_string();
     assert_eq!(
         set_cookie,
-        format!("tack_session={token}; Path=/api; HttpOnly; SameSite=Strict")
+        format!("tack_session={token}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=43200")
     );
     let cookie = format!("tack_session={token}");
     assert_eq!(
@@ -546,4 +549,147 @@ async fn api_always_has_a_token() {
     let response = raw_handshake(address, &handshake).await;
     assert!(response.starts_with("HTTP/1.1 101"), "{response}");
     server.abort();
+}
+
+/// The session cookie carries `Secure` when the request came over https (the tunnel in front
+/// says so with `X-Forwarded-Proto`), and every session cookie lasts twelve hours.
+#[tokio::test]
+async fn session_cookie_is_secure_behind_https() {
+    let (app, _) = common::test_app_with_config(protected_config()).await;
+    let (address, server) = spawn_real_server(app).await;
+    let page = reqwest::Client::new()
+        .get(format!("http://{address}/"))
+        .header("x-forwarded-proto", "https")
+        .send()
+        .await
+        .expect("GET /");
+    let set_cookie = page
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("GET / sets the session cookie")
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        set_cookie,
+        format!(
+            "tack_session={API_TOKEN}; Path=/api; HttpOnly; SameSite=Strict; Secure; Max-Age=43200"
+        )
+    );
+    server.abort();
+}
+
+/// Over plain http with no forwarding header the cookie has no `Secure`, and it still
+/// authorizes the API.
+#[tokio::test]
+async fn session_cookie_over_plain_http_stays_usable() {
+    let (app, _) = common::test_app_with_config(protected_config()).await;
+    let (address, server) = spawn_real_server(app).await;
+    let page = reqwest::get(format!("http://{address}/"))
+        .await
+        .expect("GET /");
+    let set_cookie = page
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("GET / sets the session cookie")
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        set_cookie,
+        format!("tack_session={API_TOKEN}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=43200")
+    );
+    let cookie = format!("tack_session={API_TOKEN}");
+    assert_eq!(
+        status_with_headers(
+            address,
+            reqwest::Method::GET,
+            "/api/projects",
+            &[("cookie", &cookie)]
+        )
+        .await,
+        200
+    );
+    server.abort();
+}
+
+/// A decision with no `expires_at` gets one a day out, so a question nobody answers is settled by
+/// the sweep rather than left waiting. A replay of the same request is not a conflict because the
+/// clock moved on.
+#[tokio::test]
+async fn decision_without_expiry_gets_a_day() {
+    let (app, state, _) = common::test_app_with_state(AppConfig::default(), None).await;
+    let repo = state.repo.clone();
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
+    let attempt = ready_running_attempt(&app, &item_id, "decision-default").await;
+    let mut body = decision_body(
+        &attempt.runner_id,
+        &attempt.attempt_id,
+        attempt.fencing_token,
+        "dec-default",
+    );
+    body.as_object_mut().unwrap().remove("expires_at");
+    let uri = format!("/api/runner/v1/attempts/{}/decisions", attempt.attempt_id);
+    let bearer = format!("Bearer {}", attempt.credential);
+
+    let (status, created) = common::send_large(
+        &app,
+        "POST",
+        &uri,
+        body.clone(),
+        &[("authorization", &bearer)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let row = execution_decisions::decision_of_attempt(&repo, &attempt.attempt_id, "dec-default")
+        .await
+        .expect("read the decision")
+        .expect("the decision is stored");
+    let created_at = chrono::DateTime::parse_from_rfc3339(&row.created_at).unwrap();
+    let expires_at = chrono::DateTime::parse_from_rfc3339(
+        row.expires_at
+            .as_deref()
+            .expect("a default expiry is stored"),
+    )
+    .unwrap();
+    assert_eq!(expires_at - created_at, chrono::Duration::hours(24));
+
+    let (status, replay) =
+        common::send_large(&app, "POST", &uri, body, &[("authorization", &bearer)]).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a replay is not a conflict: {replay}"
+    );
+}
+
+/// A decision that names its own expiry keeps exactly that instant.
+#[tokio::test]
+async fn decision_with_explicit_expiry_keeps_it() {
+    let (app, state, _) = common::test_app_with_state(AppConfig::default(), None).await;
+    let repo = state.repo.clone();
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
+    let attempt = ready_running_attempt(&app, &item_id, "decision-explicit").await;
+    let body = decision_body(
+        &attempt.runner_id,
+        &attempt.attempt_id,
+        attempt.fencing_token,
+        "dec-explicit",
+    );
+    let requested =
+        chrono::DateTime::parse_from_rfc3339(body["expires_at"].as_str().unwrap()).unwrap();
+    let uri = format!("/api/runner/v1/attempts/{}/decisions", attempt.attempt_id);
+    let (status, created) = common::send_large(
+        &app,
+        "POST",
+        &uri,
+        body,
+        &[("authorization", &format!("Bearer {}", attempt.credential))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let row = execution_decisions::decision_of_attempt(&repo, &attempt.attempt_id, "dec-explicit")
+        .await
+        .expect("read the decision")
+        .expect("the decision is stored");
+    let stored = chrono::DateTime::parse_from_rfc3339(row.expires_at.as_deref().unwrap()).unwrap();
+    assert_eq!(stored, requested);
 }
