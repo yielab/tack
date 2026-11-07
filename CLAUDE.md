@@ -143,7 +143,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   crate `tack-evals` measures regression, safety and verifier agreement with Claude Haiku 5.5 through Anthropic
   at integration only, never in CI; production gets quality figures by profile/harness/model and a trend
   notification. Four rounds, Sonnet and Haiku cards; the plan's §11 decisions 1–4 gate rounds 3 and 4. Asks to
-  prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`.
+  prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`. Rounds 0 and 1 are built in `develop` (2026-11-07)
+  except GR10 and GR11, which wait on decisions 3 and 4; the pending parity cells are listed in
+  `agent_boundaries.rs` (`PENDING_CELLS`), each with its card.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
