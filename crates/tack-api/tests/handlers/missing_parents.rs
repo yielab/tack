@@ -80,7 +80,7 @@ async fn the_remaining_writes_to_a_missing_parent_answer_404() {
         ),
         (
             "POST",
-            format!("/api/items/{missing}/subtasks-from-plan"),
+            format!("/api/items/{missing}/items-from-plan"),
             json!({"artifact_id": "art_1", "subtasks": [{"title": "a", "acceptance": []}]}),
         ),
         (

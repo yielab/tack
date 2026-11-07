@@ -2567,6 +2567,68 @@
         }
       }
     },
+    "/api/items/{id}/items-from-plan": {
+      "post": {
+        "tags": [
+          "items"
+        ],
+        "operationId": "create_items_from_plan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Parent Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateItemsFromPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Items created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateItemsFromPlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Parent item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{id}/run-options": {
       "get": {
         "tags": [
@@ -2602,68 +2664,6 @@
           },
           "404": {
             "description": "No such item",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/items/{id}/subtasks-from-plan": {
-      "post": {
-        "tags": [
-          "items"
-        ],
-        "operationId": "create_subtasks_from_plan",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Parent Item ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateSubtasksFromPlanRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Subtasks created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateSubtasksFromPlanResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Parent item not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -11723,6 +11723,41 @@
           }
         }
       },
+      "CreateItemsFromPlanRequest": {
+        "type": "object",
+        "required": [
+          "subtasks"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The plan artifact the entries came from; absent means a file the person uploaded."
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateSubtaskFromPlan"
+            }
+          }
+        }
+      },
+      "CreateItemsFromPlanResponse": {
+        "type": "object",
+        "required": [
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreatedSubtask"
+            }
+          }
+        }
+      },
       "CreateOp": {
         "type": "object",
         "description": "One `create`: an entry of a plan (`docs/contracts/plan-v1`), with refs where the plan has\nindexes.",
@@ -12211,41 +12246,6 @@
               "null"
             ],
             "description": "The item type, when the project has it; else the parent's when that is work, else the default work type."
-          }
-        }
-      },
-      "CreateSubtasksFromPlanRequest": {
-        "type": "object",
-        "required": [
-          "subtasks"
-        ],
-        "properties": {
-          "artifact_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The plan artifact the entries came from; absent means a file the person uploaded."
-          },
-          "subtasks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CreateSubtaskFromPlan"
-            }
-          }
-        }
-      },
-      "CreateSubtasksFromPlanResponse": {
-        "type": "object",
-        "required": [
-          "created"
-        ],
-        "properties": {
-          "created": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CreatedSubtask"
-            }
           }
         }
       },

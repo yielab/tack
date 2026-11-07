@@ -312,7 +312,7 @@ mod tests {
             (Method::DELETE, format!("/api/items/{i}")),
             (Method::POST, "/api/executions".to_string()),
             (Method::GET, "/api/executions".to_string()),
-            (Method::POST, format!("/api/items/{i}/subtasks-from-plan")),
+            (Method::POST, format!("/api/items/{i}/items-from-plan")),
             (Method::GET, "/api/agent-credentials".to_string()),
             (Method::POST, "/api/agent-credentials".to_string()),
             (Method::GET, "/api/backup".to_string()),

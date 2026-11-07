@@ -377,7 +377,7 @@ async fn accepting_the_plan_of_an_epic_puts_its_items_under_it_and_they_take_its
     let (status, body) = common::send(
         &b.app,
         "POST",
-        &format!("/api/items/{epic}/subtasks-from-plan"),
+        &format!("/api/items/{epic}/items-from-plan"),
         json!({"artifact_id": "plan-1", "subtasks": [
             {"title": "Pay", "acceptance": []},
             {"title": "Refund", "acceptance": []}
