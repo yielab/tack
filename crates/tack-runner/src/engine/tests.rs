@@ -819,6 +819,15 @@ fn runner_engine<A: HarnessAdapter>(
     root: &Path,
 ) -> RunnerEngine<FakeProtocol, A, FakeWorktree> {
     RunnerEngine::new(protocol, adapter, journal, workspace_manager(root))
+        .with_install_rules(board_may_replace())
+}
+
+/// The install rules of a runner whose administrator lets the board replace the command.
+fn board_may_replace() -> crate::prepare::Rules {
+    crate::prepare::Rules {
+        board_may_replace: true,
+        ..crate::prepare::Rules::default()
+    }
 }
 
 fn runner_engine_with_clock<A: HarnessAdapter, C: crate::Clock>(
@@ -3620,7 +3629,8 @@ async fn run_evidence_attempt_tuned(
             },
         ),
     )
-    .with_data_protocol(Arc::new(data_protocol.clone()));
+    .with_data_protocol(Arc::new(data_protocol.clone()))
+    .with_install_rules(board_may_replace());
     let engine = match git_config {
         Some(config) => engine.with_git(config),
         None => engine,
@@ -5003,6 +5013,47 @@ async fn a_docket_run_installs_nothing() {
     })
     .await;
     assert_eq!(starts, 1, "docket prepares its own copy");
+}
+
+/// An install that ran outside any sandbox because the administrator allowed it says so on the run.
+#[tokio::test]
+async fn an_install_without_a_sandbox_says_so_on_the_run() {
+    let opted_out = crate::prepare::Rules {
+        sandbox: crate::harness::sandbox::detect(None, None).requiring(false),
+        board_may_replace: true,
+        ..crate::prepare::Rules::default()
+    };
+    for (rules, events) in [(opted_out, 1), (board_may_replace(), 0)] {
+        let (root_dir, journal) = fresh_journal("install-unsandboxed");
+        let mut claimed = work();
+        replacing_install(&mut claimed, "touch installed");
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let data_protocol = FakeDataProtocol::new();
+        let engine = runner_engine(
+            protocol(claimed, false, false),
+            adapter,
+            journal,
+            root_dir.path(),
+        )
+        .with_install_rules(rules)
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle");
+
+        let state = data_protocol.state.lock().expect("lock");
+        let reported: Vec<_> = state
+            .events
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .filter(|event| event.kind == "attempt.install_unsandboxed")
+            .collect();
+        assert_eq!(reported.len(), events);
+        if let Some(event) = reported.first() {
+            assert_eq!(event.payload["reason"], crate::prepare::UNSANDBOXED_REASON);
+        }
+    }
 }
 
 /// A folder the runner prepared never reaches the evidence, though the project does not ignore

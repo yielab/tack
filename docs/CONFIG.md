@@ -111,7 +111,7 @@ runner does not know makes it refuse to start.
 | `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` | `max_concurrent_attempts` | `--max-concurrent-attempts` (the `tack-runner` executable only) | `1` | How many attempts the runner works at once. Below `1`, or a value that is not a whole number, is refused at start. A folder worked in place runs one attempt at a time whatever this says; parallel attempts need a branch or a clone |
 | `TACK_RUNNER_SECRET_VALUE` | — | — | _(none)_ | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable: the store keeps it (OS keychain, or an owner-only file where none answers within three seconds; `tack runner doctor` reports which backend a given boot picked) |
 
-Tables `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]`, `[docket]` and `[egress]` have no environment variable;
+Tables `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]`, `[prepare]`, `[docket]` and `[egress]` have no environment variable;
 they are described in the sections below. Runner credentials are redacted in every log and error.
 
 ## Embedded runner (`tack serve --with-runner`)
@@ -132,7 +132,7 @@ The settings:
   TOML file the embedded runner loads, the same file `tack runner start --config` reads. Without it the
   runner reads `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on Linux) when
   that file exists. It is the only way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[sandbox]`,
-  `[environment]`, `[docket]` or `[egress]` table, since those have no environment variable. With no file it runs on
+  `[environment]`, `[prepare]`, `[docket]` or `[egress]` table, since those have no environment variable. With no file it runs on
   defaults: no verifier, no branch push and no docket. `GET /api/local-runner` names the file it read
   (`config_file`, `null` with none), and `tack runner doctor` prints it first.
 - **State directory.** `<TACK_STORAGE_DIR>/runner`, so two boards never share one runner's state.
@@ -285,6 +285,26 @@ addresses in every mode, judged on the address a name resolves to. The agent is 
 `HTTPS_PROXY` and `NO_PROXY`; a program that ignores them is not held. docket's traffic is not affected: docket
 confines its own. What each mode covers, and what it cannot, is in
 [What the Agent Can Reach](https://yielab.github.io/tack/admin-guide/what-the-agent-can-reach.html#web-access).
+
+## Installing dependencies (`[prepare]`)
+
+The runner installs a project's dependencies in the copy an agent works in, before the agent starts. The install
+runs inside the sandbox and, where `[egress] enforce` is on, through the same proxy, reaching the package registry only.
+
+```toml
+[prepare]
+board_may_replace = true
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `board_may_replace` | `false` | Whether a project may replace the install command from the board. A replacement is a shell command the board chose, so without this the run ends as failed with the reason. The command the lockfile implies is never affected |
+
+The install keeps `PATH`, `HOME`, the locale, certificate files (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`) and the
+registry's settings (`NPM_CONFIG_REGISTRY`, `NPM_TOKEN`, `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`,
+`UV_INDEX_URL` and the like) from the runner's environment, and nothing else. Where the machine has no `bwrap` and
+`[sandbox] required = false`, it runs with the runner's own environment. See
+[Installing the project's dependencies](https://yielab.github.io/tack/admin-guide/runners.html#installing-the-projects-dependencies).
 
 ## docket (`[docket]`)
 

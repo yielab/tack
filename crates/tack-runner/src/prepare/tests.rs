@@ -66,6 +66,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("first install");
@@ -103,6 +104,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("second install");
@@ -131,6 +133,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("another lockfile");
@@ -156,6 +159,7 @@ async fn a_detected_command_is_resolved_from_the_lockfile_and_hits_the_cache() {
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("prepared");
@@ -174,6 +178,7 @@ async fn an_install_turned_off_or_without_a_lockfile_runs_nothing() {
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("off");
@@ -185,6 +190,7 @@ async fn an_install_turned_off_or_without_a_lockfile_runs_nothing() {
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("no lockfile");
@@ -209,6 +215,10 @@ async fn a_replaced_command_runs_every_time_and_keeps_nothing() {
             &setup.state,
             LIMIT,
             &ProcessEnv::default(),
+            &Rules {
+                board_may_replace: true,
+                ..Rules::default()
+            },
         )
         .await
         .expect("replaced");
@@ -232,6 +242,7 @@ async fn a_folder_the_repository_holds_is_left_alone() {
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("install");
@@ -259,6 +270,7 @@ async fn an_attempt_that_loses_the_race_keeps_its_own_install_and_the_winners_en
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("install");
@@ -291,6 +303,7 @@ async fn an_install_that_cannot_be_hard_linked_still_runs_and_is_just_not_kept()
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("install");
@@ -324,6 +337,7 @@ async fn prepare_with(checkout: &Path, command: &str, lockfile: &str, state: &Pa
         state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect("install");
@@ -341,6 +355,7 @@ async fn a_failed_command_says_how_it_ended_and_shows_the_end_of_its_output() {
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect_err("fails");
@@ -356,6 +371,7 @@ async fn a_failed_command_says_how_it_ended_and_shows_the_end_of_its_output() {
         &setup.state,
         LIMIT,
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect_err("fails");
@@ -379,6 +395,7 @@ async fn a_command_that_outlasts_the_time_limit_is_stopped() {
         &setup.state,
         Duration::from_secs(1),
         &ProcessEnv::default(),
+        &Rules::default(),
     )
     .await
     .expect_err("times out");
@@ -430,4 +447,125 @@ fn a_run_installs_nothing_only_when_its_tools_run_no_command_and_it_has_no_check
     from_profile.resolved_agent_profile.tool_policy =
         serde_json::json!({"tools": {"codex": ["Read", "Grep"]}});
     assert!(needs_no_install(&from_profile));
+}
+
+#[tokio::test]
+async fn a_replacement_the_runner_does_not_allow_is_refused_before_anything_runs() {
+    let setup = Setup::new();
+    let checkout = setup.checkout("a1", "lock");
+    let setting = PrepareSetting::Replace {
+        command: setup.install_command(),
+    };
+
+    let error = prepare(
+        &checkout,
+        &setting,
+        &setup.state,
+        LIMIT,
+        &ProcessEnv::default(),
+        &Rules::default(),
+    )
+    .await
+    .expect_err("refused");
+
+    assert_eq!(error.to_string(), tack_protocol::prepare::REPLACE_REFUSED);
+    assert_eq!(setup.runs(), 0);
+}
+
+#[tokio::test]
+async fn the_registry_token_never_shows_in_a_failed_installs_reason() {
+    let setup = Setup::new();
+    let checkout = setup.checkout("a1", "lock");
+    let env = ProcessEnv::from_pairs([
+        ("NPM_TOKEN", "npm_s3cr3tvalue"),
+        ("PIP_INDEX_URL", "https://user:p4ssw0rd@pypi.example/simple"),
+    ]);
+
+    let error = install(
+        &checkout,
+        "echo $NPM_TOKEN $PIP_INDEX_URL >&2; exit 1",
+        None,
+        &setup.state,
+        LIMIT,
+        &env,
+        &Rules::default(),
+    )
+    .await
+    .expect_err("fails");
+
+    let reason = error.to_string();
+    assert!(reason.contains("[REDACTED]"), "{reason}");
+    assert!(!reason.contains("npm_s3cr3tvalue"), "{reason}");
+    assert!(!reason.contains("p4ssw0rd"), "{reason}");
+}
+
+#[test]
+fn the_proxy_lets_an_install_reach_its_package_managers_registry_and_the_one_the_runner_names() {
+    let env = ProcessEnv::from_pairs([
+        (
+            "NPM_CONFIG_REGISTRY",
+            "https://user:pw@Npm.Corp.example:8443/repo/",
+        ),
+        ("NPM_TOKEN", "not-a-url"),
+    ]);
+    assert_eq!(
+        registry_hosts(Some("package-lock.json"), &env),
+        ["npm.corp.example", "registry.npmjs.org"]
+    );
+    assert_eq!(
+        registry_hosts(Some("uv.lock"), &ProcessEnv::default()),
+        ["files.pythonhosted.org", "pypi.org"]
+    );
+    // A command the board replaced may use any package manager.
+    let all = registry_hosts(None, &ProcessEnv::default());
+    for host in ["registry.npmjs.org", "pypi.org", "index.crates.io"] {
+        assert!(all.iter().any(|h| h == host), "{host}");
+    }
+    assert_eq!(host_of("not a url"), None);
+}
+
+#[test]
+fn a_tools_prefix_is_bound_with_it_unless_it_is_the_persons_own_dot_directory() {
+    let setup = Setup::new();
+    let home = setup.state.join("home");
+    let checkout = setup.checkout("a1", "lock");
+    let layout = [
+        "home/.nvm/versions/node/v22/bin",
+        "home/.cargo/bin",
+        "opt/node/bin",
+        "tools",
+    ];
+    for dir in layout {
+        fs::create_dir_all(setup.state.join(dir)).expect("directory");
+    }
+    let path = std::env::join_paths(
+        layout
+            .iter()
+            .map(|dir| setup.state.join(dir))
+            .chain([PathBuf::from("/usr/bin"), PathBuf::from("relative/bin")]),
+    )
+    .expect("path")
+    .into_string()
+    .expect("text");
+    // The state directory is the temporary root's child, so everything above sits outside it.
+    let state = setup.state.join("runner-state");
+
+    let bound: Vec<PathBuf> = tool_dirs(&path, Some(&home), &state, &checkout)
+        .into_iter()
+        .map(|(from, to)| {
+            assert_eq!(from, to);
+            from
+        })
+        .collect();
+
+    let at = |dir: &str| setup.state.join(dir);
+    assert_eq!(
+        bound,
+        [
+            at("home/.nvm/versions/node/v22"),
+            at("home/.cargo/bin"),
+            at("opt/node"),
+            at("tools"),
+        ]
+    );
 }

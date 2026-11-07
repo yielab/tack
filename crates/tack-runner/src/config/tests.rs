@@ -373,3 +373,27 @@ fn the_egress_table_is_off_until_it_is_set_and_refuses_unknown_keys() {
 
     assert!(load(Some("[egress]\nmode = \"open\"\n")).is_err());
 }
+
+#[test]
+fn the_board_may_not_replace_the_install_until_the_administrator_says_so() {
+    let load = |toml: Option<&str>| {
+        RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: toml,
+            ..RunnerConfigSources::default()
+        })
+    };
+    assert!(!load(None).expect("defaults").prepare.board_may_replace);
+    assert!(
+        !load(Some("[prepare]\n"))
+            .expect("an empty table")
+            .prepare
+            .board_may_replace
+    );
+    assert!(
+        load(Some("[prepare]\nboard_may_replace = true\n"))
+            .expect("allowed")
+            .prepare
+            .board_may_replace
+    );
+    assert!(load(Some("[prepare]\nreplace = true\n")).is_err());
+}
