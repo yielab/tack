@@ -338,10 +338,13 @@ pub fn wilson(outcomes: Outcomes) -> Option<(f64, f64)> {
     Some(((center - half).max(0.0), (center + half).min(1.0)))
 }
 
+/// Fewest runs ended in the recent window for a trend to be told: two runs are an anecdote.
+const TREND_MIN_RECENT: u32 = 5;
+
 /// The notice for a cut whose success rate in the last seven days is clearly below the one in the
 /// 28 days before, or `None`. "Clearly" is the 95 % Wilson intervals of the two windows not
 /// overlapping, with the recent one below: a few runs give wide intervals, so a small sample
-/// warns only when it is extreme. `by` and `name` are the cut (`profile`, `Reviewer`).
+/// warns only when it is extreme, and fewer than five recent runs never warn. `by` and `name` are the cut (`profile`, `Reviewer`).
 pub fn quality_trend(
     project_id: Uuid,
     by: &str,
@@ -349,6 +352,9 @@ pub fn quality_trend(
     recent: Outcomes,
     before: Outcomes,
 ) -> Option<Notice> {
+    if recent.ended < TREND_MIN_RECENT {
+        return None;
+    }
     let (_, recent_high) = wilson(recent)?;
     let (before_low, _) = wilson(before)?;
     // Equal bounds count as overlapping.

@@ -335,6 +335,21 @@ fn trend_wilson_matches_the_hand_values() {
 }
 
 #[test]
+fn trend_never_warns_on_fewer_than_five_recent_runs() {
+    // 0 of 2 against 63 of 70 has intervals far apart, and is still two runs.
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(0, 2),
+            outcomes(63, 70)
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn trend_warns_only_when_the_intervals_do_not_overlap() {
     // 2 of 20 now against 63 of 70 before: far apart.
     let drop = quality_trend(
