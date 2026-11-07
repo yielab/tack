@@ -31,6 +31,15 @@ export const HELP = {
   builtInProfiles: { text: 'Implementer, Reviewer, Researcher and Planner come with Tack. You can edit them, not delete them. A profile that names no agent runs with the agent you pick for the task.', href: BOOK.agentTeams },
   decisionToken: { text: 'A second secret, apart from signing in, that your administrator sets up. Needed to answer the agent; never sent when you only look.', href: BOOK.decisionToken },
   promptFingerprint: { text: "Identifies the fixed wording Tack put around the card's text in this prompt. Two runs with the same fingerprint were given the same wording; a different one means it changed between them.", href: BOOK.runDialog },
+  qualitySuccess: { text: 'Runs that succeeded out of the runs that ended after starting. A run the computer or the team turned away is not counted: it did no work.', href: BOOK.workQuality },
+  qualityFirstPass: { text: "Tasks whose first run you accepted out of the tasks whose first run you reviewed. It says how often an agent gets it right the first time.", href: BOOK.workQuality },
+  qualityRework: { text: 'Runs after a task\'s first, per task that has run. 0.5 means one extra round for every two tasks.', href: BOOK.workQuality },
+  qualityRevert: { text: 'Pull requests that were reverted out of the ones that were merged or reverted. It says how often merged work did harm.', href: BOOK.workQuality },
+  qualityAgreement: { text: "How often the verifier's word matched what became of the work. Bad work is work you rejected or whose pull request was reverted; good work is work you accepted and kept.", href: BOOK.workQuality },
+  qualityPassK: { text: 'For a task that repeats, the chance that any three of its runs all succeed. It says whether the agent does it every time, not just once.', href: BOOK.workQuality },
+  qualityQuestions: { text: 'How many times an agent asked you something per hundred steps it took, and how often you let it go on. A kind of question you always allow is noise.', href: BOOK.workQuality },
+  qualityStops: { text: 'Why runs ended without succeeding, by the code the run gave. "Not started" runs were turned away before the agent did anything.', href: BOOK.workQuality },
+  qualityCuts: { text: 'The same rates, cut by who did the work: the profile, the agent, the model, the team and the fingerprint of the prompt wording.', href: BOOK.workQuality },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
 
