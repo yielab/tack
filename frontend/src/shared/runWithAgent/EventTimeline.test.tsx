@@ -54,6 +54,18 @@ describe('EventTimeline', () => {
     expect(c.textContent).not.toContain('{"reason"');
   });
 
+  it('attempt.install_unsandboxed is named, and its reason is shown', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.install_unsandboxed', payload: { reason: 'The install ran without a sandbox: this computer has none and the administrator turned the requirement off' }, occurred_at: '2026-11-07T12:00:00Z', created_at: '2026-11-07T12:00:00Z' }]),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Installed without a sandbox');
+    expect(c.textContent).toContain('the administrator turned the requirement off');
+    expect(c.textContent).not.toContain('{"reason"');
+  });
+
   it('attempt.approvals_forced_ask is named, and its reason is shown', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.approvals_forced_ask', payload: { reason: 'no sandbox on this machine (bwrap not on PATH), so this agent asks before each action instead of running on its own' }, occurred_at: '2026-11-07T12:00:00Z', created_at: '2026-11-07T12:00:00Z' }]),

@@ -183,6 +183,8 @@ pub struct RunnerConfig {
     pub sandbox: SandboxConfig,
     /// The `[egress]` table: whether the runner holds a local agent's traffic to a proxy.
     pub egress: EgressConfig,
+    /// The `[prepare]` table: what the board may change about the dependency install.
+    pub prepare: PrepareConfig,
     /// The environment the runner process was started with, the one place harnesses, the verifier
     /// and the install read it from. Empty until the environment source supplies it.
     pub process: ProcessEnv,
@@ -201,6 +203,16 @@ impl Default for SandboxConfig {
     fn default() -> Self {
         Self { required: true }
     }
+}
+
+/// The `[prepare]` table.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PrepareConfig {
+    /// Whether a project may replace the install command from the board. A replacement is a shell
+    /// command the board chose, so it runs here only when the administrator allows it; the
+    /// command the lockfile implies always may.
+    pub board_may_replace: bool,
 }
 
 /// The `[docket]` table. docket runs as a daemon beside the runner and the
@@ -385,6 +397,7 @@ struct FileConfig {
     docket: Option<DocketConfig>,
     sandbox: Option<SandboxConfig>,
     egress: Option<EgressConfig>,
+    prepare: Option<PrepareConfig>,
 }
 
 impl RunnerConfig {
@@ -402,6 +415,7 @@ impl RunnerConfig {
             docket: DocketConfig::default(),
             sandbox: SandboxConfig::default(),
             egress: EgressConfig::default(),
+            prepare: PrepareConfig::default(),
             process: ProcessEnv::default(),
         }
     }
@@ -454,6 +468,9 @@ impl RunnerConfig {
             }
             if let Some(egress) = file.egress {
                 config.egress = egress;
+            }
+            if let Some(prepare) = file.prepare {
+                config.prepare = prepare;
             }
             config.apply(ConfigOverrides {
                 api_base_url: file.api_base_url,

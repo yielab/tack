@@ -167,6 +167,7 @@ pub async fn build_runtime_with_active(
     .with_verify(config.verify.clone(), limits.harness_process.clone())
     .with_git(config.git.clone())
     .with_process_env(config.process.clone())
+    .with_install_rules(crate::prepare::Rules::from_config(&config))
     .with_board_url(board_url(&config.api_base_url))
     .with_active(active);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities)

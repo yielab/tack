@@ -33,6 +33,7 @@ makes the runner refuse to start.
 | `[verify]`, `[git]` | The verifier and the branch push. See [After a succeeded attempt](#after-a-succeeded-attempt). |
 | `[secrets]`, `[environment]` | What a run may reference and the variables every run gets. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
 | `[sandbox]` | `required = false` lets an agent run without `bubblewrap`, asking before each action. The default requires it. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
+| `[prepare]` | `board_may_replace = true` lets a project replace the install command from the board. The default does not. See [Installing the project's dependencies](#installing-the-projects-dependencies). |
 | `[docket]` | Where docket's API is. See [docket teams](#docket-teams). |
 
 Every variable and key is in the [Configuration](configuration-reference.md). Run
@@ -426,8 +427,18 @@ dialog show what will run. For a folder on the board's own computer the board re
 itself; for any other project the line says it is detected on the runner when the run starts.
 
 For Claude Code, Codex and opencode the runner makes the copy of the code the agent works in, so it
-also runs the command there, before the agent starts. It runs with the runner's own environment,
-network included, and within the run's time limit. What npm, pnpm and yarn install into
+also runs the command there, before the agent starts, within the run's time limit. A package's own
+install script runs as you, so the command runs where the agent does, inside the sandbox: with a
+scratch home instead of yours, so it cannot read or write your files, and with an environment of a few
+names only (`PATH`, `HOME`, the locale, certificate files and the package registry's settings), not the
+runner's whole environment. Where the runner holds agents to their web access (`[egress] enforce`), the
+install goes through the same proxy and reaches only the package registry: the one the lockfile's package
+manager uses, and any registry named in the runner's own `NPM_CONFIG_REGISTRY`, `PIP_INDEX_URL` or `UV_INDEX_URL`.
+The tools it needs are found on the runner's `PATH`; a tool kept under a version manager's folder is
+shown to the sandbox together with the folder beside its `bin`. Its output is read with the registry's
+tokens removed. Where the machine has no sandbox and the administrator turned the requirement off, the
+install runs as the runner does, as the agent does, and the run's timeline says "Installed without a
+sandbox"; where the requirement is on, nothing is installed and the run ends as failed. What npm, pnpm and yarn install into
 `node_modules` is kept once in the runner's state folder, under `prepare-cache`, per lockfile. The
 next run with the same lockfile gets its own `node_modules` whose files are hard links to the kept
 ones, so it prepares in seconds without running the command and without copying the packages; the
@@ -439,6 +450,16 @@ command a project replaced keep nothing and run every time. If the command exits
 runs out of time, the run ends as failed before the agent starts and spends no tokens; its reason is
 "Could not prepare the dependencies", the command and how it ended, and the last lines of its output.
 A docket run is prepared by docket, not by the runner.
+
+A command a project replaced is a shell command the board chose, so the runner runs it only if you allow
+it. By default it does not: the run ends as failed before the agent starts, with the reason that the runner
+does not let the board replace the install command. To allow it, write the following in the runner's settings
+file; the command the lockfile implies never needs it.
+
+```toml
+[prepare]
+board_may_replace = true
+```
 
 The runner installs only what the agent can use. When a run's tools are named and none of them runs
 a command (only Read, Grep, Glob, WebFetch and WebSearch) and the card has no check that runs
