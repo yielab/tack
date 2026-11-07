@@ -26,6 +26,8 @@ fn a_direct_request_passes_only_the_model() {
         // rest of the mapping).
         [
             "exec",
+            "-c",
+            "mcp_servers={}",
             "--json",
             "--sandbox",
             "workspace-write",
@@ -218,6 +220,8 @@ fn the_permission_policy_maps_onto_the_sandbox_flag() {
             args,
             [
                 "exec",
+                "-c",
+                "mcp_servers={}",
                 "--json",
                 "--sandbox",
                 sandbox,
@@ -380,7 +384,7 @@ fn an_ask_request_becomes_an_app_server_conversation() {
         host: &crate::config::ProcessEnv::default(),
     };
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
-    assert_eq!(invocation.args, ["app-server"]);
+    assert_eq!(invocation.args, ["app-server", "-c", "mcp_servers={}"]);
     assert!(invocation.stdin_stays_open);
 
     // `prompt()`'s bytes: framed as the JSON-RPC `initialize` request when

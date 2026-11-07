@@ -216,8 +216,8 @@ already running is left running.
 
   | Agent | Sign in with | Where the sign-in lives | What the sandbox binds |
   |---|---|---|---|
-  | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | `~/.claude` |
-  | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | `~/.codex` |
+  | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | Its settings, instructions, skills and commands, read-only, and its login file. Sessions and caches go to a scratch home |
+  | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | Its `config.toml`, instructions, rules and skills, read-only, and its login file. Sessions and databases go to a scratch home. Its MCP servers do not load |
   | opencode | `opencode auth login` ([providers](https://opencode.ai/docs/providers/)) | opencode's own `auth.json` | Its `auth.json` only, in a scratch home, with the `provider`, `model` and `small_model` keys of its configuration. Its MCP servers, plugins and permissions do not reach the run |
   | docket | docket's own sign-in ([docket](https://github.com/yielab/docket)) | docket's own home (`DOCKET_HOME`) | Nothing: docket is a daemon the runner talks to over HTTP, and it confines its agents in its own jail |
 

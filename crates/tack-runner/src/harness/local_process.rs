@@ -178,10 +178,10 @@ pub struct HarnessDescriptor {
     /// is going (`StreamSignal::Progress`). A grammar that does is read line
     /// by line on every run, not only one kept open to be asked questions.
     pub reports_progress: bool,
-    /// Directories under `$HOME` this CLI needs as they are (its login
-    /// session, its settings) when it runs inside a sandbox. A CLI that
-    /// keeps all its state in the scratch home names none.
-    pub sandbox_binds: &'static [&'static str],
+    /// Directories under `$HOME` this CLI reads from, and the login it
+    /// shares, when it runs inside a sandbox. A CLI that keeps all its state
+    /// in the scratch home names none.
+    pub sandbox_binds: &'static [sandbox::ConfigDir],
     /// Who meets each parity rule for this CLI: itself, the runner from outside, its daemon, or
     /// nobody yet (with the reason). Declared from what the code does today, never from what a
     /// later card will do; the parity test in `tests/agent_boundaries.rs` reads it.
