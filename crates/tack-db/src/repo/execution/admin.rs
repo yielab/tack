@@ -34,6 +34,7 @@ pub struct AgentProfilePatch<'a> {
     pub kind: Option<&'a str>,
     pub fleet_id: Option<Option<&'a str>>,
     pub delivers: Option<Option<&'a str>>,
+    pub egress_mode: Option<&'a str>,
 }
 
 impl Repository {
@@ -90,8 +91,9 @@ impl Repository {
         })
     }
 
-    /// Adds an agent profile, placed in `fleet_id`, given a `delivers` line and
-    /// the `kind` it does (the column's default, `custom`, when absent)
+    /// Adds an agent profile, placed in `fleet_id`, given a `delivers` line,
+    /// the `kind` it does (the column's default, `custom`, when absent) and the
+    /// `egress_mode` it starts with (the column's default, `listed`, when absent)
     /// when any is named, in one transaction. A taken name is
     /// `Conflict("profile_name_taken")`.
     #[instrument(skip(self, input))]
@@ -101,6 +103,7 @@ impl Repository {
         fleet_id: Option<&str>,
         delivers: Option<&str>,
         kind: Option<&str>,
+        egress_mode: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         let now = now.to_rfc3339();
@@ -114,16 +117,18 @@ impl Repository {
         .execute(&mut *tx)
         .await
         .map_err(|err| conflict_on_unique(err, "profile_name_taken"))?;
-        if fleet_id.is_some() || delivers.is_some() || kind.is_some() {
+        if fleet_id.is_some() || delivers.is_some() || kind.is_some() || egress_mode.is_some() {
             sqlx::query(
-                "UPDATE agent_profiles SET fleet_id = ?, delivers = ?, kind = COALESCE(?, kind) WHERE id = ?",
+                "UPDATE agent_profiles SET fleet_id = ?, delivers = ?, kind = COALESCE(?, kind), \
+                 egress_mode = COALESCE(?, egress_mode) WHERE id = ?",
             )
-                .bind(fleet_id)
-                .bind(delivers)
-                .bind(kind)
-                .bind(input.id)
-                .execute(&mut *tx)
-                .await?;
+            .bind(fleet_id)
+            .bind(delivers)
+            .bind(kind)
+            .bind(egress_mode)
+            .bind(input.id)
+            .execute(&mut *tx)
+            .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -150,6 +155,7 @@ impl Repository {
             "UPDATE agent_profiles SET name = COALESCE(?, name), instructions = COALESCE(?, instructions), \
              tool_policy = COALESCE(?, tool_policy), limits = COALESCE(?, limits), \
              summary = COALESCE(?, summary), kind = COALESCE(?, kind), \
+             egress_mode = COALESCE(?, egress_mode), \
              fleet_id = CASE WHEN ? = 1 THEN ? ELSE fleet_id END, \
              delivers = CASE WHEN ? = 1 THEN ? ELSE delivers END, updated_at = ? WHERE id = ?",
         )
@@ -159,6 +165,7 @@ impl Repository {
         .bind(patch.limits)
         .bind(patch.summary)
         .bind(patch.kind)
+        .bind(patch.egress_mode)
         .bind(set_fleet)
         .bind(fleet_id)
         .bind(set_delivers)

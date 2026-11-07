@@ -58,15 +58,11 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
         ],
         login: &[LOGIN_FILE],
     }],
+    model_endpoints: &["api.anthropic.com"],
     parity: &[
         (ParityRule::SandboxOrNoRun, ParityCell::Runner),
         (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
-        (
-            ParityRule::EgressByAllowList,
-            ParityCell::missing(
-                "GR5: Claude Code's web tools reach the network directly, no proxy of the runner's",
-            ),
-        ),
+        (ParityRule::EgressByAllowList, ParityCell::Runner),
         (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),

@@ -231,6 +231,39 @@ async fn the_request_snapshot_carries_the_item_as_data_beside_the_composed_prose
 }
 
 #[tokio::test]
+async fn the_request_snapshot_carries_the_profiles_web_access_and_its_listed_hosts() {
+    let board = board().await;
+    add_profile(
+        &board.repo,
+        "profile-web",
+        r#"{"allowed_hosts":["docs.rs"]}"#,
+        "{}",
+    )
+    .await;
+    board
+        .repo
+        .update_agent_profile(
+            "profile-web",
+            tack_db::repo::execution::AgentProfilePatch {
+                egress_mode: Some("open"),
+                ..Default::default()
+            },
+            SystemClock.now(),
+        )
+        .await
+        .unwrap();
+    let mut request = bare_request(board.item_id, "k-web");
+    request.agent_profile_id = Some("profile-web".into());
+    let started = start(&board, request).await.unwrap();
+    let stored = snapshot(&board.repo, &started).await;
+    assert_eq!(stored["resolved_agent_profile"]["egress_mode"], "open");
+    assert_eq!(
+        stored["resolved_agent_profile"]["tool_policy"]["allowed_hosts"],
+        json!(["docs.rs"])
+    );
+}
+
+#[tokio::test]
 async fn a_run_keeps_the_fingerprint_of_the_prompt_templates_it_was_composed_with() {
     let board = board().await;
     add_profile(&board.repo, "profile-sha", "{}", "{}").await;

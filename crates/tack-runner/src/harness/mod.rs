@@ -14,6 +14,7 @@ pub mod artifact;
 pub mod claude_code;
 pub mod codex;
 pub mod docket;
+pub mod egress;
 pub mod env_policy;
 pub mod fixtures;
 pub mod local_process;
@@ -143,6 +144,20 @@ pub(crate) fn profile_kind(request: &ExecutionRequestSnapshot) -> &str {
         .get("kind")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
+}
+
+/// The web access the run's profile chose. A request that names none (made before the profile
+/// had one) gets the middle mode.
+pub(crate) fn profile_egress_mode(
+    request: &ExecutionRequestSnapshot,
+) -> tack_protocol::execution::EgressMode {
+    request
+        .resolved_agent_profile
+        .additional
+        .get("egress_mode")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|mode| mode.parse().ok())
+        .unwrap_or(tack_protocol::execution::EgressMode::Listed)
 }
 
 /// What a plan-proposing profile is told about where the plan goes, by kind. The profile's own
@@ -443,7 +458,7 @@ pub fn discover(
     config: &crate::config::RunnerConfig,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
-    let (docket, env) = (&config.docket, &config.process);
+    let (docket, egress, env) = (&config.docket, &config.egress, &config.process);
     let request_may_reference = config.secrets.request_may_reference.as_slice();
     let sandbox = sandbox::detect(env.search_path().as_deref(), env.home().as_deref())
         .requiring(config.sandbox.required);
@@ -454,6 +469,7 @@ pub fn discover(
         secrets,
         request_may_reference,
         own_environment,
+        egress,
         env,
     );
     install(&mut found, machine, codex::CodexGrammar);
@@ -495,12 +511,13 @@ type Machine<'a> = (
     &'a SecretStore,
     &'a [String],
     &'a BTreeMap<String, String>,
+    &'a crate::config::EgressConfig,
     &'a crate::config::ProcessEnv,
 );
 
 fn install<G: local_process::HarnessGrammar>(
     (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
-    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment, env): Machine<
+    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment, egress, env): Machine<
         '_,
     >,
     grammar: G,
@@ -519,7 +536,8 @@ fn install<G: local_process::HarnessGrammar>(
                 .register(
                     harness
                         .with_probed_sandbox(sandbox.clone())
-                        .with_environment(request_may_reference.to_vec(), own_environment.clone()),
+                        .with_environment(request_may_reference.to_vec(), own_environment.clone())
+                        .with_egress(egress.clone()),
                 )
                 .is_err()
             {
@@ -796,6 +814,17 @@ impl HarnessAdapter for AdapterRegistry {
         self.resolve(&kind)
             .ok()?
             .approvals_forced_ask(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
+    async fn network_refusals(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<tokio::sync::mpsc::Receiver<egress::NetworkRefusal>> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .network_refusals(&LocalRunHandle { process_id: inner })
             .await
     }
 

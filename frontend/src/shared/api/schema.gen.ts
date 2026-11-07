@@ -3951,6 +3951,8 @@ export interface components {
             };
             /** @description One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer". */
             delivers?: string | null;
+            /** @description How far the agent's traffic may go when the runner enforces it: `closed`, `listed` or `open`. */
+            egress_mode: string;
             fleet_id?: string | null;
             instructions: string;
             kind: string;
@@ -4346,6 +4348,12 @@ export interface components {
         BundleProfile: {
             /** @description One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer". */
             delivers?: string | null;
+            /**
+             * @description How far the agent's traffic may go: `closed` (the model's endpoint), `listed` (and the hosts
+             *     in `tool_policy.allowed_hosts`) or `open` (any public host). Absent: the profile keeps its own,
+             *     or takes the one its kind starts with.
+             */
+            egress_mode?: string | null;
             /** @description The name of the fleet that runs it; absent: any computer. */
             fleet?: string | null;
             /** @description What the agent is told before the task. */
@@ -4801,6 +4809,12 @@ export interface components {
         CreateProfile: {
             /** @description One line on what the profile delivers; empty or absent is no line. */
             delivers?: string | null;
+            /**
+             * @description How far the agent's traffic may go when the runner enforces it: `closed` (the model's
+             *     endpoint only), `listed` (and `tool_policy.allowed_hosts`) or `open` (any public host).
+             *     Absent: the one the profile's kind starts with.
+             */
+            egress_mode?: string | null;
             /** @description The fleet a run with this profile goes to when it names no selector. */
             fleet_id?: string | null;
             instructions: string;
@@ -7861,6 +7875,8 @@ export interface components {
         UpdateProfile: {
             /** @description Omitted leaves the line untouched; JSON `null` or an empty string clears it. */
             delivers?: string | null;
+            /** @description `closed`, `listed` or `open`, as on create. */
+            egress_mode?: string | null;
             /** @description Omitted leaves the fleet untouched; JSON `null` clears it. */
             fleet_id?: string | null;
             instructions?: string | null;

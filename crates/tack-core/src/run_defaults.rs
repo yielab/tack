@@ -229,6 +229,66 @@ pub fn check_network(tool_policy: &serde_json::Value) -> Result<(), String> {
     }
 }
 
+/// What a profile's `egress_mode` may be: `closed`, `listed` or `open`.
+pub fn check_egress_mode(mode: &str) -> Result<tack_protocol::execution::EgressMode, String> {
+    mode.trim().parse()
+}
+
+/// A profile's web access as a file or a request states it: its mode, when it states one, and the
+/// hosts its tool policy lists.
+pub fn check_egress(mode: Option<&str>, tool_policy: &serde_json::Value) -> Result<(), String> {
+    if let Some(mode) = mode {
+        check_egress_mode(mode)?;
+    }
+    check_allowed_hosts(tool_policy)
+}
+
+/// The hosts a profile lists for its `listed` web access (`tool_policy.allowed_hosts`): names
+/// only, no scheme, port or path. Anything that is not a list of names is none.
+pub fn allowed_hosts(tool_policy: &serde_json::Value) -> Vec<String> {
+    tool_policy
+        .get("allowed_hosts")
+        .and_then(|v| v.as_array())
+        .map(|hosts| {
+            hosts
+                .iter()
+                .filter_map(|h| h.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// What a profile's `tool_policy.allowed_hosts` may hold: absent, or a list of at most 64 host
+/// names, each `example.com` or `*.example.com`, in lower case.
+pub fn check_allowed_hosts(tool_policy: &serde_json::Value) -> Result<(), String> {
+    let Some(hosts) = tool_policy.get("allowed_hosts") else {
+        return Ok(());
+    };
+    let Some(hosts) = hosts.as_array().filter(|hosts| hosts.len() <= 64) else {
+        return Err("tool_policy.allowed_hosts must be a list of at most 64 host names".to_owned());
+    };
+    for host in hosts {
+        let Some(host) = host.as_str() else {
+            return Err("tool_policy.allowed_hosts must hold host names".to_owned());
+        };
+        let name = host.strip_prefix("*.").unwrap_or(host);
+        let valid = !name.is_empty()
+            && name.len() <= 253
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.')
+            && !name.starts_with(['.', '-'])
+            && !name.ends_with(['.', '-'])
+            && !name.contains("..");
+        if !valid {
+            return Err(format!(
+                "tool_policy.allowed_hosts: \"{host}\" is not a host name such as example.com or *.example.com"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// What a profile's `delivers` line may be: one line of at most 160 characters. An empty line is
 /// no line; the caller stores it as absent.
 pub fn check_delivers(delivers: &str) -> Result<(), String> {
@@ -350,6 +410,49 @@ mod tests {
         assert!(caps(serde_json::json!({"network": true})).uses_network);
         assert!(check_delivers("a change on a branch").is_ok());
         assert!(check_delivers("two\nlines").is_err());
+    }
+
+    #[test]
+    fn a_web_access_mode_is_one_of_three_and_listed_hosts_are_names() {
+        for mode in ["closed", "listed", "open", " open "] {
+            assert!(check_egress_mode(mode).is_ok(), "{mode}");
+        }
+        assert!(check_egress_mode("wide").is_err());
+        assert!(check_egress_mode("").is_err());
+
+        let hosts = |value: serde_json::Value| serde_json::json!({"allowed_hosts": value});
+        assert!(check_allowed_hosts(&serde_json::json!({})).is_ok());
+        assert!(
+            check_allowed_hosts(&hosts(serde_json::json!([
+                "docs.rs",
+                "*.crates.io",
+                "a-b.c1.test"
+            ])))
+            .is_ok()
+        );
+        for bad in [
+            serde_json::json!("docs.rs"),
+            serde_json::json!([1]),
+            serde_json::json!(["https://docs.rs"]),
+            serde_json::json!(["docs.rs/path"]),
+            serde_json::json!(["docs.rs:443"]),
+            serde_json::json!(["Docs.rs"]),
+            serde_json::json!(["*"]),
+            serde_json::json!(["*."]),
+            serde_json::json!(["a..b"]),
+            serde_json::json!([".docs.rs"]),
+            serde_json::json!(["docs.rs."]),
+            serde_json::json!((0..65).map(|n| format!("h{n}.test")).collect::<Vec<_>>()),
+        ] {
+            assert!(check_allowed_hosts(&hosts(bad.clone())).is_err(), "{bad}");
+        }
+        assert_eq!(
+            allowed_hosts(&hosts(serde_json::json!(["docs.rs", 3, "b.test"]))),
+            ["docs.rs", "b.test"]
+        );
+        assert!(check_egress(Some("open"), &serde_json::json!({})).is_ok());
+        assert!(check_egress(Some("wide"), &serde_json::json!({})).is_err());
+        assert!(check_egress(None, &hosts(serde_json::json!(["x y"]))).is_err());
     }
 
     fn cands() -> Vec<Candidate> {

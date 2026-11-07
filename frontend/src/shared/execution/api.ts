@@ -369,6 +369,9 @@ export const fleetsApi = {
 /** What a profile does; it decides whether a run needs a repository. */
 export type ProfileKind = 'implementer' | 'reviewer' | 'researcher' | 'planner' | 'custom';
 
+/** How far a profile's agent may reach on the web when the runner enforces it. */
+export type EgressMode = 'closed' | 'listed' | 'open';
+
 export interface AgentProfileSummary {
   agent_profile_id: string;
   name: string;
@@ -380,6 +383,8 @@ export interface AgentProfileSummary {
   summary?: string;
   /** One line on what the profile delivers: "a change on a branch", "an answer". */
   delivers?: string | null;
+  /** How far the agent's traffic may go: the model only, that and the profile's hosts, or any public host. */
+  egress_mode?: EgressMode;
   /** The group of computers the profile's runs go to; none means the one active computer. */
   fleet_id?: string | null;
   /** Read only, derived from the tool policy: what the profile's tools can do. */
@@ -412,6 +417,8 @@ export interface CreateAgentProfileInput {
   delivers?: string | null;
   /** What the profile does; left out, a new profile is `custom` and an updated one keeps its own. */
   kind?: ProfileKind;
+  /** Left out, a new profile starts with the mode its kind starts with and an updated one keeps its own. */
+  egress_mode?: EgressMode;
 }
 
 export interface CreateAgentProfileResult {

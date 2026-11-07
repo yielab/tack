@@ -111,7 +111,7 @@ runner does not know makes it refuse to start.
 | `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` | `max_concurrent_attempts` | `--max-concurrent-attempts` (the `tack-runner` executable only) | `1` | How many attempts the runner works at once. Below `1`, or a value that is not a whole number, is refused at start. A folder worked in place runs one attempt at a time whatever this says; parallel attempts need a branch or a clone |
 | `TACK_RUNNER_SECRET_VALUE` | — | — | _(none)_ | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable: the store keeps it (OS keychain, or an owner-only file where none answers within three seconds; `tack runner doctor` reports which backend a given boot picked) |
 
-Tables `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]` and `[docket]` have no environment variable;
+Tables `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]`, `[docket]` and `[egress]` have no environment variable;
 they are described in the sections below. Runner credentials are redacted in every log and error.
 
 ## Embedded runner (`tack serve --with-runner`)
@@ -132,7 +132,7 @@ The settings:
   TOML file the embedded runner loads, the same file `tack runner start --config` reads. Without it the
   runner reads `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on Linux) when
   that file exists. It is the only way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[sandbox]`,
-  `[environment]` or `[docket]` table, since those have no environment variable. With no file it runs on
+  `[environment]`, `[docket]` or `[egress]` table, since those have no environment variable. With no file it runs on
   defaults: no verifier, no branch push and no docket. `GET /api/local-runner` names the file it read
   (`config_file`, `null` with none), and `tack runner doctor` prints it first.
 - **State directory.** `<TACK_STORAGE_DIR>/runner`, so two boards never share one runner's state.
@@ -264,6 +264,28 @@ As with the verifier, a run request can decline the push for one run but never e
 for a push from a runner with `push_branches = false` changes nothing and the attempt records an
 `attempt.push_skipped` event.
 
+## Web access (`[egress]`)
+
+Holds each run of Claude Code, Codex and opencode to the web access its profile chose (`closed`, `listed` or
+`open`) through a proxy the runner starts for the run on loopback. Off by default.
+
+```toml
+[egress]
+enforce = true
+model_hosts = ["openrouter.ai", "*.example.com"]
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enforce` | `false` | Whether every run of a local agent goes through the proxy, in its profile's mode |
+| `model_hosts` | `[]` | Hosts every mode lets through besides the agent's own model address; for an agent that takes any provider (opencode). `example.com` or `*.example.com` |
+
+The proxy refuses this computer's own address, private networks, link-local addresses and the cloud metadata
+addresses in every mode, judged on the address a name resolves to. The agent is told through `HTTP_PROXY`,
+`HTTPS_PROXY` and `NO_PROXY`; a program that ignores them is not held. docket's traffic is not affected: docket
+confines its own. What each mode covers, and what it cannot, is in
+[What the Agent Can Reach](https://yielab.github.io/tack/admin-guide/what-the-agent-can-reach.html#web-access).
+
 ## docket (`[docket]`)
 
 docket runs as a daemon beside the runner and the runner talks to its operator API (version 6,
@@ -337,7 +359,7 @@ unless the administrator turned the requirement off, and then it asks before eac
 When `bwrap` is on the runner's `PATH`, each agent that can
 start inside it runs inside it, seeing the workspace and a scratch home read-write, the
 directories it needs from your home (`~/.claude`, `~/.codex`) and the system
-directories read-only. The network is not restricted. An agent that cannot start inside
+directories read-only. The sandbox does not close the network; see `[egress]`. An agent that cannot start inside
 `bwrap` (a program in a virtualenv or under Homebrew, whose loader or runtime lives where the
 sandbox does not reach) counts as not contained. docket is not wrapped: it confines its own agents, and the
 probe asks it (`isolationPosture` in its `/health`): `sandbox: harness` only when docket says it

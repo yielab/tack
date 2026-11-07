@@ -90,6 +90,11 @@ pub struct CreateProfile {
     /// (the default). It decides whether a run needs a repository.
     #[serde(default)]
     pub kind: Option<String>,
+    /// How far the agent's traffic may go when the runner enforces it: `closed` (the model's
+    /// endpoint only), `listed` (and `tool_policy.allowed_hosts`) or `open` (any public host).
+    /// Absent: the one the profile's kind starts with.
+    #[serde(default)]
+    pub egress_mode: Option<String>,
 }
 fn empty() -> Value {
     json!({})
@@ -235,6 +240,8 @@ pub struct AgentProfileSummary {
     pub fleet_id: Option<String>,
     /// One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer".
     pub delivers: Option<String>,
+    /// How far the agent's traffic may go when the runner enforces it: `closed`, `listed` or `open`.
+    pub egress_mode: String,
     /// Read only: whether its tools can change files, derived from `tool_policy`.
     #[schema(read_only)]
     pub changes_files: bool,
@@ -278,6 +285,8 @@ pub struct UpdateProfile {
     pub delivers: Option<Option<String>>,
     /// What the profile does, from the same list as on create. A built-in profile keeps its own.
     pub kind: Option<String>,
+    /// `closed`, `listed` or `open`, as on create.
+    pub egress_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -971,6 +980,7 @@ pub async fn create_profile(
         input.fleet_id.as_deref(),
         input.delivers.as_deref(),
         input.kind.as_deref(),
+        input.egress_mode.as_deref(),
     )
     .await?;
     check_limits(&input.limits)?;
@@ -999,6 +1009,14 @@ pub async fn create_profile(
         .map(str::trim)
         .filter(|d| !d.is_empty());
     let kind = input.kind.as_deref().map(str::trim);
+    let egress_mode = input
+        .egress_mode
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_else(|| {
+            tack_protocol::execution::EgressMode::default_for_kind(kind.unwrap_or("custom"))
+                .as_str()
+        });
     let result = state
         .repo
         .create_agent_profile_placed(
@@ -1012,6 +1030,7 @@ pub async fn create_profile(
             input.fleet_id.as_deref(),
             delivers,
             kind,
+            Some(egress_mode),
             state.clock.now(),
         )
         .await;
@@ -1109,6 +1128,7 @@ fn profile_from_row(
         summary: r.summary,
         fleet_id: r.fleet_id,
         delivers: r.delivers,
+        egress_mode: r.egress_mode,
         changes_files: caps.changes_files,
         runs_commands: caps.runs_commands,
         uses_network: caps.uses_network,
@@ -1132,13 +1152,14 @@ fn check_limits(limits: &Value) -> Result<(), (StatusCode, Json<Value>)> {
     })
 }
 
-/// 400 when `kind` is not one a profile may take, `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, `tool_policy.docket.pipeline_by_type` names a method the profile's agent or team does not have, or `fleet_id` names no fleet. Answers with what deserves a second look (a method the team names no member for).
+/// 400 when `kind` is not one a profile may take, `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `egress_mode` is not closed, listed or open, `tool_policy.allowed_hosts` is not a list of host names, `tool_policy.docket.team` is not docket's project id, `tool_policy.docket.pipeline_by_type` names a method the profile's agent or team does not have, or `fleet_id` names no fleet. Answers with what deserves a second look (a method the team names no member for).
 async fn check_profile_fields(
     repo: &Repository,
     tool_policy: Option<&Value>,
     fleet_id: Option<&str>,
     delivers: Option<&str>,
     kind: Option<&str>,
+    egress_mode: Option<&str>,
 ) -> Result<Vec<String>, (StatusCode, Json<Value>)> {
     if let Some(kind) = kind.map(str::trim)
         && !PROFILE_KINDS.contains(&kind)
@@ -1148,6 +1169,14 @@ async fn check_profile_fields(
             StableErrorCode::InvalidRequest,
             &format!("kind \"{kind}\" is not one of {}", PROFILE_KINDS.join(", ")),
             json!({"field": "kind"}),
+        ));
+    }
+    if let Some(Err(message)) = egress_mode.map(tack_core::run_defaults::check_egress_mode) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "egress_mode"}),
         ));
     }
     if let Some(Err(message)) = delivers.map(tack_core::run_defaults::check_delivers) {
@@ -1179,6 +1208,16 @@ async fn check_profile_fields(
             StableErrorCode::InvalidRequest,
             &message,
             json!({"field": "tool_policy.network"}),
+        ));
+    }
+    if let Some(policy) = tool_policy
+        && let Err(message) = tack_core::run_defaults::check_allowed_hosts(policy)
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "tool_policy.allowed_hosts"}),
         ));
     }
     if let Some(team) = tool_policy.and_then(|p| p.get("docket")?.get("team")) {
@@ -1358,6 +1397,7 @@ pub async fn update_profile(
         input.fleet_id.as_ref().and_then(|f| f.as_deref()),
         input.delivers.as_ref().and_then(|d| d.as_deref()),
         input.kind.as_deref(),
+        input.egress_mode.as_deref(),
     )
     .await?;
     if let Some(kind) = input.kind.as_deref().map(str::trim) {
@@ -1391,6 +1431,7 @@ pub async fn update_profile(
         kind: input.kind.as_deref().map(str::trim),
         fleet_id: input.fleet_id.as_ref().map(|f| f.as_deref()),
         delivers: delivers.as_ref().map(|d| d.as_deref()),
+        egress_mode: input.egress_mode.as_deref().map(str::trim),
     };
     state
         .repo

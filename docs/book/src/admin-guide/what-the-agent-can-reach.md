@@ -65,7 +65,8 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   discarded with it. It does not see the
   runner's state, `~/.tackrc`, `~/.ssh` or the token file, does not share IPC or the hostname with
   your machine, and holds no Linux capabilities. The network is not
-  restricted: the agent has to reach its model. The runner decides, for each agent,
+  closed by the sandbox: the agent has to reach its model, and where it may go is
+  decided by its profile's [web access](#web-access). The runner decides, for each agent,
   by starting it once inside `bwrap`. One that cannot start there (a program installed
   in a virtualenv or under Homebrew, for example) counts as not contained, and
   `tack runner doctor` and the run say so.
@@ -149,6 +150,44 @@ Never at completion. A pull request opens when you accept the attempt in its
 review, and only if the runner pushed the branch
 (`push_branches = true`) and the card is linked to a GitHub issue. Until you accept,
 nothing has been proposed to anyone.
+
+## Web access
+
+A profile chooses how far its agent may reach on the web: **closed** (only the model's own address), **listed**
+(the model and the hosts in the profile's `tool_policy.allowed_hosts`, each `example.com` or `*.example.com`) or
+**open** (any public site). A new profile starts with the mode of its kind: Implementer and custom profiles listed,
+Reviewer and Planner closed, Researcher open. The Agents page edits it as **Web access**; the project file and the
+profile API call it `egress_mode`.
+
+The runner enforces the choice when its configuration says so, and not before:
+
+```toml
+[egress]
+enforce = true
+model_hosts = ["openrouter.ai"]   # hosts every mode lets through, besides the agent's own model address
+```
+
+With `enforce = true` each run of Claude Code, Codex or opencode goes through a proxy the runner starts for that run
+on loopback and tells the agent about through `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (a request cannot set them).
+In every mode the proxy refuses this computer's own address, private networks, link-local addresses and the cloud
+metadata addresses. It judges the address a name resolves to, not the name, and connects to that address and no other,
+so a name that answers differently a second time reaches nothing inside. A refused destination is an event on the run
+and each one reached is logged with its bytes. Over plain HTTP only `GET`, `HEAD` and `OPTIONS` to a URL of at most
+2048 bytes pass; an HTTPS tunnel hides its URL, so **open** limits where the agent connects and not what it sends,
+and a public site it allows can still receive data. `tack runner doctor` prints, per agent, whether this runner
+enforces it.
+
+Know before you turn it on:
+
+- Claude Code and Codex name their model's address; opencode takes whichever provider its own configuration names,
+  so list those hosts under `model_hosts`. A model served on this computer, or on a private network, is refused like
+  any other internal address.
+- A profile with `listed` and no `allowed_hosts` reaches its model and nothing else, as `closed` does. Check the
+  profiles that browse before you enforce, and give them `open` or their hosts.
+- This is a request to the agent through the proxy variables, not a wall. A program that ignores them, or a shell
+  command that opens its own socket, is not held, whatever the sandbox does. The sandbox does not yet remove the other
+  ways out.
+- docket confines its own traffic; Tack asks it and shows the answer, and does not enforce.
 
 ## What "Web tools" does and does not do
 

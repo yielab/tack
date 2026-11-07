@@ -66,6 +66,18 @@ describe('EventTimeline', () => {
     expect(c.textContent).not.toContain('{"reason"');
   });
 
+  it('attempt.network_refused names where the agent tried to go and why it was refused', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.network_refused', payload: { host: '169.254.169.254', port: 80, reason: 'is on this machine or a private, link-local or metadata network' }, occurred_at: '2026-11-07T12:00:00Z', created_at: '2026-11-07T12:00:00Z' }]),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Web access refused');
+    expect(c.textContent).toContain('169.254.169.254:80 is on this machine or a private, link-local or metadata network');
+    expect(c.textContent).not.toContain('{"host"');
+  });
+
   it('shows the paths an event names inside the project, not the runner\'s workspace', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([step(1, 'agent.tool_call', 'Read /var/tmp/ws-1/src/app.ts')]));
     const c = mount('exec_1', 1, undefined, '/var/tmp/ws-1');

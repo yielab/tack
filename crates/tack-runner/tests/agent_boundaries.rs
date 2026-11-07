@@ -45,6 +45,7 @@ static FAKE: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[],
+    model_endpoints: &[],
     parity: &[],
     readiness: None,
     models_docs: "",
@@ -419,6 +420,7 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
         read_only: &["settings.json"],
         login: &[".credentials.json"],
     }],
+    model_endpoints: &[],
     parity: &[],
     readiness: None,
     models_docs: "",
@@ -1749,6 +1751,7 @@ fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
         cancels_over_api: real.cancels_over_api,
         reports_progress: real.reports_progress,
         sandbox_binds: &[],
+        model_endpoints: &[],
         parity: &[],
         readiness: None,
         models_docs: "",
@@ -1981,6 +1984,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         cancels_over_api: false,
         reports_progress: false,
         sandbox_binds: &[],
+        model_endpoints: &[],
         parity: &[],
         readiness: None,
         models_docs: "",
@@ -2106,11 +2110,7 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
 // must delete their entries; a descriptor with a gap nobody explained is red.
 
 /// `(rule, agent, card)` for each cell that is not met today and that a card will meet.
-const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
-    (ParityRule::EgressByAllowList, "claude-code", "GR5"),
-    (ParityRule::EgressByAllowList, "codex", "GR5"),
-    (ParityRule::EgressByAllowList, "opencode", "GR5"),
-];
+const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[];
 
 /// What is wrong with the matrix, one line per problem; empty when it holds.
 fn parity_problems(
@@ -2185,6 +2185,7 @@ fn leaked_descriptor(
         cancels_over_api: false,
         reports_progress: false,
         sandbox_binds: &[],
+        model_endpoints: &[],
         parity: Box::leak(column.into_boxed_slice()),
         readiness: None,
         models_docs: "",
@@ -2284,5 +2285,348 @@ fn the_board_knows_which_agents_report_no_usage_while_they_run() {
             "{}: `WITHOUT_LIVE_USAGE` must list exactly the agents with `reports_progress: false`",
             descriptor.kind
         );
+    }
+}
+
+// ---- Web access (the runner's proxy) ----
+
+mod egress {
+    use std::{
+        collections::HashMap,
+        io,
+        net::{IpAddr, SocketAddr},
+        sync::{Arc, Mutex},
+    };
+
+    use async_trait::async_trait;
+    use tack_runner::harness::egress::{Network, NetworkRefusal};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+    };
+
+    use super::*;
+
+    /// A CLI stand-in that says where the runner told it to send its traffic, then waits.
+    const CLI: &str = "#!/bin/sh\n\
+        { echo \"HTTPS_PROXY=$HTTPS_PROXY\"; echo \"HTTP_PROXY=$HTTP_PROXY\"; echo \"NO_PROXY=$NO_PROXY\"; } > \"$TACK_TEST_ENV_FILE.tmp\"\n\
+        mv \"$TACK_TEST_ENV_FILE.tmp\" \"$TACK_TEST_ENV_FILE\"\n\
+        exec sleep 60\n";
+
+    /// Names resolve as the test says; a connection to any address reaches a local echo server,
+    /// and the address it was asked for is kept.
+    struct Fake {
+        names: HashMap<&'static str, Vec<IpAddr>>,
+        echo: SocketAddr,
+        dialled: Mutex<Vec<SocketAddr>>,
+    }
+
+    #[async_trait]
+    impl Network for Fake {
+        async fn resolve(&self, host: &str) -> io::Result<Vec<IpAddr>> {
+            self.names
+                .get(host)
+                .cloned()
+                .ok_or_else(|| io::Error::other("unknown name"))
+        }
+
+        async fn connect(&self, to: SocketAddr) -> io::Result<TcpStream> {
+            self.dialled.lock().unwrap().push(to);
+            TcpStream::connect(self.echo).await
+        }
+    }
+
+    async fn echo_server() -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buffer = [0u8; 1024];
+                    while let Ok(n) = stream.read(&mut buffer).await {
+                        if n == 0 || stream.write_all(&buffer[..n]).await.is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        address
+    }
+
+    struct ScriptGrammar(&'static HarnessDescriptor);
+
+    impl HarnessGrammar for ScriptGrammar {
+        fn descriptor(&self) -> &'static HarnessDescriptor {
+            self.0
+        }
+
+        fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
+            RunGrammar.capabilities()
+        }
+
+        fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+            Ok(Invocation::default())
+        }
+
+        fn report(&self, _run: &RunContext<'_>, _result: &ProcessResult) -> RunReport {
+            RunReport::verdict(true, serde_json::json!({}))
+        }
+    }
+
+    /// A running stand-in CLI whose traffic goes through the runner's proxy.
+    struct Live {
+        _dir: tempfile::TempDir,
+        harness: LocalProcessHarness<ScriptGrammar>,
+        handle: tack_runner::client::LocalRunHandle,
+        network: Arc<Fake>,
+        told: HashMap<String, String>,
+    }
+
+    impl Live {
+        /// The proxy the CLI was told about, when it was told one.
+        fn proxy(&self) -> SocketAddr {
+            let url = self
+                .told
+                .get("HTTPS_PROXY")
+                .expect("the CLI was told a proxy");
+            url.trim_start_matches("http://")
+                .parse()
+                .expect("a socket address")
+        }
+
+        /// What the proxy answers to a `CONNECT`.
+        async fn connect(&self, target: &str) -> String {
+            let mut stream = TcpStream::connect(self.proxy()).await.unwrap();
+            let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n");
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).await.unwrap_or(0) == 1 {
+                head.push(byte[0]);
+            }
+            String::from_utf8(head)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap()
+                .to_owned()
+        }
+    }
+
+    /// Starts the stand-in CLI. `mode` and `listed` are what the profile chose; `enforce` is the
+    /// runner's `[egress]` switch.
+    async fn live(mode: Option<&str>, listed: &[&str], enforce: bool) -> Live {
+        let dir = root("egress");
+        let program = dir.path().join("cli.sh");
+        std::fs::write(&program, CLI).unwrap();
+        std::fs::set_permissions(
+            &program,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+            kind: "egress-fake",
+            program: Box::leak(program.display().to_string().into_boxed_str()),
+            model_endpoints: &["api.model.test"],
+            ..FAKE
+        }));
+        let network = Arc::new(Fake {
+            names: HashMap::from([
+                ("api.model.test", vec!["203.0.113.10".parse().unwrap()]),
+                ("docs.listed.test", vec!["203.0.113.20".parse().unwrap()]),
+                ("blog.public.test", vec!["203.0.113.30".parse().unwrap()]),
+                ("rebind.test", vec!["10.0.0.9".parse().unwrap()]),
+            ]),
+            echo: echo_server().await,
+            dialled: Mutex::new(Vec::new()),
+        });
+        let harness = sandboxed_harness(
+            ScriptGrammar(descriptor),
+            dir.path(),
+            sandbox::Sandbox::none("test"),
+        )
+        .with_egress(tack_runner::EgressConfig {
+            enforce,
+            model_hosts: Vec::new(),
+        })
+        .with_egress_network(network.clone());
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let env_file = dir.path().join("env.txt");
+        let mut spec = spec(
+            workspace,
+            &[(
+                "TACK_TEST_ENV_FILE",
+                literal(&env_file.display().to_string()),
+            )],
+        );
+        spec.work.request.requested_harness_kind =
+            tack_protocol::execution::HarnessKind::new(descriptor.kind);
+        let profile = &mut spec.work.request.resolved_agent_profile;
+        if let Some(mode) = mode {
+            profile
+                .additional
+                .insert("egress_mode".into(), serde_json::json!(mode));
+        }
+        profile.tool_policy = serde_json::json!({"allowed_hosts": listed});
+        let handle = harness.start(&spec).await.expect("the run starts");
+        let mut told = None;
+        for _ in 0..200 {
+            if let Ok(text) = std::fs::read_to_string(&env_file) {
+                told = Some(text);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let told = told
+            .expect("the CLI reported its environment")
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .collect();
+        Live {
+            _dir: dir,
+            harness,
+            handle,
+            network,
+            told,
+        }
+    }
+
+    impl Live {
+        async fn stop(self) {
+            self.harness
+                .cancel(&self.handle)
+                .await
+                .expect("the run stops");
+        }
+    }
+
+    #[tokio::test]
+    async fn without_enforcement_the_cli_is_told_no_proxy() {
+        let run = live(Some("closed"), &[], false).await;
+        for name in ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"] {
+            assert_eq!(run.told[name], "", "{name}");
+        }
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn the_runner_tells_the_cli_its_proxy_and_keeps_loopback_off_it() {
+        let run = live(Some("open"), &[], true).await;
+        assert!(
+            run.told["HTTPS_PROXY"].starts_with("http://127.0.0.1:"),
+            "{:?}",
+            run.told
+        );
+        assert_eq!(run.told["HTTPS_PROXY"], run.told["HTTP_PROXY"]);
+        assert!(run.told["NO_PROXY"].contains("127.0.0.1"), "{:?}", run.told);
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn closed_reaches_the_cli_endpoint_and_refuses_a_public_host_that_is_not_listed() {
+        let run = live(Some("closed"), &["docs.listed.test"], true).await;
+        // The twin: the CLI still reaches the model.
+        assert!(run.connect("api.model.test:443").await.contains("200"));
+        assert_eq!(
+            *run.network.dialled.lock().unwrap(),
+            ["203.0.113.10:443".parse::<SocketAddr>().unwrap()]
+        );
+        // A public host that is not its model is refused, and so is one the profile lists: a
+        // closed profile has no list.
+        assert!(run.connect("blog.public.test:443").await.contains("403"));
+        assert!(run.connect("docs.listed.test:443").await.contains("403"));
+        assert_eq!(run.network.dialled.lock().unwrap().len(), 1);
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn listed_reaches_the_cli_endpoint_and_the_profiles_hosts_and_no_other() {
+        let run = live(Some("listed"), &["docs.listed.test"], true).await;
+        assert!(run.connect("api.model.test:443").await.contains("200"));
+        assert!(run.connect("docs.listed.test:443").await.contains("200"));
+        assert!(run.connect("blog.public.test:443").await.contains("403"));
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_profile_with_no_mode_on_the_request_is_listed() {
+        let run = live(None, &["docs.listed.test"], true).await;
+        assert!(run.connect("docs.listed.test:443").await.contains("200"));
+        assert!(run.connect("blog.public.test:443").await.contains("403"));
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn open_reaches_any_public_host_and_refuses_internal_addresses_by_name_or_number() {
+        let run = live(Some("open"), &[], true).await;
+        assert!(run.connect("blog.public.test:443").await.contains("200"));
+        let dialled = run.network.dialled.lock().unwrap().len();
+        for target in [
+            "127.0.0.1:3210",
+            "10.1.2.3:443",
+            "169.254.169.254:80",
+            "[fd00:ec2::254]:80",
+            // a name that resolves to a private address
+            "rebind.test:443",
+        ] {
+            assert!(run.connect(target).await.contains("403"), "{target}");
+        }
+        assert_eq!(
+            run.network.dialled.lock().unwrap().len(),
+            dialled,
+            "a refused destination was dialled"
+        );
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn each_refused_destination_reaches_the_engine_as_an_event_to_report() {
+        let run = live(Some("closed"), &[], true).await;
+        let mut refusals = run
+            .harness
+            .network_refusals(&run.handle)
+            .await
+            .expect("an enforced run reports its refusals");
+        run.connect("blog.public.test:443").await;
+        run.connect("169.254.169.254:80").await;
+        let first: NetworkRefusal = refusals.recv().await.unwrap();
+        assert_eq!((first.host.as_str(), first.port), ("blog.public.test", 443));
+        let second = refusals.recv().await.unwrap();
+        assert_eq!(second.host, "169.254.169.254");
+        assert!(second.reason.contains("private"), "{}", second.reason);
+        run.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_run_without_enforcement_has_no_refusals_to_report() {
+        let run = live(Some("closed"), &[], false).await;
+        assert!(run.harness.network_refusals(&run.handle).await.is_none());
+        run.stop().await;
+    }
+
+    #[test]
+    fn every_agent_the_runner_spawns_names_its_model_endpoint_or_leaves_it_to_the_administrator() {
+        for descriptor in all_descriptors() {
+            let named = !descriptor.model_endpoints.is_empty();
+            let expected = matches!(descriptor.kind, "claude-code" | "codex");
+            assert_eq!(
+                named, expected,
+                "{}: only claude-code and codex know their endpoint; opencode takes the provider \
+                 its configuration names and docket confines its own",
+                descriptor.kind
+            );
+            for host in descriptor.model_endpoints {
+                assert!(
+                    host.chars().all(|c| c.is_ascii_lowercase()
+                        || c.is_ascii_digit()
+                        || c == '.'
+                        || c == '-'),
+                    "{host}"
+                );
+            }
+        }
     }
 }

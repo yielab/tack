@@ -1240,6 +1240,31 @@ describe('RunWithAgentModal', () => {
     expect(web().checked).toBe(false);
   });
 
+  it('the_network_line_names_the_profiles_web_access_and_says_when_the_computer_does_not_hold_the_agent_to_it', async () => {
+    const line = () => document.querySelector('[data-testid="run-dialog-web-access"]')?.textContent ?? '';
+    const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', kind: 'researcher', egress_mode: 'open' };
+    const enforcing = (enforced: boolean) => runnerRow('runner-9', 'Box', runnerCapabilitySnapshot({
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], egress: { enforced, model_endpoints: ['api.openai.com'] } }],
+    }));
+    const pick = (name: string) => profileRadio(name).click();
+    mount({}, { runners: [enforcing(true)], fleets: [], agentProfiles: [{ ...PROFILE, kind: 'reviewer', egress_mode: 'closed' }, researcher], project: { ...PROJECT, default_profile_id: null } });
+    await flush(); await flush();
+    pick('Reviewer');
+    await flush();
+    expect(line()).toContain('Web: only the model');
+    expect(line()).not.toContain('does not hold');
+    expect(document.querySelector('[data-testid="run-dialog-web-access"] button[aria-label="Help: Web access"]')).not.toBeNull();
+    pick('Researcher');
+    await flush();
+    expect(line()).toContain('Web: any public site, no private networks');
+    teardown();
+    mount({}, { runners: [enforcing(false)], fleets: [], agentProfiles: [researcher], project: { ...PROJECT, default_profile_id: null } });
+    await flush(); await flush();
+    pick('Researcher');
+    await flush();
+    expect(line()).toContain('Web: any public site, no private networks (this computer does not hold the agent to it)');
+  });
+
   it('the_web_tools_box_follows_the_servers_default_for_the_chosen_agent_and_opencode_locks_it_on', async () => {
     const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
     // Tools that name the web are a default of the server's, not a rule the dialog repeats.
