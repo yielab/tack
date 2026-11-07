@@ -69,7 +69,12 @@ driver takes your side without a conflict and `.githooks/post-merge` regenerates
    pull request.
 3. **Write tests** for new behaviour and for a bug fix (a test that fails before the change and
    passes after). Where a test lives and how big it may be: [docs/TESTING.md](docs/TESTING.md).
-4. **Run the gate before pushing.** The pre-push hook is the definition of the local gate, so run
+4. **Classify the change.** Does it touch what the agent reads or receives: the prompt and the fence
+   around a card's text, what a run is given, a profile's default tools and approvals, the plan
+   instructions, the brief sent to the verifier, the manager's digest and threads, the onboarding
+   skill? A change to what the agent reads or receives names its suite, its threshold and its baseline, and writes the task first when none captures it. Put that in an EDD block at the top of the pull request; the lane and how to run it are in
+   [docs/TESTING.md](docs/TESTING.md#evals). A change that touches none of those needs a test, not an eval.
+5. **Run the gate before pushing.** The pre-push hook is the definition of the local gate, so run
    it rather than a list of commands typed from memory:
 
    ```bash
@@ -86,20 +91,20 @@ driver takes your side without a conflict and `.githooks/post-merge` regenerates
    If you touched the frontend, CI also runs `cd frontend && npm run type-check && npm test`,
    `npm run lint:tokens` (no raw color literals; colors come from `--color-*` tokens) and
    `npm run build` (the entry bundle stays under 30 KB gzipped).
-5. **Update the docs and the changelog.** If you changed behaviour, configuration or the API, change
+6. **Update the docs and the changelog.** If you changed behaviour, configuration or the API, change
    the matching docs in the same pull request and add a line under `[Unreleased]` in
    [CHANGELOG.md](CHANGELOG.md) (Added, Changed, Removed, Fixed or Security). The changelog is
    written by hand for someone upgrading: say what they can now do or what behaves differently, not
    which file moved. When you change an API response shape, update the frontend types and test mocks
    with it.
-6. **Describe the pull request:** what changed and why, how you tested it, and any follow-ups. The
+7. **Describe the pull request:** what changed and why, how you tested it, and any follow-ups. The
    [template](.github/PULL_REQUEST_TEMPLATE.md) has the checklist.
-7. **Write the commit subject as one plain sentence after a verb:** `Add:` for something new,
+8. **Write the commit subject as one plain sentence after a verb:** `Add:` for something new,
    `Fix:` for a bug, `Change:` for different behaviour, `Clean:` for code or docs removed with no
    change in behaviour, `Chore:` for regenerated files and housekeeping, `Docs:` for documentation only, `Release:` for a version bump. Say what a user
    or maintainer can now do or no longer suffers, for example `Fix: an open "Run with agent" dialog
    survives the board's realtime refetch`. No AI-attribution lines (no `Co-Authored-By` trailers).
-8. **Review.** The maintainer reviews, may ask for changes, and merges once CI is green. Every job
+9. **Review.** The maintainer reviews, may ask for changes, and merges once CI is green. Every job
    in `.github/workflows/ci.yml` that runs on a pull request must pass.
 
 By submitting a pull request you agree that your contribution is licensed under the project's

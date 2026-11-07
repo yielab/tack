@@ -5,7 +5,7 @@ use super::state::{self, Move};
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
-use tack_protocol::execution::{ExecutionState, RunnerId};
+use tack_protocol::execution::{ExecutionState, PROMPT_TEMPLATE_SHA, RunnerId};
 use tracing::instrument;
 
 use crate::Repository;
@@ -790,15 +790,16 @@ pub(super) async fn enqueue_in(
         "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
          request_fingerprint, selector_kind, selector_id, agent_profile_id, agent_profile_snapshot, \
          requested_harness_kind, requested_model, repository_snapshot, \
-         permission_policy, timeout_seconds, budgets, environment, metadata, request_snapshot, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         permission_policy, timeout_seconds, budgets, environment, metadata, request_snapshot, prompt_template_sha, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(input.id).bind(input.item_id).bind(input.idempotency_scope).bind(input.idempotency_key)
     .bind(input.request_fingerprint).bind(input.selector_kind).bind(input.selector_id)
     .bind(input.agent_profile_id).bind(input.agent_profile_snapshot).bind(input.requested_harness_kind)
     .bind(input.requested_model).bind(input.repository_snapshot)
     .bind(input.permission_policy).bind(input.timeout_seconds).bind(input.budgets)
-    .bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(now).bind(now)
+    .bind(input.environment).bind(input.metadata).bind(request_snapshot)
+    .bind(PROMPT_TEMPLATE_SHA.as_str()).bind(now).bind(now)
     .execute(&mut **tx).await?;
     Ok(EnqueueResult::Created(input.id.to_string()))
 }

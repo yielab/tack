@@ -321,6 +321,30 @@ and the refusal of `--with-runner` on a non-loopback bind. It binds ports 3399�
 cannot pass because the product cannot do the thing is a FAIL, never a SKIP; a missing harness
 binary is reported as ABSENT and never counted as a pass.
 
+## Evals
+
+Tests say whether the code does what it says; an eval says whether the agent's work got worse. A change to what the agent reads or receives names its suite, its threshold and its baseline, and writes the task first when none captures it.
+
+An EDD block names the three, for example:
+
+```text
+**Eval:** regression; new task regression/plan-carries-a-check (seen to fail: 0/3)
+**Threshold:** regression with no new reds; the two planning tasks, paired, not below -5 points
+**Baseline:** develop b363899b -> evals/baselines/b363899b/
+```
+
+The lane is the development crate `tack-evals`, never released. A task is a folder with a `task.yaml`, hidden checks and a reference solution; each trial runs in a clean world (its own data directory, port, seeded repository and a fake `$HOME` with canaries). The suites are `regression`, `safety` and `verifier`.
+
+```bash
+cargo run -p tack-evals -- check-solutions <suite>   # every reference solution passes its own checks
+cargo run -p tack-evals -- run <suite>               # trials with a real agent; spends tokens
+cargo run -p tack-evals -- compare <base> <head>     # paired difference against a baseline
+```
+
+**An eval never blocks CI.** CI runs the crate's own tests with the fake agent and `check-solutions`, which cost nothing. A run with a real model happens on the integrator's or the operator's machine, under a token cap, and its result is a number to read: a regression warns, and a phase closes on `regression` with no new reds plus the live suite.
+
+Every run keeps the fingerprint of the prompt templates it was composed with (`PROMPT_TEMPLATE_SHA`), shown on the run's page under **What the agent read**. Changing one line of a template changes it, and `tack-protocol`'s `template_fingerprint_matches_the_recorded_value` fails until the new value is written in `crates/tack-protocol/tests/fixtures/prompt_template_sha.txt`, which puts the change to the wording in the diff.
+
 ## End-to-end, accessibility and API-contract tests (Playwright)
 
 Browser-level tests that drive the real app — the `tack-api` server plus the Vite-served SPA — in

@@ -10,6 +10,7 @@ mod capabilities;
 mod lifecycle;
 mod messages;
 mod operations;
+mod prompt_templates;
 mod types;
 
 // `CapabilityLimits` is exported here since it's the type of the public
@@ -43,6 +44,10 @@ pub use messages::{
 pub use operations::{
     MemoryDecision, OperationOutcome, OperationPollRequest, OperationPollResponse,
     OperationResultRequest, OperationResultResponse, RunnerOperation, TeamOperation,
+};
+pub use prompt_templates::{
+    BRIEF_HEADING, COMMENT_LABEL, DEFINITION_OF_DONE_HEADING, PROMPT_TEMPLATE_SHA,
+    PROMPT_TEMPLATES, template_fingerprint,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

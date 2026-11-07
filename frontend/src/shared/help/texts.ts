@@ -30,6 +30,7 @@ export const HELP = {
   teamsPanel: { text: 'Each card shows only what the agent that runs the team reported. A line it left out says so, so you can tell "none" from "not said".', href: BOOK.agentTeams },
   builtInProfiles: { text: 'Implementer, Reviewer, Researcher and Planner come with Tack. You can edit them, not delete them. A profile that names no agent runs with the agent you pick for the task.', href: BOOK.agentTeams },
   decisionToken: { text: 'A second secret, apart from signing in, that your administrator sets up. Needed to answer the agent; never sent when you only look.', href: BOOK.decisionToken },
+  promptFingerprint: { text: "Identifies the fixed wording Tack put around the card's text in this prompt. Two runs with the same fingerprint were given the same wording; a different one means it changed between them.", href: BOOK.runDialog },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
 
