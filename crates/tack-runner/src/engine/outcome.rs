@@ -119,8 +119,8 @@ pub(super) fn changed_beyond_the_plan(outcome: &mut HarnessOutcome, files: &[Str
 
 impl HarnessOutcome {
     /// The usage the evidence carries: the measured counters, plus the
-    /// agent's version and the model it ran, which the verifier reads from
-    /// the same place.
+    /// agent's version, the model it ran and that model's family, which the
+    /// verifier reads from the same place.
     pub fn evidence_usage(&self) -> serde_json::Value {
         let mut usage = serde_json::to_value(&self.usage).unwrap_or(serde_json::Value::Null);
         if let Some(object) = usage.as_object_mut() {
@@ -132,6 +132,14 @@ impl HarnessOutcome {
                 "model".to_owned(),
                 serde_json::json!(self.actual_execution.model),
             );
+            if let Some(family) = self
+                .actual_execution
+                .model
+                .as_deref()
+                .and_then(crate::evidence::model_family)
+            {
+                object.insert("family".to_owned(), serde_json::json!(family));
+            }
         }
         usage
     }

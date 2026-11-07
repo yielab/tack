@@ -463,15 +463,16 @@ pub(super) fn attempt_evidence(
         document["generator"] = json!({ "model": model });
     }
     // The family of the model the last implementer step ran on, when the harness recorded the
-    // prompts of its steps. It is declared by the harness and never inferred from the model.
+    // prompts of its steps; a run without steps names the family of the model it ran instead.
+    // Both are declared by the runner from the model's own name and never guessed beyond it.
     let steps = tack.terminal_reason["steps"].as_array();
-    if let Some(family) = steps
+    let step_family = steps
         .into_iter()
         .flatten()
         .rev()
         .filter(|step| step["role"] == "implementer")
-        .find_map(|step| non_empty(&step["family"]))
-    {
+        .find_map(|step| non_empty(&step["family"]));
+    if let Some(family) = step_family.or_else(|| non_empty(&usage["family"])) {
         document["generator"]["family"] = json!(family);
     }
     if let Some((uri, sha256)) = trajectory {
