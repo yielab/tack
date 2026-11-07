@@ -104,8 +104,8 @@ labels** (2026-11-06;
 [plan](https://github.com/yielab/tack/blob/develop/docs/plans/evals-y-guardrails-2026-11-06.es.md),
 [audit](https://github.com/yielab/tack/blob/develop/docs/audits/evals-y-guardrails-2026-11-06.es.md);
 no ADR: ADR 0013 and ADR 0018 decisions 11 and 12 are amended where their text becomes false.
-**Proposed, not accepted:** the plan's §11 decisions 1 to 4 are the maintainer's, and rounds 3 and 4
-wait on them).
+**Decisions 1 to 4 taken 2026-11-07; all cards built, the live proof against docket and prill is
+what is left**).
 
 **Built 2026-11-07, in `develop`:** round 0 (C0-1, C0-2, C0-3) and round 1 (GR0, GR1, GR4, GR7, GR8,
 GR10, GR11, GR14, GR18, P1), the full pre-push gate green after each round. The parity test carries a
@@ -115,8 +115,26 @@ the same day: `tack mcp` refuses without an agent credential (decision 3); the M
 expires (a card of its own, since a runner would stop with `SessionRefused` after its 90 days). Still
 open for the maintainer: runner rows and pending decisions that predate the default expiry never
 expire; a merge over a `reject` on an attempt that already has a review does not store the reason.
-Decisions 1 and 2 are not taken: a runner-supplied sandbox required whoever else supplies one, and
-egress in three modes per profile (closed, listed hosts, open web for researchers).
+Decisions 1 and 2 were taken the same day: containment is required whoever supplies it (the runner's
+`bwrap` for Claude Code, opencode and Codex; docket's own jail only asked about), and web access is a
+mode per profile (`closed`, `listed`, `open`).
+
+**Built 2026-11-07, in `develop`, rounds 2 to 4:** the evals harness and its cards (EDD-1 the change
+contract and the prompt fingerprint; E2-1 to E2-3 the `tack-evals` crate, its graders, metrics, report,
+`compare` and `nightly`, and the nine-task regression suite; E3-1 the ten-pair safety suite; E3-2 the
+thirty-case verifier set, whose labels a person still has to confirm; EDD-4 `promote`), the guardrails
+(GR2 containment required, GR3 three more sandbox flags, GR5a the egress proxy in three modes, GR5b
+`--unshare-net` so the proxy is the only way out, GR6 the install in the sandbox, GR9 changed checks
+hold the merge, GR12 an imported card asks, GR13 a stop reaches other sessions, GR17 docket's outcome
+rules), the production figures (EDD-2 the quality section, EDD-3 the trend notice) and C4-1's L8
+(`items-from-plan`). The parity test's pending list is empty. Egress enforcement is off until the
+operator turns on `[egress] enforce`. The first baselines are committed in `evals/baselines/`: Claude
+Code with Haiku 5.5, three trials per task, 27 of 27 on regression and, on safety, full utility, an
+attack tried once in 30 trials and never successful, no twin failed. Both suites are saturated for this
+model, so they guard against regression and cannot yet show what a guardrail adds. Open: the Reviewer
+profile's verdict is not stored, so the verifier figure judges prill's pack only; the verifier-suite
+labels; `allowed_hosts` has no editor; Codex, opencode and docket baselines; C4-1's L6 waits for the
+`v0.2.0-beta.1` release; the plan's decision 8 (dollars in the metrics) is still open.
 
 An audit of the four harnesses found that the board contains an agent well (scopes, change sets, a
 second secret for decisions, demotion after a revert) and the machine does not: the network is never
