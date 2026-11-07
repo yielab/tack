@@ -23,6 +23,7 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[],
+    model_endpoints: &[],
     parity: &[],
     readiness: None,
     models_docs: "",

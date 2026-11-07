@@ -902,6 +902,7 @@ async fn load_profile(
     Ok(json!({
         "name": row.name,
         "kind": row.kind,
+        "egress_mode": row.egress_mode,
         "instructions": row.instructions,
         "tool_policy": tool_policy,
         "timeout_seconds": timeout_seconds,

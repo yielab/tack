@@ -33,6 +33,8 @@ mod one_review;
 mod plan_instructions_name_no_file;
 #[path = "migrations/planner_writes_plan.rs"]
 mod planner_writes_plan;
+#[path = "migrations/profile_egress_mode.rs"]
+mod profile_egress_mode;
 #[path = "migrations/provisional_limit.rs"]
 mod provisional_limit;
 #[path = "migrations/role_profile_fleet.rs"]

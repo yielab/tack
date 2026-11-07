@@ -126,3 +126,14 @@ still receive data, and the interface says so. Enforcement starts as a runner op
 default once the safety suite and its twins are green. docket confines its own traffic; Tack asks
 and shows, and does not enforce.
 Phase 94 cards that change this: GR5a, then GR5b (`--unshare-net`, so the proxy is the only way out).
+
+Built by GR5a (2026-11-07): the proxy is one `CONNECT` listener on loopback per run, started by the runner
+when `[egress] enforce` is set (off until the safety suite and its twins are green). The mode is the profile's
+`egress_mode` (a new profile starts with the mode of its kind: Implementer and custom `listed`, Reviewer and
+Planner `closed`, Researcher `open`) and the hosts of `listed` are the profile's `tool_policy.allowed_hosts`. Each
+agent's descriptor names its model endpoints (`api.anthropic.com` for Claude Code; `api.openai.com`, `chatgpt.com`
+and `auth.openai.com` for Codex); opencode takes whatever provider its configuration names, so an administrator
+lists those under `[egress] model_hosts`. A model served on loopback is refused like any internal address. Plain
+HTTP passes only `GET`, `HEAD` and `OPTIONS` to a URL of at most 2048 bytes; an HTTPS tunnel is judged by its
+destination alone. Until GR5b, the proxy is told to the agent through `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, so
+a program that ignores them is not held.

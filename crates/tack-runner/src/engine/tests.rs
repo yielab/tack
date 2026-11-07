@@ -437,6 +437,8 @@ struct FakeAdapter {
     elsewhere: Arc<Mutex<Option<mpsc::Receiver<AnsweredElsewhere>>>>,
     // `None` for every test that does not prove the forced-ask event.
     forced_ask: Option<String>,
+    // Handed out once by `network_refusals`, for the test proving the refused-destination event.
+    refusals: Arc<Mutex<Option<mpsc::Receiver<crate::harness::egress::NetworkRefusal>>>>,
 }
 
 struct InteractiveFake {
@@ -560,6 +562,13 @@ impl HarnessAdapter for FakeAdapter {
 
     async fn approvals_forced_ask(&self, _handle: &LocalRunHandle) -> Option<String> {
         self.forced_ask.clone()
+    }
+
+    async fn network_refusals(
+        &self,
+        _handle: &LocalRunHandle,
+    ) -> Option<mpsc::Receiver<crate::harness::egress::NetworkRefusal>> {
+        self.refusals.lock().expect("fake adapter lock").take()
     }
 
     async fn answered_elsewhere_channel(
@@ -792,6 +801,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         elsewhere: Arc::new(Mutex::new(None)),
         progress: Arc::new(Mutex::new(None)),
         forced_ask: None,
+        refusals: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -2503,6 +2513,50 @@ async fn post_spawn_journal_update_failure_reports_ambiguity_cancels() {
     ));
     assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
     assert_eq!(cancellations.load(Ordering::SeqCst), 1);
+    std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+/// A destination the runner's proxy refused reaches the board as an event naming it and why.
+#[tokio::test]
+async fn a_refused_destination_is_reported_with_its_host_and_reason() {
+    let (root_dir, journal) = fresh_journal("network-refused");
+    let root = root_dir.path();
+    let (told, refusals) = mpsc::channel(4);
+    told.send(crate::harness::egress::NetworkRefusal {
+        host: "169.254.169.254".to_owned(),
+        port: 80,
+        reason: "the address is on this machine or a private network".to_owned(),
+    })
+    .await
+    .expect("queued");
+    let fake_adapter = FakeAdapter {
+        refusals: Arc::new(Mutex::new(Some(refusals))),
+        ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+    };
+    let data_protocol = FakeDataProtocol::new();
+    let engine = runner_engine(protocol(work(), false, false), fake_adapter, journal, root)
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("cycle");
+
+    let state = data_protocol.state.lock().expect("lock");
+    let reported: Vec<_> = state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.network_refused")
+        .collect();
+    assert_eq!(reported.len(), 1);
+    assert_eq!(reported[0].payload["host"], "169.254.169.254");
+    assert_eq!(reported[0].payload["port"], 80);
+    assert!(
+        reported[0].payload["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("private network"))
+    );
+    drop(state);
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 

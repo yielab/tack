@@ -202,6 +202,11 @@ pub struct BundleProfile {
     /// One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivers: Option<String>,
+    /// How far the agent's traffic may go: `closed` (the model's endpoint), `listed` (and the hosts
+    /// in `tool_policy.allowed_hosts`) or `open` (any public host). Absent: the profile keeps its own,
+    /// or takes the one its kind starts with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub egress_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

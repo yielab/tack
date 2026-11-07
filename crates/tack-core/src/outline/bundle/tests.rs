@@ -16,6 +16,7 @@ fn profile_row(name: &str, builtin: bool) -> ProfileRow {
         limits: serde_json::json!({}),
         fleet_id: None,
         delivers: None,
+        egress_mode: "listed".into(),
         builtin,
     }
 }
@@ -131,6 +132,14 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
         (
             "profiles: [{ name: P, tool_policy: { network: \"yes\" } }]",
             Problem("profiles: \"P\": tool_policy.network must be true or false"),
+        ),
+        (
+            "profiles: [{ name: P, egress_mode: wide }]",
+            Problem("profiles: \"P\": egress mode \"wide\""),
+        ),
+        (
+            "profiles: [{ name: P, tool_policy: { allowed_hosts: [\"https://docs.rs\"] } }]",
+            Problem("tool_policy.allowed_hosts"),
         ),
         (
             "profiles: [{ name: P, limits: { budgets: { tokens: 0 } } }]",

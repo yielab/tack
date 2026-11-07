@@ -85,8 +85,8 @@ pub async fn seed_builtin_profiles(
         }});
         sqlx::query(
             "INSERT OR IGNORE INTO agent_profiles \
-             (id, name, instructions, tool_policy, limits, kind, builtin, summary, created_at, updated_at) \
-             SELECT ?, ?, ?, ?, '{}', ?, 1, ?, ?, ? \
+             (id, name, instructions, tool_policy, limits, kind, builtin, summary, egress_mode, created_at, updated_at) \
+             SELECT ?, ?, ?, ?, '{}', ?, 1, ?, ?, ?, ? \
              WHERE NOT EXISTS (SELECT 1 FROM agent_profiles WHERE kind = ? AND builtin = 1)",
         )
         .bind(format!("ap_{}", uuid::Uuid::new_v4()))
@@ -95,6 +95,7 @@ pub async fn seed_builtin_profiles(
         .bind(tool_policy.to_string())
         .bind(kind)
         .bind(summary)
+        .bind(tack_protocol::execution::EgressMode::default_for_kind(kind).as_str())
         .bind(&now)
         .bind(&now)
         .bind(kind)
@@ -1105,7 +1106,7 @@ impl Repository {
     ) -> Result<Vec<tack_core::outline::bundle::ProfileRow>, StoreError> {
         use sqlx::Row;
         let rows = sqlx::query(
-            "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id, delivers \
+            "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id, delivers, egress_mode \
              FROM agent_profiles ORDER BY name",
         )
         .fetch_all(self.pool())
@@ -1123,6 +1124,7 @@ impl Repository {
                 limits: json(r.get("limits")),
                 fleet_id: r.get("fleet_id"),
                 delivers: r.get("delivers"),
+                egress_mode: r.get("egress_mode"),
                 builtin: r.get::<i64, _>("builtin") != 0,
             })
             .collect())
@@ -1147,12 +1149,12 @@ impl Repository {
         let now = now.to_rfc3339();
         sqlx::query(
             "INSERT INTO agent_profiles \
-             (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, egress_mode, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
              instructions = excluded.instructions, tool_policy = excluded.tool_policy, \
              limits = excluded.limits, kind = excluded.kind, fleet_id = excluded.fleet_id, \
-             delivers = excluded.delivers, \
+             delivers = excluded.delivers, egress_mode = excluded.egress_mode, \
              updated_at = excluded.updated_at",
         )
         .bind(&row.id)
@@ -1163,6 +1165,7 @@ impl Repository {
         .bind(&row.kind)
         .bind(&row.fleet_id)
         .bind(&row.delivers)
+        .bind(&row.egress_mode)
         .bind(&now)
         .bind(&now)
         .execute(self.pool())

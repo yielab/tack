@@ -1,7 +1,7 @@
 import { type Component, For, Show, createEffect, createResource, createSignal, createUniqueId } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import { Badge, Button, EmptyState, Field, FieldShell, HelpHint, LoadError, Skeleton } from '../../../shared/ui';
-import { HELP } from '../../../shared/help/texts';
+import { EGRESS_MODES, HELP, defaultEgressMode } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
 import {
@@ -15,6 +15,7 @@ import {
   teamOf,
   teamsApi,
   type AgentProfileSummary,
+  type EgressMode,
   type ProfileHistory,
   type ProfileKind,
 } from '../../../shared/execution';
@@ -142,8 +143,12 @@ const AgentProfilesPanel: Component = () => {
   const [delivers, setDelivers] = createSignal('');
   const [team, setTeam] = createSignal('');
   const [kind, setKind] = createSignal<ProfileKind>('custom');
+  /** What the person chose for web access; `null` follows what the kind starts with. */
+  const [chosenEgress, setChosenEgress] = createSignal<EgressMode | null>(null);
+  const egressMode = (): EgressMode => chosenEgress() ?? defaultEgressMode(kind());
   const teamId = createUniqueId();
   const kindId = createUniqueId();
+  const egressId = createUniqueId();
   const [instructions, setInstructions] = createSignal('');
   const instructionsId = createUniqueId();
   const [tools, setTools] = createStore<ToolForm>(blankTools());
@@ -203,6 +208,7 @@ const AgentProfilesPanel: Component = () => {
     setDelivers(profile?.delivers ?? '');
     setTeam(teamOf(profile ?? undefined) ?? '');
     setKind(profile?.kind ?? 'custom');
+    setChosenEgress(profile?.egress_mode ?? null);
     setMethodRows(methodsByType(profile?.tool_policy));
     setRefusal(null);
     setWarnings([]);
@@ -272,6 +278,8 @@ const AgentProfilesPanel: Component = () => {
       ...(delivers().trim() ? { delivers: delivers().trim() } : existing?.delivers ? { delivers: null } : {}),
       // A built-in profile keeps its kind, so it is never sent.
       ...(!existing?.builtin && kind() !== (existing?.kind ?? 'custom') ? { kind: kind() } : {}),
+      // Left out, a new profile starts with its kind's mode and an edited one keeps its own.
+      ...(chosenEgress() && chosenEgress() !== existing?.egress_mode ? { egress_mode: chosenEgress()! } : {}),
     };
     setSaving(true);
     setRefusal(null);
@@ -469,6 +477,24 @@ const AgentProfilesPanel: Component = () => {
                   <For each={choices().notReported}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
                 </optgroup>
               </Show>
+            </select>
+          </FieldShell>
+          <FieldShell label="Web access" for={egressId} help={HELP.egressMode}>
+            <select
+              id={egressId}
+              data-testid="profile-web-access"
+              value={egressMode()}
+              onChange={(e) => setChosenEgress(e.currentTarget.value as EgressMode)}
+              class="rounded-full border px-3 py-1 text-sm"
+              style={FIELD_STYLE}
+            >
+              <For each={EGRESS_MODES}>
+                {(m) => (
+                  <option value={m.value} selected={m.value === egressMode()}>
+                    {m.label}
+                  </option>
+                )}
+              </For>
             </select>
           </FieldShell>
           <FieldShell

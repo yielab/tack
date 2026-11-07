@@ -48,13 +48,13 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: true,
     sandbox_binds: &[],
+    // opencode calls whichever provider its own configuration names, so the runner cannot know:
+    // the administrator lists them in `[egress] model_hosts`.
+    model_endpoints: &[],
     parity: &[
         (ParityRule::SandboxOrNoRun, ParityCell::Runner),
         (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
-        (
-            ParityRule::EgressByAllowList,
-            ParityCell::missing("GR5: webfetch is always allowed, no proxy of the runner's"),
-        ),
+        (ParityRule::EgressByAllowList, ParityCell::Runner),
         (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),

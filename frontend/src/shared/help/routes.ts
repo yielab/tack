@@ -5,6 +5,7 @@ export const BOOK = {
   agents: `${BOOK_BASE}user-guide/running-agents.html#agents-on-this-computer`,
   automation: `${BOOK_BASE}user-guide/automation.html#automation`,
   runDialog: `${BOOK_BASE}user-guide/running-agents.html#the-run-with-agent-dialog`,
+  webAccess: `${BOOK_BASE}user-guide/running-agents.html#web-access`,
   workspace: `${BOOK_BASE}user-guide/automation.html#where-the-agent-works`,
   items: `${BOOK_BASE}user-guide/items.html`,
   agentTeams: `${BOOK_BASE}user-guide/automation.html#what-the-agents-page-shows-about-a-team`,

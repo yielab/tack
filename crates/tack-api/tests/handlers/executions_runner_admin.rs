@@ -2975,6 +2975,96 @@ async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_d
     assert_eq!(err["error"]["details"]["field"], "delivers");
 }
 
+// A profile's web access: it starts with the mode its kind starts with, a person changes it, a word
+// outside the three is refused, and the hosts a `listed` profile reaches must be host names.
+#[tokio::test]
+async fn a_profile_has_a_web_access_mode_that_starts_from_its_kind_and_listed_hosts_are_names() {
+    let (app, _repo, _item_id) = setup().await;
+    let mode_of = |body: &Value| body["egress_mode"].as_str().unwrap().to_owned();
+    let id_of = |body: &Value| body["agent_profile_id"].as_str().unwrap().to_owned();
+    let (_, plain) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "Plain", "instructions": "x"}).to_string(),
+    )
+    .await;
+    let (_, digger) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "Digger", "instructions": "x", "kind": "researcher"}).to_string(),
+    )
+    .await;
+    let (_, judge) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "Judge", "instructions": "x", "kind": "reviewer"}).to_string(),
+    )
+    .await;
+    let (_, list) = snd(&app, "GET", "/agent-profiles", String::new()).await;
+    let find = |id: &str| {
+        list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["agent_profile_id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(mode_of(&find(&id_of(&plain))), "listed");
+    assert_eq!(mode_of(&find(&id_of(&digger))), "open");
+    assert_eq!(mode_of(&find(&id_of(&judge))), "closed");
+
+    let id = id_of(&plain);
+    let (status, patched) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"egress_mode": "open", "tool_policy": {"allowed_hosts": ["docs.rs", "*.crates.io"]}})
+            .to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{patched}");
+    assert_eq!(mode_of(&patched), "open");
+    assert_eq!(patched["tool_policy"]["allowed_hosts"][1], "*.crates.io");
+
+    for (body, field) in [
+        (json!({"egress_mode": "wide"}), "egress_mode"),
+        (
+            json!({"tool_policy": {"allowed_hosts": ["https://docs.rs/path"]}}),
+            "tool_policy.allowed_hosts",
+        ),
+        (
+            json!({"tool_policy": {"allowed_hosts": "docs.rs"}}),
+            "tool_policy.allowed_hosts",
+        ),
+    ] {
+        let (status, err) = snd(
+            &app,
+            "PATCH",
+            &format!("/agent-profiles/{id}"),
+            body.to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {err}");
+        assert_eq!(err["error"]["details"]["field"], field);
+    }
+    let (_, kept) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"name": "Plain 2"}).to_string(),
+    )
+    .await;
+    assert_eq!(
+        mode_of(&kept),
+        "open",
+        "an omitted key leaves the mode alone"
+    );
+}
+
 // A person chooses what a profile does: the kind comes in on create and update, a kind outside the
 // list is refused naming the list, and a built-in profile keeps its own.
 #[tokio::test]

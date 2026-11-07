@@ -51,7 +51,7 @@ pub use prompt_templates::{
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,
-    AutonomyLevel, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId,
+    AutonomyLevel, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId, EgressMode,
     EnvironmentValue, ExecutionError, ExecutionRequestId, ExecutionRequestSnapshot, ExecutionState,
     FencingToken, HarnessKind, IdempotencyKey, ItemId, Measurement, MeasurementSource,
     PermissionPolicy, ProtocolError, ProtocolErrorEnvelope, ProtocolVersion, RecoveryDetails,
