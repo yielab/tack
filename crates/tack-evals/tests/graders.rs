@@ -256,6 +256,17 @@ fn outcome_files_holds_the_agent_to_what_was_asked() {
     let exact = verdict(1, &["src/total.ts", "tests/new.test.ts"]);
     assert_eq!(exact.judgement.verdict, Verdict::Passed, "{exact:?}");
 
+    // Bytecode caches left by running the tests are not the agent's work.
+    let caches = verdict(
+        4,
+        &[
+            "src/total.ts",
+            "__pycache__/total.cpython-312.pyc",
+            "tests/__pycache__/t.cpython-312.pyc",
+        ],
+    );
+    assert_eq!(caches.judgement.verdict, Verdict::Passed, "{caches:?}");
+
     let stray = verdict(2, &["src/total.ts", "package.json"]);
     assert_eq!(check(&stray, "outcome.files").outcome, Outcome::Fail);
     assert!(

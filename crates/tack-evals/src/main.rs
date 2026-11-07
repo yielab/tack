@@ -10,7 +10,7 @@ use tack_evals::graders::verifier::{Verdicts, score_markdown, score_set};
 use tack_evals::promote::{PromoteOptions, promote, refusals};
 use tack_evals::record::{self, TrialRecord, TrialStatus};
 use tack_evals::report::{
-    compare, compare_markdown, load_summary, summarize, warnings, write_summary,
+    compare, compare_markdown, failures_markdown, load_summary, summarize, warnings, write_summary,
 };
 use tack_evals::trial::{TrialOptions, run_and_record};
 use tack_evals::verifier_set::generate::{Options, check_set, generate};
@@ -270,6 +270,7 @@ fn run() -> Result<ExitCode> {
             // one run after another.
             let all = grade_file(&record::trials_path(&out), &load_tasks(&tasks)?)?;
             write_summary(&out, &summarize(&all), None)?;
+            std::fs::write(out.join("failures.md"), failures_markdown(&all))?;
             Ok(exit_code(batch.errors > 0))
         }
         Command::Compare {

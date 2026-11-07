@@ -660,6 +660,32 @@ pub fn compare_markdown(comparison: &Comparison) -> String {
     text
 }
 
+/// Why each failed trial failed: the checks that decided it, with what each one saw. A score says
+/// how many; this says what, so a broken task can be told from a weak agent.
+pub fn failures_markdown(trials: &[crate::grade::GradedTrial]) -> String {
+    use crate::graders::Outcome;
+    let mut text = String::from("# Failed trials\n");
+    let mut any = false;
+    for trial in trials {
+        if trial.judgement.verdict != Verdict::Failed {
+            continue;
+        }
+        any = true;
+        let _ = writeln!(
+            text,
+            "\n## {}@{} · {} · epoch {}",
+            trial.task, trial.version, trial.harness, trial.epoch
+        );
+        for check in trial.required.iter().filter(|c| c.outcome == Outcome::Fail) {
+            let _ = writeln!(text, "- {}: {}", check.name, check.detail.trim());
+        }
+    }
+    if !any {
+        text.push_str("\nNone.\n");
+    }
+    text
+}
+
 /// Writes `summary.json` and `summary.md` into `dir`.
 pub fn write_summary(dir: &Path, summary: &Summary, comparison: Option<&Comparison>) -> Result<()> {
     std::fs::create_dir_all(dir)?;
