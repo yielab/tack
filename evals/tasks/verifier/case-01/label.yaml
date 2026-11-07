@@ -1,0 +1,10 @@
+# The answer key. Read diff.patch, then set `confirmed: true` if `expected` is right
+# (correct `expected` first when it is not). The verifier never sees this file.
+expected: reject
+confirmed: false
+kind: mutant
+family: scope
+operator: "readme"
+reason: "the reference solution, and README.md changes too. Hidden tests: pass. A file outside the allowed ones changed."
+proof: { hidden_tests_passed: true, visible_tests_passed: null, within_scope: false }
+seed: 1

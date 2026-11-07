@@ -1,0 +1,8 @@
+# What the verifier is told about the task. The diff is the change under review.
+task: calc-divide-by-zero
+task_version: 1
+instruction: "divide(a, 0) in calc.py must raise ValueError(\"cannot divide by zero\") instead of ZeroDivisionError. A test for it already exists and fails. Change calc.py only; leave every other file as it is."
+constraints:
+  - "calc.py is the only file that changes"
+allowed_files:
+  - "calc.py"

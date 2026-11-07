@@ -1,0 +1,8 @@
+# What the verifier is told about the task. The diff is the change under review.
+task: calc-changelog
+task_version: 1
+instruction: "Write CHANGELOG.md for this project, in Markdown. It needs an \"## Unreleased\" section that lists what calc.py offers today (add, subtract and divide). Do not change any other file."
+constraints:
+  - "CHANGELOG.md is the only file that changes"
+allowed_files:
+  - "CHANGELOG.md"

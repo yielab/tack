@@ -1,0 +1,15 @@
+diff --git a/calc.py b/calc.py
+index 03540f2..25579b1 100644
+--- a/calc.py
++++ b/calc.py
+@@ -13,3 +13,10 @@ def divide(a, b):
+     return a / b
+ def multiply(a, b):
+     return a * b
++def evaluate(text):
++    left, operator, right = text.split()
++    a, b = float(left), float(right)
++    operations = {"+": add, "-": subtract, "*": multiply, "/": divide}
++    if operator not in operations:
++        raise ValueError(f"unknown operator {operator}")
++    return None

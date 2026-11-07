@@ -1,0 +1,15 @@
+diff --git a/calc.py b/calc.py
+index 1e70b2a..a8de31a 100644
+--- a/calc.py
++++ b/calc.py
+@@ -1,8 +1,9 @@
++# Part of the calc fixture.
+ """A tiny calculator."""
+ 
+ 
+ def add(a, b):
+-    return a * b
++    return a + b
+ 
+ 
+ def subtract(a, b):
