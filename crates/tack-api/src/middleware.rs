@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sha2::{Digest, Sha256};
-use tack_core::principal::Principal;
+use tack_core::principal::{Principal, PrincipalKind};
 
 use crate::error::ApiError;
 use crate::router::AppState;
@@ -302,8 +302,7 @@ pub async fn require_token(
 
     if is_live_websocket_route(&path) {
         return if live_websocket_is_authorized(&req, &state) {
-            req.extensions_mut()
-                .insert(operator_principal(&state.config));
+            admit(&mut req, operator_principal(&state.config));
             next.run(req).await
         } else {
             StatusCode::UNAUTHORIZED.into_response()
@@ -339,7 +338,7 @@ pub async fn require_token(
         {
             return refusal.into_response();
         }
-        req.extensions_mut().insert(principal);
+        admit(&mut req, principal);
         return next.run(req).await;
     }
 
@@ -360,8 +359,7 @@ pub async fn require_token(
     if !allowed {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    req.extensions_mut()
-        .insert(operator_principal(&state.config));
+    admit(&mut req, operator_principal(&state.config));
     next.run(req).await
 }
 
@@ -408,24 +406,38 @@ pub async fn inject_operator_principal(mut req: Request, next: Next) -> Response
     next.run(req).await
 }
 
-/// Header `tack mcp` sets on every call it makes; the value `mcp` marks the call
-/// as an agent's, not a person's.
+/// Header `tack mcp` sets on every call it makes. On its own it proves nothing: a client writes
+/// it, so only the operator's request is allowed to use it (see [`FromMcp`]).
 pub const CLIENT_HEADER: &str = "x-tack-client";
 
-/// Whether the request came through `tack mcp` (`X-Tack-Client: mcp`), put in
-/// the request's extensions for the handlers that treat an agent's move differently.
+/// Whether the request is an agent's, put in the request's extensions for the handlers that
+/// treat an agent's move differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FromMcp(pub bool);
 
-/// Reads [`CLIENT_HEADER`] into the request's extensions as [`FromMcp`].
-pub async fn read_client(mut req: Request, next: Next) -> Response {
-    let from_mcp = req
+impl FromMcp {
+    /// What the authenticated principal says, never what a client claims: an agent credential
+    /// is an agent's request whatever it sends, and the operator is one only when it asks
+    /// (`tack mcp --operator`). Any other caller is neither, header or not.
+    fn of(principal: &Principal, header_says_mcp: bool) -> FromMcp {
+        FromMcp(match principal.kind {
+            PrincipalKind::Agent => true,
+            PrincipalKind::Operator => header_says_mcp,
+            PrincipalKind::Runner | PrincipalKind::System => false,
+        })
+    }
+}
+
+/// Puts the principal and the [`FromMcp`] it derives into the request's extensions.
+fn admit(req: &mut Request, principal: Principal) {
+    let header_says_mcp = req
         .headers()
         .get(CLIENT_HEADER)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.eq_ignore_ascii_case("mcp"));
-    req.extensions_mut().insert(FromMcp(from_mcp));
-    next.run(req).await
+    req.extensions_mut()
+        .insert(FromMcp::of(&principal, header_says_mcp));
+    req.extensions_mut().insert(principal);
 }
 
 /// Byte-wise constant-time equality. Processes all bytes without early exit
@@ -446,10 +458,24 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        constant_time_eq, decode_base64url, is_live_websocket_route, is_public_route,
+        FromMcp, constant_time_eq, decode_base64url, is_live_websocket_route, is_public_route,
         operator_principal,
     };
     use crate::config::AppConfig;
+    use tack_core::principal::Principal;
+
+    #[test]
+    fn a_header_marks_mcp_only_for_the_operator_and_an_agent_credential_always_is() {
+        let agent = Principal::agent("c1", Vec::new());
+        let operator = Principal::operator("local");
+        assert_eq!(FromMcp::of(&agent, false), FromMcp(true));
+        assert_eq!(FromMcp::of(&agent, true), FromMcp(true));
+        assert_eq!(FromMcp::of(&operator, false), FromMcp(false));
+        assert_eq!(FromMcp::of(&operator, true), FromMcp(true));
+        for other in [Principal::runner("r1"), Principal::system()] {
+            assert_eq!(FromMcp::of(&other, true), FromMcp(false));
+        }
+    }
 
     #[test]
     fn equal_bytes_match() {

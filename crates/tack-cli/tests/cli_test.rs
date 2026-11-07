@@ -728,3 +728,30 @@ fn serve_warns_when_the_data_folder_holds_a_database_it_does_not_use() {
         "{warning}"
     );
 }
+
+// ── mcp (refuses to act as the operator unless asked) ────────────────────────
+
+/// `tack mcp` with no agent credential exits 2 and says what to do; the operator's own token on
+/// this machine does not count as one, and `--operator` is the way in.
+#[test]
+fn mcp_without_an_agent_credential_exits_2() {
+    let home = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_tack"))
+            .args(args)
+            .env("HOME", home.path())
+            .env("XDG_DATA_HOME", home.path().join("data"))
+            .env_remove("TACK_API_TOKEN")
+            .env_remove("TACK_API_URL")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let refused = run(&["mcp"]);
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("use an agent credential or --operator")
+    );
+    // With stdin closed at once the loop ends cleanly: the opt-in is what let it start.
+    assert_eq!(run(&["mcp", "--operator"]).status.code(), Some(0));
+}

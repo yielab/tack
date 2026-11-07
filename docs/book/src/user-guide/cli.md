@@ -324,9 +324,15 @@ The service keeps its database, files and log in your per-user application-data 
 
 ```sh
 # Wire this into an MCP client; it reads JSON-RPC on stdin and answers on stdout.
-# It uses the same connection settings as every other command.
-tack mcp
+# It uses the same connection settings as every other command, and needs an agent
+# credential in TACK_API_TOKEN (Settings → Agent credentials).
+TACK_API_TOKEN=tack_agent_... tack mcp
+
+# To act as yourself, with every scope, say so:
+tack mcp --operator
 ```
+
+Without one of the two, `tack mcp` exits with code 2 and "use an agent credential or --operator".
 
 See [the MCP guide](https://github.com/yielab/tack/blob/develop/docs/MCP.md) for the client configuration and the tool list.
 

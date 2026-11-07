@@ -568,6 +568,51 @@ async fn a_level_is_refused_for_an_agent_other_than_docket() {
     assert_eq!(stored["autonomy"], "L3");
 }
 
+/// What a run the agent credential `agent:cred-1` asks for, and what an operator asks for, both
+/// wanting every permission and the network.
+async fn permissive_run(board: &support::Board, principal: &str) -> Value {
+    let mut request = full_request(board.item_id);
+    request.permission_policy.approvals = Some(tack_protocol::execution::Approvals::Auto);
+    request.permission_policy.network = Some(true);
+    request.origin = Some("operator".into());
+    let started = start_run(&board.repo, SystemClock.now(), principal, request)
+        .await
+        .unwrap();
+    snapshot(&board.repo, &started).await
+}
+
+#[tokio::test]
+async fn a_run_an_agent_credential_starts_asks_first_has_no_network_and_is_an_mcp_run() {
+    let board = board().await;
+    let stored = permissive_run(&board, "agent:cred-1").await;
+    assert_eq!(stored["permission_policy"]["approvals"], "ask");
+    assert_eq!(stored["permission_policy"]["network"], false);
+    assert_eq!(stored["origin"], "mcp");
+}
+
+#[tokio::test]
+async fn an_agent_that_already_asks_for_ask_keeps_ask() {
+    let board = board().await;
+    let mut request = full_request(board.item_id);
+    request.permission_policy.approvals = Some(tack_protocol::execution::Approvals::Ask);
+    request.permission_policy.network = Some(false);
+    let started = start_run(&board.repo, SystemClock.now(), "agent:cred-1", request)
+        .await
+        .unwrap();
+    let stored = snapshot(&board.repo, &started).await;
+    assert_eq!(stored["permission_policy"]["approvals"], "ask");
+    assert_eq!(stored["permission_policy"]["network"], false);
+}
+
+#[tokio::test]
+async fn the_operators_run_keeps_what_it_asked_for() {
+    let board = board().await;
+    let stored = permissive_run(&board, "operator:token:abc").await;
+    assert_eq!(stored["permission_policy"]["approvals"], "auto");
+    assert_eq!(stored["permission_policy"]["network"], true);
+    assert_eq!(stored["origin"], Value::Null);
+}
+
 /// A request body's machine is both fields or neither, and only a runner or a fleet: the typed
 /// request cannot hold anything else.
 #[test]
