@@ -601,15 +601,16 @@ async fn write_profiles(
             ),
         };
         let empty = |v: &Value| v.as_object().is_some_and(serde_json::Map::is_empty);
+        let kind = value
+            .kind
+            .as_deref()
+            .map(|k| k.trim().to_string())
+            .or_else(|| old.map(|o| o.kind.clone()))
+            .unwrap_or_else(|| "custom".into());
         let profile = ProfileRow {
             id: id.clone(),
             name: value.name.trim().to_string(),
-            kind: value
-                .kind
-                .as_deref()
-                .map(|k| k.trim().to_string())
-                .or_else(|| old.map(|o| o.kind.clone()))
-                .unwrap_or_else(|| "custom".into()),
+            kind: kind.clone(),
             instructions: match old {
                 Some(o) if value.instructions.is_empty() => o.instructions.clone(),
                 _ => value.instructions.clone(),
@@ -640,6 +641,16 @@ async fn write_profiles(
                 .filter(|d| !d.is_empty())
                 .map(str::to_owned)
                 .or_else(|| old.and_then(|o| o.delivers.clone())),
+            egress_mode: value
+                .egress_mode
+                .as_deref()
+                .map(|mode| mode.trim().to_owned())
+                .or_else(|| old.map(|o| o.egress_mode.clone()))
+                .unwrap_or_else(|| {
+                    tack_protocol::execution::EgressMode::default_for_kind(&kind)
+                        .as_str()
+                        .to_owned()
+                }),
             builtin: false,
         };
         repo.write_agent_profile(&profile, SystemClock.now())

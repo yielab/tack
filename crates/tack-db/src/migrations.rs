@@ -172,6 +172,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("108_drop_boards", &MIGRATION_108[..]),
         ordinary("109_one_review", &MIGRATION_109[..]),
         ordinary("110_prompt_template_sha", &MIGRATION_110[..]),
+        ordinary("111_profile_egress_mode", &MIGRATION_111[..]),
     ]
 }
 
@@ -2307,3 +2308,13 @@ const MIGRATION_109: [&str; 8] = [
 // between two runs can be traced to a change in the wording. Runs made before have none.
 const MIGRATION_110: [&str; 1] =
     ["ALTER TABLE execution_requests ADD COLUMN prompt_template_sha TEXT"];
+
+// 111: a profile says how far its agent's traffic may go when the runner holds it to a proxy: the model
+// endpoint only (`closed`), that and the profile's hosts (`listed`), or any public host (`open`). A role
+// that reads and judges starts closed, one that browses starts open, every other role starts listed, the
+// same defaults a new profile of that kind gets.
+const MIGRATION_111: [&str; 3] = [
+    "ALTER TABLE agent_profiles ADD COLUMN egress_mode TEXT NOT NULL DEFAULT 'listed' CHECK (egress_mode IN ('closed', 'listed', 'open'))",
+    "UPDATE agent_profiles SET egress_mode = 'closed' WHERE kind IN ('reviewer', 'planner')",
+    "UPDATE agent_profiles SET egress_mode = 'open' WHERE kind = 'researcher'",
+];

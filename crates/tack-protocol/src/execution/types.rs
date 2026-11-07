@@ -416,6 +416,54 @@ pub enum Approvals {
     Ask,
 }
 
+/// Where a run's traffic may go when the runner holds it to a proxy: the profile chooses. In every
+/// mode loopback, private, link-local and cloud-metadata addresses are refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressMode {
+    /// The agent's model endpoint only.
+    Closed,
+    /// The model endpoint and the hosts the profile lists.
+    Listed,
+    /// Any public host. A profile that browses cannot list every domain.
+    Open,
+}
+
+impl EgressMode {
+    /// Every mode, from the narrowest.
+    pub const ALL: [EgressMode; 3] = [EgressMode::Closed, EgressMode::Listed, EgressMode::Open];
+
+    /// The mode as it is stored and sent.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            EgressMode::Closed => "closed",
+            EgressMode::Listed => "listed",
+            EgressMode::Open => "open",
+        }
+    }
+
+    /// What a profile of this kind starts with: a role that reads and judges reaches the model
+    /// alone, one that browses the open web, every other role the model and its listed hosts.
+    pub fn default_for_kind(kind: &str) -> EgressMode {
+        match kind {
+            "reviewer" | "planner" => EgressMode::Closed,
+            "researcher" => EgressMode::Open,
+            _ => EgressMode::Listed,
+        }
+    }
+}
+
+impl std::str::FromStr for EgressMode {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        EgressMode::ALL
+            .into_iter()
+            .find(|mode| mode.as_str() == text)
+            .ok_or_else(|| format!("egress mode \"{text}\" is not one of closed, listed, open"))
+    }
+}
+
 /// How much a run may settle without a person: `L3` has one decide, `L5` the least. The same
 /// three names as a project's autonomy level; on the wire they are `"L3"`, `"L4"` and `"L5"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

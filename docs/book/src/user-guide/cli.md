@@ -276,6 +276,9 @@ docket
   credentials: docket holds its own model credentials in its home; Tack holds none and reaches docket with the daemon's bearer token.
 ```
 
+A present agent that the runner starts itself also has a `web access` line: whether this runner holds the agent to
+its profile's web access (`[egress] enforce`), and the model addresses it always allows.
+
 When docket is configured and answers, its block gains these lines before the sign-in and model lines:
 
 ```text

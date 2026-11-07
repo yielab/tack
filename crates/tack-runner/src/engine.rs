@@ -179,6 +179,17 @@ async fn next_step(progress: &mut Option<mpsc::Receiver<Progress>>) -> Option<Op
     }
 }
 
+/// The next destination the runner's proxy refused, or never resolves when this run has no
+/// proxy; `None` once the proxy has stopped telling.
+async fn next_refusal(
+    refusals: &mut Option<mpsc::Receiver<crate::harness::egress::NetworkRefusal>>,
+) -> Option<Option<crate::harness::egress::NetworkRefusal>> {
+    match refusals.as_mut() {
+        Some(told) => Some(told.recv().await),
+        None => std::future::pending().await,
+    }
+}
+
 /// `Rejected` carries a `reason`.
 ///
 /// Pre-spawn rejections have several genuinely distinct causes (wrong
@@ -330,6 +341,16 @@ pub trait HarnessAdapter: Send + Sync {
     /// timeline. `None` for a harness that reports none. Taken once per
     /// handle, like [`Self::decision_channels`].
     async fn progress_channel(&self, _handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
+        None
+    }
+
+    /// The destinations the runner's proxy refused this run, one per destination and reason.
+    /// `None` for a harness whose traffic is not held to a proxy. Taken once per handle, like
+    /// [`Self::decision_channels`].
+    async fn network_refusals(
+        &self,
+        _handle: &LocalRunHandle,
+    ) -> Option<mpsc::Receiver<crate::harness::egress::NetworkRefusal>> {
         None
     }
 }
@@ -1098,6 +1119,7 @@ where
         let mut decisions = self.adapter.decision_channels(handle).await;
         let mut progress = self.adapter.progress_channel(handle).await;
         let mut elsewhere = self.adapter.answered_elsewhere_channel(handle).await;
+        let mut refusals = self.adapter.network_refusals(handle).await;
         let mut steps: Vec<Progress> = Vec::new();
         let mut wait_future = self.adapter.wait(handle);
         let mut pending: Option<PendingDecision> = None;
@@ -1129,6 +1151,11 @@ where
                             steps.push(step);
                         }
                     }
+                    if let Some(rest) = refusals.as_mut() {
+                        while let Ok(refusal) = rest.try_recv() {
+                            self.report_network_refused(session, record, refusal).await;
+                        }
+                    }
                     self.submit_progress(session, record, &mut steps, prompt).await;
                     return outcome.map(|mut outcome| {
                         if stopped_by_cancel {
@@ -1149,6 +1176,10 @@ where
                 Some(told) = next_elsewhere(&mut elsewhere) => match told {
                     Some(told) => self.close_answered_elsewhere(session, record, &mut state, told).await,
                     None => elsewhere = None,
+                },
+                Some(told) = next_refusal(&mut refusals) => match told {
+                    Some(refusal) => self.report_network_refused(session, record, refusal).await,
+                    None => refusals = None,
                 },
                 Some(step) = next_step(&mut progress) => match step {
                     Some(step) => {
@@ -1231,6 +1262,22 @@ where
                 false
             }
         }
+    }
+
+    /// Tells the board a destination the runner's proxy refused this run, once per destination.
+    async fn report_network_refused(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        refusal: crate::harness::egress::NetworkRefusal,
+    ) {
+        let payload = serde_json::json!({
+            "host": refusal.host,
+            "port": refusal.port,
+            "reason": refusal.reason,
+        });
+        self.submit_event(session, record, "attempt.network_refused", payload)
+            .await;
     }
 
     /// Tells the board, as one event, that the agent's processes outlived the second try.

@@ -260,6 +260,75 @@ describe('AgentProfilesPanel', () => {
     expect(container.textContent).toContain('A built-in profile keeps what it does.');
   });
 
+  it('has one Web access select with three one-line options and a help hint, and sends only what changed', async () => {
+    const profiles = [
+      { agent_profile_id: 'ap_m', name: 'scout', instructions: 'Look.', tool_policy: {}, limits: {}, kind: 'custom', builtin: false, egress_mode: 'listed' },
+    ];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      const body = method !== 'GET' ? {} : String(input).endsWith('/api/teams') ? { teams: [] } : { protocol_version: 1, data: profiles };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
+    await flush();
+    const selects = container.querySelectorAll('[data-testid="profile-web-access"]');
+    expect(selects.length).toBe(1);
+    const web = selects[0] as HTMLSelectElement;
+    expect(web.value).toBe('listed');
+    expect(Array.from(web.options).map((o) => [o.value, o.textContent])).toEqual([
+      ['closed', 'Closed: only the model'],
+      ['listed', "Listed: the model and the profile's hosts"],
+      ['open', 'Open: any public site'],
+    ]);
+    // The help says what each mode covers and that an allowed public site can still receive data.
+    const hint = container.querySelector<HTMLElement>('button[aria-label="Help: Web access"]')!;
+    expect(hint.getAttribute('title')).toContain('Closed:');
+    expect(hint.getAttribute('title')).toContain('Open: any public site');
+    expect(hint.getAttribute('title')).toContain('can still receive what the agent sends it');
+
+    // Saved untouched, the mode is not sent: the profile keeps its own.
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await flush();
+    const first = fetchMock.mock.calls.find((c) => (c[1] as RequestInit)?.method === 'PATCH')!;
+    expect(JSON.parse((first[1] as RequestInit).body as string)).not.toHaveProperty('egress_mode');
+
+    await flush();
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
+    await flush();
+    const again = container.querySelector<HTMLSelectElement>('[data-testid="profile-web-access"]')!;
+    again.value = 'open';
+    again.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await flush();
+    const patches = fetchMock.mock.calls.filter((c) => (c[1] as RequestInit)?.method === 'PATCH');
+    expect(JSON.parse((patches[patches.length - 1][1] as RequestInit).body as string).egress_mode).toBe('open');
+  });
+
+  it('shows what a new profile of each kind starts with until the person chooses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const body = String(input).endsWith('/api/teams') ? { teams: [] } : { protocol_version: 1, data: [] };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    Array.from(container.querySelectorAll('button')).find((b) => /new profile|add profile|create/i.test(b.textContent ?? ''))!.click();
+    await flush();
+    const web = container.querySelector<HTMLSelectElement>('[data-testid="profile-web-access"]')!;
+    const kind = container.querySelector<HTMLSelectElement>('[data-testid="profile-kind"]')!;
+    expect(web.value).toBe('listed');
+    for (const [k, mode] of [['researcher', 'open'], ['reviewer', 'closed'], ['planner', 'closed'], ['implementer', 'listed']] as const) {
+      kind.value = k;
+      kind.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(web.value, k).toBe(mode);
+    }
+  });
+
   it('says what a built-in profile is, with its description and the agent that runs it', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const body = String(input).endsWith('/api/teams')

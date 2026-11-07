@@ -350,3 +350,26 @@ fn the_sandbox_is_required_unless_the_table_turns_it_off() {
     );
     assert!(load(Some("[sandbox]\nmode = \"off\"\n")).is_err());
 }
+
+#[test]
+fn the_egress_table_is_off_until_it_is_set_and_refuses_unknown_keys() {
+    let load = |toml: Option<&str>| {
+        RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: toml,
+            ..RunnerConfigSources::default()
+        })
+    };
+    let unset = load(None).expect("defaults").egress;
+    assert!(!unset.enforce);
+    assert!(unset.model_hosts.is_empty());
+
+    let set = load(Some(
+        "[egress]\nenforce = true\nmodel_hosts = [\"openrouter.ai\", \"*.example.com\"]\n",
+    ))
+    .expect("an egress table")
+    .egress;
+    assert!(set.enforce);
+    assert_eq!(set.model_hosts, ["openrouter.ai", "*.example.com"]);
+
+    assert!(load(Some("[egress]\nmode = \"open\"\n")).is_err());
+}

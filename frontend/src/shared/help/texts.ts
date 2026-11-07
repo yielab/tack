@@ -16,6 +16,7 @@ export const HELP = {
   profile: { text: 'What the agent is allowed to do and how it is told to work. Implementer changes code; Reviewer and Researcher only read; Planner proposes subtasks.', href: BOOK.automation },
   askBeforeEachAction: { text: 'The agent pauses before every action and waits for your answer under Questions from the agent. A card that was imported starts with this on.', href: BOOK.runDialog },
   webTools: { text: "Lets the agent fetch pages and search the web. Off turns those tools off; the agent's shell can still reach the network. A card that was imported starts with this off.", href: BOOK.runDialog },
+  egressMode: { text: "How far the agent's traffic may go, when this computer holds it to that. Closed: only the model's own address. Listed: the model and the hosts you list for the profile. Open: any public site. In every mode, this computer's own address and private networks are refused. A site the mode allows can still receive what the agent sends it, because the page is not seen.", href: BOOK.webAccess },
   sandbox: { text: "Every agent runs contained: by this computer (bubblewrap), by its own sandbox, or by docket; Claude Code and opencode only by bubblewrap. Where nothing contains an agent it doesn't run, unless the administrator turned the requirement off, and then it asks before each action.", href: `${BOOK_BASE}admin-guide/what-the-agent-can-reach.html` },
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
   ladderTeams: { text: 'Each role works with an agent profile, and the profile names the team that runs it. A task takes the profile of its role; one with no role takes the project default.', href: BOOK.automation },
@@ -42,6 +43,26 @@ export const HELP = {
   qualityCuts: { text: 'The same rates, cut by who did the work: the profile, the agent, the model, the team and the fingerprint of the prompt wording.', href: BOOK.workQuality },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
+
+/** The three web accesses a profile can have, in the order the profile's select lists them. */
+export const EGRESS_MODES = [
+  { value: 'closed', label: 'Closed: only the model', line: 'Web: only the model' },
+  { value: 'listed', label: 'Listed: the model and the profile\'s hosts', line: "Web: the model and the profile's hosts" },
+  { value: 'open', label: 'Open: any public site', line: 'Web: any public site, no private networks' },
+] as const;
+
+/** What a profile starts with by what it does, as the server decides it. */
+export function defaultEgressMode(kind: string | undefined): (typeof EGRESS_MODES)[number]['value'] {
+  if (kind === 'reviewer' || kind === 'planner') return 'closed';
+  return kind === 'researcher' ? 'open' : 'listed';
+}
+
+/** Whether the computers a run could land on hold the agent to its profile's web access: every one
+ *  that says so, else false. `undefined` when none reports it. */
+export function egressEnforced(reports: ReadonlyArray<{ egress?: { enforced?: boolean } }>): boolean | undefined {
+  const said = reports.map((r) => r.egress?.enforced).filter((e): e is boolean => typeof e === 'boolean');
+  return said.length === 0 ? undefined : said.every(Boolean);
+}
 
 /** How the runner's sandbox is put in words, wherever a run's sandbox is shown. */
 export const SANDBOX_TEXT = {

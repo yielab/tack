@@ -73,6 +73,8 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: true,
     reports_progress: true,
     sandbox_binds: &[],
+    // docket is a daemon with its own confinement: nothing here goes through the runner's proxy.
+    model_endpoints: &[],
     parity: &[
         // docket never blocks a run: it is asked for its jail, and where it does not say there
         // is one the board asks before each action instead.

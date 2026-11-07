@@ -17,12 +17,14 @@ pub struct AgentProfileRow {
     pub summary: Option<String>,
     pub fleet_id: Option<String>,
     pub delivers: Option<String>,
+    /// How far its agent's traffic may go: `closed`, `listed` or `open`.
+    pub egress_mode: String,
 }
 
 /// Every agent profile, by name.
 pub async fn profiles_by_name(repo: &Repository) -> Result<Vec<AgentProfileRow>, StoreError> {
     Ok(sqlx::query_as::<_, AgentProfileRow>(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers FROM agent_profiles",
+        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers,egress_mode FROM agent_profiles",
         " ORDER BY name"
     ))
     .fetch_all(repo.pool())
@@ -35,7 +37,7 @@ pub async fn profile_by_id(
     profile_id: &str,
 ) -> Result<Option<AgentProfileRow>, StoreError> {
     Ok(sqlx::query_as::<_, AgentProfileRow>(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers FROM agent_profiles",
+        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers,egress_mode FROM agent_profiles",
         " WHERE id = ?"
     ))
     .bind(profile_id)

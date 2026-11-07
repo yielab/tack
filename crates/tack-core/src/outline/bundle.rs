@@ -43,6 +43,7 @@ pub struct ProfileRow {
     pub limits: Value,
     pub fleet_id: Option<String>,
     pub delivers: Option<String>,
+    pub egress_mode: String,
     pub builtin: bool,
 }
 
@@ -675,6 +676,11 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
         {
             problems.push(format!("{at}: {message}"));
         }
+        if let Err(message) =
+            crate::run_defaults::check_egress(profile.egress_mode.as_deref(), &profile.tool_policy)
+        {
+            problems.push(format!("{at}: {message}"));
+        }
         if let Some(fleet) = profile.fleet.as_deref().map(str::trim)
             && !board.fleets.iter().any(|(_, n)| n.trim() == fleet)
         {
@@ -1162,6 +1168,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
             }),
             summary: None,
             delivers: p.delivers.clone(),
+            egress_mode: Some(p.egress_mode.clone()),
         })
         .collect();
 

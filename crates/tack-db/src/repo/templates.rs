@@ -247,6 +247,7 @@ fn builtin_profile(name: &str, kind: &str, instructions: &str) -> BundleProfile 
         fleet: None,
         summary: None,
         delivers: None,
+        egress_mode: None,
     }
 }
 
