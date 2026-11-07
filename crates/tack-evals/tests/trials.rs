@@ -43,6 +43,8 @@ fn a_task_ends_succeeded_and_passes_its_exam() {
     let frozen = out.join(record.frozen.as_ref().unwrap());
     assert!(frozen.join("artifacts/attempt-1/changes.patch").is_file());
     assert!(frozen.join("execution.json").is_file());
+    let refs = std::fs::read_to_string(frozen.join("repo-refs.txt")).unwrap();
+    assert!(refs.contains("refs/heads/main"), "{refs}");
 }
 
 fn asking_agent() -> FakeAgent {
