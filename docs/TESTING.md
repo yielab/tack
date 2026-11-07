@@ -215,7 +215,7 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 
 | Tier | Trigger | Jobs |
 |---|---|---|
-| Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security`, `security-boundaries` |
+| Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security`, `security-boundaries`, `evals-harness` |
 | Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (`scripts/smoke.sh` in fake mode, then Chromium only) |
 | Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (smoke, then all three browsers) |
 
@@ -228,6 +228,7 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 | `deny` | `cargo deny check` for the root workspace and for `tack-desktop` |
 | `security` | `cargo audit` for both workspaces + `npm audit` |
 | `security-boundaries` | the boundary suites; see below |
+| `evals-harness` | builds `tack`, then the `tack-evals` tests (a real server and runner in a throwaway world, a script for the agent) and `tack-evals check-solutions` over the fixture tasks. No model, no tokens |
 | `embed-spa` | clippy and the `tack-api` tests with the SPA embedded, release build, binary-size budgets (25 MB for `tack`, 8 MB for `tack-runner`) |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `e2e` | `scripts/smoke.sh` in fake mode against the binaries the job built, then Playwright, the a11y scan and the API contract — Chromium only on a merge, all three browsers on the schedule run and on a manual dispatch |

@@ -3723,6 +3723,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tack-evals"
+version = "0.2.0-beta.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
+ "tack-test-support",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "tack-orch"
 version = "0.2.0-beta.1"
 dependencies = [

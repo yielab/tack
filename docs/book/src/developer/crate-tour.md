@@ -1,6 +1,6 @@
 # Crate Tour
 
-This chapter is for contributors who need to find the file that owns a behaviour. It walks through each Rust crate in the main workspace: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. The workspace has nine crates: `tack-protocol` (the contract the server and the runner share), `tack-core` (pure domain logic), `tack-orch` (pure runs policy), `tack-db` (the store), `tack-app` (the use cases and the background ticks), `tack-api` (HTTP), `tack-runner`, `tack-cli`, and `tack-test-support`, which holds test helpers. A tenth, `tack-desktop`, sits outside that workspace by design; its own section at the end of this chapter says why. `scripts/check-crate-graph.sh --print` prints which crate may depend on which, `scripts/arch-facts.sh` prints that table with the current counts, and the check fails on any edge outside it.
+This chapter is for contributors who need to find the file that owns a behaviour. It walks through each Rust crate in the main workspace: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. The workspace has ten crates: `tack-protocol` (the contract the server and the runner share), `tack-core` (pure domain logic), `tack-orch` (pure runs policy), `tack-db` (the store), `tack-app` (the use cases and the background ticks), `tack-api` (HTTP), `tack-runner`, `tack-cli`, `tack-test-support`, which holds test helpers, and `tack-evals`, a development harness that is never released. An eleventh, `tack-desktop`, sits outside that workspace by design; its own section at the end of this chapter says why. `scripts/check-crate-graph.sh --print` prints which crate may depend on which, `scripts/arch-facts.sh` prints that table with the current counts, and the check fails on any edge outside it.
 
 > The SolidJS web UI in `frontend/` is covered separately in
 > [Frontend & Design System](frontend.md) — structure, the design-token system,
@@ -653,9 +653,21 @@ Error handling: the `extract()` helper parses the response body regardless of st
 
 **Lives in:** `crates/tack-test-support/src/`
 
-**Owns:** what the other crates' tests share: `setup_test_db()` (a migrated in-memory `Repository`), the `seed` module (one function per table, which plants the rows a test needs, including a `created_at` or a stored state, below the store's own commands), `ControllableClock` (a `Clock` a test sets and advances), `poll_until` and fixture loading. It depends on `tack-protocol`, `tack-core` and `tack-db`, and is the one crate that enables `tack-db`'s `raw-pool` feature.
+**Owns:** what the other crates' tests share: `setup_test_db()` (a migrated in-memory `Repository`), the `seed` module (one function per table, which plants the rows a test needs, including a `created_at` or a stored state, below the store's own commands), `ControllableClock` (a `Clock` a test sets and advances), `poll_until`, `fake_agent` (a script that stands in for `claude` when a test runs the real server and runner) and fixture loading. It depends on `tack-protocol`, `tack-core` and `tack-db`, and is the one crate that enables `tack-db`'s `raw-pool` feature.
 
 A test plants rows with `tack_test_support::seed` and reads them back with `tack_db::queries::`, so a test of a route or a use case never names SQL. Every crate may use it as a dev-dependency; `tack-api`'s `tests/common` keeps its own test-app helpers because they need the router.
+
+---
+
+## `tack-evals`
+
+**Lives in:** `crates/tack-evals/src/`
+
+**Owns:** a development harness, `publish = false`, that nothing depends on. It starts `tack serve --with-runner` in a throwaway world (`world.rs`: its own data directory, a seed repository with one commit, a fake `$HOME` with canary files, a fake secret in the runner's settings), uses it over HTTP as an operator would (`api.rs`, `trial.rs`), answers the decisions the run raises with the decision token as the task's script says (`operator.rs`), and freezes what the run left into a line of `trials.jsonl` (`record.rs`). A task is a directory (`task.rs`): `task.yaml`, the seed `repo/`, the `hidden/` checks and the reference `solution/`. The hidden checks are copied out of the task when the world is built and put over the agent's tree only when the exam runs (`exam.rs`), so an agent that writes into `hidden/` cannot change the exam. `tack-evals check-solutions` runs the same exam over each task's own solution with no model.
+
+**Does not own:** a verdict. The record holds facts; graders, metrics and the report read it later. It imports nothing from Tack's inside, only `tack-test-support`.
+
+Its tests run the real server and runner with `FakeAgent` from `tack-test-support` as the agent, so they spend no tokens and CI runs them (the `evals-harness` job).
 
 ---
 

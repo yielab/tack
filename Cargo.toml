@@ -10,6 +10,7 @@ members = [
     "crates/tack-app",
     "crates/tack-runner",
     "crates/tack-test-support",
+    "crates/tack-evals",
 ]
 # tack-desktop is a workspace of its own, on purpose. Tauri drags GTK, WebKit
 # and glib into whatever workspace contains it, so as a member it made every

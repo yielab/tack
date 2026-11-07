@@ -570,6 +570,32 @@ jobs:
           TACK_REQUIRE_BWRAP: "1"
         run: cargo nextest run --workspace --profile ci --no-tests=fail -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'
 
+  evals-harness:
+    name: Evals harness (fake agent, no model)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
+        with:
+          tool: nextest
+      # The harness serves with the `tack` binary, so it is built first and the tests find it
+      # beside their own. The agent is a script: nothing here calls a model or spends a token.
+      - name: Build tack
+        run: cargo build -p tack-cli
+      - name: Harness tests
+        run: cargo nextest run --workspace --profile ci --no-tests=fail -E 'package(tack-evals)'
+      # Every task's reference solution must pass its own hidden checks without a model.
+      - name: Reference solutions pass their exams
+        run: cargo run -p tack-evals -- check-solutions crates/tack-evals/tests/fixtures/tasks
+
   e2e:
     name: E2E (Playwright)
     # Merge tier: push to develop or main runs Chromium only. Schedule tier:
