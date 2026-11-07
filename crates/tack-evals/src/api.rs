@@ -18,11 +18,18 @@ pub struct Api {
 
 impl Api {
     pub fn new(base: &str) -> Result<Self> {
+        Self::with_token(base, Some(API_TOKEN))
+    }
+
+    /// An operator of a server that is not a throwaway world: its own token, or none for a
+    /// loopback server that asks for none.
+    pub fn with_token(base: &str, token: Option<&str>) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {API_TOKEN}").parse()?,
-        );
+        if let Some(token) = token {
+            let mut value: reqwest::header::HeaderValue = format!("Bearer {token}").parse()?;
+            value.set_sensitive(true);
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+        }
         let client = reqwest::blocking::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(30))
@@ -36,6 +43,15 @@ impl Api {
     pub fn get(&self, path: &str) -> Result<Value> {
         let response = self.client.get(self.url(path)).send()?;
         read(path, response)
+    }
+
+    /// Like [`Api::get`], but a 404 is `None`: the thing is not there, which is an answer.
+    pub fn get_optional(&self, path: &str) -> Result<Option<Value>> {
+        let response = self.client.get(self.url(path)).send()?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        read(path, response).map(Some)
     }
 
     pub fn post(&self, path: &str, body: &Value) -> Result<Value> {

@@ -3,9 +3,11 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use tack_evals::api::Api;
 use tack_evals::exam::{SolutionVerdict, check_solution};
 use tack_evals::grade::{GradedTrial, grade_file, grade_trial};
 use tack_evals::graders::verifier::{Verdicts, score_markdown, score_set};
+use tack_evals::promote::{PromoteOptions, promote, refusals};
 use tack_evals::record::{self, TrialRecord, TrialStatus};
 use tack_evals::report::{
     compare, compare_markdown, load_summary, summarize, warnings, write_summary,
@@ -79,7 +81,8 @@ enum Command {
         agent: AgentArgs,
     },
     /// Apply each task's reference solution and run its hidden checks, with no model. Exits 1
-    /// when any solution fails: the task is broken.
+    /// when any solution fails: the task is broken. A candidate from `promote` is refused until a
+    /// person has written its exam and its solution.
     CheckSolutions {
         #[arg(required = true)]
         tasks: Vec<PathBuf>,
@@ -104,6 +107,39 @@ enum Command {
         bad: usize,
         #[arg(long)]
         check: bool,
+    },
+    /// Make a candidate for the capability suite from an attempt a person rejected (or, with
+    /// --reason, work that was merged and reverted): the repository at the base commit as a git
+    /// bundle, the item and its brief, the reason and a pointer to the evidence, anonymised, in
+    /// <out>/<attempt id>/. Reads the server; changes nothing on it. The exam and the reference
+    /// solution are written by a person.
+    Promote {
+        attempt_id: String,
+        /// The server that holds the attempt.
+        #[arg(long, default_value = "http://127.0.0.1:3210")]
+        server: String,
+        /// The environment variable holding the server's API token, if it asks for one.
+        #[arg(long, default_value = "TACK_API_TOKEN")]
+        token_env: String,
+        /// The run (request id) the attempt belongs to; faster than searching the server's runs.
+        #[arg(long)]
+        run: Option<String>,
+        /// A clone to read the base commit from, when the project's repository is not a local
+        /// folder.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Why the work was refused, for a revert (the board records no reason for one).
+        #[arg(long)]
+        reason: Option<String>,
+        /// A name to take out besides the project's and the repository's (repeatable).
+        #[arg(long = "name")]
+        names: Vec<String>,
+        /// An environment variable whose value is a secret to take out wherever it appears
+        /// (repeatable). Never printed.
+        #[arg(long = "env-secret")]
+        env_secret: Vec<String>,
+        #[arg(long, default_value = "evals/candidates")]
+        out: PathBuf,
     },
     /// List the verifier-set labels no person has confirmed yet.
     VerifierLabels {
@@ -179,6 +215,43 @@ fn run() -> Result<ExitCode> {
             bad,
             check,
         } => gen_verifier_set(&tasks, &out, &Options { seed, good, bad }, check),
+        Command::Promote {
+            attempt_id,
+            server,
+            token_env,
+            run,
+            repo,
+            reason,
+            names,
+            env_secret,
+            out,
+        } => {
+            let token = std::env::var(&token_env).ok();
+            let api = Api::with_token(&server, token.as_deref())?;
+            let options = PromoteOptions {
+                out,
+                run,
+                repo,
+                reason,
+                names,
+                secrets: env_secret
+                    .iter()
+                    .filter_map(|name| std::env::var(name).ok())
+                    .collect(),
+            };
+            let promoted = promote(&api, &attempt_id, &options)?;
+            println!("candidate  {}", promoted.dir.display());
+            for file in &promoted.files {
+                println!("  {file}");
+            }
+            for warning in &promoted.warnings {
+                println!("WARNING  {warning}");
+            }
+            println!(
+                "read it before anything else: anonymising is not proof. Then write hidden/ and                  solution/, unbundle repo.bundle into repo/ and add task.yaml (evals/README.md)"
+            );
+            Ok(ExitCode::SUCCESS)
+        }
         Command::VerifierLabels { set } => verifier_labels(&set),
         Command::ScoreVerifier {
             set,
@@ -298,6 +371,10 @@ fn nightly(
 
 fn check_solutions(paths: &[PathBuf]) -> Result<ExitCode> {
     let mut broken = 0;
+    for refusal in refusals(paths)? {
+        broken += 1;
+        println!("REFUSED  {}", refusal.message());
+    }
     for task in load_tasks(paths)? {
         match check_solution(&task)? {
             SolutionVerdict::Passed => println!("ok       {}", task.task.id),
