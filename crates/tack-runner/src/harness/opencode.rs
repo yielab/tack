@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use tack_protocol::conversation::ConverseMode;
 use tack_protocol::execution::{
-    Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
+    Approvals, CapabilitySupport, FeatureCapabilities, ParityCell, ParityRule, PermissionPolicy,
+    Usage,
 };
 
 use crate::harness::{
@@ -47,6 +48,41 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: true,
     sandbox_binds: &[],
+    parity: &[
+        (
+            ParityRule::SandboxOrNoRun,
+            ParityCell::missing(
+                "GR2: bwrap only when installed, otherwise the run goes ahead unsandboxed",
+            ),
+        ),
+        (
+            ParityRule::NoSandboxMeansAsk,
+            ParityCell::missing(
+                "GR1: the permission block allows every action whether or not there is a sandbox",
+            ),
+        ),
+        (
+            ParityRule::EgressByAllowList,
+            ParityCell::missing("GR5: webfetch is always allowed, no proxy of the runner's"),
+        ),
+        (
+            ParityRule::UntrustedItemAsks,
+            ParityCell::missing("GR12: the item's trust does not change the permission block"),
+        ),
+        (ParityRule::AgentConfigIsolated, ParityCell::Runner),
+        (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),
+        (
+            ParityRule::KillEverythingOnCancel,
+            ParityCell::missing("GR13: cancel signals the process group, not the session"),
+        ),
+        (ParityRule::OutputRules, ParityCell::Runner),
+        (
+            ParityRule::ChecksChangedHoldsMerge,
+            ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
+        ),
+        (ParityRule::Redaction, ParityCell::Runner),
+        (ParityRule::StepsVisible, ParityCell::Cli),
+    ],
     readiness: Some(readiness::check),
     models_docs: "https://opencode.ai/docs/models/",
     sign_in_docs: "https://opencode.ai/docs/providers/",

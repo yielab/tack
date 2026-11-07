@@ -18,11 +18,12 @@ pub use activity::{ActivityState, ActivityTask, CurrentStep, FinishedStep, TeamA
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
     EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, MemoryEntry,
-    MemoryEvidence, ModelListSource, ModelsReport, NEED_MODEL, NEED_SIGN_IN, RunnerCapabilities,
-    SignInReport, SignInState, TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember,
-    TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamNeeds, TeamNetwork, TeamPause, TeamQueue,
-    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, TeamWebMode,
-    TeamWebRead, WorksIn, team_misfits,
+    MemoryEvidence, ModelListSource, ModelsReport, NEED_MODEL, NEED_SIGN_IN, ParityCell,
+    ParityColumn, ParityLine, ParityRule, RunnerCapabilities, SignInReport, SignInState,
+    TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember, TeamMemory, TeamMethod,
+    TeamMisfit, TeamNeed, TeamNeeds, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport,
+    TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, TeamWebMode, TeamWebRead, WorksIn,
+    team_misfits, validate_parity,
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,

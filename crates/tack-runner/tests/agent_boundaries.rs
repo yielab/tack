@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
-    RunnerId as DomainRunnerId,
+    ParityCell, ParityRule, RunnerId as DomainRunnerId, validate_parity,
 };
 use tack_runner::{
     SecretStore,
@@ -14,7 +14,7 @@ use tack_runner::{
         engine::ExecutionSpec,
     },
     harness::{
-        DESCRIPTORS,
+        DESCRIPTORS, all_descriptors,
         claude_code::ClaudeCodeGrammar,
         codex::CodexGrammar,
         env_policy,
@@ -45,6 +45,7 @@ static FAKE: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[],
+    parity: &[],
     readiness: None,
     models_docs: "",
     sign_in_docs: "",
@@ -291,6 +292,7 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[".claude"],
+    parity: &[],
     readiness: None,
     models_docs: "",
     sign_in_docs: "",
@@ -862,6 +864,7 @@ fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
         cancels_over_api: real.cancels_over_api,
         reports_progress: real.reports_progress,
         sandbox_binds: &[],
+        parity: &[],
         readiness: None,
         models_docs: "",
         sign_in_docs: "",
@@ -1093,6 +1096,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         cancels_over_api: false,
         reports_progress: false,
         sandbox_binds: &[],
+        parity: &[],
         readiness: None,
         models_docs: "",
         sign_in_docs: "",
@@ -1207,4 +1211,203 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
     }
     assert!(names.contains("DOCKET_HOME"), "{names:?}");
     handle.shutdown().await;
+}
+
+// ---- the parity matrix ----------------------------------------------------------------------
+//
+// Every rule every agent must meet, one cell per agent. A cell is fine when somebody enforces it,
+// or when no card can ever fill it (`by design:`). Every other gap is listed below with the card
+// that closes it, so the suite is green while a gap is known, and a card that closes its cells
+// must delete their entries; a descriptor with a gap nobody explained is red.
+
+/// `(rule, agent, card)` for each cell that is not met today and that a card will meet.
+const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
+    (ParityRule::SandboxOrNoRun, "claude-code", "GR2"),
+    (ParityRule::SandboxOrNoRun, "codex", "GR2"),
+    (ParityRule::SandboxOrNoRun, "opencode", "GR2"),
+    (ParityRule::SandboxOrNoRun, "docket", "GR8"),
+    (ParityRule::NoSandboxMeansAsk, "claude-code", "GR1"),
+    (ParityRule::NoSandboxMeansAsk, "codex", "GR1"),
+    (ParityRule::NoSandboxMeansAsk, "opencode", "GR1"),
+    (ParityRule::NoSandboxMeansAsk, "docket", "GR8"),
+    (ParityRule::EgressByAllowList, "claude-code", "GR5"),
+    (ParityRule::EgressByAllowList, "codex", "GR5"),
+    (ParityRule::EgressByAllowList, "opencode", "GR5"),
+    (ParityRule::UntrustedItemAsks, "claude-code", "GR12"),
+    (ParityRule::UntrustedItemAsks, "codex", "GR12"),
+    (ParityRule::UntrustedItemAsks, "opencode", "GR12"),
+    (ParityRule::UntrustedItemAsks, "docket", "GR12"),
+    (ParityRule::AgentConfigIsolated, "claude-code", "GR4"),
+    (ParityRule::AgentConfigIsolated, "codex", "GR4"),
+    (ParityRule::TokenLimitWhileRunning, "codex", "GR13"),
+    (ParityRule::KillEverythingOnCancel, "claude-code", "GR13"),
+    (ParityRule::KillEverythingOnCancel, "codex", "GR13"),
+    (ParityRule::KillEverythingOnCancel, "opencode", "GR13"),
+    (ParityRule::OutputRules, "docket", "GR17"),
+    (ParityRule::ChecksChangedHoldsMerge, "claude-code", "GR9"),
+    (ParityRule::ChecksChangedHoldsMerge, "codex", "GR9"),
+    (ParityRule::ChecksChangedHoldsMerge, "opencode", "GR9"),
+    (ParityRule::ChecksChangedHoldsMerge, "docket", "GR9"),
+    (ParityRule::Redaction, "docket", "GR18"),
+];
+
+/// What is wrong with the matrix, one line per problem; empty when it holds.
+fn parity_problems(
+    descriptors: &[&HarnessDescriptor],
+    pending: &[(ParityRule, &str, &str)],
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    for descriptor in descriptors {
+        let agent = descriptor.kind;
+        if let Err(why) = validate_parity(descriptor.parity) {
+            problems.push(format!("{agent}: {why}"));
+            continue;
+        }
+        for (rule, cell) in descriptor.parity {
+            let listed = pending.iter().find(|(pending_rule, pending_agent, _)| {
+                pending_rule == rule && *pending_agent == agent
+            });
+            match (cell, listed) {
+                (ParityCell::Missing { .. }, _) if cell.is_by_design() => {
+                    if listed.is_some() {
+                        problems.push(format!(
+                            "{rule:?} x {agent} is by design: delete it from PENDING_CELLS"
+                        ));
+                    }
+                }
+                (ParityCell::Missing { reason }, Some((_, _, card))) => {
+                    if !reason.starts_with(&format!("{card}:")) {
+                        problems.push(format!(
+                            "{rule:?} x {agent}: the reason must start with its card `{card}:`"
+                        ));
+                    }
+                }
+                (ParityCell::Missing { reason }, None) => {
+                    problems.push(format!(
+                        "{rule:?} x {agent} is missing and not pending any card: {reason}"
+                    ));
+                }
+                (_, Some((_, _, card))) => {
+                    problems.push(format!(
+                        "{rule:?} x {agent} is met now: delete it from PENDING_CELLS ({card})"
+                    ));
+                }
+                (_, None) => {}
+            }
+        }
+    }
+    for (rule, agent, card) in pending {
+        if !descriptors
+            .iter()
+            .any(|descriptor| descriptor.kind == *agent)
+        {
+            problems.push(format!(
+                "PENDING_CELLS names {agent}, which is not a registered agent ({rule:?}, {card})"
+            ));
+        }
+    }
+    problems
+}
+
+fn leaked_descriptor(
+    kind: &'static str,
+    column: Vec<(ParityRule, ParityCell)>,
+) -> &'static HarnessDescriptor {
+    Box::leak(Box::new(HarnessDescriptor {
+        kind,
+        program: "unused",
+        model_selection: ModelSelection::Optional,
+        inherited_env: &[],
+        probe_notes: &[],
+        credential_note: "",
+        reports_process_groups: false,
+        cancels_over_api: false,
+        reports_progress: false,
+        sandbox_binds: &[],
+        parity: Box::leak(column.into_boxed_slice()),
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
+    }))
+}
+
+fn met_column() -> Vec<(ParityRule, ParityCell)> {
+    ParityRule::ALL
+        .into_iter()
+        .map(|rule| (rule, ParityCell::Runner))
+        .collect()
+}
+
+#[test]
+fn parity_matrix() {
+    let problems = parity_problems(all_descriptors(), PENDING_CELLS);
+    assert!(
+        problems.is_empty(),
+        "the parity matrix has gaps:\n{}",
+        problems.join("\n")
+    );
+}
+
+#[test]
+fn parity_a_gap_nobody_explained_is_red() {
+    let mut empty_reason = met_column();
+    empty_reason[1].1 = ParityCell::missing("");
+    let mut unlisted = met_column();
+    unlisted[2].1 = ParityCell::missing("GR5: not done yet");
+    let mut by_design = met_column();
+    by_design[10].1 = ParityCell::missing("by design: it prints no steps");
+    let descriptors = [
+        leaked_descriptor("empty-reason", empty_reason),
+        leaked_descriptor("unlisted", unlisted),
+        leaked_descriptor("by-design", by_design),
+    ];
+    let problems = parity_problems(&descriptors, &[]);
+    assert_eq!(problems.len(), 2, "{problems:#?}");
+    assert!(problems[0].contains("empty-reason") && problems[0].contains("NoSandboxMeansAsk"));
+    assert!(problems[1].contains("unlisted") && problems[1].contains("EgressByAllowList"));
+}
+
+#[test]
+fn parity_a_listed_gap_is_green_until_it_is_met() {
+    let mut gap = met_column();
+    gap[2].1 = ParityCell::missing("GR5: not done yet");
+    let pending = [(ParityRule::EgressByAllowList, "gap", "GR5")];
+    assert!(parity_problems(&[leaked_descriptor("gap", gap)], &pending).is_empty());
+
+    let met = leaked_descriptor("gap", met_column());
+    let problems = parity_problems(&[met], &pending);
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    assert!(problems[0].contains("is met now"));
+}
+
+#[test]
+fn parity_a_pending_cell_names_a_registered_agent_and_its_card() {
+    let mut gap = met_column();
+    gap[2].1 = ParityCell::missing("GR5: not done yet");
+    let descriptor = leaked_descriptor("gap", gap);
+    let wrong_card = [(ParityRule::EgressByAllowList, "gap", "GR6")];
+    assert_eq!(parity_problems(&[descriptor], &wrong_card).len(), 1);
+    let ghost = [
+        (ParityRule::EgressByAllowList, "gap", "GR5"),
+        (ParityRule::Redaction, "nobody", "GR18"),
+    ];
+    assert_eq!(parity_problems(&[descriptor], &ghost).len(), 1);
+}
+
+#[test]
+fn parity_steps_are_visible_exactly_where_the_cli_reports_progress() {
+    for descriptor in all_descriptors() {
+        let steps = descriptor
+            .parity
+            .iter()
+            .find(|(rule, _)| *rule == ParityRule::StepsVisible)
+            .map(|(_, cell)| cell)
+            .expect("every column answers StepsVisible");
+        assert_eq!(
+            steps.is_met(),
+            descriptor.reports_progress,
+            "{}: StepsVisible must agree with `reports_progress`",
+            descriptor.kind
+        );
+    }
 }

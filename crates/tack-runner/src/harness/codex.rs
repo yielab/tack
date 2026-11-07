@@ -6,7 +6,7 @@
 
 use tack_protocol::conversation::ConverseMode;
 use tack_protocol::execution::{
-    Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy,
+    Approvals, CapabilitySupport, FeatureCapabilities, ParityCell, ParityRule, PermissionPolicy,
 };
 
 use crate::harness::{
@@ -36,6 +36,56 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[".codex"],
+    parity: &[
+        (
+            ParityRule::SandboxOrNoRun,
+            ParityCell::missing(
+                "GR2: bwrap only when installed, otherwise Codex's own sandbox alone",
+            ),
+        ),
+        (
+            ParityRule::NoSandboxMeansAsk,
+            ParityCell::missing(
+                "GR1: exec never asks, the runner does not force app-server without a sandbox",
+            ),
+        ),
+        (
+            ParityRule::EgressByAllowList,
+            ParityCell::missing(
+                "GR5: depends on the user's Codex config, no proxy of the runner's",
+            ),
+        ),
+        (
+            ParityRule::UntrustedItemAsks,
+            ParityCell::missing("GR12: the item's trust does not change the sandbox mode"),
+        ),
+        (
+            ParityRule::AgentConfigIsolated,
+            ParityCell::missing("GR4: ~/.codex is bound writable and the user's MCP servers load"),
+        ),
+        (
+            ParityRule::TokenLimitWhileRunning,
+            ParityCell::missing(
+                "GR13: exec reports usage only at the end, so nothing stops it at the limit",
+            ),
+        ),
+        (
+            ParityRule::KillEverythingOnCancel,
+            ParityCell::missing("GR13: cancel signals the process group, not the session"),
+        ),
+        (ParityRule::OutputRules, ParityCell::Runner),
+        (
+            ParityRule::ChecksChangedHoldsMerge,
+            ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
+        ),
+        (ParityRule::Redaction, ParityCell::Runner),
+        (
+            ParityRule::StepsVisible,
+            ParityCell::missing(
+                "by design: Codex prints no steps in exec, so reviews and evals judge the outcome only",
+            ),
+        ),
+    ],
     readiness: Some(readiness::check),
     models_docs: "https://developers.openai.com/codex/models",
     sign_in_docs: "https://developers.openai.com/codex/auth",

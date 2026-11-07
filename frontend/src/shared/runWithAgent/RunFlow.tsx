@@ -16,6 +16,7 @@ import { spaced } from './runLimit';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
 import ProfilePicker, { type AgentChoice } from './ProfilePicker';
+import ParityRules from './ParityRules';
 
 /** Claude Code's file, shell, web and sub-agent tools, from the names `claude mcp serve`
  *  lists (docs/plans/measurements/tools-claude-code.md). The rest of that list depends on
@@ -307,6 +308,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 </span>
               )}
             </Show>
+            <ParityRules reports={props.harnessReports()} />
           </SummaryLine>
           <SummaryLine icon={<IconGlobe />} label="Network">
             <span data-testid="run-dialog-network">{props.form.allowNetwork ? 'Web tools on: the agent may reach the network' : 'Web tools off: the agent has no network'}</span>
