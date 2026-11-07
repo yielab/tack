@@ -1,18 +1,21 @@
 //! Environment names a request may never set.
 //!
-//! The list covers the names that change what a spawned program runs or
-//! loads: the search path (`PATH`), the home directory its configuration and
-//! credentials are read from (`HOME`), code a loader or an interpreter injects
-//! before the program starts (`LD_*`, `DYLD_*`, `NODE_OPTIONS`, `PYTHON*`,
-//! `PERL5OPT`, `RUBYOPT`), a shell's start-up file (`BASH_ENV`, `ENV`), and how
-//! git and ssh behave (`GIT_*`, `SSH_*`). A name ending in `_BASE_URL` is
-//! refused because it redirects where a program sends its requests. Proxy
-//! variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are not on
-//! the list, so a request can route a program's traffic through a proxy.
+//! The list covers the names that change what a spawned program runs, loads or
+//! reads: the search path (`PATH`), the home directory its configuration and
+//! credentials are read from (`HOME`), the configuration homes a harness reads
+//! its settings from (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG` and
+//! the `XDG_*` base directories), the package manager's settings
+//! (`npm_config_*`), code a loader or an interpreter injects before the program
+//! starts (`LD_*`, `DYLD_*`, `NODE_OPTIONS`, `NODE_PATH`, `JAVA_TOOL_OPTIONS`,
+//! `PYTHON*`, `PERL5OPT`, `RUBYOPT`), a shell's start-up file (`BASH_ENV`,
+//! `ENV`), and how git and ssh behave (`GIT_*`, `SSH_*`). A name ending in
+//! `_BASE_URL` is refused because it redirects where a program sends its
+//! requests, and the proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`,
+//! `NO_PROXY`) because they route its traffic through a proxy.
 //!
-//! Names are matched without regard to case. An operator who wants one of them
-//! grants it in the runner's own `[environment]` table, which this list does
-//! not apply to.
+//! Names are matched without regard to case, so `http_proxy` is refused as
+//! `HTTP_PROXY` is. An operator who wants one of them grants it in the runner's
+//! own `[environment]` table, which this list does not apply to.
 
 const EXACT: &[(&str, &str)] = &[
     (
@@ -25,6 +28,10 @@ const EXACT: &[(&str, &str)] = &[
         "it makes node load code before the program starts",
     ),
     (
+        "NODE_PATH",
+        "it makes node load modules from other places before the program starts",
+    ),
+    (
         "PERL5OPT",
         "it makes perl load code before the program starts",
     ),
@@ -33,12 +40,44 @@ const EXACT: &[(&str, &str)] = &[
         "it makes ruby load code before the program starts",
     ),
     (
+        "JAVA_TOOL_OPTIONS",
+        "it makes the java runtime load code before the program starts",
+    ),
+    (
         "BASH_ENV",
         "it makes a shell source a file before the program starts",
     ),
     (
         "ENV",
         "it makes a shell source a file before the program starts",
+    ),
+    (
+        "CLAUDE_CONFIG_DIR",
+        "it moves where claude reads its settings and credentials",
+    ),
+    (
+        "CODEX_HOME",
+        "it moves where codex reads its settings and credentials",
+    ),
+    (
+        "OPENCODE_CONFIG",
+        "it loads a configuration file from another place",
+    ),
+    (
+        "HTTP_PROXY",
+        "it sends the program's traffic through a proxy",
+    ),
+    (
+        "HTTPS_PROXY",
+        "it sends the program's traffic through a proxy",
+    ),
+    (
+        "ALL_PROXY",
+        "it sends the program's traffic through a proxy",
+    ),
+    (
+        "NO_PROXY",
+        "it decides which of the program's requests skip the proxy",
     ),
 ];
 
@@ -59,6 +98,14 @@ const PREFIXES: &[(&str, &str)] = &[
     (
         "PYTHON",
         "it makes python load code before the program starts",
+    ),
+    (
+        "XDG_",
+        "it moves where programs read their configuration, data and cache",
+    ),
+    (
+        "NPM_CONFIG_",
+        "it changes how npm reads its configuration and caches packages",
     ),
 ];
 
