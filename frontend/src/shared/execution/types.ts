@@ -187,7 +187,17 @@ export interface HarnessCapability {
   sandbox?: 'bwrap' | 'none';
   /** Why the harness is not sandboxed, when `sandbox` is `"none"`. */
   sandbox_reason?: string;
+  /** Who applies each containment rule for this agent. Optional: older runners omit it. */
+  parity?: ParityLine[];
 }
+
+/** One containment rule and who applies it: the agent's own CLI, the runner from outside, the
+ *  agent's daemon, or nobody (with why). */
+export type ParityLine = { rule: string; label: string } & (
+  | { by: 'cli' | 'runner' }
+  | { by: 'delegated'; to: string }
+  | { by: 'missing'; reason: string }
+);
 
 export interface CapabilityLimits {
   event_payload_bytes_max: number;

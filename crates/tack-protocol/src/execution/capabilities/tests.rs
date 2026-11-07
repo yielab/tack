@@ -556,3 +556,86 @@ fn the_team_of_one_round_trips_and_a_docket_team_is_not_one() {
     assert!(old.delivers.is_none() && old.methods.is_none() && old.needs.is_none());
     assert!(!old.is_of_agent("saas"));
 }
+
+fn full_column() -> Vec<(ParityRule, ParityCell)> {
+    ParityRule::ALL
+        .into_iter()
+        .map(|rule| (rule, ParityCell::Runner))
+        .collect()
+}
+
+#[test]
+fn parity_column_answering_every_rule_is_valid() {
+    assert_eq!(validate_parity(&full_column()), Ok(()));
+}
+
+#[test]
+fn parity_missing_cell_without_a_reason_is_refused_naming_the_rule() {
+    let mut column = full_column();
+    column[2].1 = ParityCell::missing("  ");
+    let error = validate_parity(&column).expect_err("an unexplained gap");
+    assert!(error.contains("EgressByAllowList"), "{error}");
+}
+
+#[test]
+fn parity_column_with_a_rule_unanswered_or_answered_twice_is_refused() {
+    let mut short = full_column();
+    short.pop();
+    assert!(
+        validate_parity(&short)
+            .expect_err("a rule left out")
+            .contains("StepsVisible")
+    );
+    let mut twice = full_column();
+    twice.push((ParityRule::Redaction, ParityCell::Cli));
+    assert!(
+        validate_parity(&twice)
+            .expect_err("a rule answered twice")
+            .contains("Redaction")
+    );
+}
+
+#[test]
+fn parity_delegated_to_nobody_is_refused() {
+    let mut column = full_column();
+    column[0].1 = ParityCell::delegated("");
+    assert!(validate_parity(&column).is_err());
+}
+
+#[test]
+fn parity_by_design_is_a_missing_cell_with_the_prefix() {
+    assert!(ParityCell::missing("by design: it prints no steps").is_by_design());
+    assert!(!ParityCell::missing("GR1 will do it").is_by_design());
+    assert!(!ParityCell::Cli.is_by_design());
+    assert!(ParityCell::delegated("docket").is_met());
+    assert!(!ParityCell::missing("GR1").is_met());
+}
+
+#[test]
+fn parity_round_trips_through_the_capability_report() {
+    let mut harness: HarnessCapability = serde_json::from_value(serde_json::json!({
+        "harness_kind":"codex","installed_version":"1","probe_error":null,
+        "probed_at":"2026-08-06T12:00:00Z"
+    }))
+    .expect("harness");
+    assert_eq!(harness.parity(), None);
+    harness.set_parity(&[
+        (ParityRule::SandboxOrNoRun, ParityCell::Runner),
+        (
+            ParityRule::EgressByAllowList,
+            ParityCell::delegated("docket"),
+        ),
+        (
+            ParityRule::StepsVisible,
+            ParityCell::missing("by design: none"),
+        ),
+    ]);
+    let wire = serde_json::to_value(&harness).expect("serialize");
+    assert_eq!(wire["parity"][0]["by"], "runner");
+    assert_eq!(wire["parity"][1]["to"], "docket");
+    assert_eq!(wire["parity"][2]["reason"], "by design: none");
+    let parity = harness.parity().expect("read back");
+    assert_eq!(parity.len(), 3);
+    assert_eq!(parity[0].rule, ParityRule::SandboxOrNoRun);
+    assert_eq!(parity[0].label, ParityRule::SandboxOrNoRun.label());
+}
