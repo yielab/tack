@@ -610,17 +610,15 @@ impl ExecutionRequestSnapshot {
         serde_json::from_value(self.additional.get("autonomy")?.clone()).ok()
     }
 
-    /// Whether this run's profile is a Planner or a Researcher on an agent other than docket:
-    /// the one file it may write is `tack-plan.json`. Docket's researcher writes a document,
-    /// which is its delivery.
+    /// Whether this run's profile is a Planner or a Researcher, on any agent: it changes no file
+    /// of the project, and the plan it proposes is `tack-plan.json` (docket's team proposes
+    /// through its records instead, and writes no file at all).
     pub fn writes_only_the_plan(&self) -> bool {
-        self.requested_harness_kind.as_str() != "docket"
-            && self
-                .resolved_agent_profile
-                .additional
-                .get("kind")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|kind| PLAN_WRITER_KINDS.contains(&kind))
+        self.resolved_agent_profile
+            .additional
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|kind| PLAN_WRITER_KINDS.contains(&kind))
     }
 
     /// The tools this run gives `harness`: the run's own list when it names any (the person typed
@@ -648,8 +646,8 @@ impl ExecutionRequestSnapshot {
     ///   profile's for that agent, when it is not `*`. Naming a write tool (`bash`,
     ///   `shell`, `edit`, `multiedit`, `notebookedit`, `write`, `apply_patch`) means
     ///   a change is expected, whatever the profile's kind; naming only read tools
-    ///   means none is. The exception is `write` on a `planner` or `researcher` outside
-    ///   `docket`: that is the plan file those profiles write, not a change;
+    ///   means none is. The exception is `write` on a `planner` or `researcher`: that is
+    ///   the plan file those profiles write, not a change;
     /// - with `*` or no list at all, a profile of kind `reviewer`, `researcher` or
     ///   `planner` is read-only, and any other expects a change. No list at all
     ///   changes nothing, except for `docket`, which applies its team's own tools;

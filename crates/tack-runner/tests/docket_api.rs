@@ -9153,3 +9153,136 @@ async fn redact_the_token_docket_is_read_with_never_reaches_a_teams_activity() {
         Some("The call used [REDACTED].")
     );
 }
+
+// ── The outcome rules hold for docket as for the local agents ────────────────────
+
+/// What the engine makes of a docket run that ended `done` in the repository: the evidence
+/// captured from the branch docket returned (`base_commit..head_commit`), then the outcome rules
+/// applied to it. Returns the outcome after the rules and the evidence they judged.
+async fn judged(
+    scene: &Scene,
+    outcome: tack_runner::harness::HarnessOutcome,
+    kind: Option<&str>,
+) -> (tack_runner::harness::HarnessOutcome, Value) {
+    let mut outcome = outcome;
+    let mut work = spec(scene, "attempt-1", 1);
+    // The team applies its own tools; the fixture's explicit list would decide instead.
+    work.work.request.permission_policy.tools.clear();
+    if let Some(kind) = kind {
+        work.work
+            .request
+            .resolved_agent_profile
+            .additional
+            .insert("kind".to_owned(), kind.into());
+    }
+    let workspaces = tack_runner::client::WorkspaceManager::new(
+        scene._dir.path().join("workspaces"),
+        tack_runner::client::workspace::git::GitWorktreeProvisioner::default(),
+    );
+    let base = outcome.terminal_reason["base_commit"]
+        .as_str()
+        .expect("the branch's base")
+        .to_owned();
+    let head = outcome.terminal_reason["head_commit"]
+        .as_str()
+        .expect("the branch's head")
+        .to_owned();
+    let (scratch, mut staged) = tack_runner::evidence::capture(
+        &workspaces,
+        &work.workspace,
+        "docket".to_owned(),
+        kind.unwrap_or_default(),
+        outcome.terminal_reason.clone(),
+        Value::Null,
+        None,
+        Some(&base),
+        ("Tack <t@localhost>", "work"),
+        Some(&head),
+    )
+    .await;
+    tack_runner::client::engine::fail_beyond_the_plan(&work, &scratch, &mut staged, &mut outcome);
+    tack_runner::client::engine::fail_without_change(&work, &scratch, &mut staged, &mut outcome);
+    let evidence: Value =
+        serde_json::from_slice(&std::fs::read(scratch.join("src/evidence.json")).expect("file"))
+            .expect("evidence");
+    let _ = std::fs::remove_dir_all(scratch);
+    (outcome, evidence)
+}
+
+fn committing(path: &str) -> Script {
+    Script {
+        commit: Some((path.to_owned(), "changed\n".to_owned())),
+        ..Script::default()
+    }
+}
+
+#[tokio::test]
+async fn a_docket_planner_that_edits_the_source_ends_failed_naming_the_file() {
+    let fake = pods_fake().await;
+    let (outcome, scene) = run_script(&fake, committing("src/lib.rs")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+
+    let (outcome, evidence) = judged(&scene, outcome, Some("planner")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], "changed_beyond_plan");
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        "This run was meant only to write a plan, but it also changed: src/lib.rs"
+    );
+    // The change stays in the evidence, which says the same.
+    assert_eq!(evidence["files"][0]["path"], "src/lib.rs");
+    assert_eq!(evidence["terminal_reason"]["code"], "changed_beyond_plan");
+}
+
+#[tokio::test]
+async fn a_docket_researcher_that_edits_the_source_ends_failed_too() {
+    let fake = pods_fake().await;
+    let (outcome, scene) = run_script(&fake, committing("src/lib.rs")).await;
+    let (outcome, _) = judged(&scene, outcome, Some("researcher")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], "changed_beyond_plan");
+}
+
+#[tokio::test]
+async fn a_docket_planner_that_changed_nothing_stays_succeeded() {
+    let fake = pods_fake().await;
+    let (outcome, scene) = run_script(&fake, Script::default()).await;
+    let (outcome, _) = judged(&scene, outcome, Some("planner")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+}
+
+#[tokio::test]
+async fn a_docket_run_that_is_done_with_no_diff_ends_failed() {
+    let fake = pods_fake().await;
+    let (outcome, scene) = run_script(&fake, Script::default()).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(
+        outcome.terminal_reason["head_commit"], outcome.terminal_reason["base_commit"],
+        "the branch equals its base"
+    );
+
+    let (outcome, _) = judged(&scene, outcome, Some("implementer")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], "no_change");
+}
+
+#[tokio::test]
+async fn a_docket_run_that_touches_tests_reaches_the_evidence_the_checked_files_rule_reads() {
+    let fake = pods_fake().await;
+    let (outcome, scene) = run_script(&fake, committing("tests/retry.rs")).await;
+    let (outcome, evidence) = judged(&scene, outcome, Some("implementer")).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    let paths: Vec<&str> = evidence["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .map(|file| file["path"].as_str().expect("path"))
+        .collect();
+    assert_eq!(paths, ["tests/retry.rs"]);
+    assert!(
+        paths
+            .iter()
+            .all(|path| tack_runner::evidence::checked_files::matches(path)),
+        "the file is one that decides how the work is checked"
+    );
+}

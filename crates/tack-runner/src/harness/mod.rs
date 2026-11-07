@@ -217,9 +217,12 @@ pub(crate) fn local_prompt(work: &crate::client::ClaimedWork) -> String {
         work.workspace_repository(),
         Ok(repository) if repository.workspace_mode == crate::client::WorkspaceMode::Repository
     );
-    if let Some(sentence) = plan_channel(profile_kind(request))
-        .filter(|_| request.writes_only_the_plan() && has_work_tree)
-    {
+    // Docket's team proposes through its records, so it is never told of the file.
+    if let Some(sentence) = plan_channel(profile_kind(request)).filter(|_| {
+        request.requested_harness_kind.as_str() != crate::harness::docket::DESCRIPTOR.kind
+            && request.writes_only_the_plan()
+            && has_work_tree
+    }) {
         prompt.push_str("\n\n");
         prompt.push_str(sentence);
     }

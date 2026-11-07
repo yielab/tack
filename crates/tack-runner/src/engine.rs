@@ -29,6 +29,7 @@ mod outcome;
 mod resume;
 
 use outcome::{changed_config_path, runner_token_limit, token_limit_reached};
+pub use outcome::{fail_beyond_the_plan, fail_without_change};
 
 /// One thing a harness's own protocol asked the operator, read off a line of
 /// its stdout by [`HarnessGrammar::signal`](crate::harness::local_process::HarnessGrammar::signal).
@@ -873,8 +874,8 @@ where
                     }
                     // After the verifier, whose refusal of an empty change stays an
                     // event: the empty change is the headline, not that refusal.
-                    Self::fail_beyond_the_plan(spec, &scratch, &mut staged, &mut outcome);
-                    Self::fail_without_change(spec, &scratch, &mut staged, &mut outcome);
+                    outcome::fail_beyond_the_plan(spec, &scratch, &mut staged, &mut outcome);
+                    outcome::fail_without_change(spec, &scratch, &mut staged, &mut outcome);
                 }
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                     reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));

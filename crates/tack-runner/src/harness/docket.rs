@@ -103,12 +103,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
             ParityRule::KillEverythingOnCancel,
             ParityCell::delegated("docket"),
         ),
-        (
-            ParityRule::OutputRules,
-            ParityCell::missing(
-                "GR17: the Planner and Researcher rules and the no-change rule are not applied to docket's diff",
-            ),
-        ),
+        (ParityRule::OutputRules, ParityCell::Runner),
         (
             ParityRule::ChecksChangedHoldsMerge,
             ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
