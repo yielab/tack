@@ -14369,7 +14369,7 @@
       },
       "Key": {
         "type": "string",
-        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`."
+        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,\n`trend:<project>:<cut>:<name>`."
       },
       "Kind": {
         "type": "string",
@@ -14381,7 +14381,8 @@
           "run_finished",
           "due_soon",
           "children_finished",
-          "memory"
+          "memory",
+          "quality_trend"
         ]
       },
       "LatestHop": {

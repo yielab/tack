@@ -47,6 +47,7 @@ pub mod observability;
 pub mod parents;
 pub mod ports;
 pub mod pull_request;
+pub mod quality_trend;
 pub mod remote_backup;
 pub mod retention;
 pub mod runner_operations;

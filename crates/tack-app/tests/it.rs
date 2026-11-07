@@ -26,6 +26,7 @@ mod notification_delivery;
 mod notifications;
 mod observe_recovery;
 mod ports;
+mod quality_trend;
 mod refresh;
 mod report_events;
 mod requeue;

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::Serialize;
 use serde_json::Value;
-use tack_core::run_outcome::never_started;
+use tack_core::run_outcome::{never_started, work_outcome};
 use tack_db::queries::metrics::{QualityAttempt, QuestionRow};
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeDecision;
@@ -122,14 +122,7 @@ pub struct CutRow {
 /// or neither: still going, cancelled, or turned away before it started.
 fn outcome(attempt: &QualityAttempt) -> Option<bool> {
     let state: ExecutionState = attempt.state.parse().ok()?;
-    match state {
-        ExecutionState::Succeeded => Some(true),
-        ExecutionState::Failed => {
-            let reason = reason_of(attempt);
-            (!never_started(state, reason.as_ref())).then_some(false)
-        }
-        _ => None,
-    }
+    work_outcome(state, reason_of(attempt).as_ref())
 }
 
 fn reason_of(attempt: &QualityAttempt) -> Option<Value> {

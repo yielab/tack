@@ -5703,14 +5703,15 @@ export interface components {
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
          *     fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`.
+         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,
+         *     `trend:<project>:<cut>:<name>`.
          */
         Key: string;
         /**
          * @description What happened that a person is told about.
          * @enum {string}
          */
-        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon" | "children_finished" | "memory";
+        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon" | "children_finished" | "memory" | "quality_trend";
         /**
          * @description The step of a docket run an attempt is in, read from the text of its latest hop event so a
          *     screen finds the step on the team's list without fetching the events.

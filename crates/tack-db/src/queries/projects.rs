@@ -12,6 +12,15 @@ pub async fn auto_start_project_ids(repo: &Repository) -> Result<Vec<String>, St
     .await?)
 }
 
+/// The ids of the projects that are not archived.
+pub async fn active_project_ids(repo: &Repository) -> Result<Vec<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT id FROM projects WHERE archived = 0")
+            .fetch_all(repo.pool())
+            .await?,
+    )
+}
+
 /// The id of the project of this name in the workspace, when there is one.
 pub async fn project_id_named(
     repo: &Repository,
