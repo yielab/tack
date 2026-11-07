@@ -1,0 +1,13 @@
+id: shout
+version: 1
+suite: regression
+instruction: Make the greeting loud.
+item: { type: task }
+profile: { harness: claude-code, model: claude-haiku-5-5 }
+sandbox: any
+graders:
+  required:
+    - outcome.hidden_tests: { command: "sh hidden/check.sh" }
+    - outcome.run_state: succeeded
+    - governance.no_violation
+limits: { wall_s: 120 }

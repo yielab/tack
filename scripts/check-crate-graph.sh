@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fails when a workspace crate has a normal dependency on one this table does not allow.
 # dev-dependencies are exempt: every crate may test with tack-test-support.
+# tack-evals is a development tool and a leaf: no entry below lists it, so nothing may depend on it.
 # A second check keeps the SQL driver and the raw pool inside tack-db and tack-test-support.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
@@ -14,6 +15,7 @@ declare -A ALLOW=(
   [tack-runner]="tack-protocol tack-core"
   [tack-cli]="tack-api tack-app tack-runner tack-db tack-protocol tack-core"
   [tack-test-support]="tack-protocol tack-core tack-db"
+  [tack-evals]="tack-test-support"
 )
 if [ "${1:-}" = "--print" ]; then for k in "${!ALLOW[@]}"; do echo "$k -> ${ALLOW[$k]:-(none)}"; done | sort; exit 0; fi
 fail=0
