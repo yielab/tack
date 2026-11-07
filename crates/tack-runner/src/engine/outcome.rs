@@ -58,6 +58,26 @@ pub(super) fn token_limit_reached(outcome: &mut HarnessOutcome, limit: u64, coun
     outcome.terminal_reason = serde_json::Value::Object(reason);
 }
 
+/// The attempt asked to stop whose agent's processes were still alive after SIGKILL ends failed,
+/// not cancelled: the board must not read "stopped" where something may still be running on the
+/// machine.
+pub(super) fn cancel_failed_reason(outcome: &mut HarnessOutcome) {
+    outcome.terminal_state = AttemptState::Failed;
+    let mut reason = match std::mem::take(&mut outcome.terminal_reason) {
+        serde_json::Value::Object(reason) => reason,
+        _ => serde_json::Map::new(),
+    };
+    reason.insert("reason".to_owned(), "cancel_failed".into());
+    reason.insert("code".to_owned(), "cancel_failed".into());
+    reason.insert(
+        "message".to_owned(),
+        "The run was asked to stop, but some of the agent's processes could not be stopped; \
+         check this computer for leftovers"
+            .into(),
+    );
+    outcome.terminal_reason = serde_json::Value::Object(reason);
+}
+
 /// The attempt whose agent reported success and delivered no change ends failed, with the
 /// sentence its panel prints as the reason; what the harness reported stays beside it. A
 /// harness that left files uncommitted says how many in `untracked_files`.

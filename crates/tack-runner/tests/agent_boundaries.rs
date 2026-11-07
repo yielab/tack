@@ -2007,10 +2007,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::UntrustedItemAsks, "codex", "GR12"),
     (ParityRule::UntrustedItemAsks, "opencode", "GR12"),
     (ParityRule::UntrustedItemAsks, "docket", "GR12"),
-    (ParityRule::TokenLimitWhileRunning, "codex", "GR13"),
-    (ParityRule::KillEverythingOnCancel, "claude-code", "GR13"),
-    (ParityRule::KillEverythingOnCancel, "codex", "GR13"),
-    (ParityRule::KillEverythingOnCancel, "opencode", "GR13"),
     (ParityRule::ChecksChangedHoldsMerge, "claude-code", "GR9"),
     (ParityRule::ChecksChangedHoldsMerge, "codex", "GR9"),
     (ParityRule::ChecksChangedHoldsMerge, "opencode", "GR9"),
@@ -2173,6 +2169,20 @@ fn parity_steps_are_visible_exactly_where_the_cli_reports_progress() {
             steps.is_met(),
             descriptor.reports_progress,
             "{}: StepsVisible must agree with `reports_progress`",
+            descriptor.kind
+        );
+    }
+}
+
+/// The board decides the clock and the auto-start of an agent from a list in the protocol crate,
+/// because it has no descriptors; this keeps that list equal to what the descriptors say.
+#[test]
+fn the_board_knows_which_agents_report_no_usage_while_they_run() {
+    for descriptor in all_descriptors() {
+        assert_eq!(
+            tack_protocol::execution::reports_usage_while_running(descriptor.kind),
+            descriptor.reports_progress,
+            "{}: `WITHOUT_LIVE_USAGE` must list exactly the agents with `reports_progress: false`",
             descriptor.kind
         );
     }

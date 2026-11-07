@@ -19,6 +19,9 @@ pub struct Candidate {
     pub profile: Option<Resolved>,
     /// A fleet, or exactly one active runner, to run on.
     pub has_machine: bool,
+    /// The profile's agent reports no usage while it runs, and its last run went past the token
+    /// limit: nothing would stop the next one at the limit either.
+    pub went_over_unmeasured: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +37,7 @@ pub enum Skip {
     Blocked(usize),
     NoProfile,
     NoMachine,
+    WentOver,
     Budget,
     MaxOpen,
 }
@@ -60,6 +64,8 @@ pub fn pick(candidates: &[Candidate], limits: &Limits) -> (Vec<Uuid>, Vec<(Uuid,
             Some(Skip::NoProfile)
         } else if !c.has_machine {
             Some(Skip::NoMachine)
+        } else if c.went_over_unmeasured {
+            Some(Skip::WentOver)
         } else if limits.budget_reached {
             Some(Skip::Budget)
         } else if picked.len() >= room {
@@ -106,6 +112,11 @@ pub fn why(skip: &Skip, facts: &Facts) -> Why {
         ),
         Skip::NoProfile => ("no_profile", "No one is chosen to do it".to_owned()),
         Skip::NoMachine => ("no_machine", "No computer can run it".to_owned()),
+        Skip::WentOver => (
+            "went_over",
+            "Its last run went past the token limit, and this agent cannot be stopped at the limit while it runs; start it by hand"
+                .to_owned(),
+        ),
         Skip::Budget => ("budget", "This project's token limit is reached".to_owned()),
         Skip::MaxOpen => ("max_open", max_open_text(facts)),
     };
@@ -151,6 +162,7 @@ mod tests {
                 from: None,
             }),
             has_machine: true,
+            went_over_unmeasured: false,
         }
     }
 
@@ -232,6 +244,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_profile_whose_agent_went_over_its_limit_unmeasured_is_not_started() {
+        let mut over = cand(1, Priority::Critical, 0);
+        over.went_over_unmeasured = true;
+        let fine = cand(2, Priority::Low, 0);
+        assert_eq!(
+            pick(&[over, fine], &limits()),
+            (vec![id(2)], vec![(id(1), Skip::WentOver)])
+        );
+    }
+
     fn facts() -> Facts {
         Facts {
             max_open: 3,
@@ -253,6 +276,11 @@ mod tests {
             (Skip::Blocked(1), "blocked", "Blocked by 1 unfinished task"),
             (Skip::NoProfile, "no_profile", "No one is chosen to do it"),
             (Skip::NoMachine, "no_machine", "No computer can run it"),
+            (
+                Skip::WentOver,
+                "went_over",
+                "Its last run went past the token limit, and this agent cannot be stopped at the limit while it runs; start it by hand",
+            ),
             (
                 Skip::Budget,
                 "budget",

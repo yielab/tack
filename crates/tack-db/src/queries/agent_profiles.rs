@@ -80,6 +80,28 @@ pub async fn successful_run_tokens(
     .await?)
 }
 
+/// Whether the newest finished run of a profile counted more tokens than the limit it ran with.
+/// A run with no limit, or no measured usage yet, is not one that went over.
+pub async fn last_run_went_over_its_limit(
+    repo: &Repository,
+    profile_id: &str,
+) -> Result<bool, StoreError> {
+    let over: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT COALESCE({COUNTED_TOKENS_SQL} > json_extract(r.request_snapshot, '$.budgets.tokens'), 0)
+         FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         WHERE r.agent_profile_id = ?
+           AND (json_extract(a.usage, '$.tokens_in.value') IS NOT NULL
+                OR json_extract(a.usage, '$.tokens_out.value') IS NOT NULL)
+         ORDER BY a.created_at DESC, a.rowid DESC
+         LIMIT 1"
+    )))
+    .bind(profile_id)
+    .fetch_optional(repo.pool())
+    .await?;
+    Ok(over == Some(1))
+}
+
 /// An agent profile as the profile resolver reads it: the columns that decide which profile a
 /// run gets and which fleet it names.
 #[derive(Debug, Clone, sqlx::FromRow)]

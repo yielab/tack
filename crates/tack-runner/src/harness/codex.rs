@@ -67,13 +67,10 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
         (
             ParityRule::TokenLimitWhileRunning,
             ParityCell::missing(
-                "GR13: exec reports usage only at the end, so nothing stops it at the limit",
+                "by design: exec reports usage only when it ends, so its token limit cannot stop it while it runs; the run gets a 30-minute clock and the profile is not started by itself after going over",
             ),
         ),
-        (
-            ParityRule::KillEverythingOnCancel,
-            ParityCell::missing("GR13: cancel signals the process group, not the session"),
-        ),
+        (ParityRule::KillEverythingOnCancel, ParityCell::Runner),
         (ParityRule::OutputRules, ParityCell::Runner),
         (
             ParityRule::ChecksChangedHoldsMerge,

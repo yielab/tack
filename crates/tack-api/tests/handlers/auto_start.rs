@@ -296,6 +296,51 @@ async fn a_reached_token_limit_is_named() {
     );
 }
 
+/// A profile whose agent reports no usage while it runs (Codex) is left to a person once its last
+/// run went past the limit; the same history does not hold back an agent that is stopped at it.
+#[tokio::test]
+async fn a_profile_whose_unmeasured_agent_went_over_its_limit_is_not_started() {
+    for (harness, started) in [("codex", 0), ("claude-code", 1)] {
+        let b = board().await;
+        seed::project_auto_start(&b.state.repo, &b.project.to_string(), "To Do", harness).await;
+        let ran = b.task("ran", "To Do", Some("profile-1")).await;
+        b.tick().await;
+        let request = execution_requests_of_item(&b.state.repo, &ran.to_string())
+            .await
+            .unwrap()
+            .remove(0);
+        seed::execution_request_token_limit(&b.state.repo, &request.id, 1_000, false).await;
+        seed::execution_attempt(
+            &b.state.repo,
+            seed::AttemptSeed {
+                id: "attempt-over",
+                request_id: &request.id,
+                runner_id: "runner-1",
+                state: ExecutionState::Failed,
+                at: "2026-11-07T10:00:00+00:00",
+                usage: Some(r#"{"tokens_in":{"value":5000,"source":"measured"},"tokens_out":{"value":0,"source":"measured"}}"#),
+                actual_execution: None,
+            },
+        )
+        .await;
+        seed::execution_request_state(&b.state.repo, &request.id, ExecutionState::Failed).await;
+        let next = b.task("next", "To Do", Some("profile-1")).await;
+
+        let body = b.auto_start().await;
+        b.tick().await;
+
+        let requests = execution_requests_of_item(&b.state.repo, &next.to_string())
+            .await
+            .unwrap();
+        assert_eq!(requests.len(), started, "{harness}");
+        if started == 0 {
+            assert_eq!(codes(&body), [(next.to_string(), "went_over".to_owned())]);
+        } else {
+            assert_eq!(body["waiting"], json!([]), "{harness}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_project_that_does_not_start_tasks_answers_off_with_nothing_listed() {
     let b = board().await;
