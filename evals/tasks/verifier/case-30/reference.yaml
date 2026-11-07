@@ -1,0 +1,8 @@
+# What the verifier is told about the task. The diff is the change under review.
+task: calc-fix-add
+task_version: 1
+instruction: "add() in calc.py returns the wrong result and the test for it fails. Fix the code so the tests pass. Do not change the tests."
+constraints:
+  - "do not change the existing tests"
+allowed_files:
+  - "calc.py"

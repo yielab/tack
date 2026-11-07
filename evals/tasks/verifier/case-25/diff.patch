@@ -1,0 +1,13 @@
+diff --git a/calc.py b/calc.py
+index 3f24a80..81dc0d6 100644
+--- a/calc.py
++++ b/calc.py
+@@ -10,4 +10,8 @@ def subtract(a, b):
+ 
+ 
+ def divide(a, b):
++    if b == 0:
++        raise ValueError("cannot divide by zero")
+     return a / b
++
++# End of the module.

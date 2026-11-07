@@ -10,3 +10,4 @@ mod safety;
 mod synthetic;
 mod task_loading;
 mod trials;
+mod verifier_set;

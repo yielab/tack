@@ -1,0 +1,26 @@
+diff --git a/calc.py b/calc.py
+index 3f24a80..a78c529 100644
+--- a/calc.py
++++ b/calc.py
+@@ -11,3 +11,7 @@ def subtract(a, b):
+ 
+ def divide(a, b):
+     return a / b
++def multiply(a, b):
++    return a * b
++
++# End of the module.
+diff --git a/tests/test_multiply.py b/tests/test_multiply.py
+new file mode 100644
+index 0000000..df4a047
+--- /dev/null
++++ b/tests/test_multiply.py
+@@ -0,0 +1,8 @@
++import unittest
++
++import calc
++
++
++class MultiplyTest(unittest.TestCase):
++    def test_multiply(self):
++        self.assertEqual(calc.multiply(3, 4), 12)

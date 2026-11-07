@@ -1,0 +1,5 @@
+# What the verifier is told about the task. The diff is the change under review.
+task: calc-add-multiply
+task_version: 1
+instruction: "Add a multiply(a, b) function to calc.py and a test for it in the tests folder. The existing tests must keep passing."
+constraints: []
