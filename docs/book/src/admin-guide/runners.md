@@ -490,8 +490,8 @@ pushes it to the remote the repository came from, using your own git credentials
 default. A failed push records `attempt.push_failed`. Turn it on only for agents you would trust with
 those credentials. The [Configuration](configuration-reference.md#pushing-the-attempts-branch-git) page says what the push does and does not guard against.
 
-**Pull request.** Not at completion: the board opens it when the attempt is accepted, in the attempt
-review or the merge-readiness pack review, or by a project's automatic merge. It needs a pushed branch, an item linked
+**Pull request.** Not at completion: the board opens it when the attempt is accepted in its
+review, or by a project's automatic merge. It needs a pushed branch, an item linked
 to a GitHub issue and a GitHub token. The pull request has the merge-readiness pack as its body, and the
 attempt then shows a **PR #n** link and a badge: open, merged, closed or reverted. The state follows
 GitHub on the sync poll; see

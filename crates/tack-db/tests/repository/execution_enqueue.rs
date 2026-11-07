@@ -409,7 +409,7 @@ async fn attempts_come_with_their_own_pull_request_review_and_merge() {
         )
         .await
         .unwrap();
-    sqlx::query("INSERT INTO attempt_reviews (attempt_id,verdict,note,reviewed_at) VALUES ('att-2','accepted','fine','2026-01-02T00:00:00Z')")
+    sqlx::query("INSERT INTO attempt_reviews (attempt_id,verdict,reason,reviewed_at) VALUES ('att-2','accepted','fine','2026-01-02T00:00:00Z')")
         .execute(fx.repo.pool())
         .await
         .unwrap();

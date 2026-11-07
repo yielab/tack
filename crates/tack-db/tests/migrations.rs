@@ -27,6 +27,8 @@ mod item_source_migration;
 mod item_types;
 #[path = "migrations/one_model_string.rs"]
 mod one_model_string;
+#[path = "migrations/one_review.rs"]
+mod one_review;
 #[path = "migrations/plan_instructions_name_no_file.rs"]
 mod plan_instructions_name_no_file;
 #[path = "migrations/planner_writes_plan.rs"]

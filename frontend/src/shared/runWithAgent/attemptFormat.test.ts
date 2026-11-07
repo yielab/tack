@@ -250,7 +250,7 @@ describe('describeAttemptStatus — one status per attempt', () => {
   it('the review verdict wins, then the outcome, then the lifecycle state', () => {
     expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }).label).toBe('Finished — needs your review');
     expect(
-      describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, { verdict: 'accepted', note: null, reviewed_at: 'x' }),
+      describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, { verdict: 'accepted', reason: null, reviewed_by: null, reviewed_at: 'x' }),
     ).toEqual({ label: 'Accepted', tone: 'success' });
     expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: { artifacts: [{ kind: 'patch', size_bytes: 0 }] } }).label).toBe(
       'Finished — no changes recorded',

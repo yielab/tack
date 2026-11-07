@@ -127,11 +127,6 @@ async fn the_remaining_writes_to_a_missing_parent_answer_404() {
         ),
         (
             "POST",
-            format!("/api/executions/req_{missing}/attempts/1/mrp/review"),
-            json!({"verdict": "accept", "reason": "fine"}),
-        ),
-        (
-            "POST",
             format!("/api/executions/req_{missing}/attempts/1/mrp/viewed"),
             Value::Null,
         ),

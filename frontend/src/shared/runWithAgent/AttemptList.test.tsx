@@ -106,7 +106,7 @@ describe('AttemptList', () => {
     expect(c.querySelector('[data-testid="attempt-chips"]')).toBeNull();
   });
 
-  it('the review banner holds Accept and Reject… once, with an optional note, in the verdict that opens the run', async () => {
+  it('the review banner holds Accept and Reject… once, with the reason a rejection needs, in the verdict that opens the run', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
@@ -121,7 +121,7 @@ describe('AttemptList', () => {
     expect(verdict.contains(banner)).toBe(true);
     (Array.from(banner.querySelectorAll('button')).find((b) => b.textContent === 'Reject…') as HTMLButtonElement).click();
     await flush();
-    expect(banner.querySelector('input[aria-label="Why it is rejected (optional)"]')).not.toBeNull();
+    expect(banner.querySelector('input[aria-label="Why it is rejected"]')).not.toBeNull();
   });
 
   it('a run that needs no verdict has no banner', () => {
@@ -1007,7 +1007,7 @@ describe('AttemptList', () => {
       const review = mountWith(FINISHED());
       await settle();
       expect(filled(review)).toEqual(['Accept']);
-      const decided = mountWith({ ...FINISHED(), review: { verdict: 'accepted', note: null, reviewed_at: '2026-08-06T12:06:00Z' } });
+      const decided = mountWith({ ...FINISHED(), review: { verdict: 'accepted', reason: null, reviewed_by: null, reviewed_at: '2026-08-06T12:06:00Z' } });
       await settle();
       expect(filled(decided)).toEqual(['Merge']);
       const failed = mountWith(attempt({ state: 'failed', terminal_reason: { code: 'timeout' } }));
@@ -1015,32 +1015,35 @@ describe('AttemptList', () => {
       expect(filled(failed)).toEqual(['Run again']);
     });
 
-    it('a run with a pack has one verdict block, and its reason is required, as the pack demands', async () => {
+    it('a run with a pack has one verdict block, and its review is the one a rejection gives a reason to', async () => {
       const spy = route({ artifacts: FILES });
       const c = mountFull(FINISHED());
       await settle();
       expect(c.querySelectorAll('[data-testid="review-actions"]')).toHaveLength(1);
       expect(c.textContent).not.toContain('Your review');
-      expect(c.textContent).not.toContain('The note is optional');
       const banner = c.querySelector('[data-testid="review-banner"]')!;
-      expect(banner.textContent).toContain('A reason is required');
+      expect(banner.textContent).toContain('When you reject, say why');
       const button = (label: string) => [...banner.querySelectorAll('button')].find((b) => b.textContent === label) as HTMLButtonElement;
-      expect(button('Accept').disabled).toBe(true);
+      expect(button('Accept').disabled).toBe(false);
+      button('Reject…').click();
+      await settle();
       expect(button('Reject').disabled).toBe(true);
       const input = banner.querySelector('input')!;
-      input.value = 'looks right';
+      input.value = 'misses a case';
       input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      expect(button('Accept').disabled).toBe(false);
+      expect(button('Reject').disabled).toBe(false);
       spy.mockClear();
-      button('Accept').click();
+      button('Reject').click();
       await settle();
       const calls = spy.mock.calls.map(([u, init]) => [String(u), (init as RequestInit | undefined)?.body] as const);
-      expect(calls.find(([u]) => u.endsWith('/mrp/review'))?.[1]).toBe(JSON.stringify({ verdict: 'accept', reason: 'looks right' }));
+      expect(calls.find(([u]) => u.endsWith('/attempts/1/review'))?.[1]).toBe(JSON.stringify({ verdict: 'rejected', reason: 'misses a case' }));
+      expect(calls.some(([u]) => u.endsWith('/mrp/review'))).toBe(false);
     });
 
-    /** The pack and the run each keep a verdict: the calls are recorded, and the run's review can be made to fail. */
-    function routeReviews(opts: { packReview?: unknown; runReviewFails?: { value: boolean } } = {}) {
+    /** The one review: the calls are recorded, and the pack read back carries the review once it is given. */
+    function routeReviews() {
       const calls: Array<{ url: string; body: unknown }> = [];
+      let given: unknown = null;
       const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
       vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
         const url = String(input);
@@ -1048,17 +1051,13 @@ describe('AttemptList', () => {
         if (init?.method === 'POST') calls.push({ url, body });
         if (url.endsWith('/artifacts')) return json({ protocol_version: 1, data: FILES });
         if (url.endsWith('/content')) return Promise.resolve(new Response(PATCH));
-        if (url.endsWith('/mrp')) return json({ pack: ready, review: opts.packReview ?? null });
-        if (url.endsWith('/mrp/viewed')) return json({});
-        if (url.endsWith('/mrp/review')) {
-          return json({ attempt_id: 'att_1', artifact_id: 'a3', verdict: body.verdict, reason: body.reason, viewed_at: null, reviewed_at: '2026-08-06T12:07:00Z', reviewed_by: 'me' });
-        }
+        if (url.endsWith('/mrp')) return json({ pack: ready, viewed_at: null, review: given });
+        if (url.endsWith('/mrp/viewed')) return json({ viewed_at: null });
         if (url.endsWith('/attempts/1/review')) {
-          return opts.runReviewFails?.value ? json({ error: { status: 500, message: 'The run could not be reached' } }, 500) : json({});
+          given = { verdict: body.verdict, reason: body.reason ?? null, reviewed_by: 'operator:local', reviewed_at: '2026-08-06T12:07:00Z' };
+          return json(given);
         }
-        if (url.endsWith('/attempts')) {
-          return json({ protocol_version: 1, data: [{ ...FINISHED(), review: { verdict: calls.at(-1)?.body && (calls.at(-1)!.body as { verdict: string }).verdict, note: null, reviewed_at: '2026-08-06T12:07:00Z' } }] });
-        }
+        if (url.endsWith('/attempts')) return json({ protocol_version: 1, data: [{ ...FINISHED(), review: given }] });
         if (url.endsWith('/decisions')) return json({ protocol_version: 1, data: [] });
         if (url.endsWith('/events')) return json({ protocol_version: 1, data: [] });
         return json({ error: { status: 404, message: 'none' } }, 404);
@@ -1069,64 +1068,33 @@ describe('AttemptList', () => {
       input.value = text;
       input.dispatchEvent(new InputEvent('input', { bubbles: true }));
     };
-    const runReviewCalls = (calls: Array<{ url: string; body: unknown }>) => calls.filter((c) => c.url.endsWith('/attempts/1/review'));
 
-    it('the reason is saved on the run\'s verdict for Accept and for Reject, and the buttons carry stable ids', async () => {
-      for (const [testid, verdict] of [['review-accept', 'accepted'], ['review-reject', 'rejected']] as const) {
-        const calls = routeReviews();
-        const c = mountFull(FINISHED());
-        await settle();
-        type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'checked by hand');
-        c.querySelector<HTMLButtonElement>(`[data-testid="${testid}"]`)!.click();
-        await settle();
-        expect(calls.find((x) => x.url.endsWith('/mrp/review'))?.body).toEqual({ verdict: verdict === 'accepted' ? 'accept' : 'reject', reason: 'checked by hand' });
-        expect(runReviewCalls(calls).map((x) => x.body)).toEqual([{ verdict, note: 'checked by hand' }]);
-        disposers.pop()!();
-        document.body.innerHTML = '';
-        vi.restoreAllMocks();
-      }
-    });
-
-    it('when the pack is reviewed and the run is not, one action saves the pack\'s verdict on the run, and says so again if it fails', async () => {
-      const packReview = { attempt_id: 'att_1', artifact_id: 'a3', verdict: 'accept', reason: 'checked by hand', viewed_at: null, reviewed_at: '2026-08-06T12:07:00Z', reviewed_by: 'me' };
-      const fails = { value: true };
-      const calls = routeReviews({ packReview, runReviewFails: fails });
+    it('Accept sends the verdict once to the one endpoint, and the pack then shows that review', async () => {
+      const calls = routeReviews();
       const c = mountFull(FINISHED());
       await settle();
-      const banner = c.querySelector('[data-testid="review-banner"]')!;
-      expect(banner.textContent).toContain('You already reviewed the pack');
-      // Neither a new Reject nor a new reason is offered: only the pack's verdict is saved on the run.
-      expect(banner.querySelector('[data-testid="review-reject"]')).toBeNull();
-      expect(banner.querySelector('[data-testid="review-reason"]')).toBeNull();
-      expect(banner.textContent).toContain('The pack was accepted');
-      const save = () => [...banner.querySelectorAll('button')].filter((b) => b.textContent === 'Save the verdict on the run');
-      expect(save()).toHaveLength(1);
-      save()[0].click();
-      await settle();
-      expect(banner.textContent).toContain('The run could not be reached');
-      expect(save()).toHaveLength(1);
-      fails.value = false;
-      save()[0].click();
-      await settle();
-      expect(runReviewCalls(calls).map((x) => x.body)).toEqual([
-        { verdict: 'accepted', note: 'checked by hand' },
-        { verdict: 'accepted', note: 'checked by hand' },
-      ]);
-      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(false);
-    });
-
-    it('a run whose first attempt review fails after the pack was reviewed offers the save, not a new Reject', async () => {
-      const fails = { value: true };
-      const calls = routeReviews({ runReviewFails: fails });
-      const c = mountFull(FINISHED());
-      await settle();
-      type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'looks right');
       c.querySelector<HTMLButtonElement>('[data-testid="review-accept"]')!.click();
       await settle();
-      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(true);
-      const banner = c.querySelector('[data-testid="review-banner"]')!;
-      expect([...banner.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Save the verdict on the run']);
-      expect(banner.textContent).toContain('The run could not be reached');
+      expect(calls.map((x) => [x.url.replace(/^.*\/executions\//, ''), x.body])).toEqual([
+        ['exec_1/attempts/1/mrp/viewed', undefined],
+        ['exec_1/attempts/1/review', { verdict: 'accepted' }],
+      ]);
+      expect(c.querySelector('[data-testid="mrp-review"]')?.textContent).toContain('Accepted');
+    });
+
+    it('a rejection carries the reason typed for it', async () => {
+      const calls = routeReviews();
+      const c = mountFull(FINISHED());
+      await settle();
+      c.querySelector<HTMLButtonElement>('[data-testid="review-reject"]')!.click();
+      await settle();
+      type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'checked by hand');
+      c.querySelector<HTMLButtonElement>('[data-testid="review-reject"]')!.click();
+      await settle();
+      expect(calls.filter((x) => x.url.endsWith('/attempts/1/review')).map((x) => x.body)).toEqual([
+        { verdict: 'rejected', reason: 'checked by hand' },
+      ]);
+      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(false);
     });
 
     it('a folder team says it works in a folder, with nothing to merge, in the verdict', async () => {
@@ -1197,10 +1165,10 @@ describe('AttemptList', () => {
       expect(attemptRunState(attempt({ state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected' } }))).toEqual({ state: 'notstarted' });
       expect(attemptRunState(attempt({ state: 'cancelled' }))).toEqual({ state: 'cancelled' });
       expect(attemptRunState(FINISHED())).toEqual({ state: 'review', docket: 'Needs your review' });
-      expect(attemptRunState({ ...FINISHED(), review: { verdict: 'accepted', note: null, reviewed_at: 'x' } })).toEqual({ state: 'done' });
+      expect(attemptRunState({ ...FINISHED(), review: { verdict: 'accepted', reason: null, reviewed_by: null, reviewed_at: 'x' } })).toEqual({ state: 'done' });
       // A run that only answered still wants a verdict; once given, it is done with nothing recorded.
       expect(attemptRunState(attempt({ terminal_reason: { result: 'Answered.' } }))).toEqual({ state: 'review', docket: 'Needs your review' });
-      expect(attemptRunState(attempt({ terminal_reason: { result: 'Answered.' }, review: { verdict: 'accepted', note: null, reviewed_at: 'x' } }))).toEqual({ state: 'done', docket: 'no changes recorded' });
+      expect(attemptRunState(attempt({ terminal_reason: { result: 'Answered.' }, review: { verdict: 'accepted', reason: null, reviewed_by: null, reviewed_at: 'x' } }))).toEqual({ state: 'done', docket: 'no changes recorded' });
       expect(attemptRunState(attempt({ terminal_reason: { outside_repository: true } }))).toEqual({ state: 'done' });
     });
   });
