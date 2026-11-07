@@ -39,7 +39,7 @@ curl -s http://127.0.0.1:3210/api/projects \
 
 The other end of the connection finds the token like this:
 
-- **The browser.** The page the server answers at `/` sets the token as a `tack_session` cookie (`HttpOnly`, `SameSite=Strict`, sent only to `/api`). You never type it.
+- **The browser.** The page the server answers at `/` sets the token as a `tack_session` cookie (`HttpOnly`, `SameSite=Strict`, sent only to `/api`, `Secure` when the page is reached over https, and kept for 12 hours). You never type it.
 - **The `tack` command.** It looks, in order, at `--token`, `TACK_API_TOKEN`, `~/.tackrc`, and then the `api-token` file of a local server (`tack/api-token` in this system's per-user data folder). A server whose database is elsewhere needs `TACK_API_TOKEN` set on both ends.
 
 The token value is never written to logs. Use a long, random string and rotate it by restarting with a new value. For what else stands between a web page and your board (the `Host` rule and the cross-site rule), see [What the Agent Can Reach](what-the-agent-can-reach.md#who-can-talk-to-the-board).
