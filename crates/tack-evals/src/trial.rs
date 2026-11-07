@@ -218,7 +218,10 @@ fn start_run(
     )?;
     let item_id = item["id"].as_str().context("the item has no id")?;
     if spec.item.brief.is_object() {
-        api.put(&format!("/api/items/{item_id}/brief"), &spec.item.brief)?;
+        api.put(
+            &format!("/api/items/{item_id}/brief"),
+            &brief_body(&spec.item.brief),
+        )?;
     }
 
     let role = spec.profile.role.as_deref().unwrap_or("Implementer");
@@ -291,6 +294,38 @@ fn start_run(
         .as_str()
         .map(str::to_owned)
         .context("the run has no request id")
+}
+
+/// A task writes its acceptance and constraints as plain sentences; the board stores typed
+/// criteria. A sentence becomes a manual check or a note, and an entry that is already typed
+/// passes through unchanged.
+fn brief_body(brief: &Value) -> Value {
+    let mut body = brief.clone();
+    if let Some(list) = body.get_mut("acceptance").and_then(Value::as_array_mut) {
+        for (index, entry) in list.iter_mut().enumerate() {
+            if let Some(text) = entry.as_str() {
+                *entry = json!({
+                    "kind": "manual",
+                    "id": format!("a{}", index + 1),
+                    "title": text,
+                    "text": text,
+                });
+            }
+        }
+    }
+    if let Some(list) = body.get_mut("constraints").and_then(Value::as_array_mut) {
+        for entry in list.iter_mut() {
+            if let Some(text) = entry.as_str() {
+                *entry = json!({ "kind": "note", "text": text });
+            }
+        }
+    }
+    for key in ["acceptance", "constraints"] {
+        if body.get(key).is_none() {
+            body[key] = json!([]);
+        }
+    }
+    body
 }
 
 fn profile_kind(role: &str) -> &'static str {
@@ -427,4 +462,36 @@ fn freeze(
     let log = server.log.lock().expect("log lock").join("\n");
     std::fs::write(dir.join("server.log"), log)?;
     Ok(frozen)
+}
+
+#[cfg(test)]
+mod brief_tests {
+    use super::*;
+
+    #[test]
+    fn plain_sentences_become_typed_entries() {
+        let body = brief_body(&json!({
+            "acceptance": ["tests pass"],
+            "constraints": ["do not edit tests"],
+        }));
+        assert_eq!(body["acceptance"][0]["kind"], "manual");
+        assert_eq!(body["acceptance"][0]["text"], "tests pass");
+        assert_eq!(
+            body["constraints"][0],
+            json!({"kind": "note", "text": "do not edit tests"})
+        );
+    }
+
+    #[test]
+    fn a_brief_without_acceptance_still_has_both_lists() {
+        let body = brief_body(&json!({ "constraints": ["only one file"] }));
+        assert_eq!(body["acceptance"], json!([]));
+    }
+
+    #[test]
+    fn typed_entries_pass_through() {
+        let typed = json!({"kind": "file", "id": "f", "title": "t", "path": "x"});
+        let body = brief_body(&json!({ "acceptance": [typed.clone()], "constraints": [] }));
+        assert_eq!(body["acceptance"][0], typed);
+    }
 }
