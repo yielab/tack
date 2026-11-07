@@ -85,12 +85,12 @@ export const items = {
     }
   },
 
-  /** `POST /items/{id}/subtasks-from-plan` — creates the accepted entries of a proposal: a run's `plan` artifact, or (no `artifact_id`) a file the person picked. */
-  createSubtasksFromPlan: (
+  /** `POST /items/{id}/items-from-plan` — creates the accepted entries of a proposal: a run's `plan` artifact, or (no `artifact_id`) a file the person picked. */
+  createItemsFromPlan: (
     itemId: string,
-    data: components['schemas']['CreateSubtasksFromPlanRequest'],
+    data: components['schemas']['CreateItemsFromPlanRequest'],
   ) =>
-    request<components['schemas']['CreateSubtasksFromPlanResponse']>(`/items/${itemId}/subtasks-from-plan`, {
+    request<components['schemas']['CreateItemsFromPlanResponse']>(`/items/${itemId}/items-from-plan`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

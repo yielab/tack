@@ -680,7 +680,7 @@ pub struct CreateSubtaskFromPlan {
 }
 
 #[derive(Debug, Deserialize, Validate, Serialize, utoipa::ToSchema)]
-pub struct CreateSubtasksFromPlanRequest {
+pub struct CreateItemsFromPlanRequest {
     /// The plan artifact the entries came from; absent means a file the person uploaded.
     #[serde(default)]
     pub artifact_id: Option<String>,
@@ -708,7 +708,7 @@ pub struct CreatedSubtask {
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct CreateSubtasksFromPlanResponse {
+pub struct CreateItemsFromPlanResponse {
     pub created: Vec<CreatedSubtask>,
 }
 
@@ -746,24 +746,24 @@ fn check_plan_links(subtasks: &[CreateSubtaskFromPlan]) -> Result<(), ApiError> 
 #[instrument(skip(state, input))]
 #[utoipa::path(
     post,
-    path = "/api/items/{id}/subtasks-from-plan",
+    path = "/api/items/{id}/items-from-plan",
     tag = "items",
     params(
         ("id" = Uuid, Path, description = "Parent Item ID"),
     ),
-    request_body = CreateSubtasksFromPlanRequest,
+    request_body = CreateItemsFromPlanRequest,
     responses(
-        (status = 200, description = "Subtasks created", body = CreateSubtasksFromPlanResponse),
+        (status = 200, description = "Items created", body = CreateItemsFromPlanResponse),
         (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Parent item not found", body = crate::openapi::ErrorEnvelope),
     ),
 )]
-pub async fn create_subtasks_from_plan(
+pub async fn create_items_from_plan(
     State(state): State<AppState>,
     axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
     Path(id): Path<Uuid>,
-    Json(input): Json<CreateSubtasksFromPlanRequest>,
-) -> ApiResult<Json<CreateSubtasksFromPlanResponse>> {
+    Json(input): Json<CreateItemsFromPlanRequest>,
+) -> ApiResult<Json<CreateItemsFromPlanResponse>> {
     // Validate request
     input
         .validate()
@@ -856,7 +856,7 @@ pub async fn create_subtasks_from_plan(
         },
     );
 
-    Ok(Json(CreateSubtasksFromPlanResponse { created }))
+    Ok(Json(CreateItemsFromPlanResponse { created }))
 }
 
 #[instrument(skip(state))]

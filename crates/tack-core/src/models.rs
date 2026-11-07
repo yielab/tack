@@ -350,8 +350,8 @@ pub enum ItemSource {
     /// migration's backfill and the serde default for old payloads.
     #[default]
     Unknown,
-    /// A subtask a person created from a Planner plan
-    /// (`POST /api/items/{id}/subtasks-from-plan`); the record says so.
+    /// An item a person accepted from a Planner's plan
+    /// (`POST /api/items/{id}/items-from-plan`); the record says so.
     Plan,
     /// `POST /api/projects/outline` and `POST /api/projects/{id}/outline` —
     /// a batch a script or a language model may have written from text Tack

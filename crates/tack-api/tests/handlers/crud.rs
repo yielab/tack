@@ -1287,13 +1287,13 @@ async fn export_yaml_round_trips_through_import() {
 // ─── Subtasks from plan ────────────────────────────────────────────
 
 #[tokio::test]
-async fn subtasks_from_plan_create_children_with_criteria() {
+async fn items_from_plan_create_children_with_criteria() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
     let parent_id = common::create_item(&app, pid, "Parent Item").await;
 
     // POST to create subtasks from a plan
-    let uri = format!("/api/items/{parent_id}/subtasks-from-plan");
+    let uri = format!("/api/items/{parent_id}/items-from-plan");
     let (status, body) = common::send(
         &app,
         "POST",
@@ -1462,7 +1462,7 @@ async fn a_nested_plan_with_dependencies_creates_the_tree_and_the_blockers() {
     let (status, body) = common::send(
         &app,
         "POST",
-        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        &format!("/api/items/{parent_id}/items-from-plan"),
         json!({
             "artifact_id": "plan-artifact-1",
             "subtasks": [
@@ -1520,7 +1520,7 @@ async fn an_accepted_entry_with_sub_items_keeps_its_own_done_when_lines() {
     let (status, body) = common::send(
         &app,
         "POST",
-        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        &format!("/api/items/{parent_id}/items-from-plan"),
         json!({
             "artifact_id": "plan-artifact-2",
             "subtasks": [
@@ -1572,7 +1572,7 @@ async fn a_plan_with_no_artifact_id_is_a_file_the_person_uploaded() {
     let (status, body) = common::send(
         &app,
         "POST",
-        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        &format!("/api/items/{parent_id}/items-from-plan"),
         json!({"subtasks": [{"title": "From a file", "acceptance": []}]}),
         &[],
     )
@@ -1592,7 +1592,7 @@ async fn an_unknown_role_type_or_team_is_reported_on_its_entry_and_refuses_nothi
     let (status, body) = common::send(
         &app,
         "POST",
-        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        &format!("/api/items/{parent_id}/items-from-plan"),
         json!({"subtasks": [
             {"title": "Lost keys", "acceptance": [], "type": "saga", "role": "Ghost", "team": "nobody"},
             {"title": "Clean", "acceptance": []}
@@ -1646,7 +1646,7 @@ async fn an_entry_may_name_a_profile_that_wins_over_its_team_and_an_unknown_one_
     let (status, body) = common::send(
         &app,
         "POST",
-        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        &format!("/api/items/{parent_id}/items-from-plan"),
         json!({"subtasks": [
             {"title": "Named profile", "acceptance": [], "profile_id": teamless},
             {"title": "Wins over team", "acceptance": [],

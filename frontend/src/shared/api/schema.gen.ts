@@ -868,6 +868,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items/{id}/items-from-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_items_from_plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{id}/run-options": {
         parameters: {
             query?: never;
@@ -879,22 +895,6 @@ export interface paths {
         get: operations["get_run_options"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/{id}/subtasks-from-plan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_subtasks_from_plan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4737,6 +4737,14 @@ export interface components {
             level: components["schemas"]["ItemTypeLevel"];
             name: string;
         };
+        CreateItemsFromPlanRequest: {
+            /** @description The plan artifact the entries came from; absent means a file the person uploaded. */
+            artifact_id?: string | null;
+            subtasks: components["schemas"]["CreateSubtaskFromPlan"][];
+        };
+        CreateItemsFromPlanResponse: {
+            created: components["schemas"]["CreatedSubtask"][];
+        };
         /**
          * @description One `create`: an entry of a plan (`docs/contracts/plan-v1`), with refs where the plan has
          *     indexes.
@@ -4874,14 +4882,6 @@ export interface components {
             title: string;
             /** @description The item type, when the project has it; else the parent's when that is work, else the default work type. */
             type?: string | null;
-        };
-        CreateSubtasksFromPlanRequest: {
-            /** @description The plan artifact the entries came from; absent means a file the person uploaded. */
-            artifact_id?: string | null;
-            subtasks: components["schemas"]["CreateSubtaskFromPlan"][];
-        };
-        CreateSubtasksFromPlanResponse: {
-            created: components["schemas"]["CreatedSubtask"][];
         };
         /** @description What opens a thread. */
         CreateThread: {
@@ -9820,6 +9820,51 @@ export interface operations {
             };
         };
     };
+    create_items_from_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Parent Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateItemsFromPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Items created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateItemsFromPlanResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Parent item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     get_run_options: {
         parameters: {
             query?: never;
@@ -9842,51 +9887,6 @@ export interface operations {
                 };
             };
             /** @description No such item */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    create_subtasks_from_plan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Parent Item ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateSubtasksFromPlanRequest"];
-            };
-        };
-        responses: {
-            /** @description Subtasks created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateSubtasksFromPlanResponse"];
-                };
-            };
-            /** @description Validation error */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Parent item not found */
             404: {
                 headers: {
                     [name: string]: unknown;
