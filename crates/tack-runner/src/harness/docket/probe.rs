@@ -639,6 +639,7 @@ pub(super) async fn probe(
     client: &Client,
     features: tack_protocol::execution::FeatureCapabilities,
 ) -> HarnessCapability {
+    let isolation = client.isolation().await;
     let mut capability = HarnessCapability {
         harness_kind: DomainHarnessKind::new(super::DESCRIPTOR.kind),
         installed_version: String::new(),
@@ -657,10 +658,10 @@ pub(super) async fn probe(
         autonomy_ceiling: None,
         teams: None,
         additional: [
-            ("sandbox".to_owned(), serde_json::json!("harness")),
+            ("sandbox".to_owned(), serde_json::json!(isolation.sandbox())),
             (
                 "sandbox_reason".to_owned(),
-                serde_json::json!("docket confines its own agents in a jail it sets up"),
+                serde_json::json!(isolation.reason()),
             ),
         ]
         .into(),

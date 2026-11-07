@@ -392,7 +392,7 @@ the machine has not granted. `tack runner doctor` shows, per team, what is left.
 ### Where docket's sandbox comes from
 
 Tack does not wrap docket in `bwrap`. docket confines its own agents in a jail it sets up, and the
-run reports `sandbox: harness`. See [What the Agent Can Reach](what-the-agent-can-reach.md).
+run reports `sandbox: harness` when docket says it jails them. A docket that says it does not, or does not say, reads as `sandbox: none` with the reason, and the run dialog and tasks that start by themselves then ask before each action. See [What the Agent Can Reach](what-the-agent-can-reach.md).
 
 ## Workspace and artifact storage
 
