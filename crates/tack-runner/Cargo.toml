@@ -58,7 +58,7 @@ tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
 # The fake model endpoint some tests point an agent at.
 wiremock = { workspace = true }
-# The in-process fake docket (`tests/fake_docket/`) that `tests/docket_v5.rs` talks to.
+# The in-process fake docket (`tests/fake_docket/`) that `tests/docket_api.rs` talks to.
 axum = { workspace = true }
 # Validates the briefing adapter's output against the schema `prill schema briefing` prints.
 jsonschema = { version = "0.33", default-features = false }

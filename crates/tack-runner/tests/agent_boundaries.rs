@@ -450,7 +450,7 @@ fn sandboxed_harness<G: HarnessGrammar>(
         &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable")
-    .with_sandbox(sandbox)
+    .with_probed_sandbox(sandbox)
 }
 
 #[test]

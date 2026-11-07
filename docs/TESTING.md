@@ -115,7 +115,7 @@ home with no model (rerun it when docket changes, and commit the diff).
 `scripts/compare-constructed-docket-fixtures.py` checks the `constructed` ones: it runs docket's own
 end-to-end world (a real `docket start --dispatch` and git repository, a scripted model on loopback,
 nothing spent) and compares the keys of a finished task, a running one, the task list and its
-cursor, a consult of several questions and the hop events with what the fixtures hold. `tests/docket_v5.rs`
+cursor, a consult of several questions and the hop events with what the fixtures hold. `tests/docket_api.rs`
 fails when a route the client sends has no capture, and the daemon's supervision is proved
 against a shell script on a scratch path that serves `/health`. No test runs a real docket or a
 model. The fake has one variant of an older docket, `before_task_scope()`: no `scope` on a record
@@ -364,7 +364,7 @@ through a browser. The suite, in `frontend/e2e/`:
 | --- | --- |
 | `smoke.spec.ts` | Every primary surface renders without a blank screen or a page error |
 | `chrome-reachable.spec.ts` | At a laptop height the sidebar reaches its last links and the run dialog's footer is the last thing in the dialog |
-| `journey.spec.ts`, `table.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists; the drawer's Expand opens the item's page with its breadcrumb, properties, tabs and Copy link |
+| `journey.spec.ts`, `list.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists; the drawer's Expand opens the item's page with its breadcrumb, properties, tabs and Copy link |
 | `brief.spec.ts` | A checklist line and a machine check on an item survive a reload |
 | `run-with-agent.spec.ts` | "Run with agent" from the board, the item and the sprint: required fields block submit, a run is created and shows up without navigation, the project's model default is sent unchanged |
 | `scheduler-e2e.spec.ts` | A request made in the UI is claimed by a runner and the UI shows it live |

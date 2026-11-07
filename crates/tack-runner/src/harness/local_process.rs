@@ -514,7 +514,7 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     request_may_reference: Vec<String>,
     /// The runner's own resolved `[environment]`, given to every run.
     own_environment: BTreeMap<String, String>,
-    /// What each spawn is wrapped in; none until [`Self::with_sandbox`].
+    /// What each spawn is wrapped in; none until [`Self::with_probed_sandbox`].
     sandbox: Sandbox,
     probe_timeout: Duration,
     /// Added to the version probe's environment only; tests steer the fake
@@ -618,12 +618,6 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     /// readiness check read.
     pub fn with_host_env(mut self, env: crate::config::ProcessEnv) -> Self {
         self.host_env = env;
-        self
-    }
-
-    /// What every spawn runs inside, as [`sandbox::detect`] found it.
-    pub fn with_sandbox(mut self, sandbox: Sandbox) -> Self {
-        self.sandbox = sandbox;
         self
     }
 
