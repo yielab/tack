@@ -78,3 +78,39 @@ sandbox ends with the runner.
 
 Phase 94 card that changes this: GR13 kills the session as well as the group, and tests a child in its
 own session.
+
+## Note, 2026-11-07: containment is required, whoever provides it (decision 11)
+
+Decision 11 says "honest where it does not": a machine without `bwrap` runs the agent unsandboxed and
+says so. The maintainer decided on 2026-11-07 that a containment layer is required, whoever supplies it:
+
+- **Claude Code and opencode** bring no sandbox, so the runner requires `bwrap` for them. With none, the
+  probe says the agent does not run here and why. An administrator may set `[sandbox] required = false`
+  in the runner's configuration; the run then asks before each action, says it is not contained, and
+  the opt-out is shown on the run, on Agents and in `tack runner doctor`.
+- **Codex** keeps its own sandbox and is wrapped in `bwrap` as well.
+- **docket** keeps its own jail. Tack only asks (`isolationPosture`); it never blocks on docket, and a
+  docket that does not declare its posture is read as the strictest case: the run asks.
+
+The honesty half of the decision stays: the run dialog's Sandbox line names who contains the agent.
+Phase 94 card that changes this: GR2.
+
+## Note, 2026-11-07: web access is a mode per profile (decision 12)
+
+Decision 12 renames "Allow network" to "Web tools" and keeps it advisory. The maintainer decided on
+2026-11-07 that the runner enforces where an agent's traffic may go, in one of three modes chosen
+by the profile, because profiles that browse (Researcher) cannot have every domain listed:
+
+| Mode | Where the run may connect |
+|---|---|
+| `closed` | The agent's model endpoint only. |
+| `listed` | The model endpoint and the hosts the profile lists. |
+| `open` | Any public host. |
+
+In all three the runner's proxy refuses loopback, private, link-local and cloud-metadata addresses,
+checked on the resolved address. A refused destination is an event on the run. An HTTPS tunnel hides
+its URL, so `open` limits where the agent connects, not what it sends: an allowed public host can
+still receive data, and the interface says so. Enforcement starts as a runner option and becomes the
+default once the safety suite and its twins are green. docket confines its own traffic; Tack asks
+and shows, and does not enforce.
+Phase 94 cards that change this: GR5a, then GR5b (`--unshare-net`, so the proxy is the only way out).

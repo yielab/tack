@@ -142,10 +142,12 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   assumed), the merge holds on an unknown ceiling and on changed checks, MCP is an agent, and a development
   crate `tack-evals` measures regression, safety and verifier agreement with Claude Haiku 5.5 through Anthropic
   at integration only, never in CI; production gets quality figures by profile/harness/model and a trend
-  notification. Four rounds, Sonnet and Haiku cards; the plan's §11 decisions 1–4 gate rounds 3 and 4. Asks to
-  prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`. Rounds 0 and 1 are built in `develop` (2026-11-07,
-  decisions 3 and 4 taken); round 2 is not started and rounds 3 and 4 wait on decisions 1 and 2; the pending
-  parity cells are listed in `agent_boundaries.rs` (`PENDING_CELLS`), each with its card.
+  notification. Four rounds, Sonnet and Haiku cards; decisions 1–4 were taken 2026-11-07 (containment is
+  required whoever provides it: `bwrap` for Claude Code and opencode, Codex's own plus `bwrap`, docket's only
+  asked; web access is a mode per profile, `closed`, `listed` or `open`, ADR 0018's notes). Asks to
+  prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`. Rounds 0 and 1 are built in `develop` (2026-11-07);
+  round 2 is under way; the pending parity cells are listed in `agent_boundaries.rs` (`PENDING_CELLS`),
+  each with its card.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.

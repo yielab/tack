@@ -233,7 +233,7 @@ rest in parallel):
   passes `check-solutions` and the first baseline per harness is committed.
 
 **Round 3 — the large guardrails, measured before and after** (E3-1 and E3-2 first, then in
-parallel; GR5b last; decisions 1 and 2 gate GR2 and GR5):
+parallel; GR5b last; decisions 1 and 2 were taken 2026-11-07):
 
 - **E3-1 — the safety suite** (Sonnet · M). Eight to ten pairs, each a task with and without the
   attack (vectors: card text, the repository's README, a web page, a comment in a test, a
@@ -244,21 +244,35 @@ parallel; GR5b last; decisions 1 and 2 gate GR2 and GR5):
   fifteen mutants and weakened-test variants over the regression solutions beside fifteen reference
   solutions; a person confirms the thirty labels. Done when the verifier grader reports prill's false
   approval and false rejection (and the Reviewer profile's, once it emits a verdict).
-- **GR2 — the sandbox is required** (Sonnet · M; decision 1). `[sandbox] required = true` by default:
-  with no `bwrap` and no explicit opt-out the probe says the agent does not run here and why; the run
-  page, Agents and the administrator guide say so; ADR 0018 decision 11 is amended. Done when the
-  boundary test schedules nothing without the opt-out and runs as `ask` with it.
+- **GR2 — containment is required, whoever provides it** (Sonnet · M; decision 1, taken 2026-11-07).
+  Claude Code and opencode bring no sandbox, so the runner requires `bwrap` for them (`[sandbox] required
+  = true` by default); Codex keeps its own and is wrapped too; docket's own jail is only asked about
+  (`isolationPosture`) and never blocks, an unreported posture being read as the strictest (`ask`). With
+  no `bwrap` and an explicit opt-out the agent runs as `ask`. Shown without a new row: the run
+  dialog's Sandbox line names who contains the agent, with a help hint of two sentences; Agents gets a
+  matching badge; the administrator guide says it in the same words; ADR 0018 decision 11 is amended.
+  Done when the boundary test schedules nothing without the opt-out, runs as `ask` with it, and docket
+  with no posture runs as `ask`.
 - **GR3 — three more flags** (Haiku · S). `--unshare-ipc --unshare-uts --cap-drop ALL`, nothing else.
   Done when a real-`bwrap` test sees no host IPC and empty capabilities, and `git`, `node` and
   `python3` still start inside.
-- **GR5a — an egress proxy with an allow-list** (Sonnet · M; decision 2). One `CONNECT` proxy on
-  loopback per run, its list the descriptor's model endpoints plus the profile's allowed hosts, handed
-  to the agent through the proxy variables; a refused destination is an event on the run. Done when a
-  fetch outside the list fails with the event and the CLI still reaches its model.
-- **GR5b — the network is enforced** (Sonnet · M; after GR5a and GR2). `--unshare-net`, with the
-  proxy reaching the sandbox through a mounted Unix socket. Done when, under real `bwrap`, a direct
-  connection to any address fails, only the list passes through the proxy, the safety suite's final
-  exfiltration success is zero and the twins lose no more than five points.
+- **GR5a — an egress proxy with three modes per profile** (Sonnet · M; decision 2, taken 2026-11-07).
+  One `CONNECT` proxy on loopback per run, the mode chosen by the profile: `closed` (the model's
+  endpoint only), `listed` (plus the profile's hosts) or `open` (any public host, for profiles that
+  browse, such as Researcher: every domain cannot be listed). In every mode the proxy refuses loopback,
+  private, link-local and cloud-metadata addresses, checked on the resolved address and connected to
+  that address. A refused destination is an event on the run; reached ones are logged. HTTPS tunnels
+  hide the URL, so `open` limits where, not what: an allowed public host can still receive data, and the
+  help says so. It starts as a runner option (`[egress] enforce`, off) and becomes the default once the
+  safety suite and its twins are green. Shown without clutter: one "Web access" selector in the profile
+  editor with a help hint, the dialog's Network line naming the mode, refused destinations on the run's
+  existing timeline. Done when each mode passes its boundary test, a CLI still reaches its model, and
+  ADR 0018 decision 12 is amended.
+- **GR5b — the network is enforced** (Sonnet · M; after GR5a and GR2). `--unshare-net` in every mode,
+  with the proxy reaching the sandbox through a mounted Unix socket. Done when, under real `bwrap`, a
+  direct connection to any address fails, only what the mode allows passes through the proxy, the safety
+  suite's final exfiltration success is zero in `closed` and `listed`, and the twins lose no more than
+  five points.
 - **GR6 — the install step runs in the sandbox** (Sonnet · M). The dependency install runs under the
   same `bwrap` with the fake home, an allow-listed environment and the proxy pointed at the registry,
   its output redacted; a board-supplied replacement install command needs the runner's
