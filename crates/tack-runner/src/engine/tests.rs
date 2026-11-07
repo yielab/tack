@@ -432,6 +432,8 @@ struct FakeAdapter {
     progress: Arc<Mutex<Option<mpsc::Receiver<Progress>>>>,
     // Handed out once by `answered_elsewhere_channel`, for the test proving that path.
     elsewhere: Arc<Mutex<Option<mpsc::Receiver<AnsweredElsewhere>>>>,
+    // `None` for every test that does not prove the forced-ask event.
+    forced_ask: Option<String>,
 }
 
 struct InteractiveFake {
@@ -543,6 +545,10 @@ impl HarnessAdapter for FakeAdapter {
 
     async fn progress_channel(&self, _handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
         self.progress.lock().expect("fake adapter lock").take()
+    }
+
+    async fn approvals_forced_ask(&self, _handle: &LocalRunHandle) -> Option<String> {
+        self.forced_ask.clone()
     }
 
     async fn answered_elsewhere_channel(
@@ -772,6 +778,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         interactive: Arc::new(Mutex::new(None)),
         elsewhere: Arc::new(Mutex::new(None)),
         progress: Arc::new(Mutex::new(None)),
+        forced_ask: None,
     }
 }
 
@@ -3227,6 +3234,41 @@ async fn a_question_answered_elsewhere_closes_its_decision_and_lets_the_next_one
     assert_eq!(answer.option_id.as_deref(), Some("approve_once"));
     drop(state);
     std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+/// A run the adapter forced to ask says why, once, so the run page can show it.
+#[tokio::test]
+async fn a_run_forced_to_ask_reports_why() {
+    for (forced, events) in [(Some("no sandbox on this machine"), 1), (None, 0)] {
+        let (root_dir, journal) = fresh_journal("forced-ask");
+        let root = root_dir.path();
+        let claimed = work();
+        let fake_adapter = FakeAdapter {
+            forced_ask: forced.map(str::to_owned),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        let data_protocol = FakeDataProtocol::new();
+        let engine = runner_engine(protocol(claimed, false, false), fake_adapter, journal, root)
+            .with_data_protocol(Arc::new(data_protocol.clone()));
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle");
+
+        let state = data_protocol.state.lock().expect("lock");
+        let reported: Vec<_> = state
+            .events
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .filter(|event| event.kind == "attempt.approvals_forced_ask")
+            .collect();
+        assert_eq!(reported.len(), events);
+        if let Some(event) = reported.first() {
+            assert_eq!(event.payload["reason"], "no sandbox on this machine");
+        }
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
 }
 
 // -----------------------------------------------------------------

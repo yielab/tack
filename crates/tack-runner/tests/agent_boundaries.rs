@@ -3,8 +3,8 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use tack_protocol::execution::{
-    AttemptId as DomainAttemptId, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
-    ParityCell, ParityRule, RunnerId as DomainRunnerId, validate_parity,
+    Approvals, AttemptId as DomainAttemptId, AttemptSnapshot, EnvironmentValue,
+    ExecutionRequestSnapshot, ParityCell, ParityRule, RunnerId as DomainRunnerId, validate_parity,
 };
 use tack_runner::{
     SecretStore,
@@ -809,6 +809,204 @@ async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
     }
 }
 
+/// The command line and environment a grammar built for a spawn.
+type Built = (Vec<String>, BTreeMap<String, String>);
+
+/// A real grammar under the shared shim program, remembering the command line and environment it
+/// built for the last spawn.
+struct Recording<G> {
+    grammar: G,
+    descriptor: &'static HarnessDescriptor,
+    seen: std::sync::Arc<std::sync::Mutex<Built>>,
+}
+
+impl<G: HarnessGrammar> HarnessGrammar for Recording<G> {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        self.descriptor
+    }
+
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
+        self.grammar.capabilities()
+    }
+
+    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        let invocation = self.grammar.invocation(run)?;
+        *self.seen.lock().unwrap() = (invocation.args.clone(), invocation.env.clone());
+        Ok(invocation)
+    }
+
+    fn prompt(&self, prompt: String, stdin_stays_open: bool) -> Vec<u8> {
+        self.grammar.prompt(prompt, stdin_stays_open)
+    }
+
+    fn report(&self, run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        self.grammar.report(run, result)
+    }
+}
+
+/// What a real agent's grammar builds for a request that asks for `approvals`, on a machine whose
+/// sandbox is `bwrap` or none: its command line, its environment, and whether the runner says it
+/// forced the run to ask.
+async fn invocation_for<G: HarnessGrammar>(
+    grammar: G,
+    kind: &'static str,
+    approvals: Option<Approvals>,
+    with_bwrap: bool,
+) -> (Vec<String>, BTreeMap<String, String>, Option<String>) {
+    let dir = root("approvals-without-a-sandbox");
+    let (bin, home, workspace) = (
+        dir.path().join("bin"),
+        dir.path().join("home"),
+        dir.path().join("workspace"),
+    );
+    for path in [&bin, &home, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    let executable = |path: &std::path::Path, text: &str| {
+        std::fs::write(path, text).expect("script");
+        std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("executable");
+    };
+    // Stands in for every agent's binary; `debug config` and `debug paths` are all opencode asks.
+    let program = bin.join(kind);
+    executable(
+        &program,
+        "#!/bin/sh\nif [ \"$2\" = config ]; then echo '{\"model\":\"p/m\"}'; elif [ \"$2\" = paths ]; then echo 'data /nonexistent'; else echo 1.0.0; fi\n",
+    );
+    if with_bwrap {
+        executable(&bin.join("bwrap"), "#!/bin/sh\nexit 0\n");
+    }
+    let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        program: Box::leak(program.display().to_string().into_boxed_str()),
+        ..*on_the_fake_harness(
+            DESCRIPTORS
+                .iter()
+                .find(|real| real.kind == kind)
+                .expect("a registered local agent"),
+        )
+    }));
+    let machine = sandbox::detect(Some(bin.as_os_str()), Some(&home));
+    assert_eq!(
+        machine.kind,
+        if with_bwrap {
+            sandbox::SandboxKind::Bwrap
+        } else {
+            sandbox::SandboxKind::None
+        }
+    );
+    let env = tack_runner::ProcessEnv::from_pairs([
+        ("HOME", home.as_os_str()),
+        ("PATH", bin.as_os_str()),
+    ]);
+    let seen = Default::default();
+    let harness = LocalProcessHarness::discover(
+        Recording {
+            grammar,
+            descriptor,
+            seen: std::sync::Arc::clone(&seen),
+        },
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        dir.path().join("staging"),
+        SecretStore::file(dir.path().join("secrets.json")),
+        &env,
+    )
+    .expect("the shim is locatable")
+    .with_probed_sandbox(machine);
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(kind);
+    spec.work.request.permission_policy.network = true;
+    spec.work.request.permission_policy.approvals = approvals;
+    let handle = harness.start(&spec).await.expect("the run starts");
+    let forced = harness.approvals_forced_ask(&handle).await;
+    harness.cancel(&handle).await.expect("cancel");
+    let (args, env) = seen.lock().unwrap().clone();
+    (args, env, forced)
+}
+
+fn permission_block(env: &BTreeMap<String, String>) -> serde_json::Value {
+    let config: serde_json::Value =
+        serde_json::from_str(&env["OPENCODE_CONFIG_CONTENT"]).expect("opencode config");
+    config["permission"].clone()
+}
+
+/// A request for `auto` on a machine where the runner found no sandbox is run as `ask`: the
+/// command line of each agent is the one that pauses on every action.
+#[tokio::test]
+async fn auto_without_a_sandbox_runs_as_ask() {
+    let has = |args: &[String], flag: &str| args.iter().any(|arg| arg == flag);
+    let after = |args: &[String], flag: &str| {
+        args.iter()
+            .position(|arg| arg == flag)
+            .map(|at| args[at + 1].clone())
+    };
+    for approvals in [None, Some(Approvals::Auto)] {
+        let (args, _, forced) =
+            invocation_for(ClaudeCodeGrammar, "claude-code", approvals, false).await;
+        assert_eq!(
+            after(&args, "--permission-mode").as_deref(),
+            Some("default")
+        );
+        assert!(has(&args, "--permission-prompt-tool"), "{args:?}");
+        assert!(!has(&args, "bypassPermissions"), "{args:?}");
+        assert!(forced.is_some_and(|why| why.contains("no sandbox")));
+
+        let (args, _, forced) = invocation_for(CodexGrammar, "codex", approvals, false).await;
+        assert!(has(&args, "app-server") && !has(&args, "exec"), "{args:?}");
+        assert!(forced.is_some());
+
+        let (args, env, forced) =
+            invocation_for(OpencodeGrammar, "opencode", approvals, false).await;
+        assert!(has(&args, "acp") && !has(&args, "run"), "{args:?}");
+        let permission = permission_block(&env);
+        assert!(
+            ["edit", "bash"]
+                .iter()
+                .all(|tool| permission[tool] != "allow"),
+            "{permission}"
+        );
+        assert!(forced.is_some());
+    }
+}
+
+/// The twin: where there is a sandbox, `auto` is `auto`, and no event says otherwise.
+#[tokio::test]
+async fn auto_under_a_sandbox_is_unchanged() {
+    let has = |args: &[String], flag: &str| args.iter().any(|arg| arg == flag);
+    let (args, _, forced) = invocation_for(
+        ClaudeCodeGrammar,
+        "claude-code",
+        Some(Approvals::Auto),
+        true,
+    )
+    .await;
+    assert!(has(&args, "bypassPermissions"), "{args:?}");
+    assert_eq!(forced, None);
+
+    let (args, _, forced) =
+        invocation_for(CodexGrammar, "codex", Some(Approvals::Auto), true).await;
+    assert!(has(&args, "exec") && !has(&args, "app-server"), "{args:?}");
+    assert_eq!(forced, None);
+
+    let (args, env, forced) =
+        invocation_for(OpencodeGrammar, "opencode", Some(Approvals::Auto), true).await;
+    assert!(has(&args, "run") && !has(&args, "acp"), "{args:?}");
+    assert_eq!(permission_block(&env)["bash"], "deny");
+    assert_eq!(forced, None);
+}
+
+/// An explicit `ask` on a machine without a sandbox is not "forced": it was asked for.
+#[tokio::test]
+async fn ask_without_a_sandbox_says_nothing_extra() {
+    let (_, _, forced) = invocation_for(
+        ClaudeCodeGrammar,
+        "claude-code",
+        Some(Approvals::Ask),
+        false,
+    )
+    .await;
+    assert_eq!(forced, None);
+}
+
 const MODEL_CREDENTIAL_VARIABLES: [&str; 7] = [
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN",
@@ -1226,9 +1424,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::SandboxOrNoRun, "codex", "GR2"),
     (ParityRule::SandboxOrNoRun, "opencode", "GR2"),
     (ParityRule::SandboxOrNoRun, "docket", "GR8"),
-    (ParityRule::NoSandboxMeansAsk, "claude-code", "GR1"),
-    (ParityRule::NoSandboxMeansAsk, "codex", "GR1"),
-    (ParityRule::NoSandboxMeansAsk, "opencode", "GR1"),
     (ParityRule::NoSandboxMeansAsk, "docket", "GR8"),
     (ParityRule::EgressByAllowList, "claude-code", "GR5"),
     (ParityRule::EgressByAllowList, "codex", "GR5"),
