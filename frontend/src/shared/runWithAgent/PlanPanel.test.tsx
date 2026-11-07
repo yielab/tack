@@ -138,7 +138,7 @@ describe('PlanPanel', () => {
     await settle();
 
     expect(posts.length).toBe(1);
-    expect(posts[0].url).toContain('/items/item_1/subtasks-from-plan');
+    expect(posts[0].url).toContain('/items/item_1/items-from-plan');
     expect(posts[0].body.artifact_id).toBe('plan_1');
     expect(posts[0].body.subtasks.map((s: any) => s.title)).toEqual(['Add the settings table', 'Settings page in the frontend']);
     expect(posts[0].body.subtasks[0].acceptance).toEqual(PLAN.subtasks[0].acceptance);

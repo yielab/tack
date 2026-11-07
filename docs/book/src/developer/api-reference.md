@@ -489,6 +489,20 @@ Manually links an item to a GitHub issue so status and comments sync both ways â
 | 400 | Invalid repo or issue number | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
 
+#### `POST /api/items/{id}/items-from-plan`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Parent Item ID |
+
+**Request body:** `CreateItemsFromPlanRequest`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Items created | `CreateItemsFromPlanResponse` |
+| 400 | Validation error | `ErrorEnvelope` |
+| 404 | Parent item not found | `ErrorEnvelope` |
+
 #### `GET /api/items/{id}/run-options`
 
 The profiles that may run an item, and why the others may not.
@@ -501,20 +515,6 @@ The profiles that may run an item, and why the others may not.
 |---|---|---|
 | 200 | Each agent profile and whether it may run the item, with the reason when it may not. The rule a run is refused by | `RunOption`[] |
 | 404 | No such item | `ErrorEnvelope` |
-
-#### `POST /api/items/{id}/subtasks-from-plan`
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `id` | path | `string` | yes | Parent Item ID |
-
-**Request body:** `CreateSubtasksFromPlanRequest`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Subtasks created | `CreateSubtasksFromPlanResponse` |
-| 400 | Validation error | `ErrorEnvelope` |
-| 404 | Parent item not found | `ErrorEnvelope` |
 
 #### `GET /api/projects/{project_id}/items`
 

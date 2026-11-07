@@ -6,8 +6,8 @@ import { request } from '../api/client';
 import type { components } from '../api/schema.gen';
 import PlanTree, { EMPTY_OFFER, loadOffer, parentOf, plural, treeSummary, unticked, type Offer, type Row } from './PlanTree';
 
-type CreateBody = components['schemas']['CreateSubtasksFromPlanRequest'];
-type CreateResponse = components['schemas']['CreateSubtasksFromPlanResponse'];
+type CreateBody = components['schemas']['CreateItemsFromPlanRequest'];
+type CreateResponse = components['schemas']['CreateItemsFromPlanResponse'];
 type CreatedSubtask = components['schemas']['CreatedSubtask'];
 
 /** One entry of a plan (plan-v1): the keys this panel reads. */
@@ -117,7 +117,7 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
           : [];
       });
       const body: CreateBody = fromFile() ? { subtasks } : { artifact_id: (props as { artifactId: string }).artifactId, subtasks };
-      const res: CreateResponse = await api.items.createSubtasksFromPlan(props.itemId, body);
+      const res: CreateResponse = await api.items.createItemsFromPlan(props.itemId, body);
       setCreated(res.created);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create the items.');

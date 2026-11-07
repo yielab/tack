@@ -97,7 +97,7 @@ describe('ProposeFromFile', () => {
     await settle();
 
     expect(posts.length).toBe(1);
-    expect(posts[0].url).toContain('/items/item_1/subtasks-from-plan');
+    expect(posts[0].url).toContain('/items/item_1/items-from-plan');
     expect('artifact_id' in posts[0].body).toBe(false);
     expect(posts[0].body.subtasks[1]).toMatchObject({ title: 'Second', depends_on: [0], parent: 0, role: 'Backend' });
     expect(container.textContent).toContain('Created 2 items');
