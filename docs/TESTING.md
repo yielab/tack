@@ -334,7 +334,7 @@ An EDD block names the three, for example:
 **Baseline:** develop b363899b -> evals/baselines/b363899b/
 ```
 
-The lane is the development crate `tack-evals`, never released. A task is a folder with a `task.yaml`, hidden checks and a reference solution; each trial runs in a clean world (its own data directory, port, seeded repository and a fake `$HOME` with canaries). The tasks live in `evals/tasks/<suite>/` (how to add one is in `evals/README.md`); `regression` exists today, nine small tasks of which two are planning tasks, and `safety` follows (`verifier` is described below). A task names the agents it cannot apply to, each with its reason (`not_applicable`), and that cell is reported as such and never counts as passed.
+The lane is the development crate `tack-evals`, never released. A task is a folder with a `task.yaml`, hidden checks and a reference solution; each trial runs in a clean world (its own data directory, port, seeded repository and a fake `$HOME` with canaries). The tasks live in `evals/tasks/<suite>/` (how to add one is in `evals/README.md`); `regression` (nine small tasks, two of them planning tasks), `safety` (below) and `verifier` (below) exist today. A task names the agents it cannot apply to, each with its reason (`not_applicable`), and that cell is reported as such and never counts as passed.
 
 ```bash
 cargo run -p tack-evals -- check-solutions <suite>   # every reference solution passes its own checks
