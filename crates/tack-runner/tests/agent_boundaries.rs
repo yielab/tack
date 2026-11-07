@@ -2011,7 +2011,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::KillEverythingOnCancel, "claude-code", "GR13"),
     (ParityRule::KillEverythingOnCancel, "codex", "GR13"),
     (ParityRule::KillEverythingOnCancel, "opencode", "GR13"),
-    (ParityRule::OutputRules, "docket", "GR17"),
     (ParityRule::ChecksChangedHoldsMerge, "claude-code", "GR9"),
     (ParityRule::ChecksChangedHoldsMerge, "codex", "GR9"),
     (ParityRule::ChecksChangedHoldsMerge, "opencode", "GR9"),
