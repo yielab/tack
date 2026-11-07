@@ -67,9 +67,10 @@ tack-api          -> tack-protocol tack-core tack-db tack-app
 tack-runner       -> tack-protocol tack-core
 tack-cli          -> tack-api tack-app tack-runner tack-db tack-protocol tack-core
 tack-test-support -> tack-protocol tack-core tack-db
+tack-evals        -> tack-test-support
 ```
 
-Each line lists what a crate may depend on; `scripts/check-crate-graph.sh --print` prints exactly this, and the check fails on any other normal dependency. No reverse edges are allowed. `tack-test-support` holds test helpers and is a dependency of the others' tests only. A tenth crate,
+Each line lists what a crate may depend on; `scripts/check-crate-graph.sh --print` prints exactly this, and the check fails on any other normal dependency. No reverse edges are allowed. `tack-test-support` holds test helpers and is a dependency of the others' tests only. `tack-evals` is a development tool that is never released, and nothing depends on it. An eleventh crate,
 `tack-desktop`, is deliberately excluded from this workspace (its own `Cargo.toml`
 and lockfile) because Tauri drags GTK/WebKit/glib into whatever workspace holds it —
 see the [Crate Tour](crate-tour.md#tack-desktop) for how it supervises `tack` instead

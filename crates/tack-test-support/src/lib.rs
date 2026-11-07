@@ -18,6 +18,7 @@ use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
 pub mod completion;
+pub mod fake_agent;
 pub mod ids;
 pub mod seed;
 

@@ -2,6 +2,9 @@
 /target/
 /docs/book/book/
 
+# What `tack-evals run` writes by default: trials.jsonl and the frozen runs
+/evals-out/
+
 # Database
 *.db
 *.db-shm
