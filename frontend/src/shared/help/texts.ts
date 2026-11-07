@@ -1,6 +1,8 @@
 import { BOOK, BOOK_BASE } from './routes';
 import type { FieldHelp } from '../ui/Field';
 
+const EGRESS_HELP = "How far the agent's traffic may go. Closed: only the model's own address. Listed: the model and the hosts you list for the profile. Open: any public site. In every mode, this computer's own address and private networks are refused. A site the mode allows can still receive what the agent sends it, because the page is not seen.";
+
 /** One sentence per field, shown as the `(?)` title and popover. */
 export const HELP = {
   folder: { text: 'The folder on this computer where the code lives. The agent works here or on a branch of it.', href: BOOK.workspace },
@@ -16,7 +18,7 @@ export const HELP = {
   profile: { text: 'What the agent is allowed to do and how it is told to work. Implementer changes code; Reviewer and Researcher only read; Planner proposes subtasks.', href: BOOK.automation },
   askBeforeEachAction: { text: 'The agent pauses before every action and waits for your answer under Questions from the agent. A card that was imported starts with this on.', href: BOOK.runDialog },
   webTools: { text: "Lets the agent fetch pages and search the web. Off turns those tools off; the agent's shell can still reach the network. A card that was imported starts with this off.", href: BOOK.runDialog },
-  egressMode: { text: "How far the agent's traffic may go, when this computer holds it to that. Closed: only the model's own address. Listed: the model and the hosts you list for the profile. Open: any public site. In every mode, this computer's own address and private networks are refused. A site the mode allows can still receive what the agent sends it, because the page is not seen.", href: BOOK.webAccess },
+  egressMode: { text: `${EGRESS_HELP} Unless this computer enforces it, the agent is only asked to follow it: a program that ignores the request is not held.`, href: BOOK.webAccess },
   sandbox: { text: "Every agent runs contained: by this computer (bubblewrap), by its own sandbox, or by docket; Claude Code and opencode only by bubblewrap. Where nothing contains an agent it doesn't run, unless the administrator turned the requirement off, and then it asks before each action.", href: `${BOOK_BASE}admin-guide/what-the-agent-can-reach.html` },
   prepare: { text: "The project's dependencies are installed before the agent starts, inside the same sandbox as the agent, with no access to your home folder or to this computer's other secrets. A command the board replaces runs only if the administrator allows it.", href: `${BOOK_BASE}admin-guide/what-the-agent-can-reach.html` },
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
@@ -51,6 +53,12 @@ export const EGRESS_MODES = [
   { value: 'listed', label: 'Listed: the model and the profile\'s hosts', line: "Web: the model and the profile's hosts" },
   { value: 'open', label: 'Open: any public site', line: 'Web: any public site, no private networks' },
 ] as const;
+
+/** The web-access help for a computer that says whether it enforces the mode: where it does, the agent has no other way out. */
+export function egressHelp(enforced: boolean | undefined): FieldHelp {
+  if (enforced !== true) return HELP.egressMode;
+  return { ...HELP.egressMode, text: `${EGRESS_HELP} This computer enforces it: the agent has no other way out, so it reaches only what its mode allows.` };
+}
 
 /** What a profile starts with by what it does, as the server decides it. */
 export function defaultEgressMode(kind: string | undefined): (typeof EGRESS_MODES)[number]['value'] {

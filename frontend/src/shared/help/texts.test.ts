@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EGRESS_MODES, HELP, SANDBOX_TEXT, SAFETY_TEXT, agentSafety, defaultEgressMode, egressEnforced } from './texts';
+import { EGRESS_MODES, HELP, SANDBOX_TEXT, SAFETY_TEXT, agentSafety, defaultEgressMode, egressEnforced, egressHelp } from './texts';
 
 describe('agentSafety', () => {
   it('names who contains each of the four agents', () => {
@@ -47,6 +47,18 @@ describe('web access', () => {
     for (const mode of EGRESS_MODES) expect(mode.label).not.toContain('\n');
     expect(HELP.egressMode.text).toContain('can still receive what the agent sends it');
     expect(HELP.egressMode.text).toContain('private networks are refused');
+  });
+
+  it('says the mode is only asked for until the computer reports that it enforces it, then that it is enforced', () => {
+    for (const unknown of [undefined, false]) {
+      expect(egressHelp(unknown).text).toContain('only asked to follow it');
+      expect(egressHelp(unknown).text).not.toContain('This computer enforces it');
+    }
+    const enforced = egressHelp(true);
+    expect(enforced.text).toContain('This computer enforces it: the agent has no other way out');
+    expect(enforced.text).not.toContain('only asked');
+    expect(enforced.text).toContain('can still receive what the agent sends it');
+    expect(enforced.href).toBe(HELP.egressMode.href);
   });
 
   it('holds the agent to its mode only when every computer it could land on says so', () => {

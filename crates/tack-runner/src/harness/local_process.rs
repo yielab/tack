@@ -16,6 +16,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -534,6 +535,9 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     /// The network a run's proxy resolves names and connects over: the machine's, unless a test
     /// stands one in.
     egress_network: Option<Arc<dyn egress::Network>>,
+    /// The executable that forwards a sandboxed agent's traffic to the proxy: the runner's own,
+    /// unless a test stands another in.
+    egress_helper: Option<PathBuf>,
     probe_timeout: Duration,
     /// Added to the version probe's environment only; tests steer the fake
     /// harness with it.
@@ -610,6 +614,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             sandbox: Sandbox::none("not detected"),
             egress: crate::config::EgressConfig::default(),
             egress_network: None,
+            egress_helper: None,
             probe_timeout: PROBE_TIMEOUT,
             probe_env: BTreeMap::new(),
             host_env: crate::config::ProcessEnv::default(),
@@ -645,6 +650,13 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     /// a test can name what a host resolves to without one.
     pub fn with_egress_network(mut self, network: Arc<dyn egress::Network>) -> Self {
         self.egress_network = Some(network);
+        self
+    }
+
+    /// Starts a sandboxed agent's forwarder from `helper` instead of the runner's own executable,
+    /// which only the `tack` and `tack-runner` binaries know how to be.
+    pub fn with_egress_helper(mut self, helper: PathBuf) -> Self {
+        self.egress_helper = Some(helper);
         self
     }
 
@@ -939,6 +951,24 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         ))
     }
 
+    /// The executable that forwards a sandboxed agent's traffic to the proxy.
+    fn egress_helper(&self) -> Result<PathBuf, HarnessError> {
+        let helper = match &self.egress_helper {
+            Some(helper) => Ok(helper.clone()),
+            None => std::env::current_exe(),
+        };
+        helper
+            .ok()
+            .filter(|helper| helper.is_file())
+            .ok_or_else(|| {
+                self.reject(
+                    "the runner cannot find its own executable to give the sandbox its web \
+                     access through the proxy"
+                        .to_owned(),
+                )
+            })
+    }
+
     /// Starts the proxy this run goes through, when the runner enforces web access. A run whose
     /// proxy cannot start does not start: it would otherwise reach the network unheld.
     async fn start_egress(
@@ -948,14 +978,19 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         let Some(policy) = self.egress_policy(spec) else {
             return Ok(None);
         };
-        let started = match &self.egress_network {
-            Some(network) => EgressProxy::start_over(policy, Arc::clone(network)).await,
-            None => EgressProxy::start(policy).await,
-        };
-        started.map(Some).map_err(|error| {
-            tracing::warn!(%error, harness = self.kind(), "the egress proxy could not start");
-            self.reject("the runner's web access proxy could not start".to_owned())
-        })
+        let network = self
+            .egress_network
+            .clone()
+            .unwrap_or_else(|| Arc::new(egress::SystemNetwork));
+        // Where the agent runs in `bwrap` it has no network, and finds the proxy by its socket.
+        let socket = self.sandbox.can_close_network();
+        EgressProxy::start_over(policy, network, socket)
+            .await
+            .map(Some)
+            .map_err(|error| {
+                tracing::warn!(%error, harness = self.kind(), "the egress proxy could not start");
+                self.reject("the runner's web access proxy could not start".to_owned())
+            })
     }
 
     /// Everything `start` spawns, built the same way `validate` checks it.
@@ -1003,8 +1038,25 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
-        // Last, so neither the request nor the grammar can point the traffic elsewhere.
-        env.extend(proxy.into_iter().flat_map(EgressProxy::environment));
+        let bridge = proxy
+            .and_then(EgressProxy::socket_dir)
+            .map(|socket_dir| {
+                Ok::<_, HarnessError>(sandbox::Bridge {
+                    helper: self.egress_helper()?,
+                    socket_dir: socket_dir.to_path_buf(),
+                })
+            })
+            .transpose()?;
+        // Last, so neither the request nor the grammar can point the traffic elsewhere. Behind
+        // the forwarder the proxy is at the sandbox's own loopback.
+        match (&bridge, proxy) {
+            (Some(_), _) => env.extend(EgressProxy::environment_at(SocketAddr::from((
+                Ipv4Addr::LOCALHOST,
+                sandbox::BRIDGE_PORT,
+            )))),
+            (None, Some(proxy)) => env.extend(proxy.environment()),
+            (None, None) => {}
+        }
         let prompt = super::local_prompt(&spec.work);
         secrets.register(prompt.clone());
         secrets.register_all(invocation.secrets);
@@ -1028,7 +1080,11 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                     .map_err(|error| HarnessError::Io(IoKind(error.kind())))?;
             }
         }
-        let (program, args) = match self.sandbox.wrap(
+        let sandbox = match bridge {
+            Some(bridge) => &self.sandbox.bridged(bridge),
+            None => &self.sandbox,
+        };
+        let (program, args) = match sandbox.wrap(
             &program,
             &args,
             &workspace_root,
@@ -1531,7 +1587,10 @@ where
         additional.insert(
             "egress".to_owned(),
             serde_json::json!({
-                "enforced": self.egress.enforce,
+                // Held: the agent has no network but the proxy. Asked: it is told to use the
+                // proxy and nothing stops it going around.
+                "enforced": self.egress.enforce && self.sandbox.can_close_network(),
+                "proxy": self.egress.enforce,
                 "model_endpoints": descriptor
                     .model_endpoints
                     .iter()
@@ -1717,6 +1776,16 @@ where
     async fn approvals_forced_ask(&self, handle: &LocalRunHandle) -> Option<String> {
         let running = self.running.lock().await;
         self.forced_ask_reason(&running.get(&handle.process_id)?.record.spec)
+    }
+
+    async fn egress_not_held(&self, _handle: &LocalRunHandle) -> Option<String> {
+        (self.egress.enforce && !self.sandbox.can_close_network()).then(|| {
+            format!(
+                "no sandbox on this machine ({}), so the agent is asked to send its traffic \
+                 through the runner's proxy but nothing stops it going around",
+                self.sandbox.reason
+            )
+        })
     }
 
     async fn network_refusals(

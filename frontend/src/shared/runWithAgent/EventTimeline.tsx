@@ -56,6 +56,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: bo
   'attempt.install_unsandboxed': { label: 'Installed without a sandbox' },
   'attempt.approvals_forced_ask': { label: 'Asks before each action' },
   'attempt.network_refused': { label: 'Web access refused' },
+  'attempt.network_not_held': { label: 'Web access not enforced' },
   'attempt.push_skipped': { label: 'Branch not pushed' },
   'attempt.push_failed': { label: 'Pushing the branch failed', failed: true },
   'attempt.evidence_failed': { label: 'Evidence could not be collected', failed: true },

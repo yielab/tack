@@ -394,6 +394,11 @@ enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Started inside an agent's sandbox as the forwarder to the runner's proxy: that is all this
+    // process is.
+    if let Some(code) = tack_runner::harness::egress::bridge::run_if_requested(std::env::args()) {
+        std::process::exit(i32::from(code));
+    }
     let cli = Cli::parse();
 
     // Bare `tack` (no subcommand) launches the server + web UI — the primary,

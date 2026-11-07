@@ -6,7 +6,7 @@ import { IconBranch, IconChecks, IconFolder, IconGlobe, IconPackage, IconShield,
 import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
-import { EGRESS_MODES, HELP, defaultEgressMode, egressEnforced } from '../help/texts';
+import { EGRESS_MODES, HELP, defaultEgressMode, egressEnforced, egressHelp } from '../help/texts';
 import { teamOf, type AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
@@ -182,7 +182,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
     const profile = selectedProfile();
     if (!profile || props.form.harnessKind === 'docket') return null;
     const mode = EGRESS_MODES.find((m) => m.value === (profile.egress_mode ?? defaultEgressMode(profile.kind)))!;
-    return egressEnforced(props.harnessReports()) === true ? mode.line : `${mode.line} (this computer does not hold the agent to it)`;
+    return `${mode.line} (${egressEnforced(props.harnessReports()) === true ? 'enforced' : 'not enforced on this computer'})`;
   };
   const profileName = () => props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.name ?? 'Choose a profile';
   const blocker = (): { text: string; href: string } | undefined => {
@@ -335,7 +335,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 <span class="inline-flex flex-wrap items-center gap-x-2" data-testid="run-dialog-web-access">
                   {' · '}
                   <span>{access()}</span>
-                  <HelpHint label="Web access" help={HELP.egressMode} />
+                  <HelpHint label="Web access" help={egressHelp(egressEnforced(props.harnessReports()))} />
                 </span>
               )}
             </Show>
