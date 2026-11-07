@@ -35,6 +35,13 @@ When the verifier's pack recommends **rejecting** the change, the button still w
 but it asks you to write why you are merging it anyway. **Merge** stays disabled until you have, and the
 reason is kept with the run as your review of it.
 
+The same goes for a change that altered how the work is checked: a test, test or build configuration, a
+manifest or the CI files. When the verifier's pack flags it (a test that proves nothing, a deleted test,
+changed test or analysis configuration, changed dependencies), the pack's flag decides; when there is no
+pack, Tack lists the changed files itself, matching file names exactly. Either way nothing merges by itself,
+the task says "A file that decides how the work is checked changed", and **Merge** asks you to write why you
+are merging it anyway.
+
 ## Merge when moved to Done
 
 With this option on, moving a task to Done merges its latest finished run. The move happens

@@ -101,10 +101,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
             ParityCell::delegated("docket"),
         ),
         (ParityRule::OutputRules, ParityCell::Runner),
-        (
-            ParityRule::ChecksChangedHoldsMerge,
-            ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
-        ),
+        (ParityRule::ChecksChangedHoldsMerge, ParityCell::Runner),
         (ParityRule::Redaction, ParityCell::Runner),
         (ParityRule::StepsVisible, ParityCell::delegated("docket")),
     ],

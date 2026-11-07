@@ -40,6 +40,7 @@ The pack is defined by `schema.json` (JSON Schema 2020-12) and contains:
 - **signature**: `{"kind": "none"}`, or `{"kind": "in-toto", "statement_sha256"}` when the runner's `[verify] sign_key` made prill sign: the hash of the staged `mrp.intoto.json` envelope (media type `application/vnd.in-toto+json`)
 - **produced_by**: Producer identification (program, version)
 - **stages** (optional): every stage the verifier knows, each `{name, status}` plus an optional `reason`; absent when the verifier reports none
+- **flags** (optional): what the verifier flags about the change, each `{code, detail}`; absent when the producer does not report flags, `[]` when it looked and found none. A flag of `tautological_test`, `tests_deleted`, `test_config_changed`, `analysis_suppressed`, `dependencies_changed` or `config_changed_in_head` holds the automatic merge
 - **next_steps** (optional): what the verifier says to do next, each `{code, severity}` plus any of `stage`, `criterion_id`, `path`, `line`, `command`, `message`; absent when none
 
 ## Relationship to the brief

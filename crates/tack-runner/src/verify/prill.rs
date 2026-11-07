@@ -36,7 +36,7 @@ use std::{fs, path::Path, process::Stdio, time::Duration};
 
 use serde_json::{Value, json};
 use tack_protocol::mrp::{
-    Criterion, CriterionStatus, JudgeRubricEntry, JudgeSection, JudgeVerdict, MergeDecision,
+    Criterion, CriterionStatus, Flag, JudgeRubricEntry, JudgeSection, JudgeVerdict, MergeDecision,
     MergeReadinessPack, MutationSection, NextStep, ProducedBySection, RecommendationSection,
     RiskSection, RiskTier, SignatureSection, StageRun, UsageSection, VerifySection,
 };
@@ -631,11 +631,20 @@ pub(super) fn pack(
             )
         })
         .collect();
-    let flags = prill["flags"]
-        .as_array()
-        .into_iter()
+    // A pack without the key is a prill that does not report flags, not one that found none.
+    let flags: Option<Vec<Flag>> = prill["flags"].as_array().map(|flags| {
+        flags
+            .iter()
+            .map(|flag| Flag {
+                code: text(&flag["code"]),
+                detail: text(&flag["detail"]),
+            })
+            .collect()
+    });
+    let flag_lines = flags
+        .iter()
         .flatten()
-        .map(|flag| format!("flag: {} — {}", text(&flag["code"]), text(&flag["detail"])));
+        .map(|flag| format!("flag: {} — {}", flag.code, flag.detail));
     let risk = prill["risk"].as_object();
     let signals = risk
         .and_then(|risk| risk.get("signals"))
@@ -775,12 +784,12 @@ pub(super) fn pack(
     let checked = tack
         .files
         .iter()
-        .filter(|file| crate::evidence::checked_files::matches(&file.path))
-        .map(|file| format!("{}: {}", crate::evidence::checked_files::SECTION, file.path));
+        .filter(|file| tack_protocol::checked_files::matches(&file.path))
+        .map(|file| format!("{}: {}", tack_protocol::checked_files::SECTION, file.path));
     let risk_reasons = reasons
         .iter()
         .cloned()
-        .chain(flags)
+        .chain(flag_lines)
         .chain(signals)
         .chain(checked)
         .collect();
@@ -827,6 +836,7 @@ pub(super) fn pack(
                 })
                 .collect()
         }),
+        flags,
     }
 }
 

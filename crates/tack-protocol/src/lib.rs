@@ -3,6 +3,7 @@
 //! prepare step. No I/O, no database: the server and the runner both build on this and on
 //! nothing else they share.
 
+pub mod checked_files;
 pub mod clock;
 pub mod conversation;
 pub mod event_kind;

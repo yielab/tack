@@ -247,8 +247,8 @@ export interface paths {
          * `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
          *     attempt's pull request at its head commit, opening the pull request first when
          *     it is missing; a refusal is a `409` carrying the reason, already recorded on
-         *     the item. When the pack recommends `reject` the person still decides, but writes
-         *     why: the press is a `400` without a `reason`, and a merge that goes through is
+         *     the item. When the pack recommends `reject`, or the change altered how the work is checked,
+         *     the person still decides, but writes why: the press is a `400` without a `reason`, and a merge that goes through is
          *     kept as the attempt's accepting review, with that reason.
          */
         post: operations["merge_attempt"];
@@ -4038,6 +4038,12 @@ export interface components {
         };
         /** @description The Merge button's state: `reason` says why it is disabled, `null` when enabled. */
         AttemptMerge: {
+            /**
+             * @description What the change altered of the way the work is checked (the pack's flags, or the files
+             *     the runner recorded when there is no pack). Not empty, the Merge button asks for a
+             *     written reason too. Left out when there is nothing.
+             */
+            checks_changed?: string[];
             enabled: boolean;
             merged?: null | components["schemas"]["MergedBy"];
             pack_decision?: null | components["schemas"]["MergeDecision"];
@@ -5808,7 +5814,10 @@ export interface components {
         };
         /** @description The Merge button's press. */
         MergeAttemptRequest: {
-            /** @description Required when the attempt's pack recommends `reject`; a blank one counts as none. */
+            /**
+             * @description Required when the attempt's pack recommends `reject` or the change altered how the work
+             *     is checked; a blank one counts as none.
+             */
             reason?: string | null;
         };
         /**
@@ -8532,7 +8541,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description invalid_request (the pack recommends reject and no reason was written) */
+            /** @description invalid_request (the pack recommends reject, or the checks changed, and no reason was written) */
             400: {
                 headers: {
                     [name: string]: unknown;
