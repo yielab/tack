@@ -257,7 +257,14 @@ enum Commands {
     },
 
     /// Run a Model Context Protocol (MCP) server over stdio for AI agents
-    Mcp,
+    ///
+    /// Needs an agent credential (`TACK_API_TOKEN=tack_agent_...`). `--operator` acts as the
+    /// operator instead, with every scope.
+    Mcp {
+        /// Act as the operator, with the token this machine holds
+        #[arg(long)]
+        operator: bool,
+    },
 
     /// Search items
     Search {
@@ -540,7 +547,13 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Open { id, json } => cmd_open(&client, &config.base_url, id, json),
 
-        Commands::Mcp => tack_cli::mcp::run(&client),
+        Commands::Mcp { operator } => {
+            if let Err(refusal) = tack_cli::mcp::admit(&client, operator) {
+                eprintln!("tack mcp: {refusal}");
+                std::process::exit(2);
+            }
+            tack_cli::mcp::run(&client)
+        }
 
         Commands::Search {
             query,
