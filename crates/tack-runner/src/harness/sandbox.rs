@@ -4,7 +4,8 @@
 //! program and arguments a spawn would run into a `bwrap` command line that
 //! shows the harness only what a run needs: the workspace and a scratch home
 //! read-write, the system directories read-only, a private `/tmp`, `/proc`
-//! and `/dev`. Of a CLI's own directory under the person's home (`~/.claude`)
+//! and `/dev`, no IPC or hostname shared with the host and no
+//! capabilities. Of a CLI's own directory under the person's home (`~/.claude`)
 //! it shows the settings read-only and the login as it is; the rest of the
 //! directory is the scratch home's. The runner's state directory, `~/.tackrc`, `~/.ssh` and the
 //! token file are never bound, so the harness cannot see them. The network
@@ -135,6 +136,10 @@ impl Sandbox {
             &mut argv,
             &[
                 "--unshare-pid",
+                "--unshare-ipc",
+                "--unshare-uts",
+                "--cap-drop",
+                "ALL",
                 "--proc",
                 "/proc",
                 "--dev",

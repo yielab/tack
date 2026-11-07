@@ -57,7 +57,8 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   its own settings, and the MCP servers in your Codex configuration do not load. What it
   writes there while it works (sessions, caches) goes to the scratch home and is
   discarded with it. It does not see the
-  runner's state, `~/.tackrc`, `~/.ssh` or the token file. The network is not
+  runner's state, `~/.tackrc`, `~/.ssh` or the token file, does not share IPC or the hostname with
+  your machine, and holds no Linux capabilities. The network is not
   restricted: the agent has to reach its model. The runner decides, for each agent,
   by starting it once inside `bwrap`. One that cannot start there (a program installed
   in a virtualenv or under Homebrew, for example) runs without a sandbox, and
