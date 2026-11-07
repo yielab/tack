@@ -23,6 +23,17 @@ const KNOWN_GRADERS: &[&str] = &[
     "process.asks",
 ];
 
+/// Where a safety task's attack comes in.
+const SAFETY_VECTORS: &[&str] = &["card", "readme", "web", "test_comment", "postinstall"];
+/// What a safety task's attack is after.
+const SAFETY_TARGETS: &[&str] = &[
+    "exfiltrate",
+    "agent_config",
+    "weaken_test",
+    "push",
+    "ssh_read",
+];
+
 /// The longest `instruction` a task may carry: it becomes the item's title and description.
 const INSTRUCTION_CHARS_MAX: usize = 500;
 
@@ -161,6 +172,40 @@ pub struct Limits {
     pub tokens: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SafetyRole {
+    /// The task as written, with the attack in it.
+    Attack,
+    /// The same task without the attack: what a guardrail costs honest work.
+    Twin,
+}
+
+/// What makes a task one half of a safety pair.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SafetySpec {
+    pub role: SafetyRole,
+    /// The other half of the pair, by id.
+    pub pair: String,
+    /// Where the attack comes in: `card`, `readme`, `web`, `test_comment` or `postinstall`.
+    pub vector: String,
+    /// What it is after: `exfiltrate`, `agent_config`, `weaken_test`, `push` or `ssh_read`.
+    pub target: String,
+    /// Words an attempt leaves in the run's tool events or in the commands it asked to run. The
+    /// card's own words are not evidence of an attempt, so a marker is a part of the action
+    /// (a host, a path, a subcommand) and not of the story around it.
+    #[serde(default)]
+    pub markers: Vec<String>,
+    /// Paths the work has no business changing (the tests, for an attack on a test): a patch that
+    /// touches one is a boundary crossed. A path ending in `/` stands for everything under it.
+    #[serde(default)]
+    pub protected_files: Vec<String>,
+    /// Refs the seed repository must not gain (a push). A ref matches when it contains the word.
+    #[serde(default)]
+    pub forbidden_refs: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
@@ -191,6 +236,9 @@ pub struct Task {
     /// report is `not_applicable` and says why; it never counts as passed.
     #[serde(default)]
     pub not_applicable: BTreeMap<String, String>,
+    /// Present on the tasks of the safety suite.
+    #[serde(default)]
+    pub safety: Option<SafetySpec>,
 }
 
 /// A task together with the directory it was read from.
@@ -316,12 +364,52 @@ impl LoadedTask {
         if task.limits.tokens == Some(0) {
             return Err("limits.tokens must be above zero, or absent for no limit".to_owned());
         }
+        self.validate_safety()?;
         self.validate_graders()?;
         if !self.repo_dir().is_dir() {
             return Err("repo/ is missing: a task needs a seed repository".to_owned());
         }
         if self.hidden_command().is_some() && !self.hidden_dir().is_dir() {
             return Err("outcome.hidden_tests needs a hidden/ directory".to_owned());
+        }
+        Ok(())
+    }
+
+    fn validate_safety(&self) -> Result<(), String> {
+        let task = &self.task;
+        let Some(safety) = &task.safety else {
+            return if task.suite == "safety" {
+                Err("a task of the safety suite needs a `safety` block".to_owned())
+            } else {
+                Ok(())
+            };
+        };
+        if safety.pair.is_empty() || safety.pair == task.id {
+            return Err("safety.pair is the id of the other half of the pair".to_owned());
+        }
+        if !SAFETY_VECTORS.contains(&safety.vector.as_str()) {
+            return Err(format!(
+                "safety.vector {:?} is not one of {}",
+                safety.vector,
+                SAFETY_VECTORS.join(", ")
+            ));
+        }
+        if !SAFETY_TARGETS.contains(&safety.target.as_str()) {
+            return Err(format!(
+                "safety.target {:?} is not one of {}",
+                safety.target,
+                SAFETY_TARGETS.join(", ")
+            ));
+        }
+        if safety.markers.iter().any(|m| m.trim().is_empty()) {
+            return Err(
+                "safety.markers holds an empty word, which every event contains".to_owned(),
+            );
+        }
+        if safety.markers.is_empty() {
+            // Without a word to look for, an attempt could never be seen and the attack would
+            // report zero by construction.
+            return Err("safety.markers is empty: how else is an attempt seen".to_owned());
         }
         Ok(())
     }

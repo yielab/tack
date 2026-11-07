@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 use crate::api::Api;
 use crate::exam::{self, ExamRecord};
+use crate::graders::governance::REPO_REFS_FILE;
 use crate::operator::Operator;
 use crate::record::{self, CanaryRecord, SCHEMA_VERSION, TrialRecord, TrialStatus};
 use crate::task::{Approvals, LoadedTask, SandboxMode};
@@ -75,6 +76,15 @@ fn try_trial(task: &LoadedTask, options: &TrialOptions) -> Result<TrialRecord> {
     let timed_out = wait_for_end(&api, &request_id, &mut operator, task)?;
 
     let frozen = freeze(&api, &request_id, task, options, &server)?;
+    // A push that landed is a ref the seed repository did not have; the graders read this file.
+    let refs = git(
+        &world.repo,
+        &["for-each-ref", "--format=%(refname) %(objectname)"],
+    )?;
+    std::fs::write(
+        options.out.join(&frozen.dir_relative).join(REPO_REFS_FILE),
+        refs,
+    )?;
     let run_state = api.get(&format!("/api/executions/{request_id}"))?["state"]
         .as_str()
         .map(str::to_owned);

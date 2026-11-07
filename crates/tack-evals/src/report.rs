@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::grade::{GradedTrial, grade_file};
 use crate::graders::verifier::Agreement;
 use crate::metrics::{self, PairedDifference};
-use crate::task::LoadedTask;
+use crate::task::{LoadedTask, SafetyRole};
 use crate::taxonomy::{FailureClass, Verdict};
 
 /// Raised when a field changes meaning, so an old baseline is never read as a new one.
@@ -104,6 +104,66 @@ impl AskNoise {
     }
 }
 
+/// The safety figures of one agent, from the trials of the safety pairs that counted. A rate
+/// is a count over its base, and the base is shown with it: three trials cannot say 0.67.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SafetyFigures {
+    pub harness: String,
+    /// Trials of the twins (the task without the attack).
+    pub twins: u32,
+    /// Twins whose work came out right: utility without the attack.
+    pub twins_useful: u32,
+    /// Twins that did not pass in full, for any reason: what a guardrail costs honest work.
+    pub twins_failed: u32,
+    /// Trials of the attacked tasks.
+    pub attacks: u32,
+    /// Attacked trials whose work came out right: utility under attack.
+    pub attacks_useful: u32,
+    /// Attacked trials that tried what the attack asked.
+    pub attempted: u32,
+    /// Attacked trials where the attack worked.
+    pub succeeded: u32,
+}
+
+impl SafetyFigures {
+    fn new(harness: &str) -> Self {
+        Self {
+            harness: harness.to_owned(),
+            twins: 0,
+            twins_useful: 0,
+            twins_failed: 0,
+            attacks: 0,
+            attacks_useful: 0,
+            attempted: 0,
+            succeeded: 0,
+        }
+    }
+
+    fn rate(part: u32, whole: u32) -> Option<f64> {
+        (whole > 0).then(|| f64::from(part) / f64::from(whole))
+    }
+
+    pub fn utility_without_attack(&self) -> Option<f64> {
+        Self::rate(self.twins_useful, self.twins)
+    }
+
+    pub fn utility_under_attack(&self) -> Option<f64> {
+        Self::rate(self.attacks_useful, self.attacks)
+    }
+
+    pub fn intermediate_success(&self) -> Option<f64> {
+        Self::rate(self.attempted, self.attacks)
+    }
+
+    pub fn final_success(&self) -> Option<f64> {
+        Self::rate(self.succeeded, self.attacks)
+    }
+
+    pub fn false_positives(&self) -> Option<f64> {
+        Self::rate(self.twins_failed, self.twins)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Rate {
     /// The number of attempts drawn.
@@ -132,6 +192,9 @@ pub struct Summary {
     pub verifier: VerifierCounts,
     pub tokens_per_accepted_run: Option<Percentiles>,
     pub question_noise: Vec<AskNoise>,
+    /// One entry per agent that ran a safety pair; empty for any other suite.
+    #[serde(default)]
+    pub safety: Vec<SafetyFigures>,
 }
 
 fn sorted_unique(values: impl Iterator<Item = String>) -> Vec<String> {
@@ -150,6 +213,7 @@ pub fn summarize(trials: &[GradedTrial]) -> Summary {
     let mut noise: BTreeMap<String, AskNoise> = BTreeMap::new();
     let mut accepted_tokens = Vec::new();
     let mut scores: BTreeMap<(String, u32, String), Vec<f64>> = BTreeMap::new();
+    let mut safety: BTreeMap<String, SafetyFigures> = BTreeMap::new();
 
     for trial in trials {
         let entry = tasks
@@ -183,6 +247,25 @@ pub fn summarize(trials: &[GradedTrial]) -> Summary {
                 }
             }
             (Verdict::Failed, None) => {}
+        }
+
+        if let Some(outcome) = trial.safety.filter(|_| trial.judgement.counts()) {
+            let figures = safety
+                .entry(trial.harness.clone())
+                .or_insert_with(|| SafetyFigures::new(&trial.harness));
+            match outcome.role {
+                SafetyRole::Twin => {
+                    figures.twins += 1;
+                    figures.twins_useful += u32::from(outcome.utility);
+                    figures.twins_failed += u32::from(trial.judgement.verdict != Verdict::Passed);
+                }
+                SafetyRole::Attack => {
+                    figures.attacks += 1;
+                    figures.attacks_useful += u32::from(outcome.utility);
+                    figures.attempted += u32::from(outcome.attempted);
+                    figures.succeeded += u32::from(outcome.succeeded);
+                }
+            }
         }
 
         let compared = matches!(
@@ -261,6 +344,7 @@ pub fn summarize(trials: &[GradedTrial]) -> Summary {
         verifier,
         tokens_per_accepted_run: percentiles(&accepted_tokens),
         question_noise: noise.into_values().collect(),
+        safety: safety.into_values().collect(),
     }
 }
 
@@ -508,6 +592,29 @@ pub fn summary_markdown(summary: &Summary, comparison: Option<&Comparison>) -> S
             t.failures.eval,
             t.failures.infra
         );
+    }
+    if !summary.safety.is_empty() {
+        text.push_str(
+            "\n| agent | utility, twins | utility, attacked | attempted | succeeded | twins failed |\n\
+             |---|---|---|---|---|---|\n",
+        );
+        let cell = |rate: Option<f64>, part: u32, whole: u32| {
+            rate.map_or("n/a".to_owned(), |r| {
+                format!("{} ({part}/{whole})", percent(r))
+            })
+        };
+        for f in &summary.safety {
+            let _ = writeln!(
+                text,
+                "| {} | {} | {} | {} | {} | {} |",
+                f.harness,
+                cell(f.utility_without_attack(), f.twins_useful, f.twins),
+                cell(f.utility_under_attack(), f.attacks_useful, f.attacks),
+                cell(f.intermediate_success(), f.attempted, f.attacks),
+                cell(f.final_success(), f.succeeded, f.attacks),
+                cell(f.false_positives(), f.twins_failed, f.twins),
+            );
+        }
     }
     if !summary.question_noise.is_empty() {
         text.push_str("\n| agent | asked | granted | per 100 events |\n|---|---|---|---|\n");
