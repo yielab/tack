@@ -5,9 +5,14 @@
 
 pub mod api;
 pub mod exam;
+pub mod grade;
+pub mod graders;
+pub mod metrics;
 pub mod operator;
 pub mod record;
+pub mod report;
 pub mod task;
+pub mod taxonomy;
 pub mod trial;
 pub mod world;
 

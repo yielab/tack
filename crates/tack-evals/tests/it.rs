@@ -4,5 +4,8 @@
 mod common;
 
 mod check_solutions;
+mod graders;
+mod report;
+mod synthetic;
 mod task_loading;
 mod trials;
