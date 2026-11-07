@@ -68,8 +68,10 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   machine, and the Agents page, the run dialog and the project's Automation settings say
   why.
 - **docket's jail is docket's.** Tack does not wrap docket in `bwrap`: docket is a daemon with its
-  own home, and it confines its agents itself, in a jail it sets up. The run reports
-  `sandbox: harness`, shown on screen as "Runs in an isolated sandbox". Tack reaches
+  own home, and it confines its agents itself, in a jail it sets up. Tack asks docket whether it
+  does: when docket says so, the run reports `sandbox: harness`, shown on screen as "Runs in an
+  isolated sandbox"; when it says it does not, or does not say, the run reports `sandbox: none`
+  and asks before each action. Tack reaches
   docket only over its loopback API with a bearer token, passes it the task, the denied tools
   and the network flag as restrictions, and holds no model key for it.
 - **The workspace.** The agent works in a clone or a branch of the project's own

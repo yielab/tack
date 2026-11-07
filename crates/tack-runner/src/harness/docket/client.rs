@@ -17,6 +17,34 @@ use crate::config::DocketConfig;
 /// How long one request may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The feature of `GET /health` under which docket says whether it jails its agents.
+const ISOLATION_POSTURE: &str = "isolationPosture";
+
+/// Whether docket confines its agents, as it said and not as Tack supposed.
+pub(super) enum Isolation {
+    Jailed,
+    /// No jail, with the sentence that says why Tack reads it so.
+    Unjailed(String),
+}
+
+impl Isolation {
+    /// The `sandbox` a machine's capability report carries: `harness` where docket jails its
+    /// agents, `none` otherwise (the Run dialog and auto-start then ask before each action).
+    pub fn sandbox(&self) -> &'static str {
+        match self {
+            Isolation::Jailed => "harness",
+            Isolation::Unjailed(_) => "none",
+        }
+    }
+
+    pub fn reason(&self) -> String {
+        match self {
+            Isolation::Jailed => "docket confines its own agents in a jail it sets up".to_owned(),
+            Isolation::Unjailed(why) => why.clone(),
+        }
+    }
+}
+
 /// What docket answered.
 #[derive(Debug, Clone)]
 pub(super) struct Reply {
@@ -134,6 +162,32 @@ impl Client {
                 .read::<super::wire::HealthAnswer>()
                 .is_ok_and(|health| health.features.iter().any(|feature| feature == name)),
             _ => false,
+        }
+    }
+
+    /// What `GET /health` says about the jail docket sets up around its agents. Anything short of
+    /// a plain `jailed` (a docket that does not say, one that says `none`, a posture Tack does
+    /// not know, or no answer at all) is no jail, with the sentence that says why.
+    pub async fn isolation(&self) -> Isolation {
+        let health = match self.health().await {
+            Ok(reply) if reply.status == 200 => reply.read::<super::wire::HealthAnswer>().ok(),
+            _ => None,
+        };
+        let posture = health
+            .as_ref()
+            .filter(|health| health.features.iter().any(|f| f == ISOLATION_POSTURE))
+            .and_then(|health| health.isolation_posture.as_deref());
+        match posture {
+            Some("jailed") => Isolation::Jailed,
+            Some("none") => {
+                Isolation::Unjailed("docket reports it runs its agents without a jail".to_owned())
+            }
+            Some(other) => Isolation::Unjailed(format!(
+                "docket reports an isolation Tack does not know ({other}), read as no jail"
+            )),
+            None => Isolation::Unjailed(
+                "docket does not report its isolation, so Tack assumes there is no jail".to_owned(),
+            ),
         }
     }
 

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tack_app::AppError;
 use tack_app::ports::Artifacts;
 use tack_app::threads::{self, OpenThread, Post};
@@ -132,6 +132,42 @@ async fn run_snapshot(repo: &Repository, request_id: &str) -> Value {
         .unwrap()
         .unwrap();
     serde_json::from_str(&raw).unwrap()
+}
+
+/// A run started without a person ticking boxes (a thread's, as an auto-started task's) asks
+/// before each action unless every machine reports the agent sandboxed. docket's probe says
+/// `none` when it reports no jail or does not say, and `harness` when it reports one.
+#[tokio::test]
+async fn a_docket_run_asks_unless_docket_reported_a_jail() {
+    for (sandbox, approvals) in [("none", json!("ask")), ("harness", Value::Null)] {
+        let (board, thread) = threaded().await;
+        set_project(
+            &board.repo,
+            board.project_id,
+            UpdateProject {
+                default_harness: Some(Some("docket".into())),
+                ..UpdateProject::default()
+            },
+        )
+        .await;
+        let snapshot = json!({"harnesses": [{
+            "harness_kind": "docket",
+            "installed_version": "0.3.0",
+            "probed_at": "2026-11-07T00:00:00Z",
+            "sandbox": sandbox,
+        }]});
+        seed::agent_runner_capabilities(&board.repo, "runner-active", &snapshot.to_string()).await;
+        let turn = say(&board, thread, "go")
+            .await
+            .expect("posted")
+            .turn
+            .expect("a run");
+        let request = run_snapshot(&board.repo, &turn.request_id).await;
+        assert_eq!(
+            request["permission_policy"]["approvals"], approvals,
+            "{sandbox}: {request}"
+        );
+    }
 }
 
 #[tokio::test]

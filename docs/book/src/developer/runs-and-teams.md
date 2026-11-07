@@ -111,6 +111,7 @@ docket 0.3.0-beta.1 lists 21 features, and the tree after it a 22nd (`memoryDeci
 | `podResume` | `POST /pods/<p>/resume` | used: Resume team |
 | `memoryStatus` | `?status=` on the memory route | used: what a team has learnt and waits to learn |
 | `memoryDecide` | `POST /pods/<p>/memory/<id>` | used: Approve and Refuse on the team's sheet |
+| `isolationPosture` | `isolationPosture` on `GET /health`: `jailed` or `none` | used: the probe's `sandbox` is `harness` only for `jailed`; absent, `none` or unknown reads as `none` with its reason, so the run dialog and auto-start ask |
 
 An `apiVersion` below 6, or one that is not a number, is a probe error: "needs docket 0.3.0-beta.1 (API 6); this docket answers API N". A docket that answers the version but not `GET /escalations` is a probe error too: "needs docket 0.3.0-beta.1 with the escalation record; this docket answers API N without it". The version number cannot tell the two apart, so the route decides. `validate` runs both checks before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
 
