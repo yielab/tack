@@ -196,6 +196,14 @@ pub fn profile_network_for(tool_policy: &serde_json::Value, agent: &str) -> bool
     }
 }
 
+/// Whether a run of `agent` for an item asks for the network when its request does not say: what
+/// the profile gives, unless the item is not trusted, which starts without web tools. opencode is
+/// the exception, since it reaches the network on every run and the runner refuses a run that says
+/// it will not.
+pub fn network_for_item(tool_policy: &serde_json::Value, agent: &str, trusted: bool) -> bool {
+    profile_network_for(tool_policy, agent) && (trusted || agent == "opencode")
+}
+
 /// The tool names a profile gives one agent (`tool_policy.tools[agent]`), or none.
 fn tools_for<'a>(tool_policy: &'a serde_json::Value, agent: &str) -> Vec<&'a str> {
     tool_policy["tools"][agent]
@@ -675,6 +683,30 @@ mod tests {
                 "{agent} {policy}"
             );
         }
+    }
+
+    #[test]
+    fn an_untrusted_item_starts_without_web_tools_except_where_the_agent_cannot() {
+        let policy = serde_json::json!({"network": true});
+        for (agent, trusted, network) in [
+            ("claude-code", true, true),
+            ("claude-code", false, false),
+            ("codex", false, false),
+            ("docket", false, false),
+            ("docket", true, true),
+            ("opencode", false, true),
+        ] {
+            assert_eq!(
+                network_for_item(&policy, agent, trusted),
+                network,
+                "{agent} trusted={trusted}"
+            );
+        }
+        assert!(!network_for_item(
+            &serde_json::json!({}),
+            "claude-code",
+            true
+        ));
     }
 
     #[test]

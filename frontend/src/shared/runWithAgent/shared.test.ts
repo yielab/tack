@@ -15,6 +15,8 @@ import {
   resolveRunModel,
   profileNetworkFor,
   webToolsLockedReason,
+  isUntrustedSource,
+  untrustedReason,
   type RunWithAgentFormValues,
 } from './shared';
 import type { RunnerCapabilities, HarnessCapability } from '../execution';
@@ -336,5 +338,20 @@ describe('the Web tools default', () => {
   it('is locked on, with its reason, only for opencode', () => {
     expect(webToolsLockedReason('opencode')).toBe('opencode reaches the network on every run');
     expect(webToolsLockedReason('claude-code')).toBeNull();
+  });
+});
+
+describe('a card that came from outside', () => {
+  it('is untrusted unless a person typed it, and unknown while it loads', () => {
+    expect(isUntrustedSource('manual')).toBe(false);
+    expect(isUntrustedSource(undefined)).toBe(false);
+    for (const source of ['github', 'linear', 'json_import', 'csv_import', 'plan', 'outline', 'unknown']) {
+      expect(isUntrustedSource(source)).toBe(true);
+    }
+  });
+
+  it('says why, and does not claim web tools are off where the agent keeps them on', () => {
+    expect(untrustedReason('claude-code')).toBe('This card was imported, so the agent asks before each action and has no web tools.');
+    expect(untrustedReason('opencode')).toBe('This card was imported, so the agent asks before each action.');
   });
 });

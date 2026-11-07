@@ -95,6 +95,8 @@ export interface RunFlowProps {
   onApprovals: () => void;
   /** The person set the Web tools box, so a profile change no longer fills it. */
   onNetwork: () => void;
+  /** Why the run starts asking and without web tools, for a card that came from outside; null for the person's own. */
+  untrustedReason?: Accessor<string | null>;
   /** Why the Web tools box is on and cannot be changed, or null when it can. */
   networkLocked: Accessor<string | null>;
   /** The selected runner's own config has a verifier / pushes branches. */
@@ -332,6 +334,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         </div>
         <Show when={!props.decisionsAttested()}>
           <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
+        </Show>
+        <Show when={props.form.approvals === 'ask' ? props.untrustedReason?.() : null}>
+          {(reason) => <p class="pl-4 text-xs" data-testid="untrusted-reason" style={{ color: 'var(--color-text-tertiary)' }}>{reason()}</p>}
         </Show>
         <div class="flex items-center gap-2">
         <Switch

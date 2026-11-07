@@ -9,8 +9,11 @@ use support::{
     OPERATOR, add_profile, add_runner, bare_request, board, code, full_request, set_project,
     snapshot, start,
 };
+use tack_app::runs::start_run::PermissionRequest;
 use tack_app::runs::start_run::start_run;
-use tack_core::models::{CodeOrigin, CreateRole, UpdateProject, UpdateRole, WorkspaceMode};
+use tack_core::models::{
+    CodeOrigin, CreateItem, CreateRole, ItemSource, UpdateProject, UpdateRole, WorkspaceMode,
+};
 use tack_db::queries;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::{
@@ -655,6 +658,97 @@ async fn the_operators_run_keeps_what_it_asked_for() {
     assert_eq!(stored["permission_policy"]["approvals"], "auto");
     assert_eq!(stored["permission_policy"]["network"], true);
     assert_eq!(stored["origin"], Value::Null);
+}
+
+/// The board's project with a card that came from outside, as an import writes it.
+async fn imported_item(board: &support::Board, source: ItemSource) -> uuid::Uuid {
+    let project = board
+        .repo
+        .get_project(board.project_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let status = project.workflow.initial_status().unwrap().to_string();
+    board
+        .repo
+        .create_item_with_source(
+            board.project_id,
+            &status,
+            CreateItem {
+                title: "Imported card".into(),
+                ..Default::default()
+            },
+            source,
+        )
+        .await
+        .unwrap()
+        .id
+}
+
+/// A request that says nothing of approvals or the network, for `agent`, under its own key.
+fn silent_request(item_id: uuid::Uuid, agent: &str) -> tack_app::runs::start_run::RunRequest {
+    let mut request = full_request(item_id);
+    request.idempotency_key = format!("silent-{agent}");
+    request.requested_harness_kind = Some(agent.into());
+    request.permission_policy = PermissionRequest::new(vec![], None);
+    request
+}
+
+#[tokio::test]
+async fn an_untrusted_item_asks_and_has_no_web_tools_by_default_in_every_agent() {
+    let board = board().await;
+    let imported = imported_item(&board, ItemSource::Github).await;
+    for agent in ["claude-code", "codex", "opencode", "docket"] {
+        let started = start(&board, silent_request(imported, agent))
+            .await
+            .unwrap();
+        let stored = snapshot(&board.repo, &started).await;
+        assert_eq!(stored["permission_policy"]["approvals"], "ask", "{agent}");
+        // opencode reaches the network on every run, and the runner refuses a run that says not.
+        assert_eq!(
+            stored["permission_policy"]["network"],
+            agent == "opencode",
+            "{agent}"
+        );
+        assert_eq!(stored["metadata"]["item"]["trusted"], false, "{agent}");
+    }
+}
+
+#[tokio::test]
+async fn a_trusted_item_keeps_the_profiles_defaults_in_every_agent() {
+    let board = board().await;
+    for agent in ["claude-code", "codex", "opencode", "docket"] {
+        let started = start(&board, silent_request(board.item_id, agent))
+            .await
+            .unwrap();
+        let stored = snapshot(&board.repo, &started).await;
+        assert_eq!(
+            stored["permission_policy"]["approvals"],
+            Value::Null,
+            "{agent}"
+        );
+        // Only opencode reaches the network on every run; the test profile gives no other agent web tools.
+        assert_eq!(
+            stored["permission_policy"]["network"],
+            agent == "opencode",
+            "{agent}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_person_can_raise_what_an_untrusted_item_starts_with() {
+    let board = board().await;
+    let imported = imported_item(&board, ItemSource::Outline).await;
+    for agent in ["claude-code", "codex", "opencode", "docket"] {
+        let mut request = silent_request(imported, agent);
+        request.permission_policy.approvals = Some(tack_protocol::execution::Approvals::Auto);
+        request.permission_policy.network = Some(true);
+        let started = start(&board, request).await.unwrap();
+        let stored = snapshot(&board.repo, &started).await;
+        assert_eq!(stored["permission_policy"]["approvals"], "auto", "{agent}");
+        assert_eq!(stored["permission_policy"]["network"], true, "{agent}");
+    }
 }
 
 /// A request body's machine is both fields or neither, and only a runner or a fleet: the typed

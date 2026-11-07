@@ -59,10 +59,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                 "GR5: depends on the user's Codex config, no proxy of the runner's",
             ),
         ),
-        (
-            ParityRule::UntrustedItemAsks,
-            ParityCell::missing("GR12: the item's trust does not change the sandbox mode"),
-        ),
+        (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (
             ParityRule::TokenLimitWhileRunning,
