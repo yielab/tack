@@ -221,6 +221,8 @@ fn env_policy_refuses_the_names_that_steer_the_runner() {
         "ENV",
         "OPENAI_BASE_URL",
         "ANTHROPIC_BASE_URL",
+        "http_proxy",
+        "no_proxy",
     ] {
         assert!(env_policy::refuse(name).is_some(), "{name} must be refused");
     }
@@ -232,6 +234,7 @@ fn env_policy_refuses_the_names_that_steer_the_runner() {
         "NODE_ENV",
         "BASE_URL",
         "TERM",
+        "MY_FLAG",
     ] {
         assert_eq!(env_policy::refuse(name), None, "{name} must be allowed");
     }
@@ -243,6 +246,116 @@ async fn a_request_naming_ld_preload_is_rejected_before_any_process_starts() {
     let reason = rejected_reason(&fixture, &[("LD_PRELOAD", literal("x"))]).await;
     assert!(
         reason.starts_with("environment_name_refused: LD_PRELOAD ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_http_proxy_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("HTTP_PROXY", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: HTTP_PROXY ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_https_proxy_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("HTTPS_PROXY", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: HTTPS_PROXY ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_all_proxy_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("ALL_PROXY", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: ALL_PROXY ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_no_proxy_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("NO_PROXY", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: NO_PROXY ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_node_path_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("NODE_PATH", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: NODE_PATH ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_java_tool_options_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("JAVA_TOOL_OPTIONS", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: JAVA_TOOL_OPTIONS ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_claude_config_dir_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("CLAUDE_CONFIG_DIR", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: CLAUDE_CONFIG_DIR ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_codex_home_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("CODEX_HOME", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: CODEX_HOME ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_opencode_config_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("OPENCODE_CONFIG", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: OPENCODE_CONFIG ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_xdg_base_directories_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("XDG_CONFIG_HOME", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: XDG_CONFIG_HOME ("),
+        "{reason}"
+    );
+}
+
+#[tokio::test]
+async fn env_policy_refuses_npm_config_settings_from_a_request() {
+    let fixture = fixture(&[]);
+    let reason = rejected_reason(&fixture, &[("npm_config_cache", literal("x"))]).await;
+    assert!(
+        reason.starts_with("environment_name_refused: npm_config_cache ("),
         "{reason}"
     );
 }
