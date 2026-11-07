@@ -161,15 +161,14 @@ fn create_execution(client: &TackClient, args: &Value) -> Result<Value, String> 
         agent_profile_id: agent_profile_id.as_deref(),
         requested_harness_kind: harness.as_deref(),
         requested_model: model.as_deref(),
-        // Fixed: a run over MCP always asks before each action, with no network.
-        permission_policy: json!({ "approvals": "ask", "network": false }),
+        // The server makes a run over MCP ask before each action, with no network.
+        permission_policy: json!({}),
         budgets: opt_object_or_empty(args, "budgets"),
         environment: json!({}),
         metadata: opt_object_or_empty(args, "metadata"),
         timeout_seconds,
     };
-    let mut body = execution::create_execution_body(selector.as_ref(), values);
-    body["origin"] = json!("mcp");
+    let body = execution::create_execution_body(selector.as_ref(), values);
     let mut answer = call(client.post("/executions", &body))?;
     // A caller written before the setting was removed still sends it: accepted, and told.
     if args.get("status_map_policy_id").is_some() {

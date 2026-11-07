@@ -5,7 +5,7 @@
 //! live in `chaos_races.rs` — split out once this file passed 1000 lines.
 
 #[path = "chaos_common.rs"]
-mod chaos_common;
+pub(super) mod chaos_common;
 
 use crate::common;
 use axum::body::{Body, to_bytes};

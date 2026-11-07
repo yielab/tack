@@ -824,9 +824,12 @@ pub async fn continue_execution(
 pub async fn create_execution(
     State(state): State<OperatorExecutionState>,
     headers: HeaderMap,
+    from_mcp: Option<axum::Extension<crate::middleware::FromMcp>>,
     Json(input): Json<CreateExecution>,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    create_as(state, principal(&headers)?, input).await
+    // Who is calling decides it, not the body: a run over MCP asks first, with no network.
+    let over_mcp = from_mcp.is_some_and(|axum::Extension(mark)| mark.0);
+    create_as(state, principal(&headers)?, input, over_mcp).await
 }
 
 /// The limit a stored run carries, with who applies it and the sentence every screen prints. Reads
@@ -1004,9 +1007,13 @@ pub(crate) async fn create_as(
     state: OperatorExecutionState,
     principal: String,
     input: CreateExecution,
+    over_mcp: bool,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let named_removed_setting = input.status_map_policy_id.is_some();
-    let input = RunRequest::try_from(input).map_err(refused)?;
+    let mut input = RunRequest::try_from(input).map_err(refused)?;
+    if over_mcp {
+        input.make_mcp_run();
+    }
     start_run(&state.repo, state.clock.now(), &principal, input)
         .await
         .map(|started| created(started, named_removed_setting))

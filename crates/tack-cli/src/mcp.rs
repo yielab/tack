@@ -30,6 +30,17 @@ use projection::{compact_item, due_timestamp};
 /// Protocol version we advertise when the client doesn't specify one.
 const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 
+/// Whether this process may serve MCP. Without an agent credential it would be the operator,
+/// every scope and no one asked, for whichever model is on the other end of the pipe; that is a
+/// choice to make out loud (`--operator`), not a default.
+pub fn admit(client: &TackClient, operator: bool) -> Result<(), &'static str> {
+    if operator || client.acts_as_agent() {
+        Ok(())
+    } else {
+        Err("use an agent credential or --operator")
+    }
+}
+
 /// Run the stdio MCP loop until stdin closes.
 ///
 /// `stdout` carries the protocol — nothing else may be written there.

@@ -43,6 +43,34 @@ fn initialized_notification_has_no_response() {
     assert!(resp.is_none());
 }
 
+fn client_with_token(token: Option<&str>) -> TackClient {
+    TackClient::new(&Config {
+        base_url: "http://127.0.0.1:0".into(),
+        token: token.map(str::to_owned),
+    })
+    .unwrap()
+}
+
+/// Without an agent credential `tack mcp` would be the operator for whatever model is on the
+/// pipe: it is refused unless `--operator` says so. The operator's own token is not a credential.
+#[test]
+fn mcp_is_refused_without_an_agent_credential_unless_the_operator_asks() {
+    let agent = format!("{}abc", tack_app::runs::agent_credential::SECRET_PREFIX);
+    for (token, operator, admitted) in [
+        (None, false, false),
+        (Some("operator-token"), false, false),
+        (None, true, true),
+        (Some("operator-token"), true, true),
+        (Some(agent.as_str()), false, true),
+    ] {
+        let verdict = admit(&client_with_token(token), operator);
+        assert_eq!(verdict.is_ok(), admitted, "{token:?} operator={operator}");
+        if !admitted {
+            assert_eq!(verdict, Err("use an agent credential or --operator"));
+        }
+    }
+}
+
 fn mcp_tool_names() -> Vec<String> {
     let resp = handle_line(
         &test_client(),
@@ -489,7 +517,6 @@ async fn mcp_create_execution_posts_the_expected_body() {
             "selector_id": "fleet_1",
             "agent_profile_id": "ap_1",
             "requested_harness_kind": "claude_code",
-            "permission_policy": { "approvals": "ask", "network": false },
             "timeout_seconds": 3600
         })))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
