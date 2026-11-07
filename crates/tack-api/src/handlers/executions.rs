@@ -33,6 +33,7 @@ use uuid::Uuid;
 use tack_core::run_defaults::Resolved;
 
 use crate::AppState;
+use crate::error::log_store_failure;
 use tack_app::AppError;
 use tack_app::runs::cancel_run::{Cancellation, cancel_run};
 use tack_app::runs::continue_run::continue_run;
@@ -633,6 +634,9 @@ pub struct AttemptMerge {
     pub reason: Option<String>,
     /// Who merged the attempt and under which policy, or `null` while it has not merged.
     pub merged: Option<MergedBy>,
+    /// What the attempt's merge-readiness pack recommends, when it has one. Over `reject` the
+    /// Merge button asks for a written reason.
+    pub pack_decision: Option<tack_protocol::mrp::MergeDecision>,
 }
 
 /// The merge that happened for an attempt: `trigger` is what asked for it
@@ -1565,6 +1569,12 @@ pub async fn list_execution_attempts(
                 Some("Merging is not available on this board".to_owned()),
             ),
         };
+        let pack_decision = match (&state.app, enabled) {
+            (Some(app), true) => {
+                tack_app::merge::pack_decision(&app.repo, &app.ports(), &attempt.id).await
+            }
+            _ => None,
+        };
         let merged = merge.and_then(|row| {
             row.merged_at.map(|merged_at| MergedBy {
                 trigger: row.trigger,
@@ -1601,6 +1611,7 @@ pub async fn list_execution_attempts(
                 enabled,
                 reason,
                 merged,
+                pack_decision,
             },
             rerun_at_l3,
         ));
@@ -1716,17 +1727,28 @@ fn attempt_summary(
     }
 }
 
+/// The Merge button's press.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MergeAttemptRequest {
+    /// Required when the attempt's pack recommends `reject`; a blank one counts as none.
+    pub reason: Option<String>,
+}
+
 /// `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
 /// attempt's pull request at its head commit, opening the pull request first when
 /// it is missing; a refusal is a `409` carrying the reason, already recorded on
-/// the item.
+/// the item. When the pack recommends `reject` the person still decides, but writes
+/// why: the press is a `400` without a `reason`, and a merge that goes through is
+/// kept as the attempt's accepting review, with that reason.
 #[utoipa::path(
     post,
     path = "/api/attempts/{attempt_id}/merge",
     tag = "execution-operator",
     params(("attempt_id" = String, Path, description = "Execution attempt ID (opaque)")),
+    request_body = MergeAttemptRequest,
     responses(
         (status = 200, description = "Merged; carries the merge commit's sha", body = serde_json::Value),
+        (status = 400, description = "invalid_request (the pack recommends reject and no reason was written)", body = RunnerV1ErrorEnvelope),
         (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
         (status = 409, description = "conflict: the merge was held, the message says why", body = RunnerV1ErrorEnvelope),
     ),
@@ -1734,6 +1756,8 @@ fn attempt_summary(
 pub async fn merge_attempt(
     State(state): State<OperatorExecutionState>,
     Path(attempt_id): Path<String>,
+    headers: HeaderMap,
+    Json(input): Json<MergeAttemptRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let exists = execution_attempts::attempt_exists(&state.repo, &attempt_id)
         .await
@@ -1746,6 +1770,22 @@ pub async fn merge_attempt(
             json!({"resource": "execution_attempt"}),
         ));
     };
+    let reason = input
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty());
+    let over_reject = tack_app::merge::pack_decision(&app.repo, &app.ports(), &attempt_id).await
+        == Some(tack_protocol::mrp::MergeDecision::Reject);
+    if over_reject && reason.is_none() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "The pack recommends rejecting this change: write why you are merging it anyway",
+            json!({"field": "reason"}),
+        ));
+    }
+    let reviewed_by = principal(&headers)?;
     match tack_app::merge::attempt(
         &app.repo,
         state.clock.as_ref(),
@@ -1756,7 +1796,25 @@ pub async fn merge_attempt(
     )
     .await
     {
-        Ok(sha) => Ok(Json(json!({"merged": true, "merge_sha": sha}))),
+        Ok(sha) => {
+            if over_reject {
+                // An attempt a person already reviewed keeps that verdict.
+                let recorded = state
+                    .repo
+                    .record_review_of_attempt(
+                        &attempt_id,
+                        "accepted",
+                        reason,
+                        &reviewed_by,
+                        &state.clock.now().to_rfc3339(),
+                    )
+                    .await;
+                if let Err(failure @ (StoreError::Sql(_) | StoreError::Corrupt { .. })) = recorded {
+                    log_store_failure(&failure);
+                }
+            }
+            Ok(Json(json!({"merged": true, "merge_sha": sha})))
+        }
         Err(reason) => Err(error(
             StatusCode::CONFLICT,
             StableErrorCode::Conflict,

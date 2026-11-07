@@ -3590,6 +3590,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -3627,6 +3628,7 @@ version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",

@@ -148,6 +148,9 @@ pub struct Facts {
     /// unknown, `Err` with the sentence when the run names a team its computer
     /// does not report.
     pub ceiling: Result<Option<Level>, String>,
+    /// The decision inside the signed statement, read once the signature held;
+    /// `None` when it was not read. The automatic merge needs it to equal `decision`.
+    pub statement_decision: Option<MergeDecision>,
 }
 
 /// The first condition that stops a merge. One variant per condition; the
@@ -158,6 +161,8 @@ pub enum Hold {
     NotMerge,
     LevelBelowL4,
     HarnessCeiling { ceiling: Level, wanted: Level },
+    CeilingUnknown,
+    DecisionMismatch,
     TeamNotReported(String),
     Require(String),
     Attestation(String),
@@ -181,6 +186,12 @@ impl fmt::Display for Hold {
             Hold::HarnessCeiling { ceiling, .. } => write!(
                 f,
                 "The team that ran this stays at {ceiling}: it needs a person during a run"
+            ),
+            Hold::CeilingUnknown => f.write_str(
+                "The team that ran this does not report how much autonomy it allows, so it needs a person",
+            ),
+            Hold::DecisionMismatch => f.write_str(
+                "The signed statement does not say what the pack says; merge it with the Merge button after reading it",
             ),
             Hold::TeamNotReported(reason)
             | Hold::Require(reason)
@@ -229,10 +240,14 @@ pub fn evaluate(f: &Facts) -> Result<(), Hold> {
                         wanted: f.level,
                     });
                 }
-                Ok(_) => {}
+                Ok(None) => return Err(Hold::CeilingUnknown),
+                Ok(Some(_)) => {}
             }
             check(&f.require).map_err(Hold::Require)?;
             check(&f.attestation).map_err(Hold::Attestation)?;
+            if f.statement_decision.as_ref() != Some(&f.decision) {
+                return Err(Hold::DecisionMismatch);
+            }
             check(&f.budget).map_err(Hold::Budget)?;
         }
     }
@@ -261,7 +276,8 @@ mod tests {
             budget: Check::Pass,
             pr_open: Check::Pass,
             ci: CiState::Green,
-            ceiling: Ok(None),
+            ceiling: Ok(Some(Level::L5)),
+            statement_decision: Some(MergeDecision::Merge),
         };
         let fail = |s: &str| Check::Fail(s.to_string());
         let rows: Vec<(&str, Facts, Result<(), Hold>)> = vec![
@@ -434,6 +450,39 @@ mod tests {
                 Err(Hold::TeamNotReported(
                     "Team saas-dev is not reported yet by this computer".into(),
                 )),
+            ),
+            (
+                "auto, the team's ceiling is unknown",
+                Facts {
+                    ceiling: Ok(None),
+                    ..base(Trigger::Auto)
+                },
+                Err(Hold::CeilingUnknown),
+            ),
+            (
+                "auto, the signed statement says something else than the pack",
+                Facts {
+                    statement_decision: Some(MergeDecision::Review),
+                    ..base(Trigger::Auto)
+                },
+                Err(Hold::DecisionMismatch),
+            ),
+            (
+                "auto, the statement's decision was not read",
+                Facts {
+                    statement_decision: None,
+                    ..base(Trigger::Auto)
+                },
+                Err(Hold::DecisionMismatch),
+            ),
+            (
+                "button, an unknown ceiling and a differing statement do not hold the Merge button",
+                Facts {
+                    ceiling: Ok(None),
+                    statement_decision: Some(MergeDecision::Reject),
+                    ..base(Trigger::Button)
+                },
+                Ok(()),
             ),
             (
                 "auto, the team's ceiling allows the level",

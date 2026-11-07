@@ -2,6 +2,7 @@
 //! has told the board what happened on GitHub, take a level off any domain whose
 //! automatic merge was reverted, then try every change that may merge by itself.
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use tack_core::autonomy::{Check, Level, Trigger, level_for};
 use tack_db::repo::autonomy as store;
@@ -152,9 +153,9 @@ pub fn is_attended(team: &TeamReport) -> bool {
 }
 
 /// The most autonomy the team that ran an attempt allows: the named team's as the
-/// computer reports it now (attended means L3), or the sentence that says the
-/// computer does not report it. A run of an agent with no team keeps the
-/// harness's own ceiling; `Ok(None)` is unknown.
+/// computer reports it now (attended means L3, lights-out L5), or the sentence that
+/// says the computer does not report it. A run of an agent with no team keeps the
+/// harness's own ceiling; `Ok(None)` is unknown, and the automatic merge holds on it.
 fn ceiling_of(
     snapshot: &str,
     kind: Option<&str>,
@@ -170,7 +171,13 @@ fn ceiling_of(
     };
     harness
         .and_then(|harness| harness.teams?.into_iter().find(|t| t.name == name))
-        .map(|team| is_attended(&team).then_some(Level::L3))
+        .map(|team| {
+            Some(if is_attended(&team) {
+                Level::L3
+            } else {
+                Level::L5
+            })
+        })
         .ok_or_else(|| format!("Team {name} is not reported yet by this computer"))
 }
 
@@ -209,6 +216,22 @@ pub async fn rerun_at_l3(repo: &Repository, attempt_id: &str) -> (bool, Option<S
         return no("This run already ran at L3");
     }
     (true, None)
+}
+
+/// The decision the signed statement carries, read from the envelope prill just accepted: the
+/// statement's predicate is the whole pack prill wrote, so its `recommendation.decision` is
+/// covered by the signature, unlike the pack the runner translated.
+fn statement_decision(envelope: &[u8]) -> Result<MergeDecision, String> {
+    let unreadable = || "The signed statement could not be read".to_owned();
+    let envelope: Value = serde_json::from_slice(envelope).map_err(|_| unreadable())?;
+    let payload = STANDARD
+        .decode(envelope["payload"].as_str().ok_or_else(unreadable)?)
+        .map_err(|_| unreadable())?;
+    let statement: Value = serde_json::from_slice(&payload).map_err(|_| unreadable())?;
+    let word = statement["predicate"]["recommendation"]["decision"]
+        .as_str()
+        .ok_or_else(|| "The signed statement carries no decision".to_owned())?;
+    Ok(MergeDecision::from_prill(word))
 }
 
 fn fail(reason: &str) -> Check {
@@ -346,7 +369,13 @@ async fn gather(
             match checked {
                 Ok(keyid) => {
                     extra.attestation_keyid = Some(keyid);
-                    Check::Pass
+                    match statement_decision(&envelope) {
+                        Ok(decision) => {
+                            extra.statement_decision = Some(decision);
+                            Check::Pass
+                        }
+                        Err(reason) => Check::Fail(reason),
+                    }
                 }
                 Err(reason) => Check::Fail(format!("The pack's signature was refused: {reason}")),
             }
@@ -387,4 +416,38 @@ async fn budget(
         ));
     }
     Check::Pass
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn envelope(statement: &Value) -> Vec<u8> {
+        json!({
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": STANDARD.encode(statement.to_string()),
+            "signatures": [],
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn the_statement_decision_is_read_from_the_predicate() {
+        let said = |word: &str| {
+            statement_decision(&envelope(
+                &json!({"predicate": {"recommendation": {"decision": word}}}),
+            ))
+        };
+        assert_eq!(said("auto-merge-eligible"), Ok(MergeDecision::Merge));
+        assert_eq!(said("human-review"), Ok(MergeDecision::Review));
+        assert_eq!(said("anything-else"), Ok(MergeDecision::Reject));
+    }
+
+    #[test]
+    fn a_statement_without_a_readable_decision_is_refused() {
+        assert!(statement_decision(b"not json").is_err());
+        assert!(statement_decision(br#"{"payload": "%%%"}"#).is_err());
+        assert!(statement_decision(&envelope(&json!({"predicate": {}}))).is_err());
+    }
 }

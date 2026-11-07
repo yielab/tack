@@ -31,6 +31,10 @@ GitHub token. Tack reads CI when you press it, not before:
   needs **Contents: write**. Fix the token on GitHub, then press again.
 - Branch protection or a conflict: GitHub's own reason is shown.
 
+When the verifier's pack recommends **rejecting** the change, the button still works, because you decide,
+but it asks you to write why you are merging it anyway. **Merge** stays disabled until you have, and the
+reason is kept with the run as your review of it.
+
 ## Merge when moved to Done
 
 With this option on, moving a task to Done merges its latest finished run. The move happens
@@ -61,11 +65,13 @@ that does not is shown on the task, and a person reviews it as usual:
 1. The run did not come through MCP.
 2. The verifier said the change can merge.
 3. The change's domain is at L4 or L5.
-4. The team that ran the change does not need a person during a run (see [The ceiling](#the-ceiling-of-a-team)).
+4. The team that ran the change does not need a person during a run, and the computer reports how much
+   autonomy the team allows (see [The ceiling](#the-ceiling-of-a-team)).
 5. The verifier's pack lists every stage the project requires (at least one is needed) as
    passed. A stage it skipped as not applicable does not
    count.
-6. The verifier's pack is signed, and the signature checks against the exact commit.
+6. The verifier's pack is signed, the signature checks against the exact commit, and the signed statement
+   says the same as the pack: if the two differ, nothing merges by itself.
 7. The project has not used up its tokens or its automatic merges for today.
 8. The pull request is open, and CI on that commit is green.
 
@@ -94,7 +100,7 @@ An administrator sets most of this up; see
 
 ### The ceiling of a team
 
-A team that needs a person during a run keeps its tasks at L3 however high the project's level is: the automatic merge holds them and says "The team that ran this stays at L3: it needs a person during a run". The **Merge** button is not held. What to change is under [Ceiling](automation.md#ceiling).
+A team that needs a person during a run keeps its tasks at L3 however high the project's level is: the automatic merge holds them and says "The team that ran this stays at L3: it needs a person during a run". A team whose computer does not report its ceiling is held the same way, with the sentence "The team that ran this does not report how much autonomy it allows, so it needs a person". The **Merge** button is not held. What to change is under [Ceiling](automation.md#ceiling).
 
 ## Sending a rejected change back to the agent
 
