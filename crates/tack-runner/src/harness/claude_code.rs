@@ -72,12 +72,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                 "GR5: Claude Code's web tools reach the network directly, no proxy of the runner's",
             ),
         ),
-        (
-            ParityRule::UntrustedItemAsks,
-            ParityCell::missing(
-                "GR12: the item's trust does not change the tools or approvals of the run",
-            ),
-        ),
+        (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),
         (ParityRule::KillEverythingOnCancel, ParityCell::Runner),

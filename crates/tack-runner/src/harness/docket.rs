@@ -90,10 +90,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
             ParityRule::EgressByAllowList,
             ParityCell::delegated("docket"),
         ),
-        (
-            ParityRule::UntrustedItemAsks,
-            ParityCell::missing("GR12: the item's trust is not passed to docket"),
-        ),
+        (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (
             ParityRule::TokenLimitWhileRunning,

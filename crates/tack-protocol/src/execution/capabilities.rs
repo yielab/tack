@@ -952,7 +952,7 @@ pub enum ParityRule {
     NoSandboxMeansAsk,
     /// The network is reached only through the allow-list.
     EgressByAllowList,
-    /// An item that is not trusted gets no file reads or web access without asking.
+    /// An item that is not trusted starts out asking before each action and without web tools.
     UntrustedItemAsks,
     /// The agent runs on its own configuration, not the user's, and credentials are redacted.
     AgentConfigIsolated,
@@ -993,7 +993,7 @@ impl ParityRule {
             ParityRule::NoSandboxMeansAsk => "Without a sandbox, asks before each action",
             ParityRule::EgressByAllowList => "Reaches the network only through the allow-list",
             ParityRule::UntrustedItemAsks => {
-                "An untrusted item gets no file reads or web access without asking"
+                "An untrusted item starts out asking before each action and without web tools"
             }
             ParityRule::AgentConfigIsolated => {
                 "Uses its own configuration, not yours, and credentials are redacted"

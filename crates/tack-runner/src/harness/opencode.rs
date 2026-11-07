@@ -60,10 +60,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
             ParityRule::EgressByAllowList,
             ParityCell::missing("GR5: webfetch is always allowed, no proxy of the runner's"),
         ),
-        (
-            ParityRule::UntrustedItemAsks,
-            ParityCell::missing("GR12: the item's trust does not change the permission block"),
-        ),
+        (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),
         (ParityRule::KillEverythingOnCancel, ParityCell::Runner),
