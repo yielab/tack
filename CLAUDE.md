@@ -142,8 +142,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   or `open`, enforced only with the runner's `[egress] enforce`), the merge holds on an unknown ceiling and on
   changed checks, MCP is an agent, and the development crate `tack-evals` runs regression, safety and verifier
   suites (`evals/`, baselines in `evals/baselines/`, Claude Code with Haiku 5.5: both suites saturated) with
-  Anthropic at integration only, never in CI; production gets quality figures and a trend notice. Left: the
-  live suite against docket and prill, the verifier-set labels (a person, about an hour), Codex/opencode/docket
+  Anthropic at integration only, never in CI; production gets quality figures and a trend notice. The live suite (35 tests) passes
+  against docket `f8dd565e`; `--check` finds docket's new `search` field not yet in the fixtures. Left: the
+  verifier-set labels (a person, about an hour), Codex/opencode/docket
   baselines, the Reviewer verdict stored, an `allowed_hosts` editor, C4-1's L6 after `v0.2.0-beta.1`, the plan's
   decision 8. Asks to prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
