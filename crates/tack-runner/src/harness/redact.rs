@@ -92,6 +92,44 @@ impl SecretMaterial {
     }
 }
 
+/// The secrets in a CLI's login file (`~/.claude/.credentials.json`,
+/// `~/.codex/auth.json`): every string under a key that names a token, a key
+/// or a secret, however deep. A file that is absent or is not JSON gives none.
+/// The values are the CLI's own, so a run that prints one is leaking the
+/// person's login.
+pub fn login_secrets(file: &std::path::Path) -> Vec<String> {
+    // Shorter than this is a flag or a word (`"max"`), not a credential.
+    const LEAST: usize = 8;
+    fn collect(value: &serde_json::Value, secret: bool, found: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) if secret && text.len() >= LEAST => {
+                found.push(text.clone());
+            }
+            serde_json::Value::Object(map) => {
+                for (key, inner) in map {
+                    let key = key.to_ascii_lowercase();
+                    let named = ["token", "key", "secret"]
+                        .iter()
+                        .any(|word| key.contains(word));
+                    collect(inner, secret || named, found);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                items.iter().for_each(|inner| collect(inner, secret, found));
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    if let Some(value) = std::fs::read(file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    {
+        collect(&value, false, &mut found);
+    }
+    found
+}
+
 /// A `Debug`-safe stand-in for an environment map. Formatting it prints only
 /// the sorted key set, never a value — matching how
 /// [`crate::config::EnrollmentCredential`] already redacts `Debug`/`Display`.
@@ -198,6 +236,34 @@ mod tests {
         assert!(formatted.contains("TACK_TEST_SECRET"), "keys are visible");
         assert!(!formatted.contains("canary-env-value"));
         assert!(!formatted.contains("also-secret"));
+    }
+
+    #[test]
+    fn login_secrets_reads_the_tokens_of_a_login_file_and_nothing_else() {
+        let dir = tempfile::tempdir().expect("directory");
+        let file = dir.path().join("login.json");
+        std::fs::write(
+            &file,
+            r#"{"claudeAiOauth":{"accessToken":"canary-access-token","refreshToken":"canary-refresh-token",
+                "expiresAt":1790000000000,"scopes":["user:inference"],"subscriptionType":"maxplan"},
+               "OPENAI_API_KEY":"sk-canary-key","tokens":{"id_token":"canary-id.jwt"},"short":"abc",
+               "last_refresh":"2026-11-01T00:00:00Z"}"#,
+        )
+        .expect("login file");
+        let mut found = login_secrets(&file);
+        found.sort();
+        assert_eq!(
+            found,
+            [
+                "canary-access-token",
+                "canary-id.jwt",
+                "canary-refresh-token",
+                "sk-canary-key"
+            ]
+        );
+        assert!(login_secrets(&dir.path().join("absent.json")).is_empty());
+        std::fs::write(&file, "not json").expect("file");
+        assert!(login_secrets(&file).is_empty());
     }
 
     #[test]

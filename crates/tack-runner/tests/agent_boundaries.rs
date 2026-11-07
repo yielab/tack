@@ -414,7 +414,11 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     cancels_over_api: false,
     reports_progress: false,
-    sandbox_binds: &[".claude"],
+    sandbox_binds: &[sandbox::ConfigDir {
+        name: ".claude",
+        read_only: &["settings.json"],
+        login: &[".credentials.json"],
+    }],
     parity: &[],
     readiness: None,
     models_docs: "",
@@ -633,6 +637,9 @@ async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
         std::fs::create_dir_all(path).expect("directory");
     }
     std::fs::write(state.join("token"), "secret").expect("state file");
+    for name in ["settings.json", ".credentials.json", "history.jsonl"] {
+        std::fs::write(home.join(".claude").join(name), "{}").expect("config file");
+    }
     let argv_file = dir.path().join("argv");
     let bwrap = bin.join("bwrap");
     std::fs::write(
@@ -660,16 +667,28 @@ async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
 
     let argv = std::fs::read_to_string(&argv_file).expect("bwrap ran");
     let args: Vec<&str> = argv.lines().collect();
-    let bound = |source: &std::path::Path| {
+    let bound_by = |flag: &str, source: &std::path::Path| {
         let source = source.display().to_string();
         args.windows(3)
-            .any(|w| w[0] == "--bind" && w[1] == source && w[2] == source)
+            .any(|w| w[0] == flag && w[1] == source && w[2] == source)
     };
+    let bound = |source: &std::path::Path| bound_by("--bind", source);
     assert!(bound(&workspace), "the workspace is bound: {args:?}");
     assert!(
-        bound(&home.join(".claude")),
-        "the claude-code bind: {args:?}"
+        bound_by("--ro-bind", &home.join(".claude/settings.json")),
+        "the settings are read-only: {args:?}"
     );
+    assert!(
+        bound(&home.join(".claude/.credentials.json")),
+        "the login is shared as it is: {args:?}"
+    );
+    for not_bound in [".claude", ".claude/history.jsonl"] {
+        let path = home.join(not_bound).display().to_string();
+        assert!(
+            args.iter().all(|arg| *arg != path),
+            "{not_bound} is the run's own, not the person's: {args:?}"
+        );
+    }
     assert!(
         args.iter()
             .all(|arg| !arg.contains(state.join("token").to_str().unwrap())
@@ -751,6 +770,338 @@ async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
         AttemptState::Succeeded
     );
     assert!(written.join("marker").exists(), "the workspace is writable");
+}
+
+/// What a CLI that is handed its own config directory does there, run for real in `bwrap`: the
+/// script tries to rewrite the person's config, then does what a CLI does while it works.
+const CONFIG_SCRIPT: &str = r#"#!/bin/sh
+dir="$HOME/$TACK_TEST_CONFIG_DIR"
+if [ "$TACK_TEST_CASE" = attack ]; then
+  ( echo '{"hooks":"evil"}' > "$dir/$TACK_TEST_CONFIG_FILE" ) 2>/dev/null && { echo "rewrote the config" >&2; exit 1; }
+  ( rm -f "$dir/$TACK_TEST_CONFIG_FILE" ) 2>/dev/null
+  ( mv "$dir/$TACK_TEST_CONFIG_FILE" "$dir/moved" ) 2>/dev/null
+  grep -q original "$dir/$TACK_TEST_CONFIG_FILE" || { echo "the config is gone or changed" >&2; exit 1; }
+  [ ! -e "$dir/history.jsonl" ] || { echo "the person's history is visible" >&2; exit 1; }
+else
+  grep -q original "$dir/$TACK_TEST_CONFIG_FILE" || { echo "the config is not readable" >&2; exit 1; }
+  mkdir -p "$dir/sessions" && echo turn > "$dir/sessions/one.jsonl" || { echo "no session" >&2; exit 1; }
+  echo "turn two" >> "$dir/sessions/one.jsonl" || { echo "session not kept" >&2; exit 1; }
+  echo refreshed > "$dir/$TACK_TEST_LOGIN_FILE" || { echo "the login is not refreshed" >&2; exit 1; }
+fi
+"#;
+
+/// The config script under a descriptor's real binds.
+struct ConfigGrammar {
+    descriptor: &'static HarnessDescriptor,
+    env: Vec<(&'static str, String)>,
+}
+
+impl HarnessGrammar for ConfigGrammar {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        self.descriptor
+    }
+
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
+        RunGrammar.capabilities()
+    }
+
+    fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        Ok(Invocation {
+            env: self
+                .env
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+            ..Default::default()
+        })
+    }
+
+    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        RunReport::verdict(
+            matches!(result.exit, ProcessExit::Exited(0)),
+            serde_json::json!({}),
+        )
+    }
+}
+
+/// `(real descriptor, config file the CLI reads, login file)` for each CLI whose own directory is
+/// bound into the sandbox.
+fn config_dirs() -> [(&'static HarnessDescriptor, &'static str, &'static str); 2] {
+    [
+        (
+            &tack_runner::harness::claude_code::DESCRIPTOR,
+            "settings.json",
+            ".credentials.json",
+        ),
+        (
+            &tack_runner::harness::codex::DESCRIPTOR,
+            "config.toml",
+            "auth.json",
+        ),
+    ]
+}
+
+/// Runs the config script as `descriptor`'s CLI in a real `bwrap` against a home that holds a
+/// config, a login and a history, and returns that home for the caller to read; `None` when
+/// this machine has no `bwrap` (unless `TACK_REQUIRE_BWRAP=1`, which makes that a failure).
+async fn run_config_script(
+    name: &str,
+    descriptor: &'static HarnessDescriptor,
+    config_file: &str,
+    login_file: &str,
+    case: &str,
+) -> Option<(AttemptState, PathBuf, tempfile::TempDir)> {
+    let path = tack_runner::ProcessEnv::from_process().search_path();
+    if sandbox::detect(path.as_deref(), None).kind != sandbox::SandboxKind::Bwrap {
+        if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+            panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
+        }
+        println!("skipped: bwrap is not on PATH");
+        return None;
+    }
+    let dir = root(&format!("config-{name}-{case}"));
+    let (state, home, workspace) = (
+        dir.path().join("state"),
+        dir.path().join("home"),
+        dir.path().join("workspace"),
+    );
+    let config_dir = home.join(format!(
+        ".{}",
+        descriptor.kind.replace("claude-code", "claude")
+    ));
+    for path in [&state, &config_dir, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    std::fs::write(config_dir.join(config_file), "original config").expect("config");
+    std::fs::write(config_dir.join(login_file), "original login").expect("login");
+    std::fs::write(config_dir.join("history.jsonl"), "private").expect("history");
+    let script = dir.path().join("cli");
+    std::fs::write(&script, CONFIG_SCRIPT).expect("script");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("executable");
+    let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        program: Box::leak(script.display().to_string().into_boxed_str()),
+        ..*descriptor
+    }));
+    let grammar = ConfigGrammar {
+        descriptor,
+        env: vec![
+            ("HOME", home.display().to_string()),
+            (
+                "TACK_TEST_CONFIG_DIR",
+                config_dir
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            ("TACK_TEST_CONFIG_FILE", config_file.to_owned()),
+            ("TACK_TEST_LOGIN_FILE", login_file.to_owned()),
+            ("TACK_TEST_CASE", case.to_owned()),
+        ],
+    };
+    let found = sandbox::detect(path.as_deref(), Some(&home));
+    let harness = sandboxed_harness(grammar, &state, found);
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new(descriptor.kind);
+    let handle = harness.start(&spec).await.expect("starts");
+    let outcome = harness.wait(&handle).await.expect("finishes");
+    // The guard goes back with the home, so the caller reads it before it is deleted.
+    let home = dir.path().join("home");
+    Some((outcome.terminal_state, home, dir))
+}
+
+#[tokio::test]
+async fn bind_the_agents_config_cannot_be_rewritten_from_inside_the_sandbox() {
+    for (descriptor, config_file, login_file) in config_dirs() {
+        let Some((state, home, _guard)) =
+            run_config_script("attack", descriptor, config_file, login_file, "attack").await
+        else {
+            return;
+        };
+        let kind = descriptor.kind;
+        assert_eq!(
+            state,
+            AttemptState::Succeeded,
+            "{kind}: the script saw the config intact"
+        );
+        let config_dir = home.join(format!(".{}", kind.replace("claude-code", "claude")));
+        assert_eq!(
+            std::fs::read_to_string(config_dir.join(config_file)).expect("config"),
+            "original config",
+            "{kind}: the person's config is as it was"
+        );
+        assert!(
+            !config_dir.join("moved").exists(),
+            "{kind}: the config was not moved away"
+        );
+    }
+}
+
+#[tokio::test]
+async fn bind_the_agents_own_state_and_refreshed_login_still_work() {
+    for (descriptor, config_file, login_file) in config_dirs() {
+        let Some((state, home, _guard)) =
+            run_config_script("twin", descriptor, config_file, login_file, "twin").await
+        else {
+            return;
+        };
+        let kind = descriptor.kind;
+        assert_eq!(
+            state,
+            AttemptState::Succeeded,
+            "{kind}: the CLI starts and keeps its session"
+        );
+        let config_dir = home.join(format!(".{}", kind.replace("claude-code", "claude")));
+        assert_eq!(
+            std::fs::read_to_string(config_dir.join(login_file)).expect("login"),
+            "refreshed\n",
+            "{kind}: a token refreshed in place reaches the person's login"
+        );
+        assert!(
+            !config_dir.join("sessions").exists(),
+            "{kind}: the session lives in the run's scratch home, not the person's directory"
+        );
+        assert_eq!(
+            std::fs::read_to_string(config_dir.join(config_file)).expect("config"),
+            "original config"
+        );
+    }
+}
+
+/// The person's home with an `mcp_servers` table in their Codex config and a login in each CLI's
+/// directory, as the runner sees it.
+fn home_with_integrations() -> (tempfile::TempDir, tack_runner::ProcessEnv) {
+    let dir = root("integrations");
+    let home = dir.path().join("home");
+    for name in [".codex", ".claude"] {
+        std::fs::create_dir_all(home.join(name)).expect("directory");
+    }
+    std::fs::write(
+        home.join(".codex/config.toml"),
+        "model = \"o3\"\n[mcp_servers.tracker]\ncommand = \"canary-mcp-command\"\nargs = [\"--token\", \"canary-mcp-arg\"]\n\
+         [mcp_servers.\"docs.site\"]\nurl = \"https://canary-mcp-url.invalid/mcp\"\n",
+    )
+    .expect("codex config");
+    std::fs::write(
+        home.join(".codex/auth.json"),
+        r#"{"OPENAI_API_KEY":null,"tokens":{"access_token":"canary-codex-access","refresh_token":"canary-codex-refresh"}}"#,
+    )
+    .expect("codex login");
+    std::fs::write(
+        home.join(".claude/.credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"canary-claude-access","refreshToken":"canary-claude-refresh","subscriptionType":"max"}}"#,
+    )
+    .expect("claude login");
+    let env = tack_runner::ProcessEnv::from_pairs([("HOME", home)]);
+    (dir, env)
+}
+
+fn invocation_of<G: HarnessGrammar>(
+    grammar: &G,
+    kind: &str,
+    host: &tack_runner::ProcessEnv,
+    ask: bool,
+) -> Invocation {
+    let dir = root("invocation");
+    let mut spec = spec(dir.path().to_path_buf(), &[]);
+    spec.work.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(kind);
+    spec.work.request.permission_policy.approvals =
+        ask.then_some(tack_protocol::execution::Approvals::Ask);
+    grammar
+        .invocation(&RunContext {
+            spec: &spec,
+            scratch: dir.path(),
+            program: None,
+            host,
+        })
+        .expect("invocation")
+}
+
+#[test]
+fn mcp_servers_in_the_users_codex_config_are_switched_off_by_name() {
+    let (_home, host) = home_with_integrations();
+    for ask in [false, true] {
+        let invocation = invocation_of(&CodexGrammar, "codex", &host, ask);
+        let at = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "-c")
+            .expect("an override");
+        assert_eq!(
+            invocation.args[at + 1],
+            r#"mcp_servers={"docs.site"={enabled=false},"tracker"={enabled=false}}"#,
+            "ask={ask}: {:?}",
+            invocation.args
+        );
+        let everything = format!("{:?} {:?}", invocation.args, invocation.env);
+        for canary in ["canary-mcp-command", "canary-mcp-arg", "canary-mcp-url"] {
+            assert!(
+                !everything.contains(canary),
+                "ask={ask}: {canary} reached Codex"
+            );
+        }
+    }
+}
+
+#[test]
+fn mcp_override_is_an_empty_table_when_the_config_names_no_server() {
+    let invocation = invocation_of(
+        &CodexGrammar,
+        "codex",
+        &tack_runner::ProcessEnv::default(),
+        false,
+    );
+    assert!(
+        invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["-c", "mcp_servers={}"]),
+        "{:?}",
+        invocation.args
+    );
+    // Claude Code and opencode already carry theirs.
+    let claude = invocation_of(
+        &ClaudeCodeGrammar,
+        "claude-code",
+        &tack_runner::ProcessEnv::default(),
+        false,
+    );
+    assert!(claude.args.contains(&"--strict-mcp-config".to_owned()));
+}
+
+#[test]
+fn redact_the_login_of_both_clis_reads_redacted() {
+    use tack_runner::harness::redact::SecretMaterial;
+    let (_home, host) = home_with_integrations();
+    for (kind, secrets, canaries) in [
+        (
+            "claude-code",
+            invocation_of(&ClaudeCodeGrammar, "claude-code", &host, false).secrets,
+            ["canary-claude-access", "canary-claude-refresh"],
+        ),
+        (
+            "codex",
+            invocation_of(&CodexGrammar, "codex", &host, false).secrets,
+            ["canary-codex-access", "canary-codex-refresh"],
+        ),
+    ] {
+        let mut material = SecretMaterial::new();
+        material.register_all(secrets);
+        for canary in canaries {
+            assert_eq!(
+                material.scrub(&format!("token={canary}")),
+                "token=[REDACTED]",
+                "{kind}: {canary}"
+            );
+        }
+        assert_eq!(
+            material.scrub("plan: max"),
+            "plan: max",
+            "{kind}: a plan name is not a secret"
+        );
+    }
 }
 
 /// The shared fake under `descriptor`, and whether it can ask before it acts.
@@ -1555,8 +1906,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::UntrustedItemAsks, "codex", "GR12"),
     (ParityRule::UntrustedItemAsks, "opencode", "GR12"),
     (ParityRule::UntrustedItemAsks, "docket", "GR12"),
-    (ParityRule::AgentConfigIsolated, "claude-code", "GR4"),
-    (ParityRule::AgentConfigIsolated, "codex", "GR4"),
     (ParityRule::TokenLimitWhileRunning, "codex", "GR13"),
     (ParityRule::KillEverythingOnCancel, "claude-code", "GR13"),
     (ParityRule::KillEverythingOnCancel, "codex", "GR13"),
