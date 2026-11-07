@@ -36,6 +36,10 @@ pub(super) struct Agent {
 pub(super) struct HealthAnswer {
     #[serde(default)]
     pub features: Vec<String>,
+    /// The jail docket says it sets up around its agents; read only when `features` lists
+    /// `isolationPosture`.
+    #[serde(default, rename = "isolationPosture")]
+    pub isolation_posture: Option<String>,
 }
 
 /// `GET /pods`.

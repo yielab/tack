@@ -73,17 +73,17 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_progress: true,
     sandbox_binds: &[],
     parity: &[
+        // docket never blocks a run: it is asked for its jail, and where it does not say there
+        // is one the board asks before each action instead.
         (
             ParityRule::SandboxOrNoRun,
             ParityCell::missing(
-                "GR8: docket's isolation is assumed, not read from what it reports",
+                "by design: docket decides whether to run; Tack asks it for its jail and never refuses on the answer",
             ),
         ),
         (
             ParityRule::NoSandboxMeansAsk,
-            ParityCell::missing(
-                "GR8: docket's sandbox posture is not read, so the dialog cannot default to ask",
-            ),
+            ParityCell::delegated("docket"),
         ),
         (
             ParityRule::EgressByAllowList,
@@ -2078,7 +2078,7 @@ impl HarnessAdapter for DocketAdapter {
     }
 
     async fn sandbox(&self, _handle: &LocalRunHandle) -> Option<String> {
-        Some("harness".to_owned())
+        Some(self.client.isolation().await.sandbox().to_owned())
     }
 
     async fn progress_channel(&self, handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {

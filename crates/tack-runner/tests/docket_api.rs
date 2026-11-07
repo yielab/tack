@@ -420,14 +420,56 @@ async fn probe_reports_each_team_and_the_ceiling() {
             .violations
             .is_empty()
     );
-    assert_eq!(capability.additional["sandbox"], json!("harness"));
-    assert_eq!(
-        adapter
-            .sandbox(&tack_runner::client::LocalRunHandle {
-                process_id: "x".into()
-            })
-            .await,
-        Some("harness".to_owned())
+}
+
+/// What the probe and the start report say about docket's jail, for a docket that says nothing,
+/// one that says `none` and one that says `jailed`.
+#[tokio::test]
+async fn probe_asks_docket_for_its_jail_and_assumes_none_when_it_does_not_say() {
+    let handle = tack_runner::client::LocalRunHandle {
+        process_id: "x".into(),
+    };
+    for (posture, sandbox, reason) in [
+        (None, "none", "does not report"),
+        (Some("none"), "none", "without a jail"),
+        (Some("jailed"), "harness", "jail"),
+    ] {
+        let fake = pods_fake().await;
+        if let Some(posture) = posture {
+            fake.with_isolation_posture(posture);
+        }
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+        let capability = adapter.probe().await;
+        assert_eq!(capability.probe_error, None);
+        assert_eq!(
+            capability.additional["sandbox"],
+            json!(sandbox),
+            "{posture:?}"
+        );
+        let said = capability.additional["sandbox_reason"].as_str().unwrap();
+        assert!(said.contains(reason), "{posture:?}: {said}");
+        assert_eq!(
+            adapter.sandbox(&handle).await.as_deref(),
+            Some(sandbox),
+            "{posture:?}"
+        );
+    }
+}
+
+/// A posture docket names but Tack does not know is not a jail.
+#[tokio::test]
+async fn probe_reads_a_posture_it_does_not_know_as_none() {
+    let fake = pods_fake().await;
+    fake.with_isolation_posture("namespaced");
+    let scene = scene();
+    let capability = adapter(&fake, &scene).probe().await;
+    assert_eq!(capability.additional["sandbox"], json!("none"));
+    assert!(
+        capability.additional["sandbox_reason"]
+            .as_str()
+            .unwrap()
+            .contains("namespaced")
     );
 }
 

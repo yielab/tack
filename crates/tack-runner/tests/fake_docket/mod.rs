@@ -418,6 +418,10 @@ struct World {
     /// /pods/<pod>/resume` clears a pause. Without it the route answers `404`, as a docket without
     /// the route would, and the report carries no `budget`.
     pod_resume: bool,
+    /// What a docket that lists `isolationPosture` says about the jail it sets up around its
+    /// agents (`jailed` or `none`). Without it `/health` lists nothing and carries no posture, as
+    /// a docket that does not report one.
+    isolation_posture: Option<String>,
     /// A docket before `budgetOutcome`: the features do not list it, and a hop's `budget` the
     /// script carries is left off the record, as a docket before the feature never wrote one.
     without_budget_outcome: bool,
@@ -503,6 +507,7 @@ impl FakeDocket {
             pod_contract: None,
             web_read_listed: false,
             pod_resume: false,
+            isolation_posture: None,
             without_budget_outcome: false,
             without_retry_continues: false,
             pod_fetch: false,
@@ -712,6 +717,11 @@ impl FakeDocket {
     /// spend and has spent (`budget`) and a paused team can be resumed over HTTP.
     pub fn with_pod_resume(&self) {
         self.shared.lock().unwrap().pod_resume = true;
+    }
+
+    /// A docket that lists `isolationPosture` and says `posture` (`jailed` or `none`).
+    pub fn with_isolation_posture(&self, posture: &str) {
+        self.shared.lock().unwrap().isolation_posture = Some(posture.to_owned());
     }
 
     /// What the team's `budget` says instead of the capture's: an object with any of `tokens`,
@@ -1258,6 +1268,9 @@ async fn handle(
             let mut answer = fixture("health");
             answer["apiVersion"] = json!(state.api_version);
             answer["features"] = features(&state);
+            if let Some(posture) = &state.isolation_posture {
+                answer["isolationPosture"] = json!(posture);
+            }
             reply(200, answer)
         }
         ("GET", ["pods"]) => pods(&state),
@@ -1329,6 +1342,9 @@ fn features(state: &World) -> Value {
     }
     if state.pod_resume {
         listed.push("podResume");
+    }
+    if state.isolation_posture.is_some() {
+        listed.push("isolationPosture");
     }
     if state.pod_shape {
         listed.push("podShape");

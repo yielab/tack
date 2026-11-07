@@ -335,6 +335,7 @@ start inside it runs inside it, seeing the workspace and a scratch home read-wri
 directories it needs from your home (`~/.claude`, `~/.codex`) and the system
 directories read-only. The network is not restricted. An agent that cannot start inside
 `bwrap` (a program in a virtualenv or under Homebrew, whose loader or runtime lives where the
-sandbox does not reach) runs unsandboxed. docket is not wrapped: it confines its own agents and
-reports `sandbox: harness`. `tack runner doctor` prints `sandbox: bwrap`, `sandbox: harness (…)` or
+sandbox does not reach) runs unsandboxed. docket is not wrapped: it confines its own agents, and the
+probe asks it (`isolationPosture` in its `/health`): `sandbox: harness` only when docket says it
+jails them, `sandbox: none` when it says not, or says nothing. `tack runner doctor` prints `sandbox: bwrap`, `sandbox: harness (…)` or
 `sandbox: none (<why>)` for each agent, and the attempt's start report carries the same word.

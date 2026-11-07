@@ -1897,8 +1897,6 @@ const PENDING_CELLS: &[(ParityRule, &str, &str)] = &[
     (ParityRule::SandboxOrNoRun, "claude-code", "GR2"),
     (ParityRule::SandboxOrNoRun, "codex", "GR2"),
     (ParityRule::SandboxOrNoRun, "opencode", "GR2"),
-    (ParityRule::SandboxOrNoRun, "docket", "GR8"),
-    (ParityRule::NoSandboxMeansAsk, "docket", "GR8"),
     (ParityRule::EgressByAllowList, "claude-code", "GR5"),
     (ParityRule::EgressByAllowList, "codex", "GR5"),
     (ParityRule::EgressByAllowList, "opencode", "GR5"),
