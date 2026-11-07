@@ -29,8 +29,8 @@ use chrono::{DateTime, Utc};
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, CapabilityValue, DocsLinks, FeatureCapabilities,
     HarnessCapability, HarnessKind as DomainHarnessKind, Measurement, MeasurementSource,
-    ModelListSource, ModelsReport, NEED_SIGN_IN, SignInReport, SignInState, TeamMisfit, TeamNeeds,
-    TeamReport, Usage, WorkspaceId as DomainWorkspaceId,
+    ModelListSource, ModelsReport, NEED_SIGN_IN, ParityColumn, SignInReport, SignInState,
+    TeamMisfit, TeamNeeds, TeamReport, Usage, WorkspaceId as DomainWorkspaceId,
 };
 use tokio::sync::mpsc;
 
@@ -182,6 +182,10 @@ pub struct HarnessDescriptor {
     /// session, its settings) when it runs inside a sandbox. A CLI that
     /// keeps all its state in the scratch home names none.
     pub sandbox_binds: &'static [&'static str],
+    /// Who meets each parity rule for this CLI: itself, the runner from outside, its daemon, or
+    /// nobody yet (with the reason). Declared from what the code does today, never from what a
+    /// later card will do; the parity test in `tests/agent_boundaries.rs` reads it.
+    pub parity: &'static ParityColumn,
     /// Asks the installed CLI whether it is signed in and which models it
     /// offers. `None` reports both as not checked.
     pub readiness: Option<ReadinessCheck>,
@@ -1450,6 +1454,7 @@ where
         };
         // The same call, once more: the board reads each agent's features from its own report.
         report.set_features(&self.grammar.capabilities());
+        report.set_parity(descriptor.parity);
         // An agent that runs here is a team of one; one that does not run says nothing of it.
         let team = report
             .probe_error

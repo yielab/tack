@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use tack_protocol::conversation::ConverseMode;
 use tack_protocol::execution::{
-    Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
+    Approvals, CapabilitySupport, FeatureCapabilities, ParityCell, ParityRule, PermissionPolicy,
+    Usage,
 };
 
 use crate::harness::{
@@ -41,6 +42,48 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: false,
     reports_progress: true,
     sandbox_binds: &[".claude"],
+    parity: &[
+        (
+            ParityRule::SandboxOrNoRun,
+            ParityCell::missing(
+                "GR2: bwrap only when installed, otherwise the run goes ahead unsandboxed",
+            ),
+        ),
+        (
+            ParityRule::NoSandboxMeansAsk,
+            ParityCell::missing(
+                "GR1: bypassPermissions is passed whether or not the runner found a sandbox",
+            ),
+        ),
+        (
+            ParityRule::EgressByAllowList,
+            ParityCell::missing(
+                "GR5: Claude Code's web tools reach the network directly, no proxy of the runner's",
+            ),
+        ),
+        (
+            ParityRule::UntrustedItemAsks,
+            ParityCell::missing(
+                "GR12: the item's trust does not change the tools or approvals of the run",
+            ),
+        ),
+        (
+            ParityRule::AgentConfigIsolated,
+            ParityCell::missing("GR4: ~/.claude is bound writable and its login is not redacted"),
+        ),
+        (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),
+        (
+            ParityRule::KillEverythingOnCancel,
+            ParityCell::missing("GR13: cancel signals the process group, not the session"),
+        ),
+        (ParityRule::OutputRules, ParityCell::Runner),
+        (
+            ParityRule::ChecksChangedHoldsMerge,
+            ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
+        ),
+        (ParityRule::Redaction, ParityCell::Runner),
+        (ParityRule::StepsVisible, ParityCell::Cli),
+    ],
     readiness: Some(readiness::check),
     models_docs: "https://code.claude.com/docs/en/model-config",
     sign_in_docs: "https://code.claude.com/docs/en/authentication",

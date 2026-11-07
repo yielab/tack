@@ -25,8 +25,8 @@ use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, OperationOutcome,
-    TeamActivity, TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, OperationOutcome, ParityCell,
+    ParityRule, TeamActivity, TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
     WorkspaceId as DomainWorkspaceId, team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
@@ -72,6 +72,52 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     cancels_over_api: true,
     reports_progress: true,
     sandbox_binds: &[],
+    parity: &[
+        (
+            ParityRule::SandboxOrNoRun,
+            ParityCell::missing(
+                "GR8: docket's isolation is assumed, not read from what it reports",
+            ),
+        ),
+        (
+            ParityRule::NoSandboxMeansAsk,
+            ParityCell::missing(
+                "GR8: docket's sandbox posture is not read, so the dialog cannot default to ask",
+            ),
+        ),
+        (
+            ParityRule::EgressByAllowList,
+            ParityCell::delegated("docket"),
+        ),
+        (
+            ParityRule::UntrustedItemAsks,
+            ParityCell::missing("GR12: the item's trust is not passed to docket"),
+        ),
+        (ParityRule::AgentConfigIsolated, ParityCell::Runner),
+        (
+            ParityRule::TokenLimitWhileRunning,
+            ParityCell::delegated("docket"),
+        ),
+        (
+            ParityRule::KillEverythingOnCancel,
+            ParityCell::delegated("docket"),
+        ),
+        (
+            ParityRule::OutputRules,
+            ParityCell::missing(
+                "GR17: the Planner and Researcher rules and the no-change rule are not applied to docket's diff",
+            ),
+        ),
+        (
+            ParityRule::ChecksChangedHoldsMerge,
+            ParityCell::missing("GR9: the merge does not yet hold when the checks changed"),
+        ),
+        (
+            ParityRule::Redaction,
+            ParityCell::missing("GR18: docket's steps, outward calls and records are not redacted"),
+        ),
+        (ParityRule::StepsVisible, ParityCell::delegated("docket")),
+    ],
     readiness: None,
     models_docs: "https://github.com/yielab/docket/blob/develop/docs/CONFIGURATION.md#31-choose-which-model-each-agent-runs-on",
     sign_in_docs: "https://github.com/yielab/docket/blob/develop/docs/MODEL-GATEWAYS.md",

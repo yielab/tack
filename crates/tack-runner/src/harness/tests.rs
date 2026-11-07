@@ -530,6 +530,7 @@ static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDesc
     cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[],
+    parity: &[],
     readiness: None,
     models_docs: "",
     sign_in_docs: "",

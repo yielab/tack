@@ -666,6 +666,7 @@ pub(super) async fn probe(
         .into(),
     };
     capability.set_features(&features);
+    capability.set_parity(super::DESCRIPTOR.parity);
     let Status {
         models,
         version,
