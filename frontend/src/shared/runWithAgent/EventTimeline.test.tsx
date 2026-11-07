@@ -78,6 +78,17 @@ describe('EventTimeline', () => {
     expect(c.textContent).not.toContain('{"reason"');
   });
 
+  it('attempt.network_not_held says the web access was only asked for, with its reason', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.network_not_held', payload: { reason: 'no sandbox on this machine (bwrap not on PATH), so the agent is asked to send its traffic through the runner\'s proxy but nothing stops it going around' }, occurred_at: '2026-11-07T12:00:00Z', created_at: '2026-11-07T12:00:00Z' }]),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Web access not enforced');
+    expect(c.textContent).toContain('nothing stops it going around');
+  });
+
   it('attempt.network_refused names where the agent tried to go and why it was refused', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.network_refused', payload: { host: '169.254.169.254', port: 80, reason: 'is on this machine or a private, link-local or metadata network' }, occurred_at: '2026-11-07T12:00:00Z', created_at: '2026-11-07T12:00:00Z' }]),

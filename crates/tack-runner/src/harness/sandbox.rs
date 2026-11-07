@@ -9,7 +9,9 @@
 //! it shows the settings read-only and the login as it is; the rest of the
 //! directory is the scratch home's. The runner's state directory, `~/.tackrc`, `~/.ssh` and the
 //! token file are never bound, so the harness cannot see them. The network
-//! is left alone: the harness has to reach its model.
+//! is left alone, unless the run is [`Sandbox::bridged`]: then the harness has no network of its
+//! own and reaches the outside only through the runner's proxy, by a Unix socket the sandbox
+//! shows and a forwarder inside it.
 
 use std::{
     collections::BTreeMap,
@@ -63,6 +65,25 @@ pub struct SharedFiles<'a> {
     pub read_only: &'a [(PathBuf, PathBuf)],
 }
 
+/// The way a sandboxed run reaches the runner's proxy once it has no network of its own: the
+/// proxy listens on a Unix socket in `socket_dir`, which the sandbox shows at
+/// [`BRIDGE_SOCKET_DIR`], and `helper` (the runner's own executable, started as
+/// [`BRIDGE_ARG`]) listens on [`BRIDGE_PORT`] of the sandbox's loopback and forwards to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bridge {
+    pub helper: PathBuf,
+    pub socket_dir: PathBuf,
+}
+
+/// The first argument that makes the runner's executable the forwarder inside a sandbox.
+pub const BRIDGE_ARG: &str = "__tack-egress-bridge";
+/// The port on the sandbox's own loopback where the agent finds the proxy.
+pub const BRIDGE_PORT: u16 = 3128;
+/// Where the sandbox shows the directory holding the proxy's socket.
+pub const BRIDGE_SOCKET_DIR: &str = "/run/tack-egress";
+/// The proxy's socket inside that directory.
+pub const BRIDGE_SOCKET_NAME: &str = "proxy.sock";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sandbox {
     pub kind: SandboxKind,
@@ -78,9 +99,27 @@ pub struct Sandbox {
     /// Whether an agent that finds none must not run: the administrator's `[sandbox]` setting.
     /// Off, an agent without a sandbox runs but asks before each action.
     required: bool,
+    /// How a run reaches the runner's proxy without a network of its own; set per run by
+    /// [`Self::bridged`].
+    bridge: Option<Bridge>,
 }
 
 impl Sandbox {
+    /// This sandbox for a run that has no network of its own: [`Self::wrap`] then adds
+    /// `--unshare-net` and starts the program behind the forwarder to the proxy. Without a
+    /// `bwrap` there is nothing to close the network with and nothing changes.
+    pub fn bridged(&self, bridge: Bridge) -> Self {
+        Self {
+            bridge: Some(bridge),
+            ..self.clone()
+        }
+    }
+
+    /// Whether this machine can wrap a program in a sandbox that holds its network shut.
+    pub fn can_close_network(&self) -> bool {
+        self.bwrap.is_some()
+    }
+
     /// This machine's sandbox with the kind a harness that cannot start in
     /// it gets: no wrapping, and the reason why.
     pub fn without(&self, reason: String) -> Self {
@@ -91,6 +130,7 @@ impl Sandbox {
             home: self.home.clone(),
             looked: true,
             required: self.required,
+            bridge: None,
         }
     }
 
@@ -115,6 +155,7 @@ impl Sandbox {
             home: None,
             looked: false,
             required: false,
+            bridge: None,
         }
     }
 
@@ -214,18 +255,36 @@ impl Sandbox {
         for (source, destination) in files.read_only {
             bind(&mut argv, "--ro-bind", source, destination);
         }
-        let canonical = program
-            .canonicalize()
-            .unwrap_or_else(|_| program.to_path_buf());
-        for path in [program, canonical.as_path()] {
-            if !["/usr", "/bin", "/lib", "/etc"]
-                .iter()
-                .any(|system| path.starts_with(system))
-            {
-                bind(&mut argv, "--ro-bind", path, path);
+        let mut shown = vec![program];
+        if let Some(bridge) = &self.bridge {
+            push(&mut argv, &["--unshare-net"]);
+            bind(
+                &mut argv,
+                "--bind",
+                &bridge.socket_dir,
+                Path::new(BRIDGE_SOCKET_DIR),
+            );
+            shown.push(&bridge.helper);
+        }
+        for path in shown {
+            let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            for path in [path, canonical.as_path()] {
+                if !["/usr", "/bin", "/lib", "/etc"]
+                    .iter()
+                    .any(|system| path.starts_with(system))
+                {
+                    bind(&mut argv, "--ro-bind", path, path);
+                }
             }
         }
         push(&mut argv, &["--die-with-parent", "--new-session", "--"]);
+        if let Some(bridge) = &self.bridge {
+            argv.extend([
+                absolute(&bridge.helper).display().to_string(),
+                BRIDGE_ARG.to_owned(),
+                "--".to_owned(),
+            ]);
+        }
         argv.push(absolute(program).display().to_string());
         argv.extend(args.iter().cloned());
         Some((bwrap.clone(), argv))
@@ -253,6 +312,7 @@ pub fn detect(path: Option<&OsStr>, home: Option<&Path>) -> Sandbox {
             home: home.map(Path::to_path_buf),
             looked: true,
             required: false,
+            bridge: None,
         },
         None => Sandbox {
             looked: true,

@@ -437,6 +437,7 @@ struct FakeAdapter {
     elsewhere: Arc<Mutex<Option<mpsc::Receiver<AnsweredElsewhere>>>>,
     // `None` for every test that does not prove the forced-ask event.
     forced_ask: Option<String>,
+    egress_not_held: Option<String>,
     // Handed out once by `network_refusals`, for the test proving the refused-destination event.
     refusals: Arc<Mutex<Option<mpsc::Receiver<crate::harness::egress::NetworkRefusal>>>>,
 }
@@ -562,6 +563,10 @@ impl HarnessAdapter for FakeAdapter {
 
     async fn approvals_forced_ask(&self, _handle: &LocalRunHandle) -> Option<String> {
         self.forced_ask.clone()
+    }
+
+    async fn egress_not_held(&self, _handle: &LocalRunHandle) -> Option<String> {
+        self.egress_not_held.clone()
     }
 
     async fn network_refusals(
@@ -801,6 +806,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         elsewhere: Arc::new(Mutex::new(None)),
         progress: Arc::new(Mutex::new(None)),
         forced_ask: None,
+        egress_not_held: None,
         refusals: Arc::new(Mutex::new(None)),
     }
 }
@@ -3337,6 +3343,41 @@ async fn a_run_forced_to_ask_reports_why() {
             .iter()
             .flat_map(|batch| batch.events.iter())
             .filter(|event| event.kind == "attempt.approvals_forced_ask")
+            .collect();
+        assert_eq!(reported.len(), events);
+        if let Some(event) = reported.first() {
+            assert_eq!(event.payload["reason"], "no sandbox on this machine");
+        }
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+}
+
+/// A run whose web access is only asked for, not held, says why, once.
+#[tokio::test]
+async fn a_run_whose_network_is_not_held_reports_why() {
+    for (unheld, events) in [(Some("no sandbox on this machine"), 1), (None, 0)] {
+        let (root_dir, journal) = fresh_journal("network-not-held");
+        let root = root_dir.path();
+        let claimed = work();
+        let fake_adapter = FakeAdapter {
+            egress_not_held: unheld.map(str::to_owned),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        let data_protocol = FakeDataProtocol::new();
+        let engine = runner_engine(protocol(claimed, false, false), fake_adapter, journal, root)
+            .with_data_protocol(Arc::new(data_protocol.clone()));
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle");
+
+        let state = data_protocol.state.lock().expect("lock");
+        let reported: Vec<_> = state
+            .events
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .filter(|event| event.kind == "attempt.network_not_held")
             .collect();
         assert_eq!(reported.len(), events);
         if let Some(event) = reported.first() {

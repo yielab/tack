@@ -190,8 +190,8 @@ export interface HarnessCapability {
   /** Whether the runner's settings require a sandbox for this agent; `false` is the administrator's
    *  opt-out. Absent on an older runner and on docket, which brings its own. */
   sandbox_required?: boolean;
-  /** Whether the runner holds this agent's traffic to its profile's web access, and the model addresses it always allows. */
-  egress?: { enforced: boolean; model_endpoints?: string[] };
+  /** Whether the runner holds this agent's traffic to its profile's web access (`enforced`: the agent has no network but the proxy), whether it at least points the agent at its proxy (`proxy`), and the model addresses it always allows. */
+  egress?: { enforced: boolean; proxy?: boolean; model_endpoints?: string[] };
   /** Who applies each containment rule for this agent. Optional: older runners omit it. */
   parity?: ParityLine[];
 }

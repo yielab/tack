@@ -41,8 +41,17 @@ struct Cli {
     max_concurrent_attempts: Option<u32>,
 }
 
+fn main() -> ExitCode {
+    // Started inside an agent's sandbox as the forwarder to the runner's proxy: that is all this
+    // process is.
+    if let Some(code) = tack_runner::harness::egress::bridge::run_if_requested(std::env::args()) {
+        return ExitCode::from(code);
+    }
+    serve()
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn serve() -> ExitCode {
     match run(Cli::parse()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

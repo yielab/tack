@@ -135,5 +135,14 @@ agent's descriptor names its model endpoints (`api.anthropic.com` for Claude Cod
 and `auth.openai.com` for Codex); opencode takes whatever provider its configuration names, so an administrator
 lists those under `[egress] model_hosts`. A model served on loopback is refused like any internal address. Plain
 HTTP passes only `GET`, `HEAD` and `OPTIONS` to a URL of at most 2048 bytes; an HTTPS tunnel is judged by its
-destination alone. Until GR5b, the proxy is told to the agent through `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, so
-a program that ignores them is not held.
+destination alone. The proxy is told to the agent through `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
+
+Built by GR5b (2026-11-07): where `[egress] enforce` is on and the sandbox is `bwrap`, the sandbox is started with
+`--unshare-net` in every mode, so the agent has no network of its own and a program that ignores the variables has
+nowhere to go. The proxy also listens on a Unix socket in a private directory that the sandbox shows; the runner's own
+executable, started inside the sandbox as a small forwarder, listens on the sandbox's loopback (port 3128), carries
+each connection to that socket, runs the agent as its child and ends with its exit status. `HTTP_PROXY` and
+`HTTPS_PROXY` then name that loopback address, so the CLIs need nothing else. The proxy is the only way out in `open`
+too, so the private-address rules hold there. With no `bwrap` (the explicit `[sandbox] required = false`) the network
+cannot be closed: the probe reports `egress.enforced: false`, and the run carries an `attempt.network_not_held` event
+saying the proxy is only asked for. With `enforce` off nothing changes.

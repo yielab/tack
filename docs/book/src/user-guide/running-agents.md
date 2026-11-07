@@ -266,8 +266,9 @@ The hosts a **Listed** profile may reach are the `allowed_hosts` of its tools in
 
 The setting is enforced only on a computer whose administrator turned enforcement on (see
 [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md#web-access)); the **Network** line of the Run
-with agent dialog says which mode the run has and when the computer does not hold the agent to it. A destination
-refused during a run appears on its timeline as **Web access refused**, with the host and the reason.
+with agent dialog says which mode the run has and whether it is **enforced** or **not enforced on this computer**.
+Where it is enforced, the agent has no other way out. A destination refused during a run appears on its timeline as
+**Web access refused**, with the host and the reason.
 
 An address that the mode lets through can still receive what the agent sends it: a page's address is seen, never its
 contents, so **Open** limits where the agent goes, not what it carries. docket confines its own traffic, and this

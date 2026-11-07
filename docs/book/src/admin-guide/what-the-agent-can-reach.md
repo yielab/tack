@@ -186,6 +186,13 @@ and each one reached is logged with its bytes. Over plain HTTP only `GET`, `HEAD
 and a public site it allows can still receive data. `tack runner doctor` prints, per agent, whether this runner
 enforces it.
 
+Where the agent runs in the sandbox (`bwrap`), the choice is **enforced**, not asked for: the sandbox gives the agent
+no network of its own, in every mode, and the proxy is its only way out. A program that ignores the proxy settings, or
+a shell command that opens its own socket, reaches nothing. The rules about this computer's own address and private
+networks hold in **open** too, because the proxy is the only way out. Without `bwrap` (the sandbox requirement turned
+off) the network cannot be closed: the agent is only asked to use the proxy, `tack runner doctor` and the run dialog
+say it is not enforced, and the run's timeline carries **Web access not enforced** with the reason.
+
 Know before you turn it on:
 
 - Claude Code and Codex name their model's address; opencode takes whichever provider its own configuration names,
@@ -193,17 +200,16 @@ Know before you turn it on:
   any other internal address.
 - A profile with `listed` and no `allowed_hosts` reaches its model and nothing else, as `closed` does. Check the
   profiles that browse before you enforce, and give them `open` or their hosts.
-- This is a request to the agent through the proxy variables, not a wall. A program that ignores them, or a shell
-  command that opens its own socket, is not held, whatever the sandbox does. The sandbox does not yet remove the other
-  ways out.
+- An enforced agent cannot reach a service already running on this computer's own address, such as a local database
+  or dev server: its network is its own, empty one. A service the agent starts during the run still works, inside it.
 - docket confines its own traffic; Tack asks it and shows the answer, and does not enforce.
 
 ## What "Web tools" does and does not do
 
 The **Web tools** switch decides whether the agent may use its own web-fetch and
 web-search tools. Off, claude-code is started without them. It does not cut the
-network: a shell command the agent runs can still reach any address the machine can,
-inside the sandbox or not. If a run must not reach the network, run it on a machine
+network: unless the runner enforces [web access](#web-access), a shell command the
+agent runs can still reach any address the machine can, inside the sandbox or not. If a run must not reach the network, run it on a machine
 or in a container that cannot.
 
 A profile can say its role needs the network: the box **This role needs the network (web search
