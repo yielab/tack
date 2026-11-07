@@ -355,6 +355,12 @@ cargo run -p tack-evals -- verifier-labels                            # the labe
 cargo run -p tack-evals -- score-verifier --verdicts verdicts.json    # {"case-01": {"prill": "merge", "reviewer": "reject"}}
 ```
 
+The `capability` suite is not written by hand: it comes from work a person refused. `promote <attempt-id>` reads the attempt from a running server (`--server`, the token in `TACK_API_TOKEN`; it only reads) and writes `evals/candidates/<attempt-id>/`, which git ignores: the repository at the attempt's base commit as a one-commit `git bundle`, the item and its brief, the reason for the rejection and the paths to the real run's evidence, all passed through an anonymiser (known secrets and token shapes, private keys, home directories, the repository's location, the project's name). A run of docket also gets `docket.yaml`, the `task` fields Tack sends docket. Work that was merged and reverted has no reason on the board, so it takes `--reason`. The anonymiser is a net, not proof: a name it does not know (a person's, in prose) stays, so `--name` adds names and `--env-secret NAME` adds a secret by its value, and a person reads the candidate before it goes anywhere. A candidate is not a task: `check-solutions` refuses it (`REFUSED`, exit 1) until a person has written `hidden/` and `solution/`, unbundled `repo.bundle` into `repo/` and added `task.yaml`. No agent writes the exam.
+
+```bash
+cargo run -p tack-evals -- promote <attempt-id> [--run <request-id>] [--repo <clone>] [--name <word>] [--env-secret <VAR>]
+```
+
 **An eval never blocks CI.** CI runs the crate's own tests with the fake agent and `check-solutions`, which cost nothing. A run with a real model happens on the integrator's or the operator's machine, under a token cap, and its result is a number to read: a regression warns, and a phase closes on `regression` with no new reds plus the live suite.
 
 Every run keeps the fingerprint of the prompt templates it was composed with (`PROMPT_TEMPLATE_SHA`), shown on the run's page under **What the agent read**. Changing one line of a template changes it, and `tack-protocol`'s `template_fingerprint_matches_the_recorded_value` fails until the new value is written in `crates/tack-protocol/tests/fixtures/prompt_template_sha.txt`, which puts the change to the wording in the diff.

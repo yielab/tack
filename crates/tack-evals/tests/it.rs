@@ -5,6 +5,7 @@ mod common;
 
 mod check_solutions;
 mod graders;
+mod promote;
 mod report;
 mod safety;
 mod synthetic;
