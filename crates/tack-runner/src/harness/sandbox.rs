@@ -4,7 +4,9 @@
 //! program and arguments a spawn would run into a `bwrap` command line that
 //! shows the harness only what a run needs: the workspace and a scratch home
 //! read-write, the system directories read-only, a private `/tmp`, `/proc`
-//! and `/dev`. The runner's state directory, `~/.tackrc`, `~/.ssh` and the
+//! and `/dev`. Of a CLI's own directory under the person's home (`~/.claude`)
+//! it shows the settings read-only and the login as it is; the rest of the
+//! directory is the scratch home's. The runner's state directory, `~/.tackrc`, `~/.ssh` and the
 //! token file are never bound, so the harness cannot see them. The network
 //! is left alone: the harness has to reach its model.
 
@@ -32,6 +34,23 @@ impl SandboxKind {
             Self::None => "none",
         }
     }
+}
+
+/// A CLI's own directory under `$HOME` (`.claude`, `.codex`): what of it a run
+/// reads, and the login it shares. Everything else in it is the run's own,
+/// empty and thrown away with the scratch home, so the settings, hooks and
+/// plugins the person keeps there cannot be rewritten from inside the
+/// sandbox and what the CLI writes while it works (sessions, caches,
+/// databases) has somewhere to go.
+#[derive(Debug, Clone, Copy)]
+pub struct ConfigDir {
+    /// The directory, relative to `$HOME`.
+    pub name: &'static str,
+    /// Entries of it the run only reads, bound read-only when they exist.
+    pub read_only: &'static [&'static str],
+    /// Entries of it that hold the login. The CLI refreshes them in place, so
+    /// they are shared as they are and not copied.
+    pub login: &'static [&'static str],
 }
 
 /// Files of the person's a run sees, each `(source, destination)` with the
@@ -92,8 +111,9 @@ impl Sandbox {
     /// machine has no sandbox and the program runs as it is.
     ///
     /// `scratch_home` is bound at the runner's `$HOME` and at its own path
-    /// (a harness may keep state there); each of `binds` names a directory
-    /// under `$HOME` that is shared as it is, when it exists. A program that
+    /// (a harness may keep state there); of each of `binds`, a directory
+    /// under `$HOME`, only the entries it names are shared, when they exist.
+    /// A program that
     /// lives outside the system directories is bound read-only. Each of
     /// `files` is one file shared at the second path, which lies in the
     /// scratch home.
@@ -103,7 +123,7 @@ impl Sandbox {
         args: &[String],
         workspace: &Path,
         scratch_home: &Path,
-        binds: &[&str],
+        binds: &[ConfigDir],
         files: SharedFiles<'_>,
     ) -> Option<(PathBuf, Vec<String>)> {
         let bwrap = self.bwrap.as_ref()?;
@@ -150,10 +170,15 @@ impl Sandbox {
         };
         if let Some(home) = &self.home {
             bind(&mut argv, "--bind", scratch_home, home);
-            for name in binds {
-                let shared = home.join(name);
-                if shared.exists() {
-                    bind(&mut argv, "--bind", &shared, &shared);
+            for dir in binds {
+                let root = home.join(dir.name);
+                for (flag, names) in [("--ro-bind", dir.read_only), ("--bind", dir.login)] {
+                    for name in names {
+                        let shared = root.join(name);
+                        if shared.exists() {
+                            bind(&mut argv, flag, &shared, &shared);
+                        }
+                    }
                 }
             }
         }

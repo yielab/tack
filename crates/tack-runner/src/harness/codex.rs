@@ -16,9 +16,14 @@ use crate::harness::{
         RunContext, RunReport, UsageDetail, capability, policy_capability,
     },
     process::{CapturedOutput, ProcessExit, ProcessResult, confined_cwd},
+    redact,
+    sandbox::ConfigDir,
 };
 
 mod readiness;
+
+/// Where Codex keeps its login, under `~/.codex`.
+const LOGIN_FILE: &str = "auth.json";
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "codex",
@@ -35,7 +40,11 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     cancels_over_api: false,
     reports_progress: false,
-    sandbox_binds: &[".codex"],
+    sandbox_binds: &[ConfigDir {
+        name: ".codex",
+        read_only: &["config.toml", "AGENTS.md", "rules", "prompts", "skills"],
+        login: &[LOGIN_FILE],
+    }],
     parity: &[
         (
             ParityRule::SandboxOrNoRun,
@@ -54,10 +63,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
             ParityRule::UntrustedItemAsks,
             ParityCell::missing("GR12: the item's trust does not change the sandbox mode"),
         ),
-        (
-            ParityRule::AgentConfigIsolated,
-            ParityCell::missing("GR4: ~/.codex is bound writable and the user's MCP servers load"),
-        ),
+        (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (
             ParityRule::TokenLimitWhileRunning,
             ParityCell::missing(
@@ -89,6 +95,28 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 pub struct CodexGrammar;
 
 pub type CodexAdapter<C = crate::SystemClock> = LocalProcessHarness<CodexGrammar, C>;
+
+/// The `-c` value that leaves no MCP server of the person's loaded. An override is merged into
+/// the person's table, not put in its place (measured on codex-cli 0.149.1: `mcp_servers={}`
+/// removes nothing), so each server their config names is switched off by name. Servers a
+/// config names nowhere need no switch, which is why the table is passed even when empty.
+fn mcp_override(host: &crate::config::ProcessEnv) -> String {
+    let names: Vec<String> = host
+        .home()
+        .and_then(|home| std::fs::read_to_string(home.join(".codex/config.toml")).ok())
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|config| match config.get("mcp_servers") {
+            Some(toml::Value::Table(servers)) => Some(servers.keys().cloned().collect()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let servers: Vec<String> = names
+        .iter()
+        // A JSON string is a TOML basic string.
+        .map(|name| format!("{}={{enabled=false}}", serde_json::json!(name)))
+        .collect();
+    format!("mcp_servers={{{}}}", servers.join(","))
+}
 
 /// Whether `tools` names `tool` (case-insensitively), the same convention
 /// `opencode.rs`'s own `grants` uses.
@@ -272,10 +300,9 @@ impl HarnessGrammar for CodexGrammar {
     /// never prompts under any flag measured (`exec-tool-call.jsonl`,
     /// `exec-sandbox-read-only.jsonl`, `exec-approve-for-me.jsonl`,
     /// `exec-bypass-approvals-and-sandbox.jsonl`) — it instead swaps the whole
-    /// invocation for the `-c` overrides (unchanged) followed by `app-server` alone,
-    /// which speaks newline-delimited JSON-RPC over stdio and does ask
+    /// invocation for `app-server`, which speaks newline-delimited JSON-RPC over stdio and does ask
     /// (`fixtures/codex/README.md` "Measured"); `signal`/`answer` drive that protocol.
-    /// Any other request keeps today's `exec` line, byte for byte. `network` and
+    /// Both lines carry one `-c` that switches off the person's MCP servers. `network` and
     /// `budgets` have no `exec` flag and are not passed; `capabilities` declares
     /// `permission_policy` advisory for that reason.
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
@@ -283,22 +310,32 @@ impl HarnessGrammar for CodexGrammar {
             &run.spec.workspace.path,
             run.spec.work.request.repository.subdirectory.as_deref(),
         )?;
+        let mcp = ["-c".to_owned(), mcp_override(run.host)];
+        // The login is read once here, so a token the agent prints reads `[REDACTED]`.
+        let secrets = run
+            .host
+            .home()
+            .map(|home| redact::login_secrets(&home.join(".codex").join(LOGIN_FILE)))
+            .unwrap_or_default();
         let mut args = Vec::new();
         if matches!(
             run.spec.work.request.permission_policy.approvals,
             Some(Approvals::Ask)
         ) {
             args.push("app-server".to_owned());
+            args.extend(mcp);
             return Ok(Invocation {
                 args,
                 stdin_stays_open: true,
+                secrets,
                 ..Invocation::default()
             });
         }
         let model = run.spec.work.request.requested_model.as_ref();
         let sandbox = sandbox_mode(&run.spec.work.request.tools_for(DESCRIPTOR.kind));
+        args.push("exec".to_owned());
+        args.extend(mcp);
         args.extend([
-            "exec".to_owned(),
             "--json".to_owned(),
             "--sandbox".to_owned(),
             sandbox.to_owned(),
@@ -308,6 +345,7 @@ impl HarnessGrammar for CodexGrammar {
         }
         Ok(Invocation {
             args,
+            secrets,
             ..Invocation::default()
         })
     }

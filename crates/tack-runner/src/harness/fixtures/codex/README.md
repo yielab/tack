@@ -55,6 +55,11 @@ provider's `env_key` were set to an obviously fake value.
   agent profile's instructions piped over **stdin**, never argv, for the same
   `ps`/`/proc` exposure reason `../process.rs` documents — confirmed against the real
   binary; no `~/.codex/config.toml` is written (`CodexGrammar::invocation`).
+- A `-c` override is merged into the config's tables, not put in their place (measured on 0.149.1
+  with `codex mcp list` against a config naming two servers): `-c 'mcp_servers={}'` removes none,
+  `-c 'mcp_servers={"name"={enabled=false}}'` switches that one off, a name with a dot included, and
+  `null`, `""` and `[]` are refused (`expected a map`). `CodexGrammar` therefore reads the server
+  names from `~/.codex/config.toml` and switches each off.
 - Version detection invokes `codex --version`, exit code 0; the real CLI prefixes the
   version with a program-name token rather than printing it bare, so detection scans for a
   strict `X.Y[.Z]` numeric token anywhere in the output rather than requiring the whole line

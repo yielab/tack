@@ -51,8 +51,12 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   `tack runner doctor`, on the "permission policy" line of each agent.
 - **Tack's sandbox on Linux.** On top of that, where `bwrap` is installed, the runner
   starts each agent inside it. The agent
-  sees the workspace and a scratch home, the folders it keeps under your home
-  (`~/.claude`, `~/.codex`), and the system directories read-only. It does not see the
+  sees the workspace and a scratch home, the system directories read-only, and of the
+  folders it keeps under your home (`~/.claude`, `~/.codex`) only its settings and
+  instructions, read-only, and its login file, which it may refresh. It cannot rewrite
+  its own settings, and the MCP servers in your Codex configuration do not load. What it
+  writes there while it works (sessions, caches) goes to the scratch home and is
+  discarded with it. It does not see the
   runner's state, `~/.tackrc`, `~/.ssh` or the token file. The network is not
   restricted: the agent has to reach its model. The runner decides, for each agent,
   by starting it once inside `bwrap`. One that cannot start there (a program installed

@@ -21,9 +21,14 @@ use crate::harness::{
         ModelUsage, RunContext, RunReport, UsageDetail, call_usage, capability, policy_capability,
     },
     process::{ProcessExit, ProcessResult},
+    redact,
+    sandbox::ConfigDir,
 };
 
 mod readiness;
+
+/// Where Claude Code keeps its login, under `~/.claude`.
+const LOGIN_FILE: &str = ".credentials.json";
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "claude-code",
@@ -41,7 +46,18 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     cancels_over_api: false,
     reports_progress: true,
-    sandbox_binds: &[".claude"],
+    sandbox_binds: &[ConfigDir {
+        name: ".claude",
+        read_only: &[
+            "settings.json",
+            "settings.local.json",
+            "CLAUDE.md",
+            "agents",
+            "commands",
+            "skills",
+        ],
+        login: &[LOGIN_FILE],
+    }],
     parity: &[
         (
             ParityRule::SandboxOrNoRun,
@@ -62,10 +78,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                 "GR12: the item's trust does not change the tools or approvals of the run",
             ),
         ),
-        (
-            ParityRule::AgentConfigIsolated,
-            ParityCell::missing("GR4: ~/.claude is bound writable and its login is not redacted"),
-        ),
+        (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (ParityRule::TokenLimitWhileRunning, ParityCell::Runner),
         (
             ParityRule::KillEverythingOnCancel,
@@ -439,11 +452,17 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         // The same opt-out for claude.ai connectors, for a CLI that predates
         // `--strict-mcp-config` covering them.
         env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".to_owned(), "false".to_owned());
+        // The login is read once here, so a token the agent prints reads `[REDACTED]`.
+        let secrets = run
+            .host
+            .home()
+            .map(|home| redact::login_secrets(&home.join(".claude").join(LOGIN_FILE)))
+            .unwrap_or_default();
         Ok(Invocation {
             args,
             env,
             stdin_stays_open: ask,
-
+            secrets,
             ..Default::default()
         })
     }
