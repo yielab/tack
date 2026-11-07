@@ -25,7 +25,7 @@ pub mod verify;
 pub use client::{RunnerProtocolClient, UnavailableProtocolClient};
 pub use clock::{Clock, SystemClock};
 pub use config::{
-    ConfigOverrides, EnrollmentCredential, PlatformStore, ProcessEnv, RunnerConfig,
+    ConfigOverrides, EgressConfig, EnrollmentCredential, PlatformStore, ProcessEnv, RunnerConfig,
     RunnerConfigSources, SandboxConfig, VerifyConfig, VerifyKind,
 };
 pub use error::{ConfigError, RunnerError};

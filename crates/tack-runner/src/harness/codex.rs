@@ -45,15 +45,11 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
         read_only: &["config.toml", "AGENTS.md", "rules", "prompts", "skills"],
         login: &[LOGIN_FILE],
     }],
+    model_endpoints: &["api.openai.com", "chatgpt.com", "auth.openai.com"],
     parity: &[
         (ParityRule::SandboxOrNoRun, ParityCell::Runner),
         (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
-        (
-            ParityRule::EgressByAllowList,
-            ParityCell::missing(
-                "GR5: depends on the user's Codex config, no proxy of the runner's",
-            ),
-        ),
+        (ParityRule::EgressByAllowList, ParityCell::Runner),
         (ParityRule::UntrustedItemAsks, ParityCell::Runner),
         (ParityRule::AgentConfigIsolated, ParityCell::Runner),
         (

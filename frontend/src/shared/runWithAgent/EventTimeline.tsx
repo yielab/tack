@@ -32,6 +32,10 @@ function describeEventPayload(payload: unknown): string {
     const obj = payload as Record<string, unknown>;
     if (typeof obj.text === 'string') return obj.text;
     if (typeof obj.message === 'string') return obj.message;
+    // A refused destination: where, then why.
+    if (typeof obj.host === 'string' && typeof obj.reason === 'string') {
+      return `${obj.host}${typeof obj.port === 'number' ? `:${obj.port}` : ''} ${obj.reason}`;
+    }
     if (typeof obj.reason === 'string') return obj.reason;
     try {
       return JSON.stringify(payload);
@@ -50,6 +54,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: bo
   'attempt.verify_failed': { label: 'Verification failed', failed: true },
   'attempt.install_skipped': { label: 'Install skipped' },
   'attempt.approvals_forced_ask': { label: 'Asks before each action' },
+  'attempt.network_refused': { label: 'Web access refused' },
   'attempt.push_skipped': { label: 'Branch not pushed' },
   'attempt.push_failed': { label: 'Pushing the branch failed', failed: true },
   'attempt.evidence_failed': { label: 'Evidence could not be collected', failed: true },

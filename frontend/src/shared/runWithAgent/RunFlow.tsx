@@ -6,7 +6,7 @@ import { IconBranch, IconChecks, IconFolder, IconGlobe, IconPackage, IconShield,
 import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
-import { HELP } from '../help/texts';
+import { EGRESS_MODES, HELP, defaultEgressMode, egressEnforced } from '../help/texts';
 import { teamOf, type AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
@@ -177,6 +177,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         : `on a new branch of ${folder()}`;
   };
   const selectedProfile = () => props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId);
+  /** The profile's web access in a few words, with whether this computer holds the agent to it. docket confines its own, so it has none here. */
+  const webAccess = () => {
+    const profile = selectedProfile();
+    if (!profile || props.form.harnessKind === 'docket') return null;
+    const mode = EGRESS_MODES.find((m) => m.value === (profile.egress_mode ?? defaultEgressMode(profile.kind)))!;
+    return egressEnforced(props.harnessReports()) === true ? mode.line : `${mode.line} (this computer does not hold the agent to it)`;
+  };
   const profileName = () => props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.name ?? 'Choose a profile';
   const blocker = (): { text: string; href: string } | undefined => {
     if (props.project()?.code_origin === 'none') return { text: "Choose where this project's code is →", href: automation() };
@@ -314,6 +321,15 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           </SummaryLine>
           <SummaryLine icon={<IconGlobe />} label="Network">
             <span data-testid="run-dialog-network">{props.form.allowNetwork ? 'Web tools on: the agent may reach the network' : 'Web tools off: the agent has no network'}</span>
+            <Show when={webAccess()}>
+              {(access) => (
+                <span class="inline-flex flex-wrap items-center gap-x-2" data-testid="run-dialog-web-access">
+                  {' · '}
+                  <span>{access()}</span>
+                  <HelpHint label="Web access" help={HELP.egressMode} />
+                </span>
+              )}
+            </Show>
           </SummaryLine>
         </ul>
       </section>

@@ -9628,6 +9628,7 @@
           "limits",
           "kind",
           "builtin",
+          "egress_mode",
           "changes_files",
           "runs_commands",
           "uses_network",
@@ -9663,6 +9664,10 @@
               "null"
             ],
             "description": "One line on what the profile delivers: \"a change on a branch\", \"a document in a folder\", \"an answer\"."
+          },
+          "egress_mode": {
+            "type": "string",
+            "description": "How far the agent's traffic may go when the runner enforces it: `closed`, `listed` or `open`."
           },
           "fleet_id": {
             "type": [
@@ -10701,6 +10706,13 @@
               "null"
             ],
             "description": "One line on what the profile delivers: \"a change on a branch\", \"a document in a folder\", \"an answer\"."
+          },
+          "egress_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How far the agent's traffic may go: `closed` (the model's endpoint), `listed` (and the hosts\nin `tool_policy.allowed_hosts`) or `open` (any public host). Absent: the profile keeps its own,\nor takes the one its kind starts with."
           },
           "fleet": {
             "type": [
@@ -11910,6 +11922,13 @@
               "null"
             ],
             "description": "One line on what the profile delivers; empty or absent is no line."
+          },
+          "egress_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How far the agent's traffic may go when the runner enforces it: `closed` (the model's\nendpoint only), `listed` (and `tool_policy.allowed_hosts`) or `open` (any public host).\nAbsent: the one the profile's kind starts with."
           },
           "fleet_id": {
             "type": [
@@ -20143,6 +20162,13 @@
               "null"
             ],
             "description": "Omitted leaves the line untouched; JSON `null` or an empty string clears it."
+          },
+          "egress_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`closed`, `listed` or `open`, as on create."
           },
           "fleet_id": {
             "type": [

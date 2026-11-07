@@ -181,6 +181,8 @@ pub struct RunnerConfig {
     pub docket: DocketConfig,
     /// The `[sandbox]` table: whether an agent that finds no sandbox here may run.
     pub sandbox: SandboxConfig,
+    /// The `[egress]` table: whether the runner holds a local agent's traffic to a proxy.
+    pub egress: EgressConfig,
     /// The environment the runner process was started with, the one place harnesses, the verifier
     /// and the install read it from. Empty until the environment source supplies it.
     pub process: ProcessEnv,
@@ -250,6 +252,18 @@ impl DocketConfig {
     pub fn configured(&self) -> bool {
         self.binary.is_some() || self.base_url.is_some()
     }
+}
+
+/// The `[egress]` table. The proxy that holds a local agent to the web access its profile chose
+/// (`closed`, `listed` or `open`) is off until `enforce` is set.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EgressConfig {
+    /// Whether every local agent's traffic goes through the runner's proxy, in its profile's mode.
+    pub enforce: bool,
+    /// Hosts every local agent may reach in every mode besides the model endpoints its own
+    /// description names: the provider an agent that takes any (opencode) is configured with.
+    pub model_hosts: Vec<String>,
 }
 
 /// The `[secrets]` table.
@@ -370,6 +384,7 @@ struct FileConfig {
     environment: Option<BTreeMap<String, EnvValue>>,
     docket: Option<DocketConfig>,
     sandbox: Option<SandboxConfig>,
+    egress: Option<EgressConfig>,
 }
 
 impl RunnerConfig {
@@ -386,6 +401,7 @@ impl RunnerConfig {
             environment: BTreeMap::new(),
             docket: DocketConfig::default(),
             sandbox: SandboxConfig::default(),
+            egress: EgressConfig::default(),
             process: ProcessEnv::default(),
         }
     }
@@ -435,6 +451,9 @@ impl RunnerConfig {
             }
             if let Some(sandbox) = file.sandbox {
                 config.sandbox = sandbox;
+            }
+            if let Some(egress) = file.egress {
+                config.egress = egress;
             }
             config.apply(ConfigOverrides {
                 api_base_url: file.api_base_url,

@@ -43,6 +43,7 @@ use crate::{
         AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, ExecutionSpec,
         HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelSource,
         Progress, Question, RecoveryObservation, StreamSignal,
+        egress::{self, EgressPolicy, EgressProxy, NetworkRefusal},
         process::{
             CancelOutcome, ProcessCanceller, ProcessExit, ProcessGroups, ProcessLimits,
             ProcessResult, ProcessSpec, SupervisedProcess,
@@ -182,6 +183,10 @@ pub struct HarnessDescriptor {
     /// shares, when it runs inside a sandbox. A CLI that keeps all its state
     /// in the scratch home names none.
     pub sandbox_binds: &'static [sandbox::ConfigDir],
+    /// The hosts this CLI reaches to call its model, which every web access mode lets through:
+    /// `closed` is these and nothing else. A CLI that takes any provider names none here and
+    /// relies on the runner's `[egress] model_hosts`.
+    pub model_endpoints: &'static [&'static str],
     /// Who meets each parity rule for this CLI: itself, the runner from outside, its daemon, or
     /// nobody yet (with the reason). Declared from what the code does today, never from what a
     /// later card will do; the parity test in `tests/agent_boundaries.rs` reads it.
@@ -500,6 +505,9 @@ struct RunRecord {
     /// Where `wait`'s read loop hands each reported step; present exactly
     /// when `progress` on the sibling [`RunningProcess`] is.
     progress: Option<mpsc::Sender<Progress>>,
+    /// The proxy this run's traffic goes through, present when the runner enforces web access.
+    /// It lives as long as the run: dropping the record stops it.
+    egress: Option<EgressProxy>,
 }
 
 /// How many reported steps may wait for the engine before the read loop
@@ -520,6 +528,12 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     own_environment: BTreeMap<String, String>,
     /// What each spawn is wrapped in; none until [`Self::with_probed_sandbox`].
     sandbox: Sandbox,
+    /// Whether, and with which extra model hosts, a run's traffic is held to its profile's web
+    /// access; off until [`Self::with_egress`].
+    egress: crate::config::EgressConfig,
+    /// The network a run's proxy resolves names and connects over: the machine's, unless a test
+    /// stands one in.
+    egress_network: Option<Arc<dyn egress::Network>>,
     probe_timeout: Duration,
     /// Added to the version probe's environment only; tests steer the fake
     /// harness with it.
@@ -594,6 +608,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             request_may_reference: Vec::new(),
             own_environment: BTreeMap::new(),
             sandbox: Sandbox::none("not detected"),
+            egress: crate::config::EgressConfig::default(),
+            egress_network: None,
             probe_timeout: PROBE_TIMEOUT,
             probe_env: BTreeMap::new(),
             host_env: crate::config::ProcessEnv::default(),
@@ -615,6 +631,20 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     ) -> Self {
         self.request_may_reference = request_may_reference;
         self.own_environment = own_environment;
+        self
+    }
+
+    /// Holds each run's traffic to the web access its profile chose, through a proxy of the
+    /// runner's, when `egress.enforce` is set.
+    pub fn with_egress(mut self, egress: crate::config::EgressConfig) -> Self {
+        self.egress = egress;
+        self
+    }
+
+    /// Makes a run's proxy resolve names and connect over `network` instead of the machine's, so
+    /// a test can name what a host resolves to without one.
+    pub fn with_egress_network(mut self, network: Arc<dyn egress::Network>) -> Self {
+        self.egress_network = Some(network);
         self
     }
 
@@ -886,12 +916,55 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         }
     }
 
+    /// The web access this run is held to, or `None` when the runner does not enforce it.
+    fn egress_policy(&self, spec: &ExecutionSpec) -> Option<EgressPolicy> {
+        if !self.egress.enforce {
+            return None;
+        }
+        let request = &spec.work.request;
+        let mode = super::profile_egress_mode(request);
+        let model_hosts = self
+            .grammar
+            .descriptor()
+            .model_endpoints
+            .iter()
+            .copied()
+            .chain(self.egress.model_hosts.iter().map(String::as_str));
+        let listed =
+            tack_core::run_defaults::allowed_hosts(&request.resolved_agent_profile.tool_policy);
+        Some(EgressPolicy::new(
+            mode,
+            model_hosts,
+            listed.iter().map(String::as_str),
+        ))
+    }
+
+    /// Starts the proxy this run goes through, when the runner enforces web access. A run whose
+    /// proxy cannot start does not start: it would otherwise reach the network unheld.
+    async fn start_egress(
+        &self,
+        spec: &ExecutionSpec,
+    ) -> Result<Option<EgressProxy>, HarnessError> {
+        let Some(policy) = self.egress_policy(spec) else {
+            return Ok(None);
+        };
+        let started = match &self.egress_network {
+            Some(network) => EgressProxy::start_over(policy, Arc::clone(network)).await,
+            None => EgressProxy::start(policy).await,
+        };
+        started.map(Some).map_err(|error| {
+            tracing::warn!(%error, harness = self.kind(), "the egress proxy could not start");
+            self.reject("the runner's web access proxy could not start".to_owned())
+        })
+    }
+
     /// Everything `start` spawns, built the same way `validate` checks it.
     /// The trailing `bool` is [`Invocation::stdin_stays_open`], carried back
     /// so `start` knows whether to open this run's decision channels.
     fn prepare(
         &self,
         spec: &ExecutionSpec,
+        proxy: Option<&EgressProxy>,
     ) -> Result<(ProcessSpec, SecretMaterial, PathBuf, bool), HarnessError> {
         self.check_request(spec)?;
         let (program, mut args) = self
@@ -930,6 +1003,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
+        // Last, so neither the request nor the grammar can point the traffic elsewhere.
+        env.extend(proxy.into_iter().flat_map(EgressProxy::environment));
         let prompt = super::local_prompt(&spec.work);
         secrets.register(prompt.clone());
         secrets.register_all(invocation.secrets);
@@ -1453,6 +1528,18 @@ where
             "sandbox_required".to_owned(),
             serde_json::json!(self.sandbox.is_required()),
         );
+        additional.insert(
+            "egress".to_owned(),
+            serde_json::json!({
+                "enforced": self.egress.enforce,
+                "model_endpoints": descriptor
+                    .model_endpoints
+                    .iter()
+                    .copied()
+                    .chain(self.egress.model_hosts.iter().map(String::as_str))
+                    .collect::<Vec<_>>(),
+            }),
+        );
         if let Some(raw) = raw_output {
             additional.insert("raw_version_output".to_owned(), serde_json::json!(raw));
         }
@@ -1546,7 +1633,7 @@ where
     /// Builds the whole spawn and discards it, so anything `start` would
     /// refuse is refused here, before the attempt is announced.
     async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
-        let prepared = self.prepare(spec).map(|_| ());
+        let prepared = self.prepare(spec, None).map(|_| ());
         // `prepare` creates the scratch directory and nothing will ever run
         // in this one; `start` prepares its own.
         let _ = std::fs::remove_dir_all(self.scratch_dir(spec));
@@ -1554,8 +1641,9 @@ where
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
+        let proxy = self.start_egress(spec).await?;
         let (process_spec, secrets, scratch, stdin_stays_open) =
-            self.prepare(spec).inspect_err(|_| {
+            self.prepare(spec, proxy.as_ref()).inspect_err(|_| {
                 let _ = std::fs::remove_dir_all(self.scratch_dir(spec));
             })?;
         let process = process_spec.spawn().await.map_err(|error| {
@@ -1601,6 +1689,7 @@ where
                     scratch,
                     interactive,
                     progress: progress_tx,
+                    egress: proxy,
                 },
                 decision_channels,
                 progress: progress_rx,
@@ -1628,6 +1717,20 @@ where
     async fn approvals_forced_ask(&self, handle: &LocalRunHandle) -> Option<String> {
         let running = self.running.lock().await;
         self.forced_ask_reason(&running.get(&handle.process_id)?.record.spec)
+    }
+
+    async fn network_refusals(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<mpsc::Receiver<NetworkRefusal>> {
+        self.running
+            .lock()
+            .await
+            .get_mut(&handle.process_id)?
+            .record
+            .egress
+            .as_mut()?
+            .take_refusals()
     }
 
     async fn progress_channel(&self, handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {

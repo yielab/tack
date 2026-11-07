@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SANDBOX_TEXT, SAFETY_TEXT, agentSafety } from './texts';
+import { EGRESS_MODES, HELP, SANDBOX_TEXT, SAFETY_TEXT, agentSafety, defaultEgressMode, egressEnforced } from './texts';
 
 describe('agentSafety', () => {
   it('names who contains each of the four agents', () => {
@@ -32,5 +32,27 @@ describe('agentSafety', () => {
 
   it('puts the agent\'s confinement in plain words', () => {
     expect(SANDBOX_TEXT.harness).toBe('Runs in an isolated sandbox');
+  });
+});
+
+describe('web access', () => {
+  it('starts each kind of profile where the server does', () => {
+    expect(['implementer', 'custom', undefined, 'reviewer', 'planner', 'researcher'].map(defaultEgressMode)).toEqual([
+      'listed', 'listed', 'listed', 'closed', 'closed', 'open',
+    ]);
+  });
+
+  it('gives each mode one short line and a help that names what none of them covers', () => {
+    expect(EGRESS_MODES.map((m) => m.value)).toEqual(['closed', 'listed', 'open']);
+    for (const mode of EGRESS_MODES) expect(mode.label).not.toContain('\n');
+    expect(HELP.egressMode.text).toContain('can still receive what the agent sends it');
+    expect(HELP.egressMode.text).toContain('private networks are refused');
+  });
+
+  it('holds the agent to its mode only when every computer it could land on says so', () => {
+    expect(egressEnforced([])).toBeUndefined();
+    expect(egressEnforced([{}])).toBeUndefined();
+    expect(egressEnforced([{ egress: { enforced: true } }, {}])).toBe(true);
+    expect(egressEnforced([{ egress: { enforced: true } }, { egress: { enforced: false } }])).toBe(false);
   });
 });

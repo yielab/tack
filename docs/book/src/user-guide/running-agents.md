@@ -247,6 +247,32 @@ running the same task again does not make you retype it. A field that cannot wor
 with a link where you typed it (the folder does not exist, the branch is not in the repository, the model
 is not on the agent's list), rather than leaving **Start run** disabled with no explanation.
 
+### Web access
+
+A profile says how far its agent may reach on the web. The **Web access** setting on the profile form (Agents →
+Agent profiles) has three choices:
+
+| Choice | The agent may connect to |
+|---|---|
+| **Closed** | Only its model's own address. |
+| **Listed** | The model and the hosts you list for the profile. |
+| **Open** | Any public site. |
+
+A new profile starts with the choice that suits what it does: Implementer and custom profiles **Listed**, Reviewer and
+Planner **Closed**, Researcher **Open**, because a profile that browses cannot have every site listed. In all three,
+this computer's own address, private networks and the addresses of a cloud provider's metadata service are refused.
+The hosts a **Listed** profile may reach are the `allowed_hosts` of its tools in the project file, such as
+`docs.rs` or `*.crates.io`.
+
+The setting is enforced only on a computer whose administrator turned enforcement on (see
+[What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md#web-access)); the **Network** line of the Run
+with agent dialog says which mode the run has and when the computer does not hold the agent to it. A destination
+refused during a run appears on its timeline as **Web access refused**, with the host and the reason.
+
+An address that the mode lets through can still receive what the agent sends it: a page's address is seen, never its
+contents, so **Open** limits where the agent goes, not what it carries. docket confines its own traffic, and this
+setting does not apply to a docket team.
+
 ### Token limits
 
 A limit is in tokens. A run has one unless the profile sets none and the project's provisional limit is cleared. You can set one in four places:

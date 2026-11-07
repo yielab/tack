@@ -207,6 +207,9 @@ fn render(report: &bootstrap::DiscoveryReport, daemon: Option<&Result<String, St
             .find(|h| h.harness_kind.as_str() == kind)
         {
             render_sandbox(capability);
+            if let Some(line) = egress_line(capability) {
+                println!("{line}");
+            }
             if let (true, Some(daemon)) = (kind == "docket", daemon) {
                 for line in docket_lines(capability, daemon) {
                     println!("{line}");
@@ -311,6 +314,33 @@ fn sandbox_line(capability: &HarnessCapability) -> Option<String> {
         (Some(kind), Some(reason)) => format!("  sandbox:     {kind} ({reason})"),
         (Some(kind), None) => format!("  sandbox:     {kind}"),
         (None, _) => return None,
+    })
+}
+
+/// One line on the web access the runner gives a run of this agent: held to the profile's mode
+/// (closed, listed or open) by the runner's proxy, or not enforced. docket reports none: it
+/// confines its own.
+fn egress_line(capability: &HarnessCapability) -> Option<String> {
+    let egress = capability.additional.get("egress")?;
+    let endpoints = egress["model_endpoints"]
+        .as_array()
+        .map(|hosts| {
+            hosts
+                .iter()
+                .filter_map(|host| host.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|hosts| !hosts.is_empty())
+        .unwrap_or_else(|| "none named (list them under [egress] model_hosts)".to_owned());
+    Some(if egress["enforced"] == true {
+        format!(
+            "  web access:  held to each profile's mode (closed: the model only; listed: and its hosts; open: any public host); never loopback or private networks. model: {endpoints}"
+        )
+    } else {
+        format!(
+            "  web access:  not enforced ([egress] enforce = false), so a profile's mode is a setting only. model: {endpoints}"
+        )
     })
 }
 
