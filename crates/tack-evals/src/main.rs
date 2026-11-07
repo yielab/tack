@@ -4,7 +4,11 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tack_evals::exam::{SolutionVerdict, check_solution};
+use tack_evals::grade::{GradedTrial, grade_file, grade_trial};
 use tack_evals::record::TrialStatus;
+use tack_evals::report::{
+    compare, compare_markdown, load_summary, summarize, warnings, write_summary,
+};
 use tack_evals::trial::{TrialOptions, run_and_record};
 use tack_evals::world::WorldOptions;
 use tack_evals::{load_tasks, locate_tack_bin};
@@ -18,7 +22,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run tasks through Tack in throwaway worlds and append each trial to trials.jsonl.
+    /// Run tasks through Tack in throwaway worlds, append each trial to trials.jsonl and write
+    /// summary.md and summary.json.
     Run {
         /// Task directories, or directories holding task directories.
         #[arg(required = true)]
@@ -29,22 +34,46 @@ enum Command {
         /// Trials per task.
         #[arg(long, default_value_t = 1)]
         epochs: u32,
-        /// Run every task with this agent, those that apply to it.
+        #[command(flatten)]
+        agent: AgentArgs,
+    },
+    /// Set a run against a base: pair the tasks by id, version and agent and report the
+    /// difference with its interval. Informational; always exits 0.
+    Compare {
+        /// The base: a summary.json, a directory holding one, a trials.jsonl, or the name of a
+        /// directory under evals/baselines/.
         #[arg(long)]
-        harness: Option<String>,
-        /// The `tack` binary to serve with.
+        base: String,
+        /// The run to judge, in any of the same forms.
         #[arg(long)]
-        tack_bin: Option<PathBuf>,
-        /// A directory put in front of the server's PATH, where the agent's binary lives.
-        #[arg(long = "agent-path")]
-        agent_path: Vec<PathBuf>,
-        /// An environment variable handed to the agent as a secret (an API key). Its value is
-        /// read from this process and never printed or recorded.
-        #[arg(long = "env-secret")]
-        env_secret: Vec<String>,
-        /// Keep each world's directory after its trial.
+        head: PathBuf,
+        /// Task directories, needed to judge a trials.jsonl.
+        #[arg(long = "tasks", num_args = 1..)]
+        tasks: Vec<PathBuf>,
+        /// Also write compare.md here.
         #[arg(long)]
-        keep_worlds: bool,
+        out: Option<PathBuf>,
+    },
+    /// The scheduled regression run: run the tasks, set them against the base and warn about
+    /// every task that passed all its trials there and fails two or more here. Exits 1 only
+    /// when it warns. Failures of the eval and of the infrastructure never warn.
+    Nightly {
+        #[arg(required = true)]
+        tasks: Vec<PathBuf>,
+        #[arg(long)]
+        base: String,
+        #[arg(long, default_value = "evals-out")]
+        out: PathBuf,
+        #[arg(long, default_value_t = 3)]
+        epochs: u32,
+        /// Stop starting trials once this many tokens have been counted.
+        #[arg(long)]
+        token_cap: Option<u64>,
+        /// Judge the trials in this file and run nothing.
+        #[arg(long)]
+        trials: Option<PathBuf>,
+        #[command(flatten)]
+        agent: AgentArgs,
     },
     /// Apply each task's reference solution and run its hidden checks, with no model. Exits 1
     /// when any solution fails: the task is broken.
@@ -52,6 +81,38 @@ enum Command {
         #[arg(required = true)]
         tasks: Vec<PathBuf>,
     },
+}
+
+/// How trials are run: which agent, with which binary, under which secrets.
+#[derive(clap::Args)]
+struct AgentArgs {
+    /// Run every task with this agent, those that apply to it.
+    #[arg(long)]
+    harness: Option<String>,
+    /// The `tack` binary to serve with.
+    #[arg(long)]
+    tack_bin: Option<PathBuf>,
+    /// A directory put in front of the server's PATH, where the agent's binary lives.
+    #[arg(long = "agent-path")]
+    agent_path: Vec<PathBuf>,
+    /// An environment variable handed to the agent as a secret (an API key). Its value is
+    /// read from this process and never printed or recorded.
+    #[arg(long = "env-secret")]
+    env_secret: Vec<String>,
+    /// Keep each world's directory after its trial.
+    #[arg(long)]
+    keep_worlds: bool,
+}
+
+impl AgentArgs {
+    fn world(&self) -> Result<WorldOptions> {
+        Ok(WorldOptions {
+            tack_bin: locate_tack_bin(self.tack_bin.clone())?,
+            agent_path: self.agent_path.clone(),
+            env_secrets: self.env_secret.clone(),
+            keep: self.keep_worlds,
+        })
+    }
 }
 
 fn main() -> ExitCode {
@@ -71,21 +132,107 @@ fn run() -> Result<ExitCode> {
             tasks,
             out,
             epochs,
-            harness,
-            tack_bin,
-            agent_path,
-            env_secret,
-            keep_worlds,
+            agent,
         } => {
-            let world = WorldOptions {
-                tack_bin: locate_tack_bin(tack_bin)?,
-                agent_path,
-                env_secrets: env_secret,
-                keep: keep_worlds,
-            };
-            run_tasks(&tasks, &out, epochs, harness.as_deref(), world)
+            let batch = run_tasks(&tasks, &out, epochs, &agent, None)?;
+            write_summary(&out, &summarize(&batch.graded), None)?;
+            Ok(exit_code(batch.errors > 0))
         }
+        Command::Compare {
+            base,
+            head,
+            tasks,
+            out,
+        } => {
+            let tasks = load_tasks(&tasks)?;
+            let comparison = compare(
+                &load_summary(&resolve_base(&base), &tasks)?,
+                &load_summary(&head, &tasks)?,
+            );
+            let text = compare_markdown(&comparison);
+            print!("{text}");
+            if let Some(out) = out {
+                std::fs::create_dir_all(&out)?;
+                std::fs::write(out.join("compare.md"), text)?;
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Nightly {
+            tasks,
+            base,
+            out,
+            epochs,
+            token_cap,
+            trials,
+            agent,
+        } => nightly(
+            &tasks,
+            &base,
+            &out,
+            epochs,
+            token_cap,
+            trials.as_deref(),
+            &agent,
+        ),
     }
+}
+
+fn exit_code(failed: bool) -> ExitCode {
+    if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// `evals/baselines/<name>` when `base` is not a path that exists.
+fn resolve_base(base: &str) -> PathBuf {
+    let path = PathBuf::from(base);
+    if path.exists() {
+        path
+    } else {
+        PathBuf::from("evals/baselines").join(base)
+    }
+}
+
+fn nightly(
+    paths: &[PathBuf],
+    base: &str,
+    out: &std::path::Path,
+    epochs: u32,
+    token_cap: Option<u64>,
+    trials: Option<&std::path::Path>,
+    agent: &AgentArgs,
+) -> Result<ExitCode> {
+    let tasks = load_tasks(paths)?;
+    let (graded, errors) = match trials {
+        Some(file) => (grade_file(file, &tasks)?, 0),
+        None => {
+            let batch = run_tasks(paths, out, epochs, agent, token_cap)?;
+            (batch.graded, batch.errors)
+        }
+    };
+    let head = summarize(&graded);
+    let comparison = compare(&load_summary(&resolve_base(base), &tasks)?, &head);
+    let raised = warnings(&comparison);
+    write_summary(out, &head, Some(&comparison))?;
+    std::fs::write(out.join("compare.md"), compare_markdown(&comparison))?;
+    std::fs::write(
+        out.join("warnings.json"),
+        serde_json::to_vec_pretty(&raised)?,
+    )?;
+    for warning in &raised {
+        println!("WARNING  {}", warning.message);
+    }
+    if errors > 0 {
+        eprintln!("tack-evals: {errors} trials could not run; see the trials.jsonl");
+    }
+    println!(
+        "{} warnings; {}",
+        raised.len(),
+        tack_evals::report::verdict(&comparison)
+    );
+    Ok(exit_code(!raised.is_empty()))
 }
 
 fn check_solutions(paths: &[PathBuf]) -> Result<ExitCode> {
@@ -107,14 +254,26 @@ fn check_solutions(paths: &[PathBuf]) -> Result<ExitCode> {
     })
 }
 
+struct Batch {
+    graded: Vec<GradedTrial>,
+    /// Trials the harness itself could not run.
+    errors: usize,
+}
+
 fn run_tasks(
     paths: &[PathBuf],
     out: &std::path::Path,
     epochs: u32,
-    harness: Option<&str>,
-    world: WorldOptions,
-) -> Result<ExitCode> {
-    let mut errors = 0;
+    agent: &AgentArgs,
+    token_cap: Option<u64>,
+) -> Result<Batch> {
+    let world = agent.world()?;
+    let harness = agent.harness.as_deref();
+    let mut batch = Batch {
+        graded: Vec::new(),
+        errors: 0,
+    };
+    let mut spent: u64 = 0;
     for task in load_tasks(paths)? {
         let wanted = harness.unwrap_or(&task.task.profile.harness);
         if task
@@ -126,6 +285,10 @@ fn run_tasks(
             continue;
         }
         for epoch in 1..=epochs {
+            if token_cap.is_some_and(|cap| spent >= cap) {
+                println!("token cap reached after {spent} tokens; no more trials are started");
+                return Ok(batch);
+            }
             let options = TrialOptions {
                 out: out.to_owned(),
                 epoch,
@@ -133,6 +296,7 @@ fn run_tasks(
                 world: world.clone(),
             };
             let record = run_and_record(&task, &options)?;
+            spent += record.counted_tokens.unwrap_or(0);
             println!(
                 "{:<20} epoch {epoch}  {:?}  run {}  {}",
                 record.task,
@@ -141,13 +305,10 @@ fn run_tasks(
                 record.reason.as_deref().unwrap_or("")
             );
             if record.status == TrialStatus::Error {
-                errors += 1;
+                batch.errors += 1;
             }
+            batch.graded.push(grade_trial(&task, &record, out));
         }
     }
-    Ok(if errors == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
-    })
+    Ok(batch)
 }

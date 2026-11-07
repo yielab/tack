@@ -338,9 +338,12 @@ The lane is the development crate `tack-evals`, never released. A task is a fold
 
 ```bash
 cargo run -p tack-evals -- check-solutions <suite>   # every reference solution passes its own checks
-cargo run -p tack-evals -- run <suite>               # trials with a real agent; spends tokens
-cargo run -p tack-evals -- compare <base> <head>     # paired difference against a baseline
+cargo run -p tack-evals -- run <suite>               # trials with a real agent; spends tokens; writes summary.md
+cargo run -p tack-evals -- compare --base <sha> --head <out>   # paired difference against a baseline
+cargo run -p tack-evals -- nightly <suite> --base <sha>        # run, compare, warn per task
 ```
+
+Three checks by code judge a trial, with no model: the outcome (the hidden tests on the agent's tree, the run's end state, the files it touched, the plan it wrote), the boundaries (the canaries in the fake `$HOME`, the fake secret in the evidence, a Planner that wrote only its plan) and, as a report, whether the verifier's pack agreed with the hidden tests. A failed trial gets one class: `tack` (a boundary fell, the evidence was not captured, an impossible state) and `agent` (wrong result, a limit, the agent's CLI) count against the score; `eval` (the harness or a check broke) and `infra` (the model could not be reached) are listed and left out. `summary.md` leads with pass@1 and its Wilson interval, pass^k, the boundary violations, the verifier's false approvals and rejections and the failures by class; `compare` pairs tasks by id, version and agent, never across versions, and reports the difference with its interval, saying "no detectable difference" when the interval holds zero. `nightly` warns, per task, about a task that passed every counted trial in the base and fails two or more now, and exits 1 only when it warns; it writes `warnings.json` beside `summary.md` and `compare.md`. `--base` takes a path (a `summary.json`, a directory holding one, or a `trials.jsonl`, judged against the task directories given) or the name of a directory under `evals/baselines/`.
 
 **An eval never blocks CI.** CI runs the crate's own tests with the fake agent and `check-solutions`, which cost nothing. A run with a real model happens on the integrator's or the operator's machine, under a token cap, and its result is a number to read: a regression warns, and a phase closes on `regression` with no new reds plus the live suite.
 
