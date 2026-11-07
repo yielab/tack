@@ -299,9 +299,15 @@ async fn seeded_rows_yield_the_expected_ratios() {
     // Reviews: R1a1 accepted after a view (5 min), R3a1 rejected unviewed (30 min); R4a1 unreviewed.
     seed::statement(
         &repo,
-        "INSERT INTO mrp_reviews (attempt_id, artifact_id, verdict, viewed_at, reviewed_at) VALUES
-           ('R1a1', 'mrp-1', 'accept', '2026-09-10T12:00:00Z', '2026-09-10T12:05:00Z'),
-           ('R3a1', 'mrp-1', 'reject', NULL, '2026-09-11T13:30:00Z')",
+        "INSERT INTO attempt_reviews (attempt_id, artifact_id, verdict, reason, reviewed_at) VALUES
+           ('R1a1', 'mrp-1', 'accepted', NULL, '2026-09-10T12:05:00Z'),
+           ('R3a1', 'mrp-1', 'rejected', 'broken', '2026-09-11T13:30:00Z')",
+        &[],
+    )
+    .await;
+    seed::statement(
+        &repo,
+        "UPDATE execution_artifacts SET viewed_at = '2026-09-10T12:00:00Z' WHERE attempt_id = 'R1a1'",
         &[],
     )
     .await;

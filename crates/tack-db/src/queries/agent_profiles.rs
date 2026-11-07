@@ -69,7 +69,6 @@ pub async fn successful_run_tokens(
          WHERE r.agent_profile_id = ? AND a.state = {succeeded}
            AND (json_extract(a.usage, '$.tokens_in.value') IS NOT NULL
                 OR json_extract(a.usage, '$.tokens_out.value') IS NOT NULL)
-           AND NOT EXISTS (SELECT 1 FROM mrp_reviews m WHERE m.attempt_id = a.id AND m.verdict = 'reject')
            AND NOT EXISTS (SELECT 1 FROM attempt_reviews v WHERE v.attempt_id = a.id AND v.verdict = 'rejected')
            AND NOT EXISTS (SELECT 1 FROM execution_requests w WHERE w.idempotency_key = 'rework-' || a.id)
          ORDER BY a.created_at DESC, a.rowid DESC

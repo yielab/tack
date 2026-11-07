@@ -21,18 +21,6 @@ async fn migrations_078_to_081_create_their_tables_and_columns() {
         ),
         ("execution_decisions", &["recommendation", "viewed_at"]),
         (
-            "mrp_reviews",
-            &[
-                "attempt_id",
-                "artifact_id",
-                "verdict",
-                "reason",
-                "viewed_at",
-                "reviewed_at",
-                "reviewed_by",
-            ],
-        ),
-        (
             "pull_requests",
             &[
                 "attempt_id",

@@ -103,3 +103,8 @@ executes nothing; the runner reports `verify_configured` and `push_configured` i
 capabilities, the "Run with agent" dialog shows both as controls — disabled, with the reason,
 when the runner does not report them — and a request may decline either for one run. A
 request can never turn on what the TOML has off. Task P2 of the plan.
+
+**2026-11-07 — decision 7's store.** A review is one record per attempt in `attempt_reviews`
+(`verdict`, `reason`, `reviewed_by`, `artifact_id` of the pack it was given on, `reviewed_at`); the
+pack's own `mrp_reviews` table is gone and `viewed_at` sits on the pack's artifact row. The reason
+is required to reject, not to accept, and `reviewed_by` is the calling principal.

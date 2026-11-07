@@ -137,9 +137,11 @@ per-endpoint listing precisely so they do not get duplicated by one.
 
 **Attempts: merge-readiness, metrics**
 - `GET .../attempts/{n}/mrp` returns the attempt's newest merge-readiness pack, or `404`
-  when the verifier left none. `POST .../mrp/viewed` marks that a person opened it, and
-  `POST .../mrp/review` records the verdict with a required reason: the first review is the
-  record and a second is a `409`. Accepting never moves the item.
+  when the verifier left none, with when a person opened it and the attempt's review.
+  `POST .../mrp/viewed` marks that a person opened it. The attempt has one review, given with
+  `POST .../attempts/{n}/review` (`accepted` or `rejected`, and a `reason` that a rejection
+  must carry, or it is a `400`): it is recorded with the caller as reviewer, the first review
+  is the record and a second is a `409`. Accepting never moves the item.
 - A run never changes an item's status. A request that sends `status_map_policy_id` to
   `POST /api/executions`, or `on_start_status` or `on_finish_status` to `PATCH /api/projects/{id}`,
   is accepted, the field is ignored, and the answer carries `notice: "ignored: the status is set by

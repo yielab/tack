@@ -595,7 +595,7 @@ async fn a_reviewed_attempt_clears_needs_review() {
             &app,
             "POST",
             &review_path,
-            json!({"verdict": verdict, "note": "looks right"}),
+            json!({"verdict": verdict, "reason": "looks right"}),
             &operator_headers(),
         )
         .await;
@@ -620,7 +620,13 @@ async fn a_reviewed_attempt_clears_needs_review() {
     .await;
     let review = &listed["data"][0]["review"];
     assert_eq!(review["verdict"], "accepted", "{listed}");
-    assert_eq!(review["note"], "looks right", "{listed}");
+    assert_eq!(review["reason"], "looks right", "{listed}");
+    assert!(
+        review["reviewed_by"]
+            .as_str()
+            .is_some_and(|by| by.starts_with("operator:")),
+        "{listed}"
+    );
     assert!(review["reviewed_at"].is_string(), "{listed}");
 }
 

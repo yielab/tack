@@ -15,7 +15,7 @@ use crate::extract::{Json, Path};
 use axum::{
     Router,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -301,13 +301,15 @@ pub fn decision_routes(state: OperatorExecutionState) -> Router {
 pub struct ReviewAttemptRequest {
     /// `accepted` or `rejected`.
     pub verdict: String,
-    pub note: Option<String>,
+    /// Required to reject, optional to accept; a blank one counts as none.
+    pub reason: Option<String>,
 }
 
 /// `POST /api/executions/{request_id}/attempts/{attempt_number}/review` —
-/// records the operator's verdict on one attempt. One verdict per attempt: a
-/// second is `409` with `details.reason = "already_reviewed"`. Accepting an
-/// attempt that pushed its branch opens its pull request and returns the URL.
+/// records a person's verdict on one attempt (and on its merge-readiness pack, when it has
+/// one), with the caller as reviewer. One verdict per attempt: a second is `409` with
+/// `details.reason = "already_reviewed"`. Accepting an attempt that pushed its branch opens its
+/// pull request and returns the URL.
 #[utoipa::path(
     post,
     path = "/api/executions/{request_id}/attempts/{attempt_number}/review",
@@ -319,7 +321,7 @@ pub struct ReviewAttemptRequest {
     request_body = ReviewAttemptRequest,
     responses(
         (status = 200, description = "The recorded verdict", body = super::executions::AttemptReview),
-        (status = 400, description = "invalid_request (verdict is not accepted or rejected)", body = super::executions::RunnerV1ErrorEnvelope),
+        (status = 400, description = "invalid_request (verdict is not accepted or rejected, or a rejection has no reason)", body = super::executions::RunnerV1ErrorEnvelope),
         (status = 404, description = "not_found (execution_request or execution_attempt)", body = super::executions::RunnerV1ErrorEnvelope),
         (status = 409, description = "conflict (details.reason = already_reviewed)", body = super::executions::RunnerV1ErrorEnvelope),
     ),
@@ -327,6 +329,7 @@ pub struct ReviewAttemptRequest {
 pub async fn review_execution_attempt(
     State(state): State<OperatorExecutionState>,
     Path((request_id, attempt_number)): Path<(String, i64)>,
+    headers: HeaderMap,
     Json(input): Json<ReviewAttemptRequest>,
 ) -> Result<Json<super::executions::AttemptReview>, (StatusCode, Json<Value>)> {
     if !matches!(input.verdict.as_str(), "accepted" | "rejected") {
@@ -337,6 +340,20 @@ pub async fn review_execution_attempt(
             json!({"field": "verdict"}),
         ));
     }
+    let reason = input
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty());
+    if input.verdict == "rejected" && reason.is_none() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "a rejection needs a reason",
+            json!({"field": "reason"}),
+        ));
+    }
+    let reviewed_by = super::executions::principal(&headers)?;
     if !execution_request_exists(&state, &request_id).await? {
         return Err(error(
             StatusCode::NOT_FOUND,
@@ -352,7 +369,8 @@ pub async fn review_execution_attempt(
             &request_id,
             attempt_number,
             &input.verdict,
-            input.note.as_deref(),
+            reason,
+            &reviewed_by,
             &reviewed_at,
         )
         .await
@@ -387,7 +405,8 @@ pub async fn review_execution_attempt(
     };
     Ok(Json(super::executions::AttemptReview {
         verdict: input.verdict,
-        note: input.note,
+        reason: reason.map(str::to_owned),
+        reviewed_by: Some(reviewed_by),
         reviewed_at,
         pull_request_url,
     }))

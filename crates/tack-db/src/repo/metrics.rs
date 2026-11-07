@@ -164,12 +164,12 @@ pub async fn mrp_waits(
     since: Option<&str>,
 ) -> Result<Vec<WaitRow>, StoreError> {
     let rows = sqlx::query(
-        "SELECT m.viewed_at, x.created_at, m.reviewed_at AS resolved_at FROM mrp_reviews m
+        "SELECT x.viewed_at, x.created_at, m.reviewed_at AS resolved_at FROM attempt_reviews m
          JOIN execution_artifacts x ON x.attempt_id = m.attempt_id AND x.artifact_id = m.artifact_id
          JOIN execution_attempts a ON a.id = m.attempt_id
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? AND m.reviewed_at IS NOT NULL
+         WHERE i.project_id = ?
            AND (? IS NULL OR julianday(x.created_at) >= julianday(?))",
     )
     .bind(project_id)
@@ -198,12 +198,12 @@ pub async fn mrp_totals(
     let row = sqlx::query(
         "SELECT COUNT(DISTINCT x.attempt_id) AS produced,
                 COUNT(DISTINCT CASE WHEN m.verdict IS NOT NULL THEN x.attempt_id END) AS reviewed,
-                COUNT(DISTINCT CASE WHEN m.verdict = 'accept' THEN x.attempt_id END) AS accepted
+                COUNT(DISTINCT CASE WHEN m.verdict = 'accepted' THEN x.attempt_id END) AS accepted
          FROM execution_artifacts x
          JOIN execution_attempts a ON a.id = x.attempt_id
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
-         LEFT JOIN mrp_reviews m ON m.attempt_id = x.attempt_id AND m.artifact_id = x.artifact_id
+         LEFT JOIN attempt_reviews m ON m.attempt_id = x.attempt_id AND m.artifact_id = x.artifact_id
          WHERE i.project_id = ? AND x.media_type = ? AND (? IS NULL OR julianday(x.created_at) >= julianday(?))",
     )
     .bind(project_id)

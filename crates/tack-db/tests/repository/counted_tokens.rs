@@ -116,12 +116,12 @@ async fn a_profiles_history_counts_its_last_successful_measured_runs() {
     let rows = [
         ("R1", "P", "succeeded", Some(1000), None),
         ("R2", "P", "succeeded", Some(3000), None),
-        ("R3", "P", "succeeded", Some(2000), Some("mrp_accept")),
+        ("R3", "P", "succeeded", Some(2000), Some("accepted")),
         ("R4", "P", "succeeded", Some(4000), None),
         ("R5", "P", "failed", Some(9000), None),
         ("R6", "P", "succeeded", None, None),
-        ("R7", "P", "succeeded", Some(8000), Some("mrp_reject")),
-        ("R8", "P", "succeeded", Some(8000), Some("attempt_rejected")),
+        ("R7", "P", "succeeded", Some(8000), Some("rejected")),
+        ("R8", "P", "succeeded", Some(8000), Some("rejected")),
         ("R9", "P", "succeeded", Some(8000), Some("rework")),
         ("R10", "other", "succeeded", Some(8000), None),
     ];
@@ -166,24 +166,10 @@ async fn a_profiles_history_counts_its_last_successful_measured_runs() {
         .await
         .unwrap();
         match refusal {
-            Some("mrp_accept" | "mrp_reject") => {
-                let verdict = if refusal == Some("mrp_reject") {
-                    "reject"
-                } else {
-                    "accept"
-                };
-                sqlx::query(
-                    "INSERT INTO mrp_reviews (attempt_id, artifact_id, verdict) VALUES (?, 'x', ?)",
-                )
-                .bind(format!("A-{id}"))
-                .bind(verdict)
-                .execute(repo.pool())
-                .await
-                .unwrap();
-            }
-            Some("attempt_rejected") => {
-                sqlx::query("INSERT INTO attempt_reviews (attempt_id, verdict, reviewed_at) VALUES (?, 'rejected', ?)")
+            Some("accepted" | "rejected") => {
+                sqlx::query("INSERT INTO attempt_reviews (attempt_id, verdict, reviewed_at) VALUES (?, ?, ?)")
                     .bind(format!("A-{id}"))
+                    .bind(refusal)
                     .bind(&created)
                     .execute(repo.pool())
                     .await

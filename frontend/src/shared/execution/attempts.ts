@@ -96,6 +96,15 @@ export type AttemptMerge = components['schemas']['AttemptMerge'];
  * to drive `model_provenance`/`usage_economics` display, which are already
  * fully typed above. `terminal_reason` is typed from the generated schema.
  */
+/** A person's verdict on one attempt; a rejection always carries its reason. `reviewed_by` is the
+ *  principal who gave it (`<kind>:<id>`), `null` for a review recorded before the reviewer was kept. */
+export interface AttemptReview {
+  verdict: 'accepted' | 'rejected';
+  reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string;
+}
+
 export interface AttemptSummary {
   attempt_id: string;
   request_id: string;
@@ -136,7 +145,7 @@ export interface AttemptSummary {
   /** What the harness ran inside, as the runner reported at start; `null` when it did not say. */
   sandbox?: string | null;
   /** `null` until a person accepts or rejects the attempt's result. */
-  review: { verdict: 'accepted' | 'rejected'; note: string | null; reviewed_at: string } | null;
+  review: AttemptReview | null;
 }
 
 export interface AttemptListResult {
@@ -288,7 +297,7 @@ export const attemptsApi = {
       `/attempts/${encodeURIComponent(attemptId)}/merge`,
       { method: 'POST' },
     ),
-  review: (requestId: string, attemptNumber: number, body: { verdict: 'accepted' | 'rejected'; note?: string }) =>
+  review: (requestId: string, attemptNumber: number, body: { verdict: 'accepted' | 'rejected'; reason?: string }) =>
     requestWithHeaders<unknown>(
       `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(String(attemptNumber))}/review`,
       { method: 'POST', body: JSON.stringify(body) },

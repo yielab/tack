@@ -42,6 +42,7 @@
 // `cancellation_requested_at`, never `state`; a re-fetch shows the real one.
 
 import { request, requestWithHeaders } from '../api/client';
+import type { AttemptReview } from './attempts';
 
 // ── Executions (`crates/tack-api/src/handlers/executions.rs`) ─────────────
 
@@ -599,19 +600,12 @@ export interface MrpNextStep {
   message?: string | null;
 }
 
-export interface MrpReview {
-  attempt_id: string;
-  artifact_id: string;
-  verdict: 'accept' | 'reject' | null;
-  reason: string | null;
-  viewed_at: string | null;
-  reviewed_at: string | null;
-  reviewed_by: string | null;
-}
-
 export interface MrpResponse {
   pack: MrpPack;
-  review: MrpReview | null;
+  /** When the pack was first opened; `null` until then. */
+  viewed_at: string | null;
+  /** The attempt's one review, given on the run or on the pack; `null` until a person has decided. */
+  review: AttemptReview | null;
 }
 
 function mrpPath(requestId: string, attemptNumber: number): string {
@@ -621,11 +615,5 @@ function mrpPath(requestId: string, attemptNumber: number): string {
 export const mrpApi = {
   get: (requestId: string, attemptNumber: number) => request<MrpResponse>(mrpPath(requestId, attemptNumber)),
   markViewed: (requestId: string, attemptNumber: number) =>
-    request<MrpReview>(`${mrpPath(requestId, attemptNumber)}/viewed`, { method: 'POST' }),
-  /** A second review of the same pack is a 409. */
-  review: (requestId: string, attemptNumber: number, verdict: 'accept' | 'reject', reason: string) =>
-    request<MrpReview>(`${mrpPath(requestId, attemptNumber)}/review`, {
-      method: 'POST',
-      body: JSON.stringify({ verdict, reason }),
-    }),
+    request<{ viewed_at: string | null }>(`${mrpPath(requestId, attemptNumber)}/viewed`, { method: 'POST' }),
 };

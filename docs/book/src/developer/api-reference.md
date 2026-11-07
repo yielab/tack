@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (129 paths, 172 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (128 paths, 171 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1007,26 +1007,8 @@ GET /api/executions/:request_id/attempts/:attempt_number/mrp
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | The parsed pack and its review record | `MrpResponse` |
+| 200 | The parsed pack, when it was opened and the attempt's review | `MrpResponse` |
 | 404 | No pack for this attempt | `ErrorEnvelope` |
-
-#### `POST /api/executions/{request_id}/attempts/{attempt_number}/mrp/review`
-
-POST /api/executions/:request_id/attempts/:attempt_number/mrp/review
-
-| Param | In | Type | Required | Description |
-|---|---|---|---|---|
-| `request_id` | path | `string` | yes | Execution request ID |
-| `attempt_number` | path | `integer` | yes | 1-based attempt number |
-
-**Request body:** `MrpReviewRequest`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | The recorded review; an accepted attempt that pushed its branch adds `pull_request_url` | `object` |
-| 400 | Blank reason | `ErrorEnvelope` |
-| 404 | No pack for this attempt | `ErrorEnvelope` |
-| 409 | The pack was already reviewed | `ErrorEnvelope` |
 
 #### `POST /api/executions/{request_id}/attempts/{attempt_number}/mrp/viewed`
 
@@ -1039,7 +1021,7 @@ POST /api/executions/:request_id/attempts/:attempt_number/mrp/viewed
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | The review record, with viewed_at stamped once | `object` |
+| 200 | When the pack was first opened, stamped once | `MrpViewed` |
 | 404 | No pack for this attempt | `ErrorEnvelope` |
 
 ---
@@ -1948,7 +1930,7 @@ Download a verified artifact's raw content
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | The recorded verdict | `AttemptReview` |
-| 400 | invalid_request (verdict is not accepted or rejected) | `RunnerV1ErrorEnvelope` |
+| 400 | invalid_request (verdict is not accepted or rejected, or a rejection has no reason) | `RunnerV1ErrorEnvelope` |
 | 404 | not_found (execution_request or execution_attempt) | `RunnerV1ErrorEnvelope` |
 | 409 | conflict (details.reason = already_reviewed) | `RunnerV1ErrorEnvelope` |
 

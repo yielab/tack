@@ -118,7 +118,14 @@ async fn a_review_is_recorded_once_and_the_store_says_why_not() {
 
     let missing = fx
         .repo
-        .record_attempt_review("request-r", 9, "accepted", None, "2026-01-01T00:00:00Z")
+        .record_attempt_review(
+            "request-r",
+            9,
+            "accepted",
+            None,
+            "operator:local",
+            "2026-01-01T00:00:00Z",
+        )
         .await;
     assert!(
         matches!(missing, Err(StoreError::NotFound { entity: "attempt" })),
@@ -132,6 +139,7 @@ async fn a_review_is_recorded_once_and_the_store_says_why_not() {
             1,
             "accepted",
             Some("looks right"),
+            "operator:local",
             "2026-01-01T00:00:00Z",
         )
         .await
@@ -140,7 +148,14 @@ async fn a_review_is_recorded_once_and_the_store_says_why_not() {
 
     let second = fx
         .repo
-        .record_attempt_review("request-r", 1, "rejected", None, "2026-01-02T00:00:00Z")
+        .record_attempt_review(
+            "request-r",
+            1,
+            "rejected",
+            Some("no"),
+            "operator:local",
+            "2026-01-02T00:00:00Z",
+        )
         .await;
     assert!(
         matches!(&second, Err(StoreError::Conflict(reason)) if reason == "already_reviewed"),

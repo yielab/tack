@@ -486,10 +486,6 @@ pub fn build_router(state: AppState) -> Router {
             "/executions/{request_id}/attempts/{attempt_number}/mrp/viewed",
             post(mrp::mark_viewed),
         )
-        .route(
-            "/executions/{request_id}/attempts/{attempt_number}/mrp/review",
-            post(mrp::review_mrp),
-        )
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))
         .route(
