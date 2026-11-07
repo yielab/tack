@@ -21,7 +21,8 @@ use crate::notifications::{Inbox, subscriber};
 use crate::ports::Ports;
 use crate::remote_backup::BackupConfig;
 use crate::{
-    auto_start, due_soon, github_sync, observability, remote_backup, retention, threads, triggers,
+    auto_start, due_soon, github_sync, observability, quality_trend, remote_backup, retention,
+    threads, triggers,
 };
 
 /// The floor of the automatic backup interval: `tokio::time::interval` panics on zero, and
@@ -292,8 +293,17 @@ impl LoopConfig {
             loops,
             repo.clone(),
             clock.clone(),
-            inbox,
+            inbox.clone(),
             due_soon::INTERVAL,
+        );
+
+        // A cut of the work whose success clearly fell is announced in the inbox, once a day.
+        quality_trend::spawn(
+            loops,
+            repo.clone(),
+            clock.clone(),
+            inbox,
+            quality_trend::INTERVAL,
         );
 
         // Purges stale replay bookkeeping and terminal events and expires overdue decisions; off

@@ -316,3 +316,105 @@ fn a_long_subject_is_cut_in_the_title() {
     assert!(n.title.ends_with(&format!("{}...", "x".repeat(80))));
     assert!(n.title.chars().count() < 160);
 }
+
+fn outcomes(succeeded: u32, ended: u32) -> Outcomes {
+    Outcomes { succeeded, ended }
+}
+
+#[test]
+fn trend_wilson_matches_the_hand_values() {
+    let (low, high) = wilson(outcomes(8, 10)).unwrap();
+    assert!(
+        (low - 0.4902).abs() < 1e-3 && (high - 0.9433).abs() < 1e-3,
+        "{low} {high}"
+    );
+    assert_eq!(wilson(outcomes(0, 0)), None);
+    let (low, high) = wilson(outcomes(0, 5)).unwrap();
+    assert_eq!(low, 0.0);
+    assert!(high > 0.4 && high < 0.5);
+}
+
+#[test]
+fn trend_warns_only_when_the_intervals_do_not_overlap() {
+    // 2 of 20 now against 63 of 70 before: far apart.
+    let drop = quality_trend(
+        project(),
+        "profile",
+        "Coder",
+        outcomes(2, 20),
+        outcomes(63, 70),
+    )
+    .expect("a drop");
+    assert_eq!(
+        (drop.kind, drop.level),
+        (Kind::QualityTrend, Level::NeedsYou)
+    );
+    assert_eq!(drop.key, Key::quality_trend(project(), "profile", "Coder"));
+    assert_eq!(drop.kind.as_str(), "quality_trend");
+    assert_eq!(
+        drop.title,
+        "Success for profile \"Coder\" fell to 10% (2 of 20) in the last 7 days, from 90% (63 of 70) in the 28 before"
+    );
+    // A lower rate whose intervals still overlap, a sample too small to tell, no change and a rise: no notice.
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(6, 10),
+            outcomes(63, 70)
+        )
+        .is_none()
+    );
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(2, 4),
+            outcomes(63, 70)
+        )
+        .is_none()
+    );
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(63, 70),
+            outcomes(63, 70)
+        )
+        .is_none()
+    );
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(20, 20),
+            outcomes(2, 20)
+        )
+        .is_none()
+    );
+    // Nothing to compare with.
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(0, 0),
+            outcomes(63, 70)
+        )
+        .is_none()
+    );
+    assert!(
+        quality_trend(
+            project(),
+            "profile",
+            "Coder",
+            outcomes(2, 20),
+            outcomes(0, 0)
+        )
+        .is_none()
+    );
+}

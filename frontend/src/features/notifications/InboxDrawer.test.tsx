@@ -122,6 +122,7 @@ describe('notificationHref', () => {
     expect(notificationHref(row('a', { kind: 'run_failed', request_id: 'r 1' }))).toBe('/projects/p1/items/item-1?tab=execution&run=r%201');
     expect(notificationHref(row('a', { kind: 'due_soon', request_id: null }))).toBe('/projects/p1/items/item-1');
     expect(notificationHref(row('a', { item_id: null }))).toBeNull();
+    expect(notificationHref(row('a', { kind: 'quality_trend', key: 'trend:p1:profile:Coder', item_id: null }))).toBe('/projects/p1/factory');
     expect(notificationHref(row('a', { kind: 'memory', key: 'memory:11111111-1111-1111-1111-111111111111:saas-dev:mem-1', item_id: null }))).toBe('/agents#team-saas-dev');
   });
 });

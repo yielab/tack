@@ -128,7 +128,7 @@ The file-upload endpoint (`POST /api/items/{id}/attachments`) is exempt from thi
 
 ## Webhooks
 
-Set `TACK_WEBHOOK_URL` to receive an HTTP `POST` for every notification Tack opens: a question an agent asks, a run that failed, a change set that waits, a run that finished, an item due within the hour. Edits to items and sprints are not sent; the board's API and live view carry those.
+Set `TACK_WEBHOOK_URL` to receive an HTTP `POST` for every notification Tack opens: a question an agent asks, a run that failed, a change set that waits, a run that finished, an item due within the hour, a clear fall in a profile's or an agent's success. Edits to items and sprints are not sent; the board's API and live view carry those.
 
 ```sh
 TACK_WEBHOOK_URL='https://hooks.example.com/tack' tack serve
@@ -148,6 +148,7 @@ The event name is sent both as the `X-Tack-Event` request header and as the `eve
 | `notification.run_finished` | A run finished |
 | `notification.due_soon` | An item is due within the next hour (checked hourly) |
 | `notification.memory` | A docket team holds something it learnt and waits for you to approve it with docket's own command (one is sent for each project that uses the team, with that project's `project_id`, within about five minutes of the team's report changing) |
+| `notification.quality_trend` | The success rate of a profile or an agent over the last seven days is clearly below the 28 days before (checked once a day) |
 
 ### Payload
 
