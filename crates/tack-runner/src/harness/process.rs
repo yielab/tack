@@ -21,6 +21,12 @@
 //! a bare `extern "C"` block instead of adding the `libc` crate as a
 //! dependency.
 //!
+//! A descendant that starts its own session or group leaves that group, so the signal to the
+//! group does not reach it. Before it signals, a stop reads the process table (`/proc`), finds
+//! the groups and sessions of the child's descendants and stops those too; a stop that leaves
+//! any of them alive reports [`CancelOutcome::Survived`], and [`ProcessCanceller::kill`] is the
+//! second try with SIGKILL at once.
+//!
 //! Non-Unix targets fall back to killing only the direct child
 //! (`tokio::process::Child::kill`), matching the same best-effort pattern
 //! already used for non-Unix permissions in `workspace.rs`/`journal.rs`; this
@@ -168,6 +174,9 @@ pub enum CancelOutcome {
     Stopped,
     /// The group did not stop from SIGTERM alone and was sent SIGKILL.
     Killed,
+    /// Something in the tree, the group or a session a descendant started, was still there after
+    /// SIGKILL and the wait that follows it.
+    Survived,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -619,6 +628,11 @@ impl SupervisedProcess {
             }
         }
         let groups = kill_groups(self.live_groups(), grace).await;
+        let outcome = if groups.survived > 0 {
+            CancelOutcome::Survived
+        } else {
+            outcome
+        };
         Ok((outcome, groups))
     }
 
@@ -632,13 +646,7 @@ impl SupervisedProcess {
 
     /// The announced groups still live, never the main one.
     fn live_groups(&self) -> BTreeSet<u32> {
-        let mut groups = self
-            .groups
-            .lock()
-            .map(|set| set.clone())
-            .unwrap_or_default();
-        groups.remove(&self.pid);
-        groups
+        announced_groups(&self.groups, self.pid)
     }
 }
 
@@ -662,25 +670,30 @@ impl ProcessCanceller {
     ) -> Result<(CancelOutcome, ProcessGroups), ProcessError> {
         #[cfg(unix)]
         {
+            let beyond = unix::descendant_groups(self.pid);
             unix::signal_group(self.pid, unix::SIGTERM)
                 .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
+            for pgid in &beyond {
+                let _ = unix::signal_group(*pgid, unix::SIGTERM);
+            }
             let mut alive = wait_until_gone(BTreeSet::from([self.pid]), grace).await;
-            let outcome = if alive.is_empty() {
-                CancelOutcome::Stopped
-            } else {
+            let mut outcome = CancelOutcome::Stopped;
+            if !alive.is_empty() {
                 unix::signal_group(self.pid, unix::SIGKILL)
                     .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
                 alive = wait_until_gone(alive, Duration::from_secs(5)).await;
-                CancelOutcome::Killed
-            };
-            let _ = alive;
-            let mut groups = self
-                .groups
-                .lock()
-                .map(|set| set.clone())
-                .unwrap_or_default();
-            groups.remove(&self.pid);
-            Ok((outcome, kill_groups(groups, grace).await))
+                outcome = if alive.is_empty() {
+                    CancelOutcome::Killed
+                } else {
+                    CancelOutcome::Survived
+                };
+            }
+            let beyond_left = kill_groups(beyond, grace).await;
+            let groups = kill_groups(announced_groups(&self.groups, self.pid), grace).await;
+            if beyond_left.survived > 0 || groups.survived > 0 {
+                outcome = CancelOutcome::Survived;
+            }
+            Ok((outcome, groups))
         }
         #[cfg(not(unix))]
         {
@@ -690,6 +703,53 @@ impl ProcessCanceller {
             )))
         }
     }
+
+    /// The second try after a stop that did not hold: SIGKILL at once to the group, to the
+    /// groups the harness announced and to the groups and sessions its descendants started,
+    /// then a look at what is still there.
+    pub async fn kill(&self) -> Result<(CancelOutcome, ProcessGroups), ProcessError> {
+        #[cfg(unix)]
+        {
+            let mut groups = announced_groups(&self.groups, self.pid);
+            groups.extend(unix::descendant_groups(self.pid));
+            let tracked = groups.len();
+            let main = unix::signal_group(self.pid, unix::SIGKILL)
+                .map_err(|error| ProcessError::Signal(IoKind(error.kind())));
+            for pgid in &groups {
+                let _ = unix::signal_group(*pgid, unix::SIGKILL);
+            }
+            main?;
+            groups.insert(self.pid);
+            let mut alive = wait_until_gone(groups, Duration::from_secs(5)).await;
+            let main_alive = alive.remove(&self.pid);
+            let outcome = if main_alive || !alive.is_empty() {
+                CancelOutcome::Survived
+            } else {
+                CancelOutcome::Killed
+            };
+            Ok((
+                outcome,
+                ProcessGroups {
+                    tracked,
+                    killed: tracked - alive.len(),
+                    survived: alive.len(),
+                },
+            ))
+        }
+        #[cfg(not(unix))]
+        {
+            Err(ProcessError::Signal(IoKind(
+                std::io::ErrorKind::Unsupported,
+            )))
+        }
+    }
+}
+
+/// The announced groups, never the main one `pid` leads.
+fn announced_groups(groups: &Mutex<BTreeSet<u32>>, pid: u32) -> BTreeSet<u32> {
+    let mut groups = groups.lock().map(|set| set.clone()).unwrap_or_default();
+    groups.remove(&pid);
+    groups
 }
 
 /// Keeps the set of live announced groups. A pgid that no group could have
@@ -781,6 +841,9 @@ async fn reap_group(pid: u32, grace: Duration) {
     }
 }
 
+/// SIGTERM to the group, SIGKILL after `grace` to what is still there. A descendant that left the
+/// group (its own session, or its own group) is stopped the same way: it is found in `/proc`
+/// before the first signal, while the tree is still joined to `pid`.
 async fn kill_tree(
     pid: u32,
     child: &mut Child,
@@ -788,15 +851,29 @@ async fn kill_tree(
 ) -> Result<CancelOutcome, ProcessError> {
     #[cfg(unix)]
     {
+        let beyond = unix::descendant_groups(pid);
         unix::signal_group(pid, unix::SIGTERM)
             .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
-        if time::timeout(grace, child.wait()).await.is_ok() {
-            return Ok(CancelOutcome::Stopped);
+        for pgid in &beyond {
+            let _ = unix::signal_group(*pgid, unix::SIGTERM);
         }
-        unix::signal_group(pid, unix::SIGKILL)
-            .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
-        let _ = time::timeout(Duration::from_secs(5), child.wait()).await;
-        Ok(CancelOutcome::Killed)
+        let mut outcome = CancelOutcome::Stopped;
+        if time::timeout(grace, child.wait()).await.is_err() {
+            unix::signal_group(pid, unix::SIGKILL)
+                .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
+            let _ = time::timeout(Duration::from_secs(5), child.wait()).await;
+            outcome = CancelOutcome::Killed;
+            if !wait_until_gone(BTreeSet::from([pid]), Duration::from_secs(5))
+                .await
+                .is_empty()
+            {
+                return Ok(CancelOutcome::Survived);
+            }
+        }
+        if kill_groups(beyond, grace).await.survived > 0 {
+            return Ok(CancelOutcome::Survived);
+        }
+        Ok(outcome)
     }
     #[cfg(not(unix))]
     {
@@ -1002,7 +1079,7 @@ pub fn process_alive(pid: u32) -> bool {
 
 #[cfg(unix)]
 mod unix {
-    use std::io;
+    use std::{collections::BTreeSet, io};
 
     // A bare `extern "C"` block avoids adding the `libc` crate as a new
     // `tack-runner` dependency for the one POSIX syscall this module needs. `libc` is already resolved
@@ -1048,6 +1125,76 @@ mod unix {
     /// Whether any process is left in the group `pgid`.
     pub fn group_alive(pgid: u32) -> bool {
         unsafe { kill(-(pgid as i32), 0) == 0 }
+    }
+
+    /// One row of the process table: who a process is, whose child it is, and its group and
+    /// session.
+    #[cfg(target_os = "linux")]
+    struct Row {
+        pid: u32,
+        parent: u32,
+        group: u32,
+        session: u32,
+    }
+
+    /// `/proc/<pid>/stat` as a [`Row`]. The command name is in parentheses and may hold spaces
+    /// or parentheses itself, so the fields are counted from the last `)`.
+    #[cfg(target_os = "linux")]
+    fn row(pid: u32) -> Option<Row> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let mut fields = stat[stat.rfind(')')? + 1..].split_whitespace().skip(1);
+        let mut next = || fields.next()?.parse::<u32>().ok();
+        Some(Row {
+            pid,
+            parent: next()?,
+            group: next()?,
+            session: next()?,
+        })
+    }
+
+    /// The process groups and sessions of every descendant of `root` that are neither `root`'s
+    /// own group nor the runner's: the places a descendant that called `setsid` or `setpgid`
+    /// lives in, which a signal to `root`'s group never reaches. Each id is the leader's pid, so
+    /// it names a group `kill(-id)` can signal. Empty where `/proc` is not there.
+    pub fn descendant_groups(root: u32) -> BTreeSet<u32> {
+        #[cfg(target_os = "linux")]
+        {
+            let Ok(entries) = std::fs::read_dir("/proc") else {
+                return BTreeSet::new();
+            };
+            let table: Vec<Row> = entries
+                .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+                .filter_map(row)
+                .collect();
+            let own = row(std::process::id());
+            let mut tree = BTreeSet::from([root]);
+            while let Some(found) = table
+                .iter()
+                .find(|row| tree.contains(&row.parent) && !tree.contains(&row.pid))
+            {
+                tree.insert(found.pid);
+            }
+            let mut groups = BTreeSet::new();
+            for row in table
+                .iter()
+                .filter(|row| row.pid != root && tree.contains(&row.pid))
+            {
+                for id in [row.group, row.session] {
+                    let runners = own
+                        .as_ref()
+                        .is_some_and(|own| id == own.group || id == own.session);
+                    if id > 1 && id != root && !runners && id <= i32::MAX as u32 {
+                        groups.insert(id);
+                    }
+                }
+            }
+            groups
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = root;
+            BTreeSet::new()
+        }
     }
 }
 

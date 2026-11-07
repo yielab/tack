@@ -1092,10 +1092,12 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
 
     /// A cancel for a run `wait` already owns: stop its groups from outside
     /// and flag it, so `wait` returns the cancelled outcome and removes the
-    /// scratch directory itself.
+    /// scratch directory itself. `kill` skips SIGTERM: it is the second try
+    /// after a stop that left something alive.
     async fn cancel_waiting(
         &self,
         handle: &LocalRunHandle,
+        kill: bool,
     ) -> Result<CancellationEvidence, HarnessError> {
         let waiting = self
             .waiting
@@ -1111,28 +1113,54 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                 HarnessError::Process
             })?;
         waiting.cancelled.store(true, Ordering::SeqCst);
-        let (observation, process_outcome, groups) =
-            match waiting.canceller.stop(waiting.grace).await {
-                Ok((CancelOutcome::Stopped, groups)) => {
-                    (CancelObservation::ProcessStopped, "stopped", groups)
-                }
-                Ok((CancelOutcome::Killed, groups)) => {
-                    (CancelObservation::ProcessStopped, "killed", groups)
-                }
-                Err(error) => {
-                    tracing::warn!(?error, harness = self.kind(), "cancel signal failed");
-                    (
-                        CancelObservation::Ambiguous,
-                        "signal_failed",
-                        ProcessGroups::default(),
-                    )
-                }
-            };
-        Ok(CancellationEvidence {
+        let stopped = if kill {
+            waiting.canceller.kill().await
+        } else {
+            waiting.canceller.stop(waiting.grace).await
+        };
+        let (observation, process_outcome, groups) = self.observed(stopped);
+        Ok(self.evidence(waiting.pid, observation, process_outcome, groups))
+    }
+
+    /// What a stop saw, in the words the engine and the board read. A tree with something alive
+    /// after SIGKILL is not stopped: the evidence is `Ambiguous` and the engine tries again.
+    fn observed(
+        &self,
+        stopped: Result<(CancelOutcome, ProcessGroups), crate::harness::process::ProcessError>,
+    ) -> (CancelObservation, &'static str, ProcessGroups) {
+        match stopped {
+            Ok((CancelOutcome::Stopped, groups)) => {
+                (CancelObservation::ProcessStopped, "stopped", groups)
+            }
+            Ok((CancelOutcome::Killed, groups)) => {
+                (CancelObservation::ProcessStopped, "killed", groups)
+            }
+            Ok((CancelOutcome::Survived, groups)) => {
+                (CancelObservation::Ambiguous, "survived", groups)
+            }
+            Err(error) => {
+                tracing::warn!(?error, harness = self.kind(), "cancel signal failed");
+                (
+                    CancelObservation::Ambiguous,
+                    "signal_failed",
+                    ProcessGroups::default(),
+                )
+            }
+        }
+    }
+
+    fn evidence(
+        &self,
+        pid: u32,
+        observation: CancelObservation,
+        process_outcome: &str,
+        groups: ProcessGroups,
+    ) -> CancellationEvidence {
+        CancellationEvidence {
             observation,
             observed_at: crate::client::Timestamp::new(rfc3339(self.clock.now())),
             details: serde_json::Map::from_iter([
-                ("pid".to_owned(), serde_json::json!(waiting.pid)),
+                ("pid".to_owned(), serde_json::json!(pid)),
                 (
                     "process_outcome".to_owned(),
                     serde_json::json!(process_outcome),
@@ -1146,7 +1174,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                     }),
                 ),
             ]),
-        })
+        }
     }
 
     async fn take_running(&self, process_id: &str) -> Result<RunningProcess, HarnessError> {
@@ -1598,13 +1626,13 @@ where
             .take()
     }
 
-    /// A signal that could not be delivered is `Ambiguous` evidence, not an
-    /// error: the process may or may not still be running, and the engine's
+    /// A signal that could not be delivered, or a tree that outlived SIGKILL, is `Ambiguous`
+    /// evidence, not an error: the process may or may not still be running, and the engine's
     /// recovery path is what resolves that.
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         let removed = self.running.lock().await.remove(&handle.process_id);
         let Some(running) = removed else {
-            return self.cancel_waiting(handle).await;
+            return self.cancel_waiting(handle, false).await;
         };
         let pid = running.process.pid();
         let run_context = RunContext {
@@ -1613,51 +1641,28 @@ where
             program: None,
             host: &self.host_env,
         };
-        let (observation, process_outcome, groups) = match running
+        let stopped = running
             .process
             .cancel(running.record.limits.termination_grace, |line| {
                 self.grammar.signal(&run_context, line)
             })
-            .await
-        {
-            Ok((CancelOutcome::Stopped, groups)) => {
-                (CancelObservation::ProcessStopped, "stopped", groups)
-            }
-            Ok((CancelOutcome::Killed, groups)) => {
-                (CancelObservation::ProcessStopped, "killed", groups)
-            }
-            Err(error) => {
-                tracing::warn!(?error, harness = self.kind(), "cancel signal failed");
-                (
-                    CancelObservation::Ambiguous,
-                    "signal_failed",
-                    ProcessGroups::default(),
-                )
-            }
-        };
+            .await;
+        let (observation, process_outcome, groups) = self.observed(stopped);
         self.remove_scratch(
             &running.record.scratch,
             running.record.spec.work.lease.attempt_id.as_str(),
         );
-        Ok(CancellationEvidence {
-            observation,
-            observed_at: crate::client::Timestamp::new(rfc3339(self.clock.now())),
-            details: serde_json::Map::from_iter([
-                ("pid".to_owned(), serde_json::json!(pid)),
-                (
-                    "process_outcome".to_owned(),
-                    serde_json::json!(process_outcome),
-                ),
-                (
-                    "groups".to_owned(),
-                    serde_json::json!({
-                        "tracked": groups.tracked,
-                        "killed": groups.killed,
-                        "survived": groups.survived,
-                    }),
-                ),
-            ]),
-        })
+        Ok(self.evidence(pid, observation, process_outcome, groups))
+    }
+
+    /// Only a run `wait` owns can be killed at once: one still held here has had no stop yet, so
+    /// the ordinary one is its first.
+    async fn kill(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        let owned = self.running.lock().await.contains_key(&handle.process_id);
+        if owned {
+            return self.cancel(handle).await;
+        }
+        self.cancel_waiting(handle, true).await
     }
 
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
