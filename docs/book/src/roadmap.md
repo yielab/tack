@@ -104,8 +104,7 @@ labels** (2026-11-06;
 [plan](https://github.com/yielab/tack/blob/develop/docs/plans/evals-y-guardrails-2026-11-06.es.md),
 [audit](https://github.com/yielab/tack/blob/develop/docs/audits/evals-y-guardrails-2026-11-06.es.md);
 no ADR: ADR 0013 and ADR 0018 decisions 11 and 12 are amended where their text becomes false.
-**Decisions 1 to 4 taken 2026-11-07; all cards built, the live proof against docket and prill is
-what is left**).
+**Decisions 1 to 4 taken 2026-11-07; all cards built and proved live the same day**).
 
 **Built 2026-11-07, in `develop`:** round 0 (C0-1, C0-2, C0-3) and round 1 (GR0, GR1, GR4, GR7, GR8,
 GR10, GR11, GR14, GR18, P1), the full pre-push gate green after each round. The parity test carries a
@@ -131,7 +130,9 @@ rules), the production figures (EDD-2 the quality section, EDD-3 the trend notic
 operator turns on `[egress] enforce`. The first baselines are committed in `evals/baselines/`: Claude
 Code with Haiku 5.5, three trials per task, 27 of 27 on regression and, on safety, full utility, an
 attack tried once in 30 trials and never successful, no twin failed. Both suites are saturated for this
-model, so they guard against regression and cannot yet show what a guardrail adds. Open: the Reviewer
+model, so they guard against regression and cannot yet show what a guardrail adds. The live suite (35 tests, Claude Haiku 5.5 through docket, about 140 000 input tokens) passes in one run
+against docket `f8dd565e` and prill `6b95423`; `--check` reports docket's new `search` field on every
+team answer (additive; the fixtures are not recaptured yet). Open: the Reviewer
 profile's verdict is not stored, so the verifier figure judges prill's pack only; the verifier-suite
 labels; `allowed_hosts` has no editor; Codex, opencode and docket baselines; C4-1's L6 waits for the
 `v0.2.0-beta.1` release; the plan's decision 8 (dollars in the metrics) is still open.
