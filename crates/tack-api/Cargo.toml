@@ -49,6 +49,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
+base64 = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }

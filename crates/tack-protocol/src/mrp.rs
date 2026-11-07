@@ -165,6 +165,19 @@ pub enum MergeDecision {
     Reject,
 }
 
+impl MergeDecision {
+    /// The decision for the word prill puts in a pack's `recommendation.decision`; any word
+    /// other than the two it names for merge and review is a rejection.
+    #[must_use]
+    pub fn from_prill(word: &str) -> Self {
+        match word {
+            "auto-merge-eligible" => Self::Merge,
+            "human-review" => Self::Review,
+            _ => Self::Reject,
+        }
+    }
+}
+
 impl std::fmt::Display for MergeDecision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

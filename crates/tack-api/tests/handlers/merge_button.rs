@@ -87,7 +87,18 @@ async fn press_merge(b: &Board, a: &ClaimedAttempt) -> (StatusCode, Value) {
         &b.app,
         "POST",
         &format!("/api/attempts/{}/merge", a.attempt_id),
-        Value::Null,
+        json!({}),
+        &operator_headers(),
+    )
+    .await
+}
+
+async fn press_merge_because(b: &Board, a: &ClaimedAttempt, reason: &str) -> (StatusCode, Value) {
+    common::send(
+        &b.app,
+        "POST",
+        &format!("/api/attempts/{}/merge", a.attempt_id),
+        json!({"reason": reason}),
         &operator_headers(),
     )
     .await
@@ -253,6 +264,55 @@ async fn each_held_press_says_why_and_the_button_says_whether_to_retry() {
             "{name}: {item}"
         );
     }
+}
+
+#[tokio::test]
+async fn merging_over_a_reject_needs_a_written_reason_and_a_merge_decision_does_not() {
+    let rejected = || Setup {
+        pack_decision: "reject",
+        statement_decision: "block",
+        ..l3()
+    };
+    let root = tempfile::tempdir().unwrap();
+    let gh = github("check-runs-all-success.json", 200, 1).await;
+    let (b, a) = finished(root.path(), &gh, rejected()).await;
+    assert_eq!(merge_state(&b, &a).await["pack_decision"], "reject");
+
+    for blank in ["", "   "] {
+        let (status, body) = press_merge_because(&b, &a, blank).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    let (status, body) = press_merge(&b, &a).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(merge_row(&b, &a.attempt_id).await.is_none());
+
+    let (status, body) =
+        press_merge_because(&b, &a, "  The reviewer misread the migration  ").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let review = tack_db::queries::attempt_reviews::review_of_attempt(&b.state.repo, &a.attempt_id)
+        .await
+        .unwrap()
+        .expect("the merge is kept as the attempt's review");
+    assert_eq!(review.verdict, "accepted");
+    assert_eq!(
+        review.reason.as_deref(),
+        Some("The reviewer misread the migration")
+    );
+    assert!(review.reviewed_by.is_some());
+
+    // The benign twin: over a pack that says merge no reason is asked for and none is kept.
+    let root = tempfile::tempdir().unwrap();
+    let gh = github("check-runs-all-success.json", 200, 1).await;
+    let (b, a) = finished(root.path(), &gh, l3()).await;
+    assert_eq!(merge_state(&b, &a).await["pack_decision"], "merge");
+    let (status, body) = press_merge(&b, &a).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        tack_db::queries::attempt_reviews::review_of_attempt(&b.state.repo, &a.attempt_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
