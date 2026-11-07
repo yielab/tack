@@ -94,6 +94,71 @@ async fn a_changed_workspace_yields_a_patch_and_a_file_list() {
 }
 
 #[tokio::test]
+async fn the_changed_files_that_decide_how_the_work_is_checked_are_recorded_by_name() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("skipped: the git binary is not on PATH");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let path = root.path().join("ws");
+    fs::create_dir_all(path.join("src")).expect("workspace");
+    assert!(git(&path, &["init", "--quiet"]));
+    fs::write(path.join("src/lib.rs"), "fn a() {}\n").expect("lib");
+    assert!(git(&path, &["add", "-A"]));
+    assert!(git(&path, &["commit", "--quiet", "-m", "base"]));
+    let base = Command::new("git")
+        .current_dir(&path)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("rev-parse");
+    let base = String::from_utf8_lossy(&base.stdout).trim().to_owned();
+
+    fs::write(path.join("src/lib.rs"), "fn b() {}\n").expect("source");
+    fs::create_dir_all(path.join("tests")).expect("tests");
+    fs::write(path.join("tests/it.rs"), "#[test] fn t() {}\n").expect("test");
+    fs::create_dir_all(path.join("latest")).expect("latest");
+    fs::write(path.join("latest/notes.md"), "notes\n").expect("notes");
+    fs::write(path.join("pyproject.toml"), "[tool.pytest]\n").expect("manifest");
+    fs::write(path.join(".tack-attempt"), "attempt").expect("marker");
+
+    let workspace = Workspace {
+        attempt_id: AttemptId::new("attempt"),
+        id: WorkspaceId::new("ws_attempt"),
+        path: path.clone(),
+        base_revision: base,
+    };
+    let workspaces =
+        WorkspaceManager::new(root.path().join("root"), GitWorktreeProvisioner::default());
+    let (scratch, staged) = capture(
+        &workspaces,
+        &workspace,
+        "claude-code".to_owned(),
+        "",
+        serde_json::json!({"code": "completed"}),
+        serde_json::Value::Null,
+        None,
+        None,
+        ("Tack <t@localhost>", "work"),
+        None,
+    )
+    .await;
+
+    let evidence = staged
+        .iter()
+        .find(|item| item["name"] == "evidence.json")
+        .expect("evidence.json is staged");
+    let bytes = fs::read(evidence["staged_path"].as_str().unwrap()).unwrap();
+    let evidence: AttemptEvidence = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(evidence.checks_changed, ["pyproject.toml", "tests/it.rs"]);
+    let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        document["checks_changed"],
+        serde_json::json!(["pyproject.toml", "tests/it.rs"])
+    );
+    fs::remove_dir_all(scratch).expect("scratch");
+}
+
+#[tokio::test]
 async fn the_steps_a_harness_recorded_are_staged_as_one_artifact() {
     if Command::new("git").arg("--version").output().is_err() {
         eprintln!("skipped: the git binary is not on PATH");

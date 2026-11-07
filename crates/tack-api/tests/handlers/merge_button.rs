@@ -316,6 +316,44 @@ async fn merging_over_a_reject_needs_a_written_reason_and_a_merge_decision_does_
 }
 
 #[tokio::test]
+async fn merging_a_change_that_altered_how_the_work_is_checked_needs_a_written_reason() {
+    let changed = || Setup {
+        checks_changed: vec!["tests/x.rs"],
+        ..l3()
+    };
+    let root = tempfile::tempdir().unwrap();
+    let gh = github("check-runs-all-success.json", 200, 1).await;
+    let (b, a) = finished(root.path(), &gh, changed()).await;
+    assert_eq!(
+        merge_state(&b, &a).await["checks_changed"],
+        json!(["tests/x.rs"])
+    );
+
+    let (status, body) = press_merge(&b, &a).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Confirm before it merges"),
+        "{body}"
+    );
+    assert!(merge_row(&b, &a.attempt_id).await.is_none());
+
+    let (status, body) = press_merge_because(&b, &a, "The test was renamed, not weakened").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let review = tack_db::queries::attempt_reviews::review_of_attempt(&b.state.repo, &a.attempt_id)
+        .await
+        .unwrap()
+        .expect("the confirmation is kept as the attempt's review");
+    assert_eq!(review.verdict, "accepted");
+    assert_eq!(
+        review.reason.as_deref(),
+        Some("The test was renamed, not weakened")
+    );
+}
+
+#[tokio::test]
 async fn a_move_to_done_merges_and_a_move_over_mcp_does_not() {
     let root = tempfile::tempdir().unwrap();
     let gh = github("check-runs-all-success.json", 200, 1).await;
