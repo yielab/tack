@@ -55,12 +55,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                 "GR2: bwrap only when installed, otherwise the run goes ahead unsandboxed",
             ),
         ),
-        (
-            ParityRule::NoSandboxMeansAsk,
-            ParityCell::missing(
-                "GR1: the permission block allows every action whether or not there is a sandbox",
-            ),
-        ),
+        (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
         (
             ParityRule::EgressByAllowList,
             ParityCell::missing("GR5: webfetch is always allowed, no proxy of the runner's"),

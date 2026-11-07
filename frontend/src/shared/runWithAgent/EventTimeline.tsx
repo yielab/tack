@@ -49,6 +49,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: bo
   'attempt.verify_skipped': { label: 'Verification skipped' },
   'attempt.verify_failed': { label: 'Verification failed', failed: true },
   'attempt.install_skipped': { label: 'Install skipped' },
+  'attempt.approvals_forced_ask': { label: 'Asks before each action' },
   'attempt.push_skipped': { label: 'Branch not pushed' },
   'attempt.push_failed': { label: 'Pushing the branch failed', failed: true },
   'attempt.evidence_failed': { label: 'Evidence could not be collected', failed: true },

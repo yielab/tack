@@ -311,6 +311,12 @@ pub trait HarnessAdapter: Send + Sync {
         None
     }
 
+    /// Why the run asks before each action although the request did not ask it to, or `None` when
+    /// it runs as requested.
+    async fn approvals_forced_ask(&self, _handle: &LocalRunHandle) -> Option<String> {
+        None
+    }
+
     /// The steps a running harness reports as it goes, for the attempt's
     /// timeline. `None` for a harness that reports none. Taken once per
     /// handle, like [`Self::decision_channels`].
@@ -669,6 +675,16 @@ where
             .is_err()
         {
             return self.quarantine_after_spawn(session, &record, &handle).await;
+        }
+        if let Some(reason) = self.adapter.approvals_forced_ask(&handle).await {
+            let payload = serde_json::json!({"reason": reason});
+            self.submit_event(
+                session,
+                &mut record,
+                "attempt.approvals_forced_ask",
+                payload,
+            )
+            .await;
         }
         if install_skipped {
             let payload = serde_json::json!({"reason": crate::prepare::NO_INSTALL_REASON});

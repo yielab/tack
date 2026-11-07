@@ -49,12 +49,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                 "GR2: bwrap only when installed, otherwise the run goes ahead unsandboxed",
             ),
         ),
-        (
-            ParityRule::NoSandboxMeansAsk,
-            ParityCell::missing(
-                "GR1: bypassPermissions is passed whether or not the runner found a sandbox",
-            ),
-        ),
+        (ParityRule::NoSandboxMeansAsk, ParityCell::Runner),
         (
             ParityRule::EgressByAllowList,
             ParityCell::missing(
