@@ -205,7 +205,7 @@ For a complete restore you need both the database backup and the storage directo
 
 ```sh
 0 2 * * * curl -s -O -J \
-  -H "Authorization: Bearer $TACK_TOKEN" \
+  -H "Authorization: Bearer $TACK_API_TOKEN" \
   --output-dir /backups/tack/ \
   http://127.0.0.1:3210/api/backup
 ```
