@@ -2041,7 +2041,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s\nrun left stopped at its own step budget, instead of posting a new one (Phase 87, decision 6).\nRefused `not_found` when `id` names no request, `unprocessable` when its own ending never\noffered Continue (decision 5's table) or its token limit is fully spent.",
+        "summary": "`POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s\nrun left stopped at its own step budget, instead of posting a new one.\nRefused `not_found` when `id` names no request, `unprocessable` when its own ending never\noffered Continue or its token limit is fully spent.",
         "operationId": "continue_execution",
         "parameters": [
           {
@@ -4176,7 +4176,7 @@
         },
         "responses": {
           "200": {
-            "description": "Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored",
+            "description": "Updated project",
             "content": {
               "application/json": {
                 "schema": {
@@ -9339,7 +9339,7 @@
             "properties": {
               "checked": {
                 "type": "boolean",
-                "description": "Ticked by a person on the \"Done when\" list. Only the board reads it:\nthe brief and the verifier ignore it. Absent means not ticked, so\nolder rows and files read as before and an unticked check is stored\nexactly as it always was."
+                "description": "Ticked by a person on the \"Done when\" list. Only the board reads it:\nthe brief and the verifier ignore it. Absent means not ticked, and an\nunticked check is stored without the key."
               },
               "id": {
                 "type": "string"
@@ -11198,7 +11198,7 @@
       },
       "ContinueResponse": {
         "type": "object",
-        "description": "Response body for `POST /api/executions/{id}/continue` — a new request that follows the same\ndocket task the named run left stopped at its own step budget (Phase 87, decision 6), or an\nidempotent replay of one already made.",
+        "description": "Response body for `POST /api/executions/{id}/continue` — a new request that follows the same\ndocket task the named run left stopped at its own step budget, or an\nidempotent replay of one already made.",
         "required": [
           "protocol_version",
           "request_id",
@@ -11363,6 +11363,7 @@
       },
       "CreateExecution": {
         "type": "object",
+        "description": "A key the request does not name is refused (`invalid_request`, `field` the key), so a\nsetting the server does not read is never taken for one it obeys.",
         "required": [
           "item_id",
           "idempotency_key",
@@ -11395,7 +11396,7 @@
               "string",
               "null"
             ],
-            "description": "A previous execution request's id, to start this run from the work it kept instead of the\nproject's base commit. The server reads that request's newest evidence\n(`actual_execution.git.branch`) and sets `metadata.rework_base` itself, the same key a\nrework already reads — a request never carries the branch directly. A name that does not\nexist is `not_found` (`details.reason = \"from_run_not_found\"`); one that belongs to\nanother project, or left no branch to continue from, is `unprocessable`\n(`details.reason` is `\"from_run_different_project\"` or `\"from_run_no_kept_work\"`). Absent,\n`metadata.rework_base` is read only when the caller set it directly, as before."
+            "description": "A previous execution request's id, to start this run from the work it kept instead of the\nproject's base commit. The server reads that request's newest evidence\n(`actual_execution.git.branch`) and sets `metadata.rework_base` itself, the same key a\nrework already reads — a request never carries the branch directly. A name that does not\nexist is `not_found` (`details.reason = \"from_run_not_found\"`); one that belongs to\nanother project, or left no branch to continue from, is `unprocessable`\n(`details.reason` is `\"from_run_different_project\"` or `\"from_run_no_kept_work\"`). Absent,\n`metadata.rework_base` is read only when the caller set it directly."
           },
           "idempotency_key": {
             "type": "string"
@@ -11468,7 +11469,8 @@
             ],
             "description": "`false` declines the runner's verifier for this run. The runner's own\nconfiguration decides whether a verifier exists; `true` never enables one."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateExecutionResponse": {
         "type": "object",
@@ -11480,13 +11482,6 @@
           "replayed"
         ],
         "properties": {
-          "notice": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Present when the request named a setting that was removed: \"ignored: the status is set by\na person\"."
-          },
           "protocol_version": {
             "type": "integer",
             "format": "int32",

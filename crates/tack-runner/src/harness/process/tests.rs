@@ -339,7 +339,7 @@ fn announced(line: &str) -> Option<StreamSignal> {
 /// only whether the child is announced; the stop must not depend on it.
 #[tokio::test]
 async fn cancel_kills_a_child_that_started_its_own_session_for_each_descriptor() {
-    let local: Vec<_> = crate::harness::all_descriptors()
+    let local: Vec<_> = crate::harness::DESCRIPTORS
         .iter()
         .filter(|descriptor| !descriptor.cancels_over_api)
         .collect();

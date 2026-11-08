@@ -123,50 +123,6 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
     }
 }
 
-/// A board from before the change left pending decisions behind: the start-up statement closes
-/// those of ended attempts and leaves a running attempt's alone.
-#[tokio::test]
-async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
-    let fx = Fixture::new().await;
-    let fence = fx.ready_running_attempt("request-old", "attempt-old").await;
-    assert!(matches!(
-        fx.complete(completion_input("attempt-old", fence, "done", None))
-            .await,
-        CompletionResult::Committed(_)
-    ));
-    seed_decisions(&fx, "attempt-old").await; // what the old board left
-    let live = fx
-        .ready_running_attempt("request-live", "attempt-live")
-        .await;
-    assert!(fx.create_decision("attempt-live", live, "live-d").await);
-
-    assert_eq!(
-        fx.repo
-            .expire_decisions_of_ended_attempts(fx.clock.now())
-            .await
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        fx.repo
-            .expire_decisions_of_ended_attempts(fx.clock.now())
-            .await
-            .unwrap(),
-        0
-    );
-
-    let (s, _, by) = decision(&fx, "attempt-old", "pending-d").await;
-    assert_eq!(
-        (s.as_str(), by.as_deref()),
-        ("expired", Some(ATTEMPT_ENDED))
-    );
-    assert_eq!(
-        decision(&fx, "attempt-old", "answered-d").await.0,
-        "resolved"
-    );
-    assert_eq!(decision(&fx, "attempt-live", "live-d").await.0, "pending");
-}
-
 #[tokio::test]
 async fn cancellation_observation_replays_after_first_success() {
     let fx = Fixture::new().await;

@@ -319,28 +319,6 @@ async fn an_import_never_raises_autonomy_past_the_projects_own() {
     assert!(!warnings.contains("autonomy.level"), "{warnings}");
 }
 
-/// A file written before a run stopped moving its task still imports: the two keys are ignored
-/// and the preview says so, and the export does not carry them.
-#[tokio::test]
-async fn a_file_that_names_the_status_moves_is_told_they_are_ignored() {
-    let app = app().await;
-    let file = "project:\n  name: Mini\nautomation:\n  on_start_status: Nowhere\n  on_finish_status: Done\n";
-    let (status, out) = import(&app, "/api/projects/outline", file).await;
-    assert_eq!(status, StatusCode::OK, "{out}");
-    let warnings = section(&out, "automation")["warnings"].to_string();
-    for key in ["on_start_status", "on_finish_status"] {
-        assert!(
-            warnings.contains(&format!(
-                "automation.{key} is ignored: the status is set by a person"
-            )),
-            "{warnings}"
-        );
-    }
-    let pid = out["project"]["id"].as_str().unwrap();
-    let project = get(&app, &format!("/api/projects/{pid}")).await;
-    assert!(project.get("on_start_status").is_none(), "{project}");
-}
-
 #[tokio::test]
 async fn the_export_is_the_import() {
     let app = app().await;

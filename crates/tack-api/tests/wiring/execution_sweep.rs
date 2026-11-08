@@ -17,7 +17,7 @@ use tack_api::execution_runtime::{ExecutionRuntime, ExecutionRuntimeConfig};
 use tack_api::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
-    Repository, queries,
+    Repository,
     repo::execution::{
         NewAgentProfile, NewArtifact, NewExecutionRequest, NewRunner, RequestSelection,
     },
@@ -68,7 +68,8 @@ async fn setup() -> (Repository, String) {
         )
         .await
         .expect("item");
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: RUNNER_ID,
             name: "Wiring Runner",
@@ -83,7 +84,8 @@ async fn setup() -> (Repository, String) {
     )
     .await
     .expect("runner");
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: PROFILE_ID,
             name: "Wiring Profile",
@@ -242,7 +244,7 @@ async fn seed_real_artifact(
 }
 
 async fn artifact_row_exists(repo: &Repository, row_id: &str) -> bool {
-    queries::execution_artifacts::artifact_row_exists(repo, row_id)
+    tack_test_support::probe::artifact_row_exists(repo, row_id)
         .await
         .unwrap()
 }

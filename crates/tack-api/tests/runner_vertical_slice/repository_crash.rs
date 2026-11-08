@@ -15,9 +15,9 @@ use tack_db::{
     Repository, StoreError, queries,
     repo::execution::{
         AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult, ClaimedExecution,
-        Completion, EnrollmentToken, EventApplyResult, EventBatch, HeartbeatBatchResult,
-        HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner,
-        RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
+        Completion, CompletionResult, EnrollmentToken, EventApplyResult, EventBatch,
+        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
+        NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
         RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
@@ -96,7 +96,8 @@ async fn fixture() -> Fixture {
         .await
         .expect("item");
     let clock = FakeClock::new();
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-crash",
             name: "Crash Matrix Runner",
@@ -111,7 +112,8 @@ async fn fixture() -> Fixture {
     )
     .await
     .expect("runner");
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-crash",
             name: "Crash Matrix Profile",
@@ -247,7 +249,7 @@ async fn claim_crash_rolls_back_then_retry_keeps_fence_at_one() {
         .await
         .expect("runner capacity");
     let attempts =
-        queries::execution_attempts::attempt_count_of_request(&fixture.repo, "request-crash")
+        tack_test_support::probe::attempt_count_of_request(&fixture.repo, "request-crash")
             .await
             .expect("attempt count");
     assert_eq!(request_state(&fixture).await, ExecutionState::Queued);
@@ -321,10 +323,9 @@ async fn ambiguous_recovery_needs_operator_and_blocks_reclaim() {
         .is_none(),
         "ambiguous side effects must never be blind-retried"
     );
-    let fences =
-        queries::execution_attempts::fence_count_of_request(&fixture.repo, "request-crash")
-            .await
-            .expect("fence count");
+    let fences = tack_test_support::probe::fence_count_of_request(&fixture.repo, "request-crash")
+        .await
+        .expect("fence count");
     assert_eq!(fences, 1);
 }
 
@@ -368,7 +369,7 @@ async fn event_checkpoint_state(fixture: &Fixture) -> (Option<String>, i64) {
     let checkpoint = queries::execution_attempts::event_checkpoint(&fixture.repo, "attempt-crash")
         .await
         .expect("checkpoint state");
-    let events = queries::execution_events::event_count_of_attempt(&fixture.repo, "attempt-crash")
+    let events = tack_test_support::probe::event_count_of_attempt(&fixture.repo, "attempt-crash")
         .await
         .expect("event count");
     (checkpoint, events)
@@ -530,12 +531,12 @@ async fn completion_crash_rolls_back_attempt_and_request() {
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), fixture.clock.now())
+            .complete_execution_result(completion_crash(), fixture.clock.now())
             .await
             .is_err()
     );
     let completion_id =
-        queries::execution_attempts::completion_id_of_attempt(&fixture.repo, "attempt-crash")
+        tack_test_support::probe::completion_id_of_attempt(&fixture.repo, "attempt-crash")
             .await
             .expect("terminal state");
     assert_eq!(attempt_state(&fixture).await, ExecutionState::Running);
@@ -549,21 +550,23 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
     enqueue(&fixture).await;
     common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
     start_claimed_attempt(&fixture).await;
-    assert!(
+    assert!(matches!(
         fixture
             .repo
-            .complete_execution(completion_crash(), fixture.clock.now())
+            .complete_execution_result(completion_crash(), fixture.clock.now())
             .await
-            .expect("completion")
-    );
-    assert!(
+            .expect("completion"),
+        CompletionResult::Committed(_) | CompletionResult::Replayed(_)
+    ));
+    assert!(matches!(
         fixture
             .repo
-            .complete_execution(completion_crash(), fixture.clock.now())
+            .complete_execution_result(completion_crash(), fixture.clock.now())
             .await
-            .expect("completion replay")
-    );
-    let terminal_rows = queries::execution_attempts::count_completed_with(
+            .expect("completion replay"),
+        CompletionResult::Committed(_) | CompletionResult::Replayed(_)
+    ));
+    let terminal_rows = tack_test_support::probe::count_completed_with(
         &fixture.repo,
         "completion-1",
         ExecutionState::Succeeded,
@@ -695,17 +698,18 @@ async fn enrollment_redeem_has_one_winner_and_keeps_hash_only_token() {
         "only one concurrent redemption can consume the token"
     );
 
-    let metadata = fixture
-        .repo
-        .enrollment_token_metadata("runner-enroll-crash", "token-enroll-crash")
-        .await
-        .expect("token metadata")
-        .expect("token row");
+    let metadata = tack_test_support::probe::enrollment_token_metadata(
+        &fixture.repo,
+        "runner-enroll-crash",
+        "token-enroll-crash",
+    )
+    .await
+    .expect("token metadata")
+    .expect("token row");
     assert!(metadata.consumed_at.is_some());
-    let token_rows =
-        queries::agent_enrollment_tokens::count_with_hash(&fixture.repo, "hash:enroll-crash")
-            .await
-            .expect("token rows");
+    let token_rows = tack_test_support::probe::count_with_hash(&fixture.repo, "hash:enroll-crash")
+        .await
+        .expect("token rows");
     assert_eq!(token_rows, 1);
 }
 
@@ -759,7 +763,7 @@ async fn heartbeat_crash_rolls_back_and_writes_no_replay_row() {
             .await
             .is_err()
     );
-    let replays = queries::execution_heartbeat_replays::replay_count(&fixture.repo)
+    let replays = tack_test_support::probe::heartbeat_replay_count(&fixture.repo)
         .await
         .expect("no failed replay row");
     assert_eq!(replays, 0);

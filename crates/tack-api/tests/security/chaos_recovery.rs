@@ -14,7 +14,7 @@ use chaos_common::*;
 use chrono::Utc;
 use serde_json::{Value, json};
 use tack_db::Repository;
-use tack_db::queries::{execution_artifacts, execution_attempts, execution_decisions};
+use tack_db::queries::{execution_artifacts, execution_attempts};
 use tack_test_support::seed;
 use tower::ServiceExt;
 
@@ -355,14 +355,14 @@ async fn assert_no_heartbeat_recorded(repo: &Repository, attempt_id: &str) {
 }
 
 async fn assert_no_decision_row(repo: &Repository, attempt_id: &str) {
-    let count = execution_decisions::decision_count_of_attempt(repo, attempt_id)
+    let count = tack_test_support::probe::decision_count_of_attempt(repo, attempt_id)
         .await
         .unwrap();
     assert_eq!(count, 0, "a stale-fenced decision must not be recorded");
 }
 
 async fn assert_no_artifact_row(repo: &Repository, attempt_id: &str) {
-    let count = execution_artifacts::artifact_count_of_attempt(repo, attempt_id)
+    let count = tack_test_support::probe::artifact_count_of_attempt(repo, attempt_id)
         .await
         .unwrap();
     assert_eq!(
@@ -430,7 +430,7 @@ async fn stale_fence_writes_nothing_across_every_mutation_route() {
 
     // None of the five rejected calls above minted a new fence: exactly the
     // two fences from setup (1 lost, 2 current) exist for this request.
-    let fences = execution_attempts::fence_count_of_request(&repo, &s.request_id)
+    let fences = tack_test_support::probe::fence_count_of_request(&repo, &s.request_id)
         .await
         .unwrap();
     assert_eq!(
@@ -465,7 +465,7 @@ async fn oversized_single_artifact_rejected_per_item_cap() {
     .await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert_eq!(body["error"]["code"], "payload_too_large");
-    let count = execution_artifacts::artifact_count_of_attempt(&repo, &attempt.attempt_id)
+    let count = tack_test_support::probe::artifact_count_of_attempt(&repo, &attempt.attempt_id)
         .await
         .unwrap();
     assert_eq!(count, 0, "an oversized single artifact must write no row");
@@ -516,7 +516,7 @@ async fn cumulative_artifact_total_rejected_over_attempt_cap() {
 
     // Exactly the ten accepted rows survive; the overflow artifact never
     // landed, and the running total is exactly what ten successes imply.
-    let rows = execution_artifacts::artifact_ids_of_attempt(&repo, &attempt.attempt_id)
+    let rows = tack_test_support::probe::artifact_ids_of_attempt(&repo, &attempt.attempt_id)
         .await
         .unwrap();
     assert_eq!(rows.len(), 10, "{rows:?}");
@@ -660,7 +660,7 @@ async fn corrupted_snapshot_row_degrades_to_typed_error_not_panic() {
     assert_eq!(status, StatusCode::OK, "{health}");
 
     // No attempt was ever created against the corrupted request.
-    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+    let attempt_count = tack_test_support::probe::attempt_count_of_request(&repo, &request_id)
         .await
         .unwrap();
     assert_eq!(attempt_count, 0);

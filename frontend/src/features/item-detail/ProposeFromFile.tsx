@@ -9,7 +9,7 @@ const isIndex = (v: unknown): v is number => typeof v === 'number' && Number.isI
  * Reads a tack-plan.json against docs/contracts/plan-v1/schema.json and the index rules in its README:
  * the first entry that does not fit is named, with why, in the words the person sees.
  */
-export function checkPlanFile(text: string): { entries: PlanEntry[] } | { error: string } {
+function checkPlanFile(text: string): { entries: PlanEntry[] } | { error: string } {
   let doc: unknown;
   try {
     doc = JSON.parse(text);

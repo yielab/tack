@@ -116,7 +116,7 @@ const PILL = { 'background-color': 'var(--color-bg-app)', color: 'var(--color-te
 const LINK = { color: 'var(--color-accent-ink)' };
 const SUMMARY_CLASS = 'cursor-pointer font-heading text-lg';
 /** The dialog's sentence for the server's `profile_source`. */
-export function describeProfileSource(source: string | null | undefined, from?: string | null): string | null {
+function describeProfileSource(source: string | null | undefined, from?: string | null): string | null {
   const said = sourceWords(source);
   return said && from ? `${said}, from ${from}` : said;
 }

@@ -25,7 +25,7 @@ export function makeItem(p: Partial<Item> & { id: string }): Item {
   };
 }
 
-export const STATUSES = [
+const STATUSES = [
   { name: 'To Do', order: 0, category: 'todo' },
   { name: 'Done', order: 1, category: 'done' },
 ];

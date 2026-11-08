@@ -1,4 +1,4 @@
-//! The two facts a board card needs from a run that the lightweight list used to leave out:
+//! The two facts a board card needs from a run beyond the lightweight list:
 //! whether the newest attempt was turned away before it started, and what the verifier
 //! recommended. Both are read through the real router, the pack uploaded through the runner
 //! routes as a runner does.

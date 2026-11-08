@@ -506,12 +506,3 @@ pub fn render_markdown(pack: &MergeReadinessPack) -> String {
 
     out
 }
-
-/// A summary line for the pack (e.g., for a PR title or log entry).
-pub fn summary_line(pack: &MergeReadinessPack) -> String {
-    match pack.recommendation.decision {
-        MergeDecision::Merge => format!("Ready to merge ({} risk)", pack.risk.tier),
-        MergeDecision::Review => format!("Needs review ({} risk)", pack.risk.tier),
-        MergeDecision::Reject => format!("Not ready ({} risk)", pack.risk.tier),
-    }
-}

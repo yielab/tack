@@ -432,10 +432,9 @@ async fn events_reflect_a_real_batch_then_unknown_attempt_is_404() {
     assert_eq!(data[0]["kind"], "log");
     assert_eq!(data[0]["payload"]["message"], "hello from the real harness");
 
-    let events_count =
-        tack_db::queries::execution_events::event_count_of_attempt(&repo, &attempt_id)
-            .await
-            .unwrap();
+    let events_count = tack_test_support::probe::event_count_of_attempt(&repo, &attempt_id)
+        .await
+        .unwrap();
     assert_eq!(
         events_count, 1,
         "the read route must reflect a real persisted row, not a mock"

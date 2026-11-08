@@ -143,7 +143,7 @@ async function seedAgentWork(request: APIRequestContext, projectId: string) {
   const brief = await request.put(`${API}/items/${seeded.briefItemId}/brief`, { data: BRIEF });
   expect(brief.ok(), `put brief: ${brief.status()}`).toBeTruthy();
 
-  // The built-in Implementer is seeded on every database (phase 67, S6); a
+  // The built-in Implementer is seeded on every database; a
   // second "Implementer" would be a 409.
   const profiles = await request.get(`${API}/agent-profiles`);
   expect(profiles.ok(), `list profiles: ${profiles.status()}`).toBeTruthy();

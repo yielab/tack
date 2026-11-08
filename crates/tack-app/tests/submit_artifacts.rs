@@ -122,7 +122,7 @@ async fn the_attempts_declared_bytes_stay_under_the_cap_across_batches() {
     .await;
     assert_eq!(over, ManifestSubmitted::TooLarge);
     assert_eq!(
-        execution_artifacts::artifact_ids_of_attempt(&world.repo, &run.attempt_id)
+        tack_test_support::probe::artifact_ids_of_attempt(&world.repo, &run.attempt_id)
             .await
             .unwrap(),
         ["art-1"],

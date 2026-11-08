@@ -333,7 +333,7 @@ async fn upload_artifact(label: &str) -> UploadedArtifact {
     let attempt_number = execution_attempts::attempt_number(&repo, &attempt.attempt_id)
         .await
         .unwrap();
-    let request_id = execution_attempts::request_id_of_attempt(&repo, &attempt.attempt_id)
+    let request_id = tack_test_support::probe::request_id_of_attempt(&repo, &attempt.attempt_id)
         .await
         .unwrap();
 

@@ -105,7 +105,7 @@ fn invalid_toml_does_not_echo_credential_like_source_text() {
 }
 
 #[test]
-fn a_provider_table_is_refused() {
+fn a_table_the_runner_does_not_read_is_refused_by_name() {
     let error = RunnerConfig::from_sources(RunnerConfigSources {
         file_toml: Some(
             r#"
@@ -116,7 +116,13 @@ fn a_provider_table_is_refused() {
         ..RunnerConfigSources::default()
     })
     .expect_err("a [provider.*] table must be refused");
-    assert_eq!(error, ConfigError::ProviderTable);
+    assert_eq!(
+        error,
+        ConfigError::UnknownKey {
+            key: "provider".into(),
+            is_table: true
+        }
+    );
     assert!(error.to_string().contains("[provider]"));
 }
 

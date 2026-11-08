@@ -81,7 +81,7 @@ async function resolveAndNotify(
 }
 
 /** Whether a prompt is the whole text the agent was given (its card fenced in `<<<card-text id=…>>>`, or simply long) and not the question put to the person. */
-export function looksLikeDispatchPrompt(prompt: string): boolean {
+function looksLikeDispatchPrompt(prompt: string): boolean {
   return /<<<[\w-]+\s+id=/.test(prompt) || prompt.length > 500 || prompt.split('\n').length > 10;
 }
 

@@ -7,8 +7,8 @@ use std::fmt::Debug;
 use std::fs;
 use tack_protocol::execution::{
     ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
-    ProtocolErrorEnvelope, RecoveryDisposition, RecoveryObservation, RecoveryObservationRequest,
-    RecoveryObservationResponse, RunnerCapabilities, TransitionActor, Usage, validate_transition,
+    ProtocolErrorEnvelope, RecoveryObservationRequest, RecoveryObservationResponse,
+    RunnerCapabilities, TransitionActor, Usage, validate_transition,
 };
 
 fn assert_exact_round_trip<T>(name: &str, value: &Value)
@@ -140,58 +140,21 @@ fn recovery_dispositions_match_the_frozen_lifecycle_contract() {
         serde_json::json!(["process_stopped", "process_running", "ambiguous"])
     );
 
-    let active = [
+    // A recovery takes an active attempt to `lost` (the request back to the queue) or to
+    // `needs_operator`.
+    for state in [
         ExecutionState::Leased,
         ExecutionState::Preparing,
         ExecutionState::Running,
         ExecutionState::WaitingDecision,
-    ];
-    for state in active {
-        assert!(
-            RecoveryDisposition::SafePreSpawnRequeue
-                .is_compatible_with(state, RecoveryObservation::ProcessStopped)
-        );
-        assert!(
-            validate_transition(
-                state,
-                RecoveryDisposition::SafePreSpawnRequeue
-                    .attempt_transition()
-                    .expect("safe recovery has an attempt transition"),
-                TransitionActor::RecoveryService,
-            )
-            .is_ok()
-        );
-        assert!(
-            RecoveryDisposition::NeedsOperator
-                .is_compatible_with(state, RecoveryObservation::ProcessRunning)
-        );
-        assert!(
-            validate_transition(
-                state,
-                RecoveryDisposition::NeedsOperator
-                    .attempt_transition()
-                    .expect("needs-operator recovery has an attempt transition"),
-                TransitionActor::RecoveryService,
-            )
-            .is_ok()
-        );
+    ] {
+        for to in [ExecutionState::Lost, ExecutionState::NeedsOperator] {
+            assert!(
+                validate_transition(state, to, TransitionActor::RecoveryService).is_ok(),
+                "{state:?} -> {to:?}"
+            );
+        }
     }
-    assert!(
-        !RecoveryDisposition::SafePreSpawnRequeue
-            .is_compatible_with(ExecutionState::Running, RecoveryObservation::Ambiguous)
-    );
-    assert!(
-        RecoveryDisposition::AlreadyTerminal
-            .is_compatible_with(ExecutionState::Succeeded, RecoveryObservation::Ambiguous)
-    );
-    assert_eq!(
-        RecoveryDisposition::AlreadyTerminal.attempt_transition(),
-        None
-    );
-    assert_eq!(
-        RecoveryDisposition::AlreadyTerminal.request_transition(),
-        None
-    );
 }
 
 #[test]

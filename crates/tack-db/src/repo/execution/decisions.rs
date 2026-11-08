@@ -39,8 +39,7 @@ const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 /// `needs_operator` — so nobody can answer a question it was waiting on: every
 /// `pending` decision becomes `expired`, in the transaction that ended it. An
 /// answered decision is left as it was. Every road that ends an attempt calls
-/// this; [`Repository::expire_decisions_of_ended_attempts`] closes what a board
-/// from before it left behind.
+/// this.
 pub(super) async fn end_attempt_decisions(
     conn: &mut SqliteConnection,
     attempt_id: &AttemptId,
@@ -120,29 +119,6 @@ pub async fn resume_attempt_after_decisions(
 }
 
 impl Repository {
-    /// Closes, as [`end_attempt_decisions`] does when an attempt ends, the
-    /// `pending` decisions of attempts already `succeeded`, `failed`,
-    /// `cancelled`, `lost` or `needs_operator` — the rows a board from before
-    /// that rule left. One statement; a second call finds nothing. Returns how
-    /// many it closed.
-    pub async fn expire_decisions_of_ended_attempts(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<u64, StoreError> {
-        let now = now.to_rfc3339();
-        let closed = sqlx::query(
-            state::sql("UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=?,metadata=CASE WHEN json_valid(metadata) THEN json_remove(metadata,'$.call') ELSE metadata END \
-             WHERE state='pending' AND attempt_id IN (SELECT id FROM execution_attempts \
-             WHERE state IN ({terminal},{lost},{needs_operator}))"),
-        )
-        .bind(&now)
-        .bind(ATTEMPT_ENDED)
-        .bind(&now)
-        .execute(self.pool())
-        .await?;
-        Ok(closed.rows_affected())
-    }
-
     /// Records a `pending` decision against a live `running` or
     /// `waiting_decision` attempt and parks the attempt (and its request) in
     /// `waiting_decision` in the same transaction. `false` means the attempt

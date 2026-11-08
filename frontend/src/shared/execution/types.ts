@@ -55,17 +55,6 @@ export type ExecutionState =
   | 'lost'
   | 'needs_operator';
 
-/** `docs/contracts/runner-v1/lifecycle-transitions.json`'s `terminal_states`. */
-export const TERMINAL_EXECUTION_STATES: ReadonlySet<ExecutionState> = new Set([
-  'succeeded',
-  'failed',
-  'cancelled',
-]);
-
-export function isTerminalExecutionState(state: ExecutionState): boolean {
-  return TERMINAL_EXECUTION_STATES.has(state);
-}
-
 /**
  * A tagged runner/fleet placement selector. Mirrors
  * `crates/tack-orch/src/execution/types.rs`'s `RunnerSelector`
@@ -305,7 +294,7 @@ export interface RunStepPrompt {
   tokens: number | null;
 }
 
-/** A step's own budget, read off the hop that ran out of it (Phase 87, docket's `budgetOutcome`):
+/** A step's own budget, read off the hop that ran out of it (docket's `budgetOutcome`):
  *  the bound that ran out (`rounds`, `toolCalls`, `time` or `tokens`), the figures, who set it
  *  (`step`, `role`, `pod` or `default`), whether the stop kept the step's work (docket pins the
  *  tree only for an Implementer hop), and where to raise it when docket says. */

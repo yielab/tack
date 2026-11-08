@@ -193,16 +193,14 @@ describe('List columns', () => {
     expect(title.className).not.toContain('truncate');
   });
 
-  it('starts_from_the_columns_this_browser_remembers_and_moves_the_Tables_choice_over', async () => {
-    localStorage.setItem('tack_table_cols', JSON.stringify(['assignee', 'needs_review']));
-    localStorage.setItem('tack_table_density', 'compact');
+  it('starts_from_the_columns_this_browser_remembers', async () => {
+    localStorage.setItem('tack_list_cols', JSON.stringify(['assignee', 'run', 'details']));
+    localStorage.setItem('tack_list_density', 'compact');
     const c = await mountProjectView(() => <List />, 'list', { items: FAMILY });
     expect(header(c, 'Assignee')).toBeUndefined();
     expect(header(c, 'Work')).toBeUndefined();
     expect(header(c, 'Details')).toBeUndefined();
     expect(header(c, 'Type')).toBeDefined();
-    expect(localStorage.getItem('tack_table_cols')).toBeNull();
-    expect(localStorage.getItem('tack_table_density')).toBeNull();
     const density = [...c.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.title === 'Toggle row density')!;
     expect(density.textContent).toBe('Comfortable'); // compact now; the button offers the other one
   });

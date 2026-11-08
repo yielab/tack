@@ -120,7 +120,7 @@ pub async fn get_project(
     params(("id" = Uuid, Path, description = "Project ID")),
     request_body = UpdateProject,
     responses(
-        (status = 200, description = "Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored", body = Project),
+        (status = 200, description = "Updated project", body = Project),
         (status = 400, description = "Validation error", body = ErrorEnvelope),
         (status = 404, description = "Project not found", body = ErrorEnvelope),
     ),
@@ -174,15 +174,8 @@ pub async fn update_project(
             .into_response();
         }
     }
-    let named_removed_setting = input.names_a_removed_setting();
     match state.repo.update_project(id, input).await {
-        Ok(Some(project)) => {
-            let mut body = serde_json::to_value(project).unwrap();
-            if named_removed_setting {
-                body["notice"] = tack_core::models::STATUS_SET_BY_A_PERSON.into();
-            }
-            Json(body).into_response()
-        }
+        Ok(Some(project)) => Json(project).into_response(),
         Ok(None) => ApiError::NotFound(format!("Project {id} not found")).into_response(),
         Err(e) => ApiError::from(e).into_response(),
     }

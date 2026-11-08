@@ -113,7 +113,8 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
         .expect("item");
 
     let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap());
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-f2",
             name: "F2 Profile",
@@ -330,7 +331,8 @@ async fn ready_running_attempt(
     let credential = enrolled["runner_credential"].as_str().unwrap().to_owned();
     let auth_header = format!("Bearer {credential}");
 
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        repo,
         NewAgentProfile {
             id: &format!("profile-{label}"),
             name: "F2 Profile",
@@ -487,7 +489,7 @@ impl Fixture {
         let attempt_number = execution_attempts::attempt_number(&self.repo, attempt_id)
             .await
             .unwrap();
-        let request_id = execution_attempts::request_id_of_attempt(&self.repo, attempt_id)
+        let request_id = tack_test_support::probe::request_id_of_attempt(&self.repo, attempt_id)
             .await
             .unwrap();
         (attempt_number, request_id)

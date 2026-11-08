@@ -7,7 +7,6 @@ use serde_json::json;
 use support::{Board, add_profile, bare_request, board, start};
 use tack_app::auto_start;
 use tack_core::models::{CreateItem, CreateRole, UpdateRole};
-use tack_db::queries;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::StableErrorCode;
 use tack_test_support::seed;
@@ -36,7 +35,7 @@ async fn item(board: &Board, title: &str, item_type: &str, parent: Option<Uuid>)
 }
 
 async fn requests_of(board: &Board, item: Uuid) -> usize {
-    queries::execution_request_rows::execution_requests_of_item(&board.repo, &item.to_string())
+    tack_test_support::probe::execution_requests_of_item(&board.repo, &item.to_string())
         .await
         .unwrap()
         .len()

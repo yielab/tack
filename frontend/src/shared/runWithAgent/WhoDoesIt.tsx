@@ -6,13 +6,13 @@ import type { components } from '../api/schema.gen';
 export type TeamEntry = components['schemas']['TeamEntry'];
 
 /** The agent a profile runs on: the first harness its tool policy names; "Agent" when it names none. */
-export function agentOf(profile: AgentProfileSummary): string {
+function agentOf(profile: AgentProfileSummary): string {
   const tools = (profile.tool_policy as { tools?: Record<string, unknown> } | null | undefined)?.tools;
   return tools ? (Object.keys(tools)[0] ?? 'Agent') : 'Agent';
 }
 
 /** What a team is made of, in a few words: its members' roles, or nothing when no agent reported it. */
-export function madeOf(team: TeamEntry | undefined): string {
+function madeOf(team: TeamEntry | undefined): string {
   const roles = [...new Set((team?.report?.members ?? []).map((m) => m.role))];
   return roles.join(', ');
 }

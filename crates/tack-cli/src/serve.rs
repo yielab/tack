@@ -17,7 +17,6 @@ use tack_db::{Repository, init_pool, migrations, repo};
 use tack_protocol::{Clock, SystemClock};
 use tokio::sync::oneshot;
 use tokio_util::task::TaskTracker;
-use tracing::info;
 
 /// Boot the server and block until it is shut down. `ready_tx` receives the real bound
 /// address once the listener is open; `local_runner` is the embedded runner the UI can turn on
@@ -36,17 +35,6 @@ pub async fn run(
     repo::execution::seed_builtin_profiles(&repo, SystemClock.now()).await?;
 
     let workspace_id = repo.ensure_default_workspace().await?;
-
-    // A board from before a decision ended with its run left questions nobody can answer.
-    let closed = repo
-        .expire_decisions_of_ended_attempts(SystemClock.now())
-        .await?;
-    if closed > 0 {
-        info!(
-            closed,
-            "closed the questions of runs that had already ended"
-        );
-    }
 
     // WebSocket update fan-out; capacity 100 messages.
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);

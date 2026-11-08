@@ -695,18 +695,6 @@ impl Repository {
         Ok(CancellationObservation::Cancelled(response))
     }
 
-    #[instrument(skip(self))]
-    pub async fn complete_execution(
-        &self,
-        completion: Completion<'_>,
-        now: DateTime<Utc>,
-    ) -> Result<bool, StoreError> {
-        Ok(matches!(
-            self.complete_execution_result(completion, now).await?,
-            CompletionResult::Committed(_) | CompletionResult::Replayed(_)
-        ))
-    }
-
     /// Records the cancellation request. When nobody holds the run any more
     /// — its latest attempt is `needs_operator`, or its lease has expired —
     /// there is no runner to observe the request, so the attempt and the

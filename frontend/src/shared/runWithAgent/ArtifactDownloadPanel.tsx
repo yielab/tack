@@ -16,7 +16,7 @@ export interface ArtifactDownloadPanelProps {
 type DownloadStatusKind = 'idle' | 'downloading' | 'done' | 'not_found' | 'not_verified' | 'error';
 
 /** A file that is Markdown: a report or a reply, read as a page and not as marks. */
-export const isMarkdownArtifact = (a: Pick<ArtifactRecord, 'kind' | 'name' | 'media_type'> | undefined): boolean =>
+const isMarkdownArtifact = (a: Pick<ArtifactRecord, 'kind' | 'name' | 'media_type'> | undefined): boolean =>
   !!a && (a.kind === 'report' || a.kind === 'reply' || a.media_type === 'text/markdown' || (a.name ?? '').endsWith('.md'));
 
 /** Hands text to the browser (or the desktop app) as a file. */

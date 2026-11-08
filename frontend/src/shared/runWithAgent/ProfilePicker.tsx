@@ -19,10 +19,10 @@ import { A } from '@solidjs/router';
 import { CapabilityGlyph, IconBranch, IconFolder } from './runDialogIcons';
 
 /** Said once under the choice, in every place the choice is made. */
-export const PER_TASK_CHOICE_TEXT = 'Each task can use a different agent; this choice is for this task.';
+const PER_TASK_CHOICE_TEXT = 'Each task can use a different agent; this choice is for this task.';
 
-export const NOBODY_YET = 'Nobody yet';
-export const MAKE_A_PROFILE = 'Make a profile for it on the Agents page';
+const NOBODY_YET = 'Nobody yet';
+const MAKE_A_PROFILE = 'Make a profile for it on the Agents page';
 
 /** "3 teams have no profile yet": the one row standing for every reported team that no profile names. */
 const noProfileText = (n: number) => (n === 1 ? '1 team has no profile yet' : `${n} teams have no profile yet`);

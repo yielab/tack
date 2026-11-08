@@ -36,8 +36,6 @@ pub struct RunRequest {
     pub requested_harness_kind: Option<String>,
     /// The one model string the agent is asked to use, passed verbatim.
     pub requested_model: Option<String>,
-    /// Removed from the request: a caller that still sends it is refused.
-    pub agent_profile_snapshot: Option<Value>,
     pub repository_snapshot: Option<Value>,
     pub permission_policy: PermissionRequest,
     pub budgets: Value,
@@ -1325,13 +1323,6 @@ pub async fn start_run(
     // each action, has no network, and is never merged by itself.
     if Principal::from_label(principal).is_some_and(|who| who.kind == PrincipalKind::Agent) {
         input.make_mcp_run();
-    }
-    if input.agent_profile_snapshot.is_some() {
-        return Err(error(
-            StableErrorCode::InvalidRequest,
-            "agent_profile_snapshot was removed; the server records the profile named by agent_profile_id",
-            json!({"field": "agent_profile_snapshot", "reason": "field_removed"}),
-        ));
     }
     let Some(item) = repo.get_item(input.item_id).await.map_err(|failure| {
         tracing::error!(error = %failure, "Could not verify item");

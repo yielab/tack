@@ -412,7 +412,7 @@ struct RunInfo {
     in_repository: bool,
     /// The run is one turn of a thread, which answers with the last step's summary.
     turn: bool,
-    /// This run continues a task another run already started (decision 6, Phase 87): the tokens
+    /// This run continues a task another run already started: the tokens
     /// that task had used (`input`, `output`) when the retry was sent, read back out of the
     /// task's own cumulative `usage` so the attempt counts only its own new hops.
     baseline_usage: Option<(u64, u64)>,
@@ -502,10 +502,9 @@ fn budget_bound_phrase(bound: &str) -> String {
     }
 }
 
-/// Where to raise the limit, for the rare hop whose `budget.raise` is absent (Card L's live proof
-/// against docket `develop` `fa06ce05`, P59-6/7/8, confirms `raise` is always present today — this
-/// is a fallback, in practice near-dead code, kept for an older docket or one that regresses the
-/// field). docket's stop message also carries a
+/// Where to raise the limit, for a hop whose `budget.raise` is absent (docket sends it today; this
+/// is the fallback for an older docket or one that drops the field). docket's stop message also
+/// carries a
 /// `"(source: <source>; raise <key>)"` tail for a bound its machine or its pipeline sized
 /// (`agent/loop_types.py::limit_origin`); reading that key out of it, rather than keeping a
 /// table of Tack's own, means a key docket renames or retires (ADR 0038 decision 5, which is
@@ -1430,9 +1429,9 @@ impl DocketAdapter {
                 additional: BTreeMap::from([("team".to_owned(), json!(info.pod))]),
             },
             usage: Usage {
-                // A continuation's task carries the whole task's usage, old hops included
-                // (decision 6): its own baseline, what the task had already used when the retry
-                // was sent, is taken back out so the run counts only its new hops.
+                // A continuation's task carries the whole task's usage, old hops included: its
+                // own baseline, what the task had already used when the retry was sent, is
+                // taken back out so the run counts only its new hops.
                 tokens_in: measurement(
                     usage
                         .and_then(|usage| usage.total.input)
@@ -1462,8 +1461,7 @@ impl DocketAdapter {
     }
 
     /// What `next.continue` on a budget stop says: whether a request may follow this task with
-    /// `continue_task`, and if not, why (decision 5's table, "Continue or Start over" in
-    /// `docs/closed-cycles/plans/phase-87.md`). `hop_budget` is the last hop's `budget`, when `budgetOutcome`
+    /// `continue_task`, and if not, why. `hop_budget` is the last hop's `budget`, when `budgetOutcome`
     /// read one; without it (an older docket, or one that never wrote the key on this hop) Tack
     /// cannot tell a step's own budget stop from a confused model, so continuing is never
     /// offered — the same case as a docket without `retryContinues`.
@@ -1487,12 +1485,10 @@ impl DocketAdapter {
     }
 
     /// Adds `branch`/`head_commit`/`base_commit` to a budget stop's `reason` when the task's
-    /// worktree has a branch to read (decision 3, Phase 87): any budget-stopped hop that pinned
-    /// its tree — an Implementer's, whatever bound it hit, `tokens` included — leaves work worth
-    /// showing, not only a `step_budget` one. Card L's live proof found a tokens-bound stop with
-    /// `treeChanged: true` left with neither key, because only the `step_budget` arm ever called
-    /// this; `from_run` then refused the very run it should have offered first (decision 5's
-    /// table, row 2). Called only once the caller has already checked `budget.tree_changed`.
+    /// worktree has a branch to read: any budget-stopped hop that pinned its tree — an
+    /// Implementer's, whatever bound it hit, `tokens` included — leaves work worth showing, not
+    /// only a `step_budget` one, and `from_run` offers to start over from it. Called only once the
+    /// caller has already checked `budget.tree_changed`.
     async fn add_kept_branch(&self, reason: &mut Value, task: &TaskView, workspace: &Path) {
         let branch = task
             .worktree
@@ -1709,9 +1705,7 @@ impl DocketAdapter {
             }
             // A `tokens` bound keeps code `budget` (that limit is Tack's own), but a kept tree is
             // still a kept tree: without this arm the generic catch-all below never looks, and
-            // `from_run` refuses the very run decision 5's table says to offer it from first
-            // (found live, Card L, docs/closed-cycles/plans/phase-87.md — a real tokens-bound stop left with
-            // neither key despite a real commit).
+            // `from_run` would refuse the very run it should offer to start over from.
             _ if failure_kind == Some("budget")
                 && self.client.has_feature("budgetOutcome").await
                 && task
@@ -1883,8 +1877,8 @@ impl HarnessAdapter for DocketAdapter {
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
         let request = &spec.work.request;
-        // `continue_task`: this request follows a task another run already started (decision 6,
-        // Phase 87), instead of posting a new one. The app layer put it there once it read the
+        // `continue_task`: this request follows a task another run already started, instead of
+        // posting a new one. The app layer put it there once it read the
         // stopped run's own team and task; nothing here looks either up on its own.
         if let Some(process_id) = request
             .metadata
@@ -1971,7 +1965,7 @@ impl HarnessAdapter for DocketAdapter {
             return Err(rejected(misfit_sentence(&pod, &misfits, pod_fetch, &facts)));
         }
         // The roles that propose, named in the task so no other role calls the tool; a team whose
-        // members say nothing of it is told as before, naming none.
+        // members say nothing of it names none.
         let proposers = proposers(members.as_deref());
         // A thread on a team whose docket lists `conversation` is one task that continues turn by
         // turn: the first turn sends it, each later one answers its `turn` escalation.
@@ -2249,7 +2243,7 @@ impl HarnessAdapter for DocketAdapter {
                 api,
                 in_repository,
                 turn: TurnNote::of(&spec.work.request.metadata).is_some(),
-                // A restart during a continuation (decision 6's "Restarts") still has to count
+                // A restart during a continuation still has to count
                 // only the new hops: the baseline travels in the request's own metadata, the same
                 // way `start_continuation` reads it the first time.
                 baseline_usage: baseline_usage_of(&spec.work.request.metadata),
@@ -2441,8 +2435,8 @@ fn baseline_usage_of(metadata: &Value) -> Option<(u64, u64)> {
 }
 
 impl DocketAdapter {
-    /// A request that continues a step another run's task already stopped at (decision 6, Phase
-    /// 87), instead of posting a new task: `process_id` is that run's own `pod/task`, the same
+    /// A request that continues a step another run's task already stopped at, instead of
+    /// posting a new task: `process_id` is that run's own `pod/task`, the same
     /// shape `register` keys a live run by. Needs both `retryContinues` (the route itself) and
     /// `budgetOutcome` (without it docket cannot tell a step's own budget stop from a confused
     /// model, so the work it kept is not there to continue either); missing either rejects the

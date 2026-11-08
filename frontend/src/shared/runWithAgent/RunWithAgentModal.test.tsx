@@ -1328,12 +1328,11 @@ describe('RunWithAgentModal', () => {
     expect(submitButton()?.disabled ?? true).toBe(true);
   });
 
-  it('the_request_sends_no_profile_snapshot_and_the_preview_names_the_profile', async () => {
+  it('the preview names the profile', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush(); await flush();
     submitButton().click();
     await flush(); await flush();
-    expect(lastCreateBody).not.toHaveProperty('agent_profile_snapshot');
     expect(requestedUrls.some((u) => u.includes('/agent-context?profile_id=profile-1'))).toBe(true);
   });
 

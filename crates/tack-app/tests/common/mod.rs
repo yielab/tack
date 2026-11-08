@@ -58,7 +58,8 @@ pub async fn world() -> World {
     let project = make_project(&repo, workspace_id).await;
     let item_id = make_item(&repo, &project).await.id.to_string();
     let snapshot = capabilities(clock.now(), 2, 2).to_string();
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: RUNNER_ID,
             name: "Use case runner",
@@ -73,7 +74,8 @@ pub async fn world() -> World {
     )
     .await
     .expect("runner");
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: PROFILE_ID,
             name: "Use case profile",

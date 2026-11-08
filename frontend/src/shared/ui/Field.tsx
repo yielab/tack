@@ -110,7 +110,7 @@ export interface FieldShellProps {
 }
 
 /** The id of the error or hint line under the control `id`; the control points at it with `aria-describedby`. */
-export const noteId = (id: string, kind: 'error' | 'hint') => `${id}-${kind}`;
+const noteId = (id: string, kind: 'error' | 'hint') => `${id}-${kind}`;
 
 /** What `aria-describedby` of a control says: its error, else its hint, after any id the caller gave. */
 export const describedBy = (id: string, note: { error?: string; hint?: string; given?: string }) =>

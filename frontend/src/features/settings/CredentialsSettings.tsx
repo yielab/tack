@@ -10,7 +10,7 @@ import { toast } from '../../shared/ui/toast';
 import { Badge, Button, Field, createConfirm } from '../../shared/ui';
 
 /** What a scope may name, in the order a screen lists them, and why one cannot be picked yet. */
-export const CAPABILITIES: { value: CredentialCapability; label: string; hint: string; reason?: string }[] = [
+const CAPABILITIES: { value: CredentialCapability; label: string; hint: string; reason?: string }[] = [
   { value: 'read', label: 'Read', hint: 'See the project, its items, comments and dependencies' },
   {
     value: 'propose',

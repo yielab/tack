@@ -276,7 +276,6 @@ async fn begin_turn(
         agent_profile_id: Some(thread.profile.clone()),
         requested_harness_kind: None,
         requested_model: None,
-        agent_profile_snapshot: None,
         repository_snapshot: None,
         permission_policy: permissions,
         budgets: json!({}),
