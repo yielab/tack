@@ -263,7 +263,6 @@ export interface Usage {
   tokens_in: Measurement<number>;
   tokens_out: Measurement<number>;
   duration_ms: Measurement<number>;
-  cost_usd: Measurement<number>;
 }
 
 // ─── Stable protocol errors (III.1.6; docs/contracts/runner-v1/errors/*.json;

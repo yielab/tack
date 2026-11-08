@@ -789,13 +789,12 @@ pub struct Measurement<T> {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
-/// Token, duration and cost usage with explicit provenance.
+/// Token and duration usage with explicit provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub tokens_in: Measurement<u64>,
     pub tokens_out: Measurement<u64>,
     pub duration_ms: Measurement<u64>,
-    pub cost_usd: Measurement<f64>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }

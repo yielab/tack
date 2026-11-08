@@ -239,9 +239,9 @@ When a demotion takes the whole project to L3, `tack_app::autonomy::demote` also
 
 A harness that can tell which models it used writes `Usage.additional["by_model"]`, an object `{ "<model>": { "input": n, "output": n, "cache_read": n?, "cache_write": n? } }`. Claude Code writes it from `claude_code.rs`; docket from `usage.byModel` (`DocketAdapter::outcome`, which keeps `input` and `output` only).
 
-One SQL prices everything. `tack_db::repo::rate_card::spend_by_model(repo, project, since)` returns one `SpendRow { model, repo, team, tokens_in, tokens_out, attempts }` per model, repository and team. An attempt with a `by_model` object counts once per model, with cache reads and writes added to `tokens_in`. Any other attempt counts under `RUN_MODEL_SQL`, the model the agent reported, else the one the run asked for. A run on the agent's default model that reported none has no model and is not priced.
+One SQL adds up everything. `tack_db::repo::metrics::spend_by_model(repo, project, since)` returns one `SpendRow { model, team, tokens_in, cache_read, tokens_out, attempts }` per model and team. An attempt with a `by_model` object counts once per model, with cache reads and writes added to `tokens_in`. Any other attempt counts under `RUN_MODEL_SQL`, the model the agent reported, else the one the run asked for. A run on the agent's default model that reported none has no model.
 
-The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows comes from the same rows. A team's dollar figure is omitted when any of its rows is unpriced.
+The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows comes from the same rows.
 
 ## A task that repeats
 

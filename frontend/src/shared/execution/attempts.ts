@@ -10,18 +10,17 @@
 // (`AttemptSummary`/`AttemptListResponse`/`EventSummary`/`EventListResponse`
 // in `executions.rs`), the same hand-typed-from-Rust convention `api.ts`'s
 // header comment documents for this whole domain (this domain's OpenAPI
-// schemas type `model_provenance`/`usage_economics` via
-// `#[schema(value_type = ...)]`, pointing at the real `tack-protocol` types).
+// schemas type `model_provenance` via `#[schema(value_type = ...)]`, pointing
+// at the real `tack-protocol` type).
 //
 // `model_provenance` (nullable — `null` until the attempt reports
-// `actual_execution`) and `usage_economics` (always present) on
-// `AttemptSummary` carry `tack_protocol::usage_provenance::{ModelProvenance,
-// UsageEconomics, RunnerTimeCost}`; the generated document describes them
-// straight from those types.
+// `actual_execution`) on `AttemptSummary` carries
+// `tack_protocol::usage_provenance::ModelProvenance`; the generated document
+// describes it straight from that type.
 
 import { requestWithHeaders } from '../api/client';
 import type { components } from '../api/schema.gen';
-import type { Measurement, RunRecordSet, RunStep, RunStepBudget, RunStepPrompt } from './types';
+import type { RunRecordSet, RunStep, RunStepBudget, RunStepPrompt } from './types';
 
 /** `executions.rs`'s `TerminalReason`: the five named keys the UI reads, plus whatever else the runner sent. */
 export type TerminalReason = components['schemas']['TerminalReason'];
@@ -48,35 +47,6 @@ export interface AttemptPullRequest {
   url: string;
 }
 
-// ─── Usage economics (`usage_provenance.rs::UsageEconomics`) ───────────────
-
-/**
- * The runner-witnessed wall-clock dimension — a plain fact, never itself a
- * `Measurement` (there is no "estimated" wall clock; see
- * `usage_provenance.rs`'s own doc comment). `wall_clock_ms` is `null` only
- * until both `started_at`/`ended_at` are known; `cost_usd_estimated` is a
- * `Measurement` because turning that duration into a dollar figure needs an
- * infra rate no deployment configures today — every real response has this
- * at `{value: null, source: 'not_measured'}`.
- */
-export interface RunnerTimeCost {
-  wall_clock_ms: number | null;
-  cost_usd_estimated: Measurement<number>;
-}
-
-/**
- * Two independently-provenanced dollar dimensions, deliberately never
- * summed into one figure: the harness/vendor's own self-reported token
- * cost, and a derived runner-infra-time cost. Always present on an
- * `AttemptSummary` (unlike `model_provenance`), because both sub-fields
- * degrade to an honest `not_measured` rather than needing to be absent
- * themselves.
- */
-export interface UsageEconomics {
-  model_token_cost_usd_estimated: Measurement<number>;
-  runner_time_cost: RunnerTimeCost;
-}
-
 // ─── Merge (`executions.rs::AttemptMerge`) ─────────────────────────────────
 
 /** Who merged an attempt's pull request, when it is merged. */
@@ -93,7 +63,7 @@ export type AttemptMerge = components['schemas']['AttemptMerge'];
  * reason the Rust struct types them as a bare `Value`: the real types
  * (`tack_protocol::execution::{ActualExecution, Usage}`) live in a crate this
  * frontend has no generated bridge to yet — this file only needs enough shape
- * to drive `model_provenance`/`usage_economics` display, which are already
+ * to drive `model_provenance` display, which is already
  * fully typed above. `terminal_reason` is typed from the generated schema.
  */
 /** A person's verdict on one attempt; a rejection always carries its reason. `reviewed_by` is the
@@ -133,7 +103,8 @@ export interface AttemptSummary {
   updated_at: string;
   /** `null` while the attempt has not yet reported `actual_execution`. */
   model_provenance: ModelProvenance | null;
-  usage_economics: UsageEconomics;
+  /** Milliseconds the runner itself witnessed between start and end; `null` until both are known. */
+  wall_clock_ms: number | null;
   /** `null` when no pull request was opened by the run. */
   pull_request: AttemptPullRequest | null;
   /** The Merge button's state. Absent from a server that predates it. */

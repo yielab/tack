@@ -246,7 +246,6 @@ async function seedAgentWork(request: APIRequestContext, projectId: string) {
         tokens_in: { value: 48210, source: 'measured' },
         tokens_out: { value: 6120, source: 'measured' },
         duration_ms: { value: 352000, source: 'measured' },
-        cost_usd: { value: null, source: 'not_measured' },
       },
       final_event_checkpoint: null,
     },

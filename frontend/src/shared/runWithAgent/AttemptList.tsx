@@ -717,7 +717,7 @@ const Unmeasured: Component = () => (
 );
 
 /** What a finished attempt used, in tokens: they are what the harness
- *  measured. No dollar figure is shown (limits and reports are in tokens). The
+ *  measured. The
  *  model provenance sits beside the model, and only when it says something
  *  the model name doesn't. */
 const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {

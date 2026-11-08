@@ -1,8 +1,8 @@
 # Reviewing a Run
 
 This page is for whoever checks what an agent did. After reading it you can find a finished run, judge its
-changes, accept or reject them, read the merge-readiness pack a verifier leaves, see what the run used and
-cost, and read the project's Factory metrics page.
+changes, accept or reject them, read the merge-readiness pack a verifier leaves, see what the run used,
+and read the project's Factory metrics page.
 
 ## What happens when a run finishes
 
@@ -63,7 +63,7 @@ reads from the top down, in the same order every time: the verdict first, then w
 6. **Files from this run**, one row for each with **View** and **Download**; a Markdown file such as `report.md` is viewed as a page.
 7. **Technical**: the request, attempt and runner ids (each copies with one press), what the agent got
    (whether it ran in an isolated sandbox, the names of its environment variables when it had any, where it
-   worked, and the exact prompt it read), the **Usage** in full (see [Usage and cost](#usage-and-cost)), the
+   worked, and the exact prompt it read), the **Usage** in full (see [Usage](#usage)), the
    **Raw log** and whether the verifier signed its pack. On the item's own page these sit in a side column.
 
 Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on the
@@ -247,7 +247,7 @@ see [Sending a rejected change back to the agent](merging.md#sending-a-rejected-
 
 ---
 
-## Usage and cost
+## Usage
 
 The verdict gives the tokens a finished attempt counted, as a bar against its limit when it has one, and how
 long it ran. The full **Usage** panel is under **Technical**. It leads with tokens, because that is what the agent measured:
@@ -259,15 +259,11 @@ long it ran. The full **Usage** panel is under **Technical**. It leads with toke
   Tack only knows the one you requested.
 - **Model calls** and how long the run took.
 
-The panel shows no dollar figure: limits and reports are in tokens. The factory metrics, below, price tokens
-from your own rate card.
-
 If an agent does not report tokens, the panel says **Tokens: Not measured**. The task's summary of its latest
 run gives the counted tokens, with what the cache served beside them, and the run's token limit with who
 applies it; see [Token limits](running-agents.md#token-limits).
 
-The Factory metrics page, below, adds up cost for a whole project in a different way: it prices the tokens of
-every run with a rate card you enter once.
+The Factory metrics page, below, adds up the tokens of every run for a whole project.
 
 ---
 
@@ -286,7 +282,6 @@ shows a figure, or **Not measured** with its reason when there is nothing to mea
 | **Pack acceptance rate** | Accepted packs divided by reviewed packs, with how many are still unreviewed |
 | **Verification tax (tokens)** | Tokens spent on verification and rework, divided by tokens spent on first attempts |
 | **Outcomes** | Pull requests opened, merged, closed and reverted, and how many were merged and not reverted |
-| **Cost** | An estimate in dollars for the project: tokens priced by the rate card, plus the human minutes above at the card's hour rate, with how many of the models used have a price |
 | **Quality** | The figures the verifier reports for each repository. Tack shows them and does not compute them. Where the verifier cannot answer, the card says why |
 
 When a card has nothing to count, it says **Not measured** and why, never `0`.
@@ -295,27 +290,8 @@ When a card has nothing to count, it says **Not measured** and why, never `0`.
 
 Under the cards, the folded section **Quality of the work** reads the period's runs as rates, each with the counts behind it, and opens into small tables: how often a run succeeded (a run turned away before it started is left out), how often the first run of a task was accepted, how many extra runs a task needed, how often a merged pull request was reverted, and how often the verifier's word agreed with what happened to the work (work you rejected, or whose pull request was reverted, is bad; work you accepted and kept is good), plus, for a task that repeats, how often any three of its runs all succeed. It also lists the questions each agent asked you per hundred steps and how often you allowed them, why runs stopped, and the same rates cut by profile, agent, model, team and prompt fingerprint. Every figure counts runs or tokens, never money, and a figure with nothing to count says **Not measured**.
 
-### Cost by model and by team
+### Tokens by model and by team
 
-Under the cards, **Cost by model** lists, for each model, the counted tokens in and out, the tokens the
-cache served (shown, not counted), the number of attempts and the estimated cost. A run that named no model and whose agent reported none appears as **No model named**. **By team**
+Under the cards, **Tokens by model** lists, for each model, the counted tokens in and out, the tokens the
+cache served (shown, not counted) and the number of attempts. A run that named no model and whose agent reported none appears as **No model named**. **By team**
 appears when at least one run went to a team, and groups the same figures by team.
-
-A row shows **not priced** in its Cost column when there is no rate card, or when the card does not list
-that model. The **Cost** card then says how many attempts were left out.
-
-### The rate card
-
-The **Rate card** form at the bottom of the page tells Tack what things cost. It applies to the whole board,
-not to one project.
-
-1. Write the date the prices were read, in **Prices as of**.
-2. Add one row per model: the model's name exactly as a run names it, and its price in US dollars per
-   million input tokens and per million output tokens.
-3. Fill in the price of a CI minute and of a human hour.
-4. Save. Every Cost figure on the page updates.
-
-A run is priced as the model the agent reported, or else the model you requested. A model that is not on the
-card cannot be priced. The CI-minute price is kept on the card but is not part of the Cost figure.
-
-Dollar figures are estimates for reading only. Limits are in tokens: see [Budgets](merging.md#budgets).

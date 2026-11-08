@@ -17,7 +17,7 @@ const BUDGETS = [
 ] as const;
 
 /**
- * Limits: what the project may spend or queue. Tokens only, never dollars. Every field saves on
+ * Limits: what the project may spend or queue. Tokens only. Every field saves on
  * change (`PUT /projects/{id}/autonomy`, the whole object, through the ladder's `save`).
  */
 const Limits: Component<{

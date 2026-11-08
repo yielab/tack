@@ -139,5 +139,4 @@ An agent Tack cannot stop at a limit (Codex) can use more than it was given, so 
 take the day past its limit; docket, Claude Code and opencode are stopped at it.
 
 A limit that stops new runs says which one on the task; runs already going finish. A day starts at midnight
-UTC. There is no limit in dollars: a dollar figure is a price list applied to tokens, and a model with no
-price would slip past it.
+UTC. Every limit is in tokens.

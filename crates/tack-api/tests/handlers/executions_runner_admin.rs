@@ -2373,8 +2373,8 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
             "limits.timeout_seconds must be a positive whole number",
         ),
         (
-            json!({"budgets": {"cost_usd": 1}}),
-            "limits.budgets.cost_usd was removed; a limit is in tokens (limits.budgets.tokens)",
+            json!({"budgets": {"max_turns": 1}}),
+            "limits.budgets.max_turns is not a limit; the only budget is limits.budgets.tokens",
         ),
     ] {
         let create = json!({"name": "Bad limits", "instructions": "x", "limits": limits});

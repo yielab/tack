@@ -58,8 +58,6 @@ export { executionsApi, fleetsApi, agentProfilesApi, runnersApi, teamOf } from '
 
 export type {
   ModelProvenance,
-  RunnerTimeCost,
-  UsageEconomics,
   AttemptPullRequest,
   AttemptSummary,
   AttemptListResult,

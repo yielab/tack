@@ -15,6 +15,8 @@ mod bridge_tables_dropped;
 mod change_sets;
 #[path = "migrations/drop_boards.rs"]
 mod drop_boards;
+#[path = "migrations/drop_rate_card.rs"]
+mod drop_rate_card;
 #[path = "migrations/drop_status_moves.rs"]
 mod drop_status_moves;
 #[path = "migrations/factory_loop_tables.rs"]

@@ -21,7 +21,7 @@
       "instructions": "Implement the assigned item and run focused tests.",
       "tool_policy": {"filesystem": "workspace_write", "network": "deny", "shell": "allowlisted"},
       "timeout_seconds": 3600,
-      "budgets": {"tokens": 200000, "cost_usd": null}
+      "budgets": {"tokens": 200000}
     },
     "requested_harness_kind": "codex",
     "requested_model": "opaque/model-alpha",
@@ -33,7 +33,7 @@
     },
     "permission_policy": {"tools": ["shell", "filesystem"], "network": false, "approvals": "auto"},
     "timeout_seconds": 3600,
-    "budgets": {"tokens": 200000, "cost_usd": null},
+    "budgets": {"tokens": 200000},
     "status_map_policy_id": null,
     "environment": {"RUST_LOG": {"value": "info", "secret_reference": null}},
     "metadata": {"ticket": "TACK-123"},

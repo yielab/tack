@@ -453,7 +453,6 @@ fn a_counted_token_is_a_new_one() {
     let usage = |reported: serde_json::Value| -> Usage {
         let mut value = serde_json::json!({
             "duration_ms": {"value": null, "source": "not_measured"},
-            "cost_usd": {"value": null, "source": "not_measured"},
         });
         value
             .as_object_mut()

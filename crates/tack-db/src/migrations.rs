@@ -173,6 +173,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("109_one_review", &MIGRATION_109[..]),
         ordinary("110_prompt_template_sha", &MIGRATION_110[..]),
         ordinary("111_profile_egress_mode", &MIGRATION_111[..]),
+        ordinary("112_drop_rate_card", &MIGRATION_112[..]),
     ]
 }
 
@@ -2318,3 +2319,6 @@ const MIGRATION_111: [&str; 3] = [
     "UPDATE agent_profiles SET egress_mode = 'closed' WHERE kind IN ('reviewer', 'planner')",
     "UPDATE agent_profiles SET egress_mode = 'open' WHERE kind = 'researcher'",
 ];
+
+// 112: no dollar figure remains in Tack, so the rate card an operator may have entered goes with it.
+const MIGRATION_112: [&str; 1] = ["DELETE FROM app_meta WHERE key = 'rate_card'"];

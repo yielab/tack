@@ -13,7 +13,6 @@ pub mod openapi;
 pub mod ports;
 pub mod prill;
 pub mod prill_store;
-pub mod rate_card;
 pub mod request_id;
 pub mod router;
 pub mod server;

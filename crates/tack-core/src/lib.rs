@@ -14,7 +14,6 @@ pub mod models;
 pub mod notification;
 pub mod outline;
 pub mod principal;
-pub mod rate_card;
 pub mod recurrence;
 pub mod rich_text;
 pub mod run_defaults;

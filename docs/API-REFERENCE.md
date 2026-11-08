@@ -167,7 +167,6 @@ per-endpoint listing precisely so they do not get duplicated by one.
   role uses, and `caps_at` and `fix` for one that needs a person during a run). A project's
   auto-start is set with `PATCH /api/projects/{id}` (`auto_start_enabled`,
   `auto_start_status`, `auto_start_max_open`); it is switched off when the project drops to L3.
-- `GET /api/settings/rate-card` and `PUT` hold the prices usage is priced with.
 
 **Templates, custom fields and the project file**
 - Built-in templates (`is_builtin: true`) cannot be deleted.

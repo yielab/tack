@@ -674,11 +674,11 @@ fn run_limits(
     let Some(object) = budgets.as_object_mut() else {
         return Err(refused("budgets must be an object", "budgets"));
     };
-    if object.contains_key("cost_usd") {
-        return Err(error(
-            StableErrorCode::InvalidRequest,
-            "budgets.cost_usd was removed; a run's limit is in tokens (budgets.tokens)",
-            json!({"field": "budgets.cost_usd", "reason": "field_removed"}),
+    // A limit that is not one Tack applies must be refused, never dropped.
+    if let Some(key) = object.keys().find(|key| key.as_str() != "tokens") {
+        return Err(refused(
+            &format!("budgets.{key} is not a limit; a run's only budget is budgets.tokens"),
+            &format!("budgets.{key}"),
         ));
     }
     let positive = |value: &Value| value.as_u64().filter(|n| *n > 0);

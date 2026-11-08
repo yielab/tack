@@ -63,7 +63,6 @@ async function completeAttempt(
         tokens_in: { value: null, source: 'not_measured' },
         tokens_out: { value: null, source: 'not_measured' },
         duration_ms: { value: null, source: 'not_measured' },
-        cost_usd: { value: null, source: 'not_measured' },
       },
       final_event_checkpoint: null,
     },
