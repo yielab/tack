@@ -1,25 +1,13 @@
 // Pure, framework-agnostic display logic for one attempt's model provenance
-// and usage economics. Kept separate from `AttemptList.tsx` for the same
-// reason `shared.ts` is separate from `RunWithAgentModal.tsx` — unit
-// testable without mounting anything, and a single place every consumer
-// (`AttemptList.tsx`, its tests) reads through so "Not measured" can never
-// silently drift into "$0.00" at a second call site.
-//
-// **The load-bearing rule this whole file exists to enforce (CLAUDE.md
-// rule 1, "unsupported is typed, unknown is explicit, unmeasured is
-// nullable"):** `usage_economics.runner_time_cost.cost_usd_estimated`
-// is `{value: null, source: "not_measured"}` in *every real response this
-// API returns today* — no runner infra cost-rate is stored anywhere in this
-// schema. `formatUsdMeasurement` below renders that literal, unmistakable
-// text `"Not measured"` — never `$0.00`, `—`, `0`, or a blank cell, which
-// would each be a lie about real money. `absent_usage_never_serializes_as_zero`
-// (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
-// same guarantee; this file is the frontend half.
+// and usage. Kept separate from `AttemptList.tsx` for the same reason
+// `shared.ts` is separate from `RunWithAgentModal.tsx` — unit testable without
+// mounting anything, and a single place every consumer reads through so
+// "Not measured" can never silently drift into a zero at a second call site.
+// Usage is tokens and time; nothing here is priced.
 
 import { plainPlanProblem, plainVerdict } from './plainWords';
 import { isFolderRun } from '../execution/attempts';
-import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
-import type { Measurement } from '../execution/types';
+import type { AttemptSummary, ModelProvenance } from '../execution/attempts';
 import { HARNESS_KINDS, describeExecutionState, type StateTone } from './shared';
 
 /** The exact literal every unmeasured usage figure must render. Never
@@ -28,27 +16,6 @@ import { HARNESS_KINDS, describeExecutionState, type StateTone } from './shared'
  *  the string, so a future edit can never accidentally introduce a second,
  *  slightly different spelling. */
 export const NOT_MEASURED_TEXT = 'Not measured';
-
-/**
- * Renders a `Measurement<number>` dollar figure honestly. `source ===
- * 'not_measured'` is checked FIRST and unconditionally returns
- * {@link NOT_MEASURED_TEXT} regardless of `value` (defensive: a
- * `not_measured` source should always carry `value: null` per the backend's
- * own guarantee, but this function does not trust that pairing blindly — a
- * `null` value on its own, whatever the `source` says, is also treated as
- * "not measured" rather than risking a `NaN`/blank render). A real `0` with
- * a `measured`/`estimated` source is a genuine, distinct fact and renders as
- * a real `$0.00...`, never collapsed into the same text as "unmeasured".
- */
-export function formatUsdMeasurement(measurement: Measurement<number>): string {
-  if (measurement.source === 'not_measured' || measurement.value === null) {
-    return NOT_MEASURED_TEXT;
-  }
-  const decimals = Math.abs(measurement.value) > 0 && Math.abs(measurement.value) < 0.01 ? 4 : 2;
-  const dollars = `$${measurement.value.toFixed(decimals)}`;
-  const provenanceLabel = measurement.source === 'measured' ? 'measured' : 'estimated';
-  return `${dollars} (${provenanceLabel})`;
-}
 
 /**
  * `wall_clock_ms` is a plain derivable fact, never itself a `Measurement`
@@ -85,38 +52,10 @@ export function hopDurationText(milliseconds: number | null): string | null {
   return milliseconds === null ? null : `Took ${formatWallClock(milliseconds)}`;
 }
 
-export interface RunnerTimeCostDisplay {
-  wallClock: string;
-  costUsd: string;
-}
-
-export function formatRunnerTimeCost(cost: RunnerTimeCost, terminal = false): RunnerTimeCostDisplay {
-  return {
-    wallClock: formatWallClock(cost.wall_clock_ms, terminal),
-    costUsd: formatUsdMeasurement(cost.cost_usd_estimated),
-  };
-}
-
-export interface UsageEconomicsDisplay {
-  modelTokenCostUsd: string;
-  runnerTime: RunnerTimeCostDisplay;
-}
-
-/** Never sums the two dollar dimensions — `UsageEconomics`'s own doc
- *  comment: they are independently provenanced and must stay visibly
- *  separate line items, not folded into one "total cost" that would imply a
- *  precision neither figure actually has. */
-export function formatUsageEconomics(usage: UsageEconomics, terminal = false): UsageEconomicsDisplay {
-  return {
-    modelTokenCostUsd: formatUsdMeasurement(usage.model_token_cost_usd_estimated),
-    runnerTime: formatRunnerTimeCost(usage.runner_time_cost, terminal),
-  };
-}
-
 // ─── What a run used ────────────────────────────────────────────────────────
 
 /** One attempt's usage, read from `attempt.usage` (the runner's report) and
- *  `usage_economics`. Every figure is `null` when the harness didn't report it. */
+ *  `wall_clock_ms`. Every figure is `null` when the harness didn't report it. */
 export interface AttemptUsage {
   /** Every input token the model read, cache reads and writes included. */
   tokensIn: number | null;
@@ -129,7 +68,6 @@ export interface AttemptUsage {
   modelCalls: number | null;
   /** The models the run used, the main one first. */
   models: string[];
-  cost: Measurement<number>;
   wallClockMs: number | null;
 }
 
@@ -169,8 +107,7 @@ export function readAttemptUsage(attempt: AttemptSummary): AttemptUsage {
     cacheWrite,
     modelCalls,
     models,
-    cost: attempt.usage_economics.model_token_cost_usd_estimated,
-    wallClockMs: attempt.usage_economics.runner_time_cost.wall_clock_ms,
+    wallClockMs: attempt.wall_clock_ms,
   };
 }
 
@@ -192,14 +129,6 @@ export function formatCountedTokens(u: AttemptUsage): string | null {
   if (u.counted === null) return null;
   const cache = u.cacheRead === null ? 'cache not reported' : `+ ${formatTokenGroups(u.cacheRead)} read from cache, not counted`;
   return `${formatTokenGroups(u.counted)} tokens (${cache})`;
-}
-
-/** A harness's own dollar figure is its estimate (claude-code prices tokens at
- *  list price), never a bill — so it is always shown as an estimate. */
-export function formatApproxCost(cost: Measurement<number>): string {
-  if (cost.source === 'not_measured' || cost.value === null) return NOT_MEASURED_TEXT;
-  const decimals = Math.abs(cost.value) > 0 && Math.abs(cost.value) < 0.01 ? 4 : 2;
-  return `≈ $${cost.value.toFixed(decimals)} (estimated)`;
 }
 
 export function harnessName(kind: string | null | undefined): string {

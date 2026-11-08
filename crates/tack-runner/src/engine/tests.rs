@@ -687,8 +687,7 @@ fn usage() -> tack_protocol::execution::Usage {
         r#"{
             "tokens_in":{"value":1,"source":"measured"},
             "tokens_out":{"value":2,"source":"measured"},
-            "duration_ms":{"value":3,"source":"measured"},
-            "cost_usd":{"value":null,"source":"not_measured"}
+            "duration_ms":{"value":3,"source":"measured"}
         }"#,
     )
     .expect("usage fixture")
@@ -4764,7 +4763,6 @@ async fn a_run_that_counts_its_token_limit_is_stopped_and_fails() {
             "tokens_in": {"value": tokens_in, "source": "measured"},
             "tokens_out": {"value": tokens_out, "source": "measured"},
             "duration_ms": {"value": null, "source": "not_measured"},
-            "cost_usd": {"value": null, "source": "not_measured"},
             "cache_read_tokens": cache_read,
         }))
         .expect("usage")
@@ -4859,7 +4857,6 @@ async fn a_stop_that_does_not_hold_is_killed_and_then_marked_cancel_failed() {
                 "tokens_in": {"value": 600, "source": "measured"},
                 "tokens_out": {"value": 0, "source": "measured"},
                 "duration_ms": {"value": null, "source": "not_measured"},
-                "cost_usd": {"value": null, "source": "not_measured"},
             }))
             .expect("usage"),
         ),

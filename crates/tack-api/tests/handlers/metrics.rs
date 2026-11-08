@@ -100,7 +100,6 @@ fn usage(tokens_in: i64, tokens_out: i64) -> String {
     json!({
         "tokens_in": {"value": tokens_in, "source": "measured"},
         "tokens_out": {"value": tokens_out, "source": "measured"},
-        "cost_usd": {"value": 9.99, "source": "measured"},
     })
     .to_string()
 }
@@ -406,14 +405,13 @@ async fn seeded_rows_yield_the_expected_ratios() {
         (Some(4), Some(1), Some(1), Some(1), Some(1))
     );
     assert!(!m.to_string().contains("pqc"), "{m}");
-    // No prill and no rate card: no quality, its reason, and no dollar.
+    // No prill: no quality, and its reason.
     assert!(m.get("quality").is_none(), "{m}");
     assert_eq!(
         m["quality_unavailable"],
         "The verifier is not installed on the board. An administrator sets it up: see the Administrator Guide"
     );
-    assert!(m.get("cost_usd").is_none(), "{m}");
-    // No dollar figure anywhere, though the seeded usage carries one.
+    // Spend is tokens: no dollar figure anywhere.
     assert!(!m.to_string().contains("usd"), "{m}");
 
     // A project with no rows: every ratio is null with its reason, never 0.
@@ -654,7 +652,7 @@ async fn a_decision_answered_elsewhere_counts_as_answered() {
 }
 
 /// A prill that answers `--version` and `metrics` from the captured output,
-/// with `qualified` raised to 2 so the per-dollar figure is not zero.
+/// with `qualified` raised to 2.
 fn fake_prill(dir: &std::path::Path) -> String {
     use std::os::unix::fs::PermissionsExt;
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prill");
@@ -678,7 +676,7 @@ fn fake_prill(dir: &std::path::Path) -> String {
 }
 
 #[tokio::test]
-async fn quality_is_prills_and_cost_is_the_rate_cards() {
+async fn quality_is_prills_and_spend_is_tokens() {
     let root = tempfile::tempdir().unwrap();
     let repo = setup_test_db().await;
     let workspace_id = create_test_workspace(&repo).await;
@@ -758,7 +756,7 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     // With a store: prill's figures, named as prill's, with its version.
     std::fs::create_dir_all(root.path().join("prill")).unwrap();
     std::fs::write(root.path().join("prill/o__r.db"), "").unwrap();
-    let (app, m) = get(program.clone()).await;
+    let (_, m) = get(program.clone()).await;
     assert!(m.get("quality_unavailable").is_none(), "{m}");
     assert_eq!(m["quality"]["source"], "prill");
     assert_eq!(m["quality"]["prill_version"], "0.1.0");
@@ -803,56 +801,24 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
         "The verifier is not installed on the board. An administrator sets it up: see the Administrator Guide",
         "{m}"
     );
-    // No rate card: no dollar anywhere, whatever the usage carried.
-    assert!(!m.to_string().contains("cost_usd"), "{m}");
-    assert!(repos[0].get("qualified_per_usd").is_none(), "{m}");
-    // The model is named, and nothing prices it: 0 of 1.
+    // Spend is the attempts' tokens by model and team, and nothing prices it.
     assert_eq!(
-        (m["priced_models"].as_i64(), m["models"].as_i64()),
-        (Some(0), Some(1)),
+        m["cost_by_model"],
+        json!([{
+            "model": "opaque/model", "tokens_in": 1_000_000, "cache_read": 0,
+            "tokens_out": 100_000, "attempts": 1
+        }]),
         "{m}"
     );
-
-    // The rate card: $3 in and $15 out per million tokens, 1M in and 100k out = $4.50.
-    let card = json!({
-        "as_of": "2026-10-01",
-        "models": {"opaque/model": {"input_per_mtok": 3.0, "output_per_mtok": 15.0}},
-        "ci_minute": 0.008,
-        "human_hour": 60.0,
-    });
-    let (status, saved) = common::send(
-        &app,
-        "PUT",
-        "/api/settings/rate-card",
-        card.clone(),
-        &headers,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{saved}");
-    let (status, read) = common::send(
-        &app,
-        "GET",
-        "/api/settings/rate-card",
-        Value::Null,
-        &headers,
-    )
-    .await;
-    assert_eq!((status, &read), (StatusCode::OK, &card));
-    let (_, m) = get(program).await;
-    close(&m["cost_usd"], 4.5);
-    assert_eq!(m["rate_card_as_of"], "2026-10-01");
     assert_eq!(
-        (m["priced_models"].as_i64(), m["models"].as_i64()),
-        (Some(1), Some(1)),
+        m["cost_by_team"],
+        json!([{
+            "team": "No team", "tokens_in": 1_000_000, "cache_read": 0,
+            "tokens_out": 100_000, "attempts": 1
+        }]),
         "{m}"
     );
-    close(&m["quality"]["repositories"][0]["cost_usd"], 4.5);
-    close(
-        &m["quality"]["repositories"][0]["qualified_per_usd"],
-        2.0 / 4.5,
-    );
-    // The harness's own figure is never summed.
-    assert!(!m.to_string().contains("9.99"), "{m}");
+    assert!(!m.to_string().contains("usd"), "{m}");
 }
 
 // An escalation the agent's policy settled itself leaves the person-answered figures where they
@@ -1359,7 +1325,6 @@ async fn the_quality_figures_give_the_rates_the_rows_make() {
         (Some(1), Some(3))
     );
 
-    // Tokens only: no dollar figure in the quality section.
     assert!(!q.to_string().contains("usd"), "{q}");
 }
 

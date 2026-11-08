@@ -67,8 +67,7 @@ offers; see [CLI](cli.md#runner).
 
 ### Details per agent
 
-- **Claude Code.** Reports the tokens it used, how many model calls it made and every model it touched. It
-  also reports its own cost estimate at list price, which is an estimate and not your bill. It honours the
+- **Claude Code.** Reports the tokens it used, how many model calls it made and every model it touched. It honours the
   tools you allow; when the run names none, the profile's list for Claude Code is used. Every tool means
   its file, shell and web tools, not its sub-agents or schedules, and it is not asked to sign its commits as
   Claude's. With **Ask before each action** on, the tools that only read (`Read`, `Glob`, `Grep`, `WebFetch`
@@ -76,7 +75,7 @@ offers; see [CLI](cli.md#runner).
   every other tool still asks. Tack stops it when the run's counted tokens reach the token limit. A run that turns web tools off blocks only Claude Code's own web fetch
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
-- **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its
+- **Codex.** Reports tokens. Allowing a tool that writes files runs Codex in its
   workspace-write sandbox; allowing none, or only read tools, runs it read-only. When the run names no
   tools, the profile's list for Codex decides. With **Ask before each
   action** off, a write the sandbox forbids simply fails inside the run. With it on, Codex pauses only for a
@@ -351,8 +350,6 @@ refuses the level, the run fails with docket's sentence.
 From the moment a docket run stops to ask, and after one ended asking, the run shows the same state, **Needs a
 person**, in the same colour, and **Open the question** on the card and on the attempt goes to the question. A
 screen reader is told when a run changes state.
-
-Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 
 ### While a run works
 

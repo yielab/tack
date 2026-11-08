@@ -53,10 +53,9 @@ literal non-secret value or an opaque reference the runner resolves locally.
 Two independent pure concerns, neither performing I/O. `model_provenance`
 checks the request's resolved model (or "no model requested") against the attempt's
 actual, observed execution — visible as a mismatch, never silently reconciled.
-`build_usage_economics` keeps runner-observed wall-clock time cost structurally
-separate from the harness/vendor's own self-reported token or dollar usage, never
-summed into one opaque number. Every dollar-valued field in the runs crates is named
-`*_usd_estimated`, never `*_usd` alone, and absent usage is a `Measurement` with
+`wall_clock_ms` is the time the runner itself witnessed between an attempt's start
+and end, kept apart from the harness's own self-reported token usage. Nothing is priced:
+no crate computes, stores or shows money. Absent usage is a `Measurement` with
 `source: NotMeasured`, never a fabricated `0`.
 
 ---
@@ -228,9 +227,9 @@ What wakes a profile (ADR 0034, decision 8), as pure values and rules. A `Trigge
 
 ---
 
-### `recurrence.rs` and `rate_card.rs`
+### `recurrence.rs`
 
-`recurrence::next_due` computes when the next copy of a repeating task is due, and `clone_for_next` builds it. `rate_card` prices a model's tokens against the operator's card, returning nothing for a model the card does not list.
+`recurrence::next_due` computes when the next copy of a repeating task is due, and `clone_for_next` builds it.
 
 ---
 
@@ -273,7 +272,7 @@ Migrations are append-only: never edit a shipped one. For example, `004_items` c
 
 `repo.rs` declares the `Repository` struct, which holds a `SqlitePool`, and each submodule of `repo/` adds an `impl Repository` block with the commands of one aggregate (`items`, `projects`, `sprints`, `roles`, `comments`, `change_sets`, `threads`, `triggers`, `agent_credentials`, `templates/`, …). `repo/execution/` has one file per concern (`enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`). A caller holds one `Repository` and calls `repo.create_item(..)`; each entity's SQL stays in its own file. `canonical.rs` is the one canonical form of a JSON value that snapshots and replay fingerprints are compared in.
 
-`rate_card.rs` holds the one SQL that prices usage: `spend_by_model` returns tokens per model, repository and team, and the Factory page and the token budget both call it.
+`repo/metrics.rs` holds the one SQL that adds up usage: `spend_by_model` returns tokens per model and team, and the Factory page reads it.
 
 - Methods return `Result<T, StoreError>` (or `Result<T, DependencyError>` for the dependency graph).
 - Queries use `sqlx::query` / `sqlx::query_as` with positional `?` parameters.

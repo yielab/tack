@@ -221,7 +221,6 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
         tokens_in: Some(steps.tokens_in()),
         tokens_out: Some(steps.output),
         duration_ms: None,
-        cost_usd: None,
         usage_detail: UsageDetail {
             cache_read_tokens: Some(steps.cache_read),
             cache_write_tokens: Some(steps.cache_write),
@@ -349,7 +348,6 @@ fn parse_output(result: &ProcessResult) -> RunReport {
                 tokens_in: res.pointer("/usage/inputTokens").and_then(Value::as_u64),
                 tokens_out: res.pointer("/usage/outputTokens").and_then(Value::as_u64),
                 duration_ms: None,
-                cost_usd: None,
                 usage_detail: Default::default(),
             };
         }
@@ -519,8 +517,7 @@ impl HarnessGrammar for OpencodeGrammar {
                 CapabilitySupport::Advisory,
                 "step_finish.tokens are real per-turn measurements, summed across every step, \
                  with the cache reads and writes added back to the input (it leaves them out); \
-                 cost is always null on the installed version for an unrecognized model, so cost \
-                 is never reported",
+                 any cost figure it prints is not read",
             ),
             proposals: Some(capability(
                 CapabilitySupport::Supported,

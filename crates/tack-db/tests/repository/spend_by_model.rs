@@ -1,10 +1,10 @@
-//! `rate_card::spend_by_model`: one query over the attempts, per model, per
-//! pull-request repository and per team, from `by_model` when an attempt
+//! `metrics::spend_by_model`: one query over the attempts, per model and per
+//! team, from `by_model` when an attempt
 //! carries it and from the run's one model when it does not.
 
 use crate::common;
 
-use tack_db::repo::rate_card::{SpendRow, spend_by_model};
+use tack_db::repo::metrics::{SpendRow, spend_by_model};
 
 #[tokio::test]
 async fn spend_by_model_splits_an_attempt_that_used_two_models() {
@@ -104,7 +104,6 @@ async fn spend_by_model_splits_an_attempt_that_used_two_models() {
     let row =
         |model: &str, team: Option<&str>, tokens_in, cache_read, tokens_out, attempts| SpendRow {
             model: Some(model.into()),
-            repo: None,
             team: team.map(Into::into),
             tokens_in,
             cache_read,
@@ -127,26 +126,4 @@ async fn spend_by_model_splits_an_attempt_that_used_two_models() {
         .await
         .unwrap();
     assert!(later.is_empty(), "{later:?}");
-
-    // A card prices each row: $1 per token in, $2 per token out, model c unlisted.
-    let card: tack_core::rate_card::RateCard = serde_json::from_value(serde_json::json!({
-        "as_of": "2026-10-14",
-        "models": {
-            "opaque/a": {"input_per_mtok": 1e6, "output_per_mtok": 2e6},
-            "opaque/b": {"input_per_mtok": 1e6, "output_per_mtok": 2e6}
-        },
-        "ci_minute": 0.0,
-        "human_hour": 0.0
-    }))
-    .unwrap();
-    let priced: f64 = got
-        .iter()
-        .filter_map(|r| {
-            tack_core::rate_card::price(&card, r.model.as_deref()?, r.tokens_in, r.tokens_out)
-        })
-        .sum();
-    assert!(
-        (priced - (300.0 + 60.0 + 75.0 + 10.0)).abs() < 1e-6,
-        "{priced}"
-    );
 }

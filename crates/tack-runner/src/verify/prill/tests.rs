@@ -108,7 +108,6 @@ fn measured_usage() -> Value {
         "tokens_in": {"source": "measured", "value": 1200},
         "tokens_out": {"source": "measured", "value": 340},
         "duration_ms": {"source": "measured", "value": 12500},
-        "cost_usd": {"source": "not_measured", "value": null},
     })
 }
 

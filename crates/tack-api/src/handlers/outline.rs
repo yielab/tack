@@ -143,20 +143,10 @@ fn read_outline(headers: &HeaderMap, body: &[u8]) -> ApiResult<Read> {
     let raw = structured_body(headers, body, "outline")?;
     let outline: Outline = serde_json::from_value(raw)
         .map_err(|e| ApiError::BadRequest(format!("Invalid outline: {e}")))?;
-    let mut warnings = Vec::new();
-    if outline
-        .automation
-        .as_ref()
-        .and_then(|auto| auto.autonomy.as_ref())
-        .and_then(|autonomy| autonomy.budgets.as_ref())
-        .is_some_and(|budgets| budgets.usd_per_day.is_some())
-    {
-        warnings.push("Dollars per day is no longer a limit; this value is ignored.".to_owned());
-    }
     Ok(Read {
         outline,
         skipped: 0,
-        warnings,
+        warnings: Vec::new(),
     })
 }
 

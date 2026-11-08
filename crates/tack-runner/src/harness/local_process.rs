@@ -254,7 +254,6 @@ pub struct RunReport {
     pub tokens_out: Option<u64>,
     /// `None` leaves the runner's own wall-clock measurement in place.
     pub duration_ms: Option<u64>,
-    pub cost_usd: Option<f64>,
     /// What the harness reports beyond the four contract figures.
     pub usage_detail: UsageDetail,
 }
@@ -319,7 +318,6 @@ pub fn call_usage(tokens_in: u64, tokens_out: u64, detail: UsageDetail) -> Usage
         tokens_in: measurement(Some(tokens_in)),
         tokens_out: measurement(Some(tokens_out)),
         duration_ms: measurement(None),
-        cost_usd: measurement(None),
         additional: detail.into_additional(),
     }
 }
@@ -359,7 +357,6 @@ impl RunReport {
             tokens_in: None,
             tokens_out: None,
             duration_ms: None,
-            cost_usd: None,
             usage_detail: UsageDetail::default(),
         }
     }
@@ -1396,7 +1393,6 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                 tokens_in: measurement(report.tokens_in),
                 tokens_out: measurement(report.tokens_out),
                 duration_ms: measurement(Some(report.duration_ms.unwrap_or(elapsed_ms))),
-                cost_usd: measurement(report.cost_usd),
                 additional: report.usage_detail.into_additional(),
             },
         }

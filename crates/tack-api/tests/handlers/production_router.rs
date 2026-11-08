@@ -181,7 +181,6 @@ fn completion_body(runner_id: &str, attempt_id: &str, fencing_token: i64) -> Val
             "tokens_in": {"value": 1234, "source": "measured"},
             "tokens_out": {"value": 456, "source": "measured"},
             "duration_ms": {"value": 295000, "source": "measured"},
-            "cost_usd": {"value": null, "source": "not_measured"},
         },
         "final_event_checkpoint": "checkpoint-0001",
     })

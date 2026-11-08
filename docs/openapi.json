@@ -8128,73 +8128,6 @@
         }
       }
     },
-    "/api/settings/rate-card": {
-      "get": {
-        "tags": [
-          "settings"
-        ],
-        "summary": "GET /api/settings/rate-card",
-        "operationId": "get_rate_card",
-        "responses": {
-          "200": {
-            "description": "The rate card, or null when none was entered",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "null"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RateCard"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "settings"
-        ],
-        "summary": "PUT /api/settings/rate-card",
-        "operationId": "put_rate_card",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RateCard"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "The saved rate card",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateCard"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "A price is negative or not a number",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/sprints/{id}": {
       "get": {
         "tags": [
@@ -10032,7 +9965,6 @@
           "never_started",
           "created_at",
           "updated_at",
-          "usage_economics",
           "merge"
         ],
         "properties": {
@@ -10195,9 +10127,14 @@
           "usage": {
             "description": "`tack_protocol::execution::Usage` once reported, else `null` — never a\nfabricated zero."
           },
-          "usage_economics": {
-            "$ref": "#/components/schemas/UsageEconomics",
-            "description": "`tack_protocol::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero; no runner infra cost-rate\nis stored anywhere in this schema today, so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at the real type, the same fix as\n`model_provenance` above."
+          "wall_clock_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Time the runner itself witnessed between the attempt's start and end,\nin milliseconds; `null` until both are known, never a partial duration.",
+            "minimum": 0
           },
           "workspace_id": {
             "type": [
@@ -11318,14 +11255,6 @@
           "tokens_out": {
             "type": "integer",
             "format": "int64"
-          },
-          "usd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "Absent without a rate card or when it does not list the model."
           }
         }
       },
@@ -11358,14 +11287,6 @@
           "tokens_out": {
             "type": "integer",
             "format": "int64"
-          },
-          "usd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "Absent without a rate card or when any of the team's models is unlisted."
           }
         }
       },
@@ -11466,7 +11387,7 @@
             "description": "The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.\nAbsent, docket decides from the team's profile; the project's level is never sent. `L3` is\n\"Run again at L3\". Any other value, or a level for an agent other than docket, is\n`invalid_request`."
           },
           "budgets": {
-            "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`)."
+            "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). Any other key is refused (`invalid_request`, field `budgets.<key>`)."
           },
           "environment": {},
           "from_run": {
@@ -13345,8 +13266,6 @@
           "merges_by_trigger",
           "decisions_answered",
           "lights_off_rate",
-          "models",
-          "priced_models",
           "cost_by_model",
           "cost_by_team",
           "work_quality"
@@ -13361,7 +13280,7 @@
             "items": {
               "$ref": "#/components/schemas/CostByModel"
             },
-            "description": "Tokens and attempts per model, priced when a card lists it."
+            "description": "Tokens and attempts per model."
           },
           "cost_by_team": {
             "type": "array",
@@ -13369,22 +13288,6 @@
               "$ref": "#/components/schemas/CostByTeam"
             },
             "description": "Tokens and attempts per docket team; `No team` for runs that name none."
-          },
-          "cost_unpriced_attempts": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Attempts whose model the rate card does not list, so not in `cost_usd`."
-          },
-          "cost_usd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "Tokens priced by the rate card, plus the human minutes at its hour\nrate. Absent without a rate card."
           },
           "decided_alone": {
             "type": "integer",
@@ -13421,11 +13324,6 @@
           "merges_by_trigger": {
             "$ref": "#/components/schemas/MergesByTrigger"
           },
-          "models": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Models the window's attempts named, and how many of them the rate card prices (none\nwithout a card): the cost card says \"N of M models priced\" from this pair."
-          },
           "mrp_acceptance_rate": {
             "$ref": "#/components/schemas/Ratio",
             "description": "accepted ÷ reviewed."
@@ -13442,10 +13340,6 @@
           "outcomes": {
             "$ref": "#/components/schemas/Outcomes"
           },
-          "priced_models": {
-            "type": "integer",
-            "format": "int64"
-          },
           "quality": {
             "oneOf": [
               {
@@ -13458,12 +13352,6 @@
             ]
           },
           "quality_unavailable": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "rate_card_as_of": {
             "type": [
               "string",
               "null"
@@ -14498,23 +14386,6 @@
           "not_measured"
         ]
       },
-      "Measurement_f64": {
-        "type": "object",
-        "description": "A nullable metric paired with its provenance, avoiding fabricated zeros.",
-        "required": [
-          "source"
-        ],
-        "properties": {
-          "source": {
-            "$ref": "#/components/schemas/MeasurementSource"
-          },
-          "value": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "additionalProperties": {}
-      },
       "MemoryDecision": {
         "type": "string",
         "description": "What a person decides about a memory entry that waits for them.",
@@ -14762,24 +14633,6 @@
           "team",
           "harness"
         ]
-      },
-      "ModelPrice": {
-        "type": "object",
-        "description": "Dollars per million tokens of one model.",
-        "required": [
-          "input_per_mtok",
-          "output_per_mtok"
-        ],
-        "properties": {
-          "input_per_mtok": {
-            "type": "number",
-            "format": "double"
-          },
-          "output_per_mtok": {
-            "type": "number",
-            "format": "double"
-          }
-        }
       },
       "ModelProvenance": {
         "type": "object",
@@ -16459,39 +16312,6 @@
           }
         }
       },
-      "RateCard": {
-        "type": "object",
-        "required": [
-          "as_of",
-          "models",
-          "ci_minute",
-          "human_hour"
-        ],
-        "properties": {
-          "as_of": {
-            "type": "string",
-            "description": "The date the prices were read, as the operator wrote it."
-          },
-          "ci_minute": {
-            "type": "number",
-            "format": "double"
-          },
-          "human_hour": {
-            "type": "number",
-            "format": "double"
-          },
-          "models": {
-            "type": "object",
-            "description": "Price per model string, exactly as a run names its model.",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/ModelPrice"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "Ratio": {
         "type": "object",
         "description": "A ratio with the counts it came from.",
@@ -16623,25 +16443,9 @@
           "metrics"
         ],
         "properties": {
-          "cost_usd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "Tokens of the attempts that opened this repository's pull requests,\npriced by the rate card. Absent without a card."
-          },
           "metrics": {
             "type": "object",
             "description": "prill's `metrics/v1` document, as prill printed it."
-          },
-          "qualified_per_usd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "prill's `qualified` ÷ `cost_usd`. Absent without a card, without a\n`qualified` count, or when the cost is zero."
           },
           "repository": {
             "type": "string",
@@ -17214,26 +17018,6 @@
           },
           "updated_at": {
             "type": "string"
-          }
-        }
-      },
-      "RunnerTimeCost": {
-        "type": "object",
-        "description": "Runner-observed wall-clock time cost — entirely different provenance\nfrom the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the\nrunner/API directly witnesses (attempt start/end), never wrapped in a\n[`Measurement`] since there is no \"estimated\" wall clock. No infra rate\nis stored anywhere in this schema today, so `cost_usd_estimated` stays\n`not_measured` unless a caller supplies `runner_rate_usd_per_hour`.",
-        "required": [
-          "cost_usd_estimated"
-        ],
-        "properties": {
-          "cost_usd_estimated": {
-            "$ref": "#/components/schemas/Measurement_f64"
-          },
-          "wall_clock_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 0
           }
         }
       },
@@ -20590,24 +20374,6 @@
                 "$ref": "#/components/schemas/Risk"
               }
             ]
-          }
-        }
-      },
-      "UsageEconomics": {
-        "type": "object",
-        "description": "Two independently-provenanced dollar dimensions, deliberately never\nsummed into one figure — see this module's doc comment.",
-        "required": [
-          "model_token_cost_usd_estimated",
-          "runner_time_cost"
-        ],
-        "properties": {
-          "model_token_cost_usd_estimated": {
-            "$ref": "#/components/schemas/Measurement_f64",
-            "description": "Pass-through of `Usage.cost_usd` — the harness/vendor's own\nself-reported dollar figure, provenance (`measured` / `estimated` /\n`not_measured`) preserved verbatim, never reinterpreted."
-          },
-          "runner_time_cost": {
-            "$ref": "#/components/schemas/RunnerTimeCost",
-            "description": "This module's own derived dimension — see [`RunnerTimeCost`]."
           }
         }
       },

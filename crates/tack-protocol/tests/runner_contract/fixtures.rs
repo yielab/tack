@@ -15,8 +15,8 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("capabilities.with-teams.json", 0xb624_77f3_7afd_d225),
     ("claim.no-work.response.json", 0x67a3_99f9_f7ee_5fc4),
     ("claim.request.json", 0x2b2d_c1f6_2357_bd0b),
-    ("claim.response.json", 0x942c_27a6_690a_a0da),
-    ("completion.request.json", 0x7b61_d544_ffa0_3a08),
+    ("claim.response.json", 0xcc7c_4b4d_7f15_e322),
+    ("completion.request.json", 0x730b_c8ed_67ca_c2cd),
     ("completion.response.json", 0x99b7_7e8d_6afc_1354),
     (
         "decision.answered-elsewhere.request.json",

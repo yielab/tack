@@ -755,7 +755,6 @@ fn completion_body(
             "tokens_in": {"value": 1234, "source": "measured"},
             "tokens_out": {"value": 456, "source": "measured"},
             "duration_ms": {"value": 295000, "source": "measured"},
-            "cost_usd": {"value": null, "source": "not_measured"},
         },
         "final_event_checkpoint": final_event_checkpoint,
     })
