@@ -29,8 +29,31 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 91 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+Phases 73 to 95 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
+
+**Phase 95 — no dollars, docket's team search, and the tree cleaned** (2026-11-08, no plan file, no
+ADR; ADR 0024 has a dated note; built in `develop` the same day). Three cards:
+
+- **USD — no dollar figure anywhere.** The plan's decision 8 is taken: the rate card (its route, its
+  form and the stored card, removed by migration 112), the metrics' `cost_usd` and `qualified_per_usd`,
+  the protocol's `Usage.cost_usd` and every harness's reading of its own cost are deleted. The metrics
+  page shows tokens by model, and a limit's `budgets` refuses any key it does not have.
+- **S — a team's web search.** A docket that lists `search` reports, per team, the provider
+  (SearXNG, Brave Search, the team's own service or none), whether it is ready and why not, and the
+  docket command that makes it ready; the team sheet shows it as one "Search" line with its help, and
+  `tack runner doctor` prints it. Tack does not switch the provider: the person runs the command on
+  docket's computer, so the key never leaves it. The fixtures are recaptured against docket
+  `ee17a1fd`, including a team whose Brave key is not stored.
+- **D — legacy and dead code.** The answers Tack kept for its own removed settings (status moves,
+  `agent_profile_snapshot`, the runner's `[provider]` table, the status-map policy) are gone, and so is
+  every compatibility path for its earlier builds (the old runner state folder, `local-<uuid>` runner
+  names, decisions an older board left open). A request to start a run refuses any unknown key. What only
+  tests ask of the store lives in `tack-test-support`; code no caller reaches, unread fixtures and the
+  frontend's unused exports and dependencies are deleted: 3 406 lines removed and 1 159 added. Migrations, docket's
+  feature probes and the runner protocol's optional fields stay.
+
+Open: the metrics screenshot in the User guide still shows the removed cost card.
 
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
 file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
@@ -131,11 +154,10 @@ operator turns on `[egress] enforce`. The first baselines are committed in `eval
 Code with Haiku 5.5, three trials per task, 27 of 27 on regression and, on safety, full utility, an
 attack tried once in 30 trials and never successful, no twin failed. Both suites are saturated for this
 model, so they guard against regression and cannot yet show what a guardrail adds. The live suite (35 tests, Claude Haiku 5.5 through docket, about 140 000 input tokens) passes in one run
-against docket `f8dd565e` and prill `6b95423`; `--check` reports docket's new `search` field on every
-team answer (additive; the fixtures are not recaptured yet). Open: the Reviewer
+against docket `f8dd565e` and prill `6b95423` (docket's `search` field, which `--check` reported, is read
+since Phase 95). Open: the Reviewer
 profile's verdict is not stored, so the verifier figure judges prill's pack only; the verifier-suite
-labels; `allowed_hosts` has no editor; Codex, opencode and docket baselines; C4-1's L6 waits for the
-`v0.2.0-beta.1` release.
+labels; `allowed_hosts` has no editor; Codex, opencode and docket baselines.
 
 An audit of the four harnesses found that the board contains an agent well (scopes, change sets, a
 second secret for decisions, demotion after a revert) and the machine does not: the network is never
@@ -337,8 +359,8 @@ parallel; GR5b last; decisions 1 and 2 were taken 2026-11-07):
   refuses it until a person adds the hidden checks and the reference solution.
 - **C4-1 — cleanup with conditions** (Haiku · S). `subtasks-from-plan` and the `ItemSource::Plan`
   texts take the catalog's words (the `plan-v1` field stays); the `status_map_policy_id` and
-  `[provider]` compatibility shims go, only once `v0.2.0-beta.1` is published. Done when the greps are
-  empty.
+  `[provider]` compatibility shims go. Done when the greps are empty. Built: L8 in Phase 94, L6 in
+  Phase 95 (without waiting for the release).
 
 Left out on purpose, listed under "Future, not planned": a calibrated model judge, the OTel
 `gen_ai.evaluation.result` export, a Harbor or Terminal-Bench adapter, a hash-chained log, seccomp in
