@@ -280,12 +280,6 @@ pub struct BundleAutomation {
     pub default_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
-    /// Read and ignored: a run no longer moves a card (the preview says so).
-    #[serde(default, skip_serializing)]
-    pub on_finish_status: Option<String>,
-    /// Read and ignored: a run no longer moves a card (the preview says so).
-    #[serde(default, skip_serializing)]
-    pub on_start_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition_of_done: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

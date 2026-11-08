@@ -140,12 +140,10 @@ fn parse_rfc3339(raw: &str) -> Option<DateTime<Utc>> {
         .map(|value| value.with_timezone(&Utc))
 }
 
-/// Deserializes a key's value, `null` included, so its presence is detectable.
-fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
-    Value::deserialize(d).map(Some)
-}
-
+/// A key the request does not name is refused (`invalid_request`, `field` the key), so a
+/// setting the server does not read is never taken for one it obeys.
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateExecution {
     pub item_id: Uuid,
     pub idempotency_key: String,
@@ -168,11 +166,6 @@ pub struct CreateExecution {
     /// the project's default agent; otherwise the agent chooses.
     #[serde(default)]
     pub requested_model: Option<String>,
-    /// Removed: the server records the profile it loads by `agent_profile_id`.
-    /// A request that still carries the key is refused (`field_removed`).
-    #[serde(default, deserialize_with = "present", skip_serializing)]
-    #[schema(ignore)]
-    pub agent_profile_snapshot: Option<Value>,
     /// `tack_protocol::execution::RepositorySnapshot` (`{kind, remote,
     /// base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
     /// from the item's project. An explicit one must name the project's own
@@ -197,11 +190,6 @@ pub struct CreateExecution {
     /// Absent: the profile's `limits.timeout_seconds`, else the default time limit.
     #[serde(default)]
     pub timeout_seconds: Option<u64>,
-    /// Removed: a run never moves a task. A request that still carries the key is accepted, the
-    /// value is ignored, and the answer's `notice` says so.
-    #[serde(default, deserialize_with = "present", skip_serializing)]
-    #[schema(ignore)]
-    pub status_map_policy_id: Option<Value>,
     /// `false` declines the runner's verifier for this run. The runner's own
     /// configuration decides whether a verifier exists; `true` never enables one.
     #[serde(default)]
@@ -244,10 +232,6 @@ pub struct CreateExecutionResponse {
     /// only once created.
     pub state: String,
     pub replayed: bool,
-    /// Present when the request named a setting that was removed: "ignored: the status is set by
-    /// a person".
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notice: Option<String>,
 }
 
 /// One row of `GET /api/executions` / the `GET /api/executions/{id}`
@@ -975,7 +959,6 @@ impl TryFrom<CreateExecution> for RunRequest {
             agent_profile_id: input.agent_profile_id,
             requested_harness_kind: input.requested_harness_kind,
             requested_model: input.requested_model,
-            agent_profile_snapshot: input.agent_profile_snapshot,
             repository_snapshot: input.repository_snapshot,
             permission_policy: start_run::PermissionRequest::from_value(input.permission_policy)?,
             budgets: input.budgets,
@@ -991,13 +974,12 @@ impl TryFrom<CreateExecution> for RunRequest {
     }
 }
 
-fn created(started: Started, named_removed_setting: bool) -> Json<CreateExecutionResponse> {
+fn created(started: Started) -> Json<CreateExecutionResponse> {
     Json(CreateExecutionResponse {
         protocol_version: 1,
         request_id: started.request_id,
         state: "queued".into(),
         replayed: started.replayed,
-        notice: named_removed_setting.then(|| tack_core::models::STATUS_SET_BY_A_PERSON.to_owned()),
     })
 }
 
@@ -1009,14 +991,13 @@ pub(crate) async fn create_as(
     input: CreateExecution,
     over_mcp: bool,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    let named_removed_setting = input.status_map_policy_id.is_some();
     let mut input = RunRequest::try_from(input).map_err(refused)?;
     if over_mcp {
         input.make_mcp_run();
     }
     start_run(&state.repo, state.clock.now(), &principal, input)
         .await
-        .map(|started| created(started, named_removed_setting))
+        .map(created)
         .map_err(refused)
 }
 

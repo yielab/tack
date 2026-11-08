@@ -57,9 +57,6 @@ pub(crate) struct ExecutionCreateArgs {
     /// Execution timeout, in seconds (default: the profile's time limit, else one hour)
     #[arg(long)]
     timeout_seconds: Option<u64>,
-    /// Removed: a run never moves a task. Accepted, ignored, and said so.
-    #[arg(long, hide = true)]
-    status_map_policy: Option<String>,
     /// Output raw JSON
     #[arg(long)]
     json: bool,
@@ -326,7 +323,6 @@ struct ExecutionCreateOpts {
     environment: Option<String>,
     metadata: Option<String>,
     timeout_seconds: Option<u64>,
-    status_map_policy: Option<String>,
 }
 
 fn cmd_execution_create(
@@ -350,12 +346,6 @@ fn cmd_execution_create(
     };
     let body = execution::build_create_execution_body(selector.as_ref(), &args)
         .map_err(|e| anyhow::anyhow!(e))?;
-    if opts.status_map_policy.is_some() {
-        eprintln!(
-            "--status-map-policy: {}",
-            tack_core::models::STATUS_SET_BY_A_PERSON
-        );
-    }
     let resp = client.post("/executions", &body)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -720,7 +710,6 @@ pub(crate) fn run_execution(client: &TackClient, action: ExecutionAction) -> any
                     environment: args.environment,
                     metadata: args.metadata,
                     timeout_seconds: args.timeout_seconds,
-                    status_map_policy: args.status_map_policy,
                 },
                 json,
             )

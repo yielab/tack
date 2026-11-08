@@ -56,13 +56,6 @@ describe('buildCreateExecutionInput', () => {
     expect(input.requested_harness_kind).toBe('codex');
     expect(input.requested_model).toBeNull();
     expect(input.timeout_seconds).toBe(1800);
-    expect(input).not.toHaveProperty('status_map_policy_id');
-  });
-
-  it('sends no agent_profile_snapshot: the server loads the profile by id', () => {
-    const input = buildCreateExecutionInput(values());
-    expect(input).not.toHaveProperty('agent_profile_snapshot');
-    expect(input.agent_profile_id).toBeTruthy();
   });
 
   // Pinned against `RepositorySnapshot { kind, remote, base_revision, subdirectory }`.

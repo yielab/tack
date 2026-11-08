@@ -124,7 +124,6 @@ Only the keys the file names change. On an export every key is written.
 | `default_harness` | text | The agent a run uses when none is named; one of the four kinds above |
 | `default_profile` | text | A profile name |
 | `default_model` | text | |
-| `on_start_status`, `on_finish_status` | text | Read and ignored: a run never moves a task, so the status is a person's. The preview warns "ignored: the status is set by a person" and an export omits them |
 | `definition_of_done` | text | |
 | `autonomy.level` | text | `L3`, `L4` or `L5`. Lowered to the project's own level |
 | `autonomy.domains` | list | `{name, paths, item_types, level}`. A domain's level is lowered the same way |
@@ -205,7 +204,6 @@ A problem refuses the whole file. A warning lets it through and is reported.
 | `repository` that is not a path or URL for its origin | `autonomy.level` or a domain level above the project's own (lowered) |
 | A `status` or `auto_start.status` outside the workflow, in `automation` | `auto_start.enabled: true` when the project has it off (applied as `false`) |
 | `max_open` below 1; more than 1000 items | A `project` block in a file added to an existing project (ignored) |
-| | `on_start_status` or `on_finish_status` in `automation` (ignored) |
 
 The levels are lowered to the project's own level, which is L3 for a new project, so a file can never raise autonomy. The warning reads "autonomy.level asked: L4; applied: L3. Raise it from Settings → Automation". The auto-start warning reads "auto_start asked: true; applied: false. Turn it on from Settings → Automation". An `auto_start` block that omits `enabled` leaves the switch as it is, so a file can set the status and the cap without touching it.
 

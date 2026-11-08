@@ -682,28 +682,22 @@ async fn rejecting_a_pushed_attempt_opens_no_pull_request() {
     assert!(gh.received_requests().await.unwrap().is_empty());
 }
 
+/// A key the request does not name is refused, so a profile or a policy sent in the body is never
+/// taken for one the server obeys; the run is not created.
 #[tokio::test]
-async fn a_request_that_names_the_removed_policy_is_accepted_and_told_it_was_ignored() {
+async fn a_request_that_names_an_unknown_key_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let (app, repo, item_id, _events) = setup(root.path(), None).await;
-    let (runner_id, _) = enroll_runner(&app, "old caller runner").await;
-    let profile = create_agent_profile(&app, "old-caller").await;
-    for (key, names_the_policy) in [("old-caller", true), ("new-caller", false)] {
+    let (runner_id, _) = enroll_runner(&app, "unknown key runner").await;
+    let profile = create_agent_profile(&app, "unknown-key").await;
+    for key in ["agent_profile_snapshot", "status_map_policy_id"] {
         let mut body = execution_request_body(&item_id, key, &runner_id, &profile);
-        if names_the_policy {
-            body["status_map_policy_id"] = json!("done_on_success");
-        }
-        let (status, created, _) =
+        body[key] = json!({"tool_policy": {"mode": "full"}});
+        let (status, refused, _) =
             common::send_with_raw(&app, "POST", "/api/executions", body, &operator_headers()).await;
-        assert_eq!(status, StatusCode::OK, "{created}");
-        if names_the_policy {
-            assert_eq!(
-                created["notice"], "ignored: the status is set by a person",
-                "{created}"
-            );
-        } else {
-            assert!(created.get("notice").is_none(), "{created}");
-        }
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+        assert_eq!(refused["error"]["code"], "invalid_request", "{refused}");
+        assert_eq!(refused["error"]["details"]["field"], key, "{refused}");
     }
     assert_eq!(item_status(&repo, &item_id).await, "To Do");
 }

@@ -4568,6 +4568,10 @@ export interface components {
             /** Format: uuid */
             target_item_id: string;
         };
+        /**
+         * @description A key the request does not name is refused (`invalid_request`, `field` the key), so a
+         *     setting the server does not read is never taken for one it obeys.
+         */
         CreateExecution: {
             /**
              * @description Omitted, the server picks one: run settings, the item's role, the project's
@@ -4665,11 +4669,6 @@ export interface components {
          *     idempotent replay of an existing one (`replayed` distinguishes the two).
          */
         CreateExecutionResponse: {
-            /**
-             * @description Present when the request named a setting that was removed: "ignored: the status is set by
-             *     a person".
-             */
-            notice?: string | null;
             /** Format: int32 */
             protocol_version: number;
             replayed: boolean;
@@ -11072,7 +11071,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored */
+            /** @description Updated project */
             200: {
                 headers: {
                     [name: string]: unknown;

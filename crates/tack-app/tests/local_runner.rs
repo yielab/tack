@@ -12,7 +12,7 @@ use serde_json::json;
 use tack_app::local_runner::{
     EmbeddedRunner, LocalRunnerControl, LocalRunnerControlError, RunnerHost, RunnerProcess,
     RuntimeState, RuntimeStatus, TestRunError, config_path_from, effective_enabled,
-    ensure_loopback, has_stored_session, migrate_legacy_state_dir, set_enabled, start_test_run,
+    ensure_loopback, has_stored_session, set_enabled, start_test_run,
     state_dir_under,
 };
 use tack_db::queries;
@@ -78,64 +78,6 @@ fn temp_dir(label: &str) -> tempfile::TempDir {
         .prefix(label)
         .tempdir()
         .expect("temporary directory")
-}
-
-#[test]
-fn migrate_legacy_state_dir_moves_legacy_directory_once() {
-    let root = temp_dir("migrate");
-    let legacy = root.path().join("legacy");
-    let new_dir = root.path().join("storage").join("runner");
-    std::fs::create_dir_all(&legacy).expect("create legacy dir");
-    std::fs::write(legacy.join("session.json"), "legacy-session").expect("write legacy session");
-
-    migrate_legacy_state_dir(&legacy, &new_dir);
-
-    assert_eq!(
-        std::fs::read_to_string(new_dir.join("session.json")).unwrap(),
-        "legacy-session",
-        "legacy state must be moved to the new, scoped directory"
-    );
-    assert!(
-        !legacy.exists(),
-        "the legacy directory must not be left behind after a successful migration"
-    );
-}
-
-#[test]
-fn migrate_legacy_state_dir_never_touches_provisioned_dir() {
-    let root = temp_dir("migrate-noop");
-    let legacy = root.path().join("legacy");
-    let new_dir = root.path().join("runner");
-    std::fs::create_dir_all(&legacy).expect("create legacy dir");
-    std::fs::write(legacy.join("session.json"), "stale-legacy-session").expect("write legacy");
-    std::fs::create_dir_all(&new_dir).expect("pre-create the new directory");
-    std::fs::write(new_dir.join("session.json"), "already-provisioned").expect("write new");
-
-    migrate_legacy_state_dir(&legacy, &new_dir);
-
-    assert_eq!(
-        std::fs::read_to_string(new_dir.join("session.json")).unwrap(),
-        "already-provisioned",
-        "an existing new-style directory must never be overwritten by a stale legacy one"
-    );
-    assert!(
-        legacy.join("session.json").is_file(),
-        "the legacy directory is left untouched once the new one already exists"
-    );
-}
-
-#[test]
-fn migrate_legacy_state_dir_is_noop_when_neither_dir_exists() {
-    let root = temp_dir("migrate-fresh");
-    let new_dir = root.path().join("storage").join("runner");
-
-    migrate_legacy_state_dir(&root.path().join("legacy"), &new_dir);
-
-    assert!(
-        !new_dir.exists(),
-        "a fresh install has nothing to migrate; the new directory is created later, on first \
-         write, not by the migration step itself"
-    );
 }
 
 #[test]

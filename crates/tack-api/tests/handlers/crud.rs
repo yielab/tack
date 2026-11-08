@@ -234,25 +234,6 @@ async fn a_type_word_is_not_a_vocabulary_key() {
     assert_eq!(body["error"]["code"], "invalid_vocabulary_key");
 }
 
-#[tokio::test]
-async fn a_patch_naming_a_removed_status_move_is_accepted_and_told_it_was_ignored() {
-    let (app, _) = common::test_app().await;
-    let pid = common::create_project(&app, "Old caller", "software").await;
-    let uri = format!("/api/projects/{pid}");
-
-    for patch in [
-        json!({"on_start_status": "In Progress"}),
-        json!({"on_finish_status": null, "definition_of_done": "tests pass"}),
-    ] {
-        let (status, body) = common::send(&app, "PATCH", &uri, patch, &[]).await;
-        assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["notice"], "ignored: the status is set by a person");
-        assert!(body.get("on_start_status").is_none(), "{body}");
-    }
-    let (status, body) = common::send(&app, "PATCH", &uri, json!({"name": "New"}), &[]).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.get("notice").is_none(), "{body}");
-}
 
 #[tokio::test]
 async fn automation_settings_round_trip_and_clear() {
@@ -266,8 +247,6 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(body["workspace_mode"], "local_branch");
     assert_eq!(body["push_after_run"], false);
     assert!(body["repository"].is_null());
-    assert!(body.get("on_start_status").is_none());
-    assert!(body.get("on_finish_status").is_none());
 
     let patch = json!({
         "repository": "/tmp/x", "code_origin": "folder", "workspace_mode": "in_place",
