@@ -143,10 +143,16 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   changed checks, MCP is an agent, and the development crate `tack-evals` runs regression, safety and verifier
   suites (`evals/`, baselines in `evals/baselines/`, Claude Code with Haiku 5.5: both suites saturated) with
   Anthropic at integration only, never in CI; production gets quality figures and a trend notice. The live suite (35 tests) passes
-  against docket `f8dd565e`; `--check` finds docket's new `search` field not yet in the fixtures. Left: the
+  against docket `f8dd565e`. Left: the
   verifier-set labels (a person, about an hour), Codex/opencode/docket
-  baselines, the Reviewer verdict stored, an `allowed_hosts` editor, C4-1's L6 after `v0.2.0-beta.1`, the plan's
-  decision 8. Asks to prill are in `docs/plans/prill-ajustes-2026-11-06.es.md`.
+  baselines, the Reviewer verdict stored, an `allowed_hosts` editor. Asks to prill are in
+  `docs/plans/prill-ajustes-2026-11-06.es.md`.
+- **Built 2026-11-08, in `develop`:** Phase 95 (the roadmap's own section, no plan file, no ADR; a dated note on ADR 0024)
+  — no dollar figure anywhere (rate card, priced metrics and `Usage.cost_usd` deleted, migration 112; the plan's
+  decision 8); docket's team `search` read and shown on the team sheet with docket's command (Tack never switches the
+  provider; fixtures from docket `ee17a1fd`); and the tree cleaned: Tack's answers for its own removed settings and
+  earlier builds deleted (C4-1's L6 included), test-only store probes in `tack-test-support`, unread fixtures and unused
+  frontend exports and dependencies gone. Kept on purpose: migrations, docket feature probes, runner-v1 optional fields.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
