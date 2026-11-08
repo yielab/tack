@@ -131,15 +131,6 @@ pub struct EnrollmentToken<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnrollmentTokenMetadata {
-    pub id: String,
-    pub runner_id: String,
-    pub expires_at: String,
-    pub consumed_at: Option<String>,
-    pub revoked_at: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RedeemEnrollmentResult {
     Redeemed(String),
     InvalidOrExpired,
@@ -509,37 +500,6 @@ impl Repository {
         Ok(())
     }
 
-    /// Renames a runner whose name is still one the board generated for a local
-    /// runner (`local-` and a UUID) and nothing else: a name a person chose is
-    /// never touched. Whether a row changed is the answer; a taken `name` is
-    /// the usual unique violation.
-    pub async fn rename_generated_local_runner(
-        &self,
-        runner_id: &str,
-        name: &str,
-        now: DateTime<Utc>,
-    ) -> Result<bool, StoreError> {
-        let result = sqlx::query(
-            "UPDATE agent_runners SET name = ?, updated_at = ? WHERE id = ? \
-             AND name GLOB 'local-????????-????-????-????-????????????'",
-        )
-        .bind(name)
-        .bind(now.to_rfc3339())
-        .bind(runner_id)
-        .execute(self.pool())
-        .await
-        .map_err(|err| conflict_on_unique(err, "runner_name_taken"))?;
-        Ok(result.rows_affected() == 1)
-    }
-
-    pub async fn enrollment_token_metadata(
-        &self,
-        runner_id: &str,
-        token_id: &str,
-    ) -> Result<Option<EnrollmentTokenMetadata>, StoreError> {
-        sqlx::query("SELECT id,runner_id,expires_at,consumed_at,revoked_at FROM agent_enrollment_tokens WHERE runner_id=? AND id=?").bind(runner_id).bind(token_id).fetch_optional(self.pool()).await?.map(|r|Ok(EnrollmentTokenMetadata{id:r.get("id"),runner_id:r.get("runner_id"),expires_at:r.get("expires_at"),consumed_at:r.get("consumed_at"),revoked_at:r.get("revoked_at")})).transpose()
-    }
-
     pub async fn revoke_runner(
         &self,
         runner_id: &str,
@@ -778,19 +738,6 @@ impl Repository {
         sqlx::query("INSERT INTO execution_heartbeat_replays(runner_id,heartbeat_id,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(runner).bind(heartbeat_id).bind(fingerprint).bind(&stored).bind(&now_s).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(HeartbeatBatchResult::Accepted(response))
-    }
-
-    /// Store only a token hash. Tokens are tied to a pre-created runner so a
-    /// redemption can atomically consume the token and activate that identity.
-    pub async fn issue_enrollment_token(
-        &self,
-        token: EnrollmentToken<'_>,
-        now: DateTime<Utc>,
-    ) -> Result<(), StoreError> {
-        sqlx::query("INSERT INTO agent_enrollment_tokens (id, runner_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(now.to_rfc3339())
-            .execute(self.pool()).await?;
-        Ok(())
     }
 
     pub async fn revoke_enrollment_token(
@@ -1053,50 +1000,6 @@ impl Repository {
             });
         }
         Ok(out)
-    }
-
-    #[instrument(skip(self, input))]
-    pub async fn register_runner(
-        &self,
-        input: NewRunner<'_>,
-        now: DateTime<Utc>,
-    ) -> Result<(), StoreError> {
-        let now = now.to_rfc3339();
-        sqlx::query(
-            "INSERT INTO agent_runners (id, name, credential_hash, labels, total_capacity, \
-             available_capacity, capability_snapshot, protocol_version, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(input.id)
-        .bind(input.name)
-        .bind(input.credential_hash)
-        .bind(input.labels)
-        .bind(input.total_capacity)
-        .bind(input.available_capacity)
-        .bind(input.capability_snapshot)
-        .bind(input.protocol_version)
-        .bind(&now)
-        .bind(&now)
-        .execute(self.pool())
-        .await?;
-        Ok(())
-    }
-
-    #[instrument(skip(self, input))]
-    pub async fn create_agent_profile(
-        &self,
-        input: NewAgentProfile<'_>,
-        now: DateTime<Utc>,
-    ) -> Result<(), StoreError> {
-        let now = now.to_rfc3339();
-        sqlx::query(
-            "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(input.id).bind(input.name).bind(input.instructions)
-        .bind(input.tool_policy).bind(input.limits).bind(&now).bind(&now)
-        .execute(self.pool()).await?;
-        Ok(())
     }
 
     /// Every agent profile, by name.

@@ -20,6 +20,7 @@ use uuid::Uuid;
 pub mod completion;
 pub mod fake_agent;
 pub mod ids;
+pub mod probe;
 pub mod seed;
 
 mod clock;

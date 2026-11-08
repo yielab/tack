@@ -27,7 +27,8 @@ async fn register_active_runner(
     capability_snapshot: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        repo,
         NewRunner {
             id: runner_id,
             name: runner_id,
@@ -126,7 +127,7 @@ async fn enqueue_via_fleet(
 }
 
 async fn attempt_count_for_request(repo: &Repository, request_id: &str) -> i64 {
-    queries::execution_attempts::attempt_count_of_request(repo, request_id)
+    tack_test_support::probe::attempt_count_of_request(repo, request_id)
         .await
         .expect("count attempts")
 }

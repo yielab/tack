@@ -125,19 +125,6 @@ pub async fn latest_state_of_request(
         .transpose()
 }
 
-/// How many `operator_requeue` audits an attempt has.
-pub async fn operator_requeues_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<i64, StoreError> {
-    Ok(sqlx::query_scalar(
-        "SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id = ? AND classification = 'operator_requeue'",
-    )
-    .bind(attempt_id)
-    .fetch_one(repo.pool())
-    .await?)
-}
-
 /// Whether an attempt with this id exists.
 pub async fn attempt_exists(repo: &Repository, attempt_id: &str) -> Result<bool, StoreError> {
     let found: Option<String> =
@@ -208,18 +195,6 @@ pub async fn attempt_number(repo: &Repository, attempt_id: &str) -> Result<i64, 
         .ok_or(StoreError::not_found("attempt"))
 }
 
-/// The request an attempt belongs to. An id no attempt has is `StoreError::NotFound`.
-pub async fn request_id_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<String, StoreError> {
-    sqlx::query_scalar("SELECT request_id FROM execution_attempts WHERE id = ?")
-        .bind(attempt_id)
-        .fetch_optional(repo.pool())
-        .await?
-        .ok_or(StoreError::not_found("attempt"))
-}
-
 /// The event checkpoint an attempt's stream has reached, or `None` before the first batch. An id
 /// no attempt has is `StoreError::NotFound`.
 pub async fn event_checkpoint(
@@ -231,32 +206,6 @@ pub async fn event_checkpoint(
         .fetch_optional(repo.pool())
         .await?
         .ok_or(StoreError::not_found("attempt"))
-}
-
-/// How many attempts a request has.
-pub async fn attempt_count_of_request(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<i64, StoreError> {
-    Ok(
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id = ?")
-            .bind(request_id)
-            .fetch_one(repo.pool())
-            .await?,
-    )
-}
-
-/// How many different fencing tokens the attempts of a request have been issued.
-pub async fn fence_count_of_request(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<i64, StoreError> {
-    Ok(sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT fencing_token) FROM execution_attempts WHERE request_id = ?",
-    )
-    .bind(request_id)
-    .fetch_one(repo.pool())
-    .await?)
 }
 
 /// The id of the newest attempt of a request, or `None` when it has none.
@@ -323,61 +272,6 @@ pub async fn item_of_attempt(
     .bind(attempt_id)
     .fetch_optional(repo.pool())
     .await?)
-}
-
-/// The completion id that ended an attempt, or `None` while it has none. An id no attempt has is
-/// `StoreError::NotFound`.
-pub async fn completion_id_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Option<String>, StoreError> {
-    sqlx::query_scalar("SELECT completion_id FROM execution_attempts WHERE id = ?")
-        .bind(attempt_id)
-        .fetch_optional(repo.pool())
-        .await?
-        .ok_or(StoreError::not_found("attempt"))
-}
-
-/// How many attempts were ended by this completion id and sit in `state`.
-pub async fn count_completed_with(
-    repo: &Repository,
-    completion_id: &str,
-    state: ExecutionState,
-) -> Result<i64, StoreError> {
-    Ok(sqlx::query_scalar(
-        "SELECT COUNT(*) FROM execution_attempts WHERE completion_id = ? AND state = ?",
-    )
-    .bind(completion_id)
-    .bind(state::text(state))
-    .fetch_one(repo.pool())
-    .await?)
-}
-
-/// The runner an attempt was leased to, or `None` when no attempt has this id.
-pub async fn runner_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Option<String>, StoreError> {
-    Ok(
-        sqlx::query_scalar("SELECT runner_id FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_optional(repo.pool())
-            .await?,
-    )
-}
-
-/// When an attempt started and when it ended, as stored; the outer `None` means no attempt has
-/// this id, an inner one that the moment was not recorded.
-pub async fn started_and_ended_at(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Option<(Option<String>, Option<String>)>, StoreError> {
-    Ok(
-        sqlx::query_as("SELECT started_at, ended_at FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_optional(repo.pool())
-            .await?,
-    )
 }
 
 /// An attempt that holds one of a runner's slots, with the task it works on and, when it is parked

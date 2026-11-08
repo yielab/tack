@@ -485,12 +485,6 @@ where
         }
     }
 
-    /// Sets how many attempts this engine works at once.
-    pub fn with_concurrency(mut self, total: u32) -> Self {
-        self.active = crate::active::ActiveAttempts::new(total);
-        self
-    }
-
     /// Works against a registry the caller also holds, so something outside
     /// the engine (the Agents page) can read how many attempts are running.
     pub fn with_active(mut self, active: crate::active::ActiveAttempts) -> Self {

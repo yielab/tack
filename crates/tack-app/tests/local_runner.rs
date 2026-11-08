@@ -12,8 +12,7 @@ use serde_json::json;
 use tack_app::local_runner::{
     EmbeddedRunner, LocalRunnerControl, LocalRunnerControlError, RunnerHost, RunnerProcess,
     RuntimeState, RuntimeStatus, TestRunError, config_path_from, effective_enabled,
-    ensure_loopback, has_stored_session, set_enabled, start_test_run,
-    state_dir_under,
+    ensure_loopback, has_stored_session, set_enabled, start_test_run, state_dir_under,
 };
 use tack_db::queries;
 use tack_test_support::{create_test_workspace, seed, setup_test_db};
@@ -374,7 +373,7 @@ async fn a_test_run_is_filed_under_one_hidden_project_and_pinned_to_the_runner()
 
     let first = run("claude-code").await.expect("first test run");
 
-    let row = queries::execution_requests::request_inputs(&repo, &first)
+    let row = tack_test_support::probe::request_inputs(&repo, &first)
         .await
         .unwrap()
         .expect("the request was stored");

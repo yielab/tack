@@ -57,7 +57,8 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
         .await
         .expect("item");
     let clock = FixedClock(Utc::now());
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-1",
             name: "profile-1",

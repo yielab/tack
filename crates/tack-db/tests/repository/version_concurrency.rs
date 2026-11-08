@@ -11,8 +11,7 @@ async fn fresh_item_starts_at_version_one() {
     let project = make_project(&repo, ws).await;
     let item = make_item(&repo, &project).await;
 
-    let version = repo
-        .get_item_version(item.id)
+    let version = tack_test_support::probe::get_item_version(&repo, item.id)
         .await
         .expect("db call")
         .expect("item exists");
@@ -26,7 +25,10 @@ async fn an_item_update_bumps_version() {
     let project = make_project(&repo, ws).await;
     let item = make_item(&repo, &project).await;
 
-    let before = repo.get_item_version(item.id).await.unwrap().unwrap();
+    let before = tack_test_support::probe::get_item_version(&repo, item.id)
+        .await
+        .unwrap()
+        .unwrap();
     common::update_item(
         &repo,
         item.id,
@@ -36,7 +38,10 @@ async fn an_item_update_bumps_version() {
         },
     )
     .await;
-    let after = repo.get_item_version(item.id).await.unwrap().unwrap();
+    let after = tack_test_support::probe::get_item_version(&repo, item.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(
         after > before,
         "an item update must bump version: {before} -> {after}"

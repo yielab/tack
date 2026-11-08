@@ -6,7 +6,6 @@ use crate::common;
 use chrono::Duration;
 use common::{FakeClock, World, world};
 use tack_app::runs::enroll::{Enrolled, Enrollment, enroll};
-use tack_db::queries::agent_runners;
 use tack_db::repo::execution::{EnrollmentToken, NewRunner};
 use tack_protocol::Clock;
 
@@ -79,7 +78,7 @@ async fn a_good_token_activates_its_runner_for_ninety_days() {
             server_time: now,
         }
     );
-    let lifecycle = agent_runners::runner_lifecycle(&world.repo, PENDING_RUNNER_ID)
+    let lifecycle = tack_test_support::probe::runner_lifecycle(&world.repo, PENDING_RUNNER_ID)
         .await
         .unwrap()
         .expect("runner exists");

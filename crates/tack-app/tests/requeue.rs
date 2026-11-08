@@ -78,7 +78,7 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
         Some(ExecutionState::Queued)
     );
     assert_eq!(
-        queries::execution_attempts::operator_requeues_of_attempt(&board.repo, "attempt-1")
+        tack_test_support::probe::operator_requeues_of_attempt(&board.repo, "attempt-1")
             .await
             .unwrap(),
         1

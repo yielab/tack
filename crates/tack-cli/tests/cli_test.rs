@@ -167,7 +167,7 @@ async fn error_response_is_returned_as_err() {
     Mock::given(method("PATCH"))
         .and(path("/api/items/bad-id"))
         .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
-            "error": "WIP limit reached for column 'In Progress'",
+            "error": {"code": "wip_limit", "message": "WIP limit reached for column 'In Progress'"},
         })))
         .mount(&server)
         .await;

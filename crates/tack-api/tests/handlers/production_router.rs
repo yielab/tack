@@ -386,16 +386,15 @@ async fn mock_vertical_slice_completes_and_survives_restart() {
     // No credential material ever appeared in a response body across the
     // whole lifecycle — the redaction guarantee, verified here end-to-end
     // through the real mounted router.
-    let stored_hash = queries::agent_runners::runner_identity(&repo, &runner_id)
+    let stored_hash = tack_test_support::probe::runner_identity(&repo, &runner_id)
         .await
         .unwrap()
         .expect("runner exists")
         .credential_hash;
-    let token_hash =
-        queries::agent_enrollment_tokens::latest_token_hash_of_runner(&repo, &runner_id)
-            .await
-            .unwrap()
-            .expect("enrollment token exists");
+    let token_hash = tack_test_support::probe::latest_token_hash_of_runner(&repo, &runner_id)
+        .await
+        .unwrap()
+        .expect("enrollment token exists");
     // `pending` and `enrolled` are the two documented, intentional
     // one-time issuance points (the raw enrollment token and the raw
     // runner credential, respectively) — everything *else* in the
@@ -561,7 +560,8 @@ async fn production_router_rejects_substituted_credentials() {
     // explained away as "it was just an unrecognized token either way".
     let clock = tack_protocol::SystemClock;
     let credential_hash = hex::encode(sha2::Sha256::digest(b"c5-real-runner-credential"));
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         tack_db::repo::execution::NewRunner {
             id: "runner-real",
             name: "Real runner",
@@ -977,10 +977,9 @@ async fn runner_v1_router_enforces_configured_body_limit() {
             .await
             .unwrap();
         assert_eq!(state, Some(ExecutionState::Queued), "{name}");
-        let attempt_count =
-            queries::execution_attempts::attempt_count_of_request(&repo, &request_id)
-                .await
-                .unwrap();
+        let attempt_count = tack_test_support::probe::attempt_count_of_request(&repo, &request_id)
+            .await
+            .unwrap();
         assert_eq!(attempt_count, 0, "{name}");
 
         // Sanity: the identical runner/request, with a normal small body,

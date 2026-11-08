@@ -160,7 +160,6 @@ impl WorkflowConfig {
             .map(|s| s.name.as_str())
     }
 
-
     /// Return true if `status` maps to the Done category in this workflow.
     pub fn is_done_status(&self, status: &str) -> bool {
         self.statuses

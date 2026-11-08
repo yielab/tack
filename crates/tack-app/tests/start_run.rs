@@ -578,7 +578,6 @@ async fn a_request_with_a_different_repository_is_refused() {
     assert_eq!(refusal.details["reason"], "repository_differs_from_project");
 }
 
-
 #[tokio::test]
 async fn an_unknown_profile_is_not_found_and_an_unknown_item_too() {
     let board = board().await;

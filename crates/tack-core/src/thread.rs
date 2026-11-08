@@ -200,7 +200,6 @@ pub fn turn_principal(thread: Uuid) -> String {
     format!("thread:{thread}")
 }
 
-
 /// Why a title or a body cannot be accepted, or `None` when it can.
 pub fn title_problem(title: &str) -> Option<String> {
     let length = title.trim().chars().count();
@@ -619,7 +618,6 @@ mod tests {
         full.status = ThreadStatus::Closed;
         assert_eq!(may_post(&full, at(1), false), Err(TurnStop::Closed));
     }
-
 
     #[test]
     fn titles_bodies_and_references_are_bounded() {

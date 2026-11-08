@@ -637,7 +637,6 @@ pub struct CreateProject {
     pub workspace_mode: Option<WorkspaceMode>,
 }
 
-
 #[derive(Debug, Default, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateProject {
@@ -686,7 +685,6 @@ pub struct UpdateProject {
     /// Replaces the project's rung and the caps on creates; omitted leaves them.
     pub agents_on_board: Option<crate::change_set::AgentsOnBoard>,
 }
-
 
 #[derive(Debug, Default, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

@@ -258,7 +258,8 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
     );
     let repo = Repository::new(pool);
     let clock = FakeClock::new();
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-a",
             name: "Runner A",

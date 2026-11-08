@@ -139,11 +139,10 @@ async fn dragging_many_cards_at_once_never_exceeds_the_wip_cap() {
         );
     }
 
-    let final_count = state
-        .repo
-        .count_items_by_status(project_id, "In Progress")
-        .await
-        .expect("count_items_by_status");
+    let final_count =
+        tack_test_support::probe::count_items_by_status(&state.repo, project_id, "In Progress")
+            .await
+            .expect("count_items_by_status");
 
     assert!(
         final_count <= WIP_LIMIT,
@@ -155,11 +154,10 @@ async fn dragging_many_cards_at_once_never_exceeds_the_wip_cap() {
     // Sanity: nothing vanished, and every item that didn't make it into "In
     // Progress" is still sitting in "Backlog" — a rejected status change
     // must leave the item untouched.
-    let backlog_count = state
-        .repo
-        .count_items_by_status(project_id, "Backlog")
-        .await
-        .expect("count_items_by_status");
+    let backlog_count =
+        tack_test_support::probe::count_items_by_status(&state.repo, project_id, "Backlog")
+            .await
+            .expect("count_items_by_status");
     assert_eq!(
         final_count + backlog_count,
         N as i64,

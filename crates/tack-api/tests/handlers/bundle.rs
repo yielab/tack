@@ -319,7 +319,6 @@ async fn an_import_never_raises_autonomy_past_the_projects_own() {
     assert!(!warnings.contains("autonomy.level"), "{warnings}");
 }
 
-
 #[tokio::test]
 async fn the_export_is_the_import() {
     let app = app().await;

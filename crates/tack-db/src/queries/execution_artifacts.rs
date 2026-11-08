@@ -46,32 +46,6 @@ pub async fn declared_bytes_of_attempt(
     .await?)
 }
 
-/// How many manifest rows an attempt has.
-pub async fn artifact_count_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<i64, StoreError> {
-    Ok(
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE attempt_id = ?")
-            .bind(attempt_id)
-            .fetch_one(repo.pool())
-            .await?,
-    )
-}
-
-/// The `artifact_id` of every manifest row of an attempt, in order.
-pub async fn artifact_ids_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Vec<String>, StoreError> {
-    Ok(sqlx::query_scalar(
-        "SELECT artifact_id FROM execution_artifacts WHERE attempt_id = ? ORDER BY artifact_id",
-    )
-    .bind(attempt_id)
-    .fetch_all(repo.pool())
-    .await?)
-}
-
 /// Where the verified content of an artifact is stored, or `None` while only its manifest is
 /// recorded. An artifact the attempt never declared is `StoreError::NotFound`.
 pub async fn content_reference(
@@ -155,13 +129,4 @@ pub async fn latest_content_reference(
     .bind(media_type)
     .fetch_optional(repo.pool())
     .await?)
-}
-
-/// Whether an artifact manifest row with this row id exists.
-pub async fn artifact_row_exists(repo: &Repository, row_id: &str) -> Result<bool, StoreError> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE id=?")
-        .bind(row_id)
-        .fetch_one(repo.pool())
-        .await?;
-    Ok(count > 0)
 }

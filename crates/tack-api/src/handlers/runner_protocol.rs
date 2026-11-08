@@ -587,8 +587,8 @@ pub async fn enroll(
     .map_err(|failure| match failure {
         // A collision on a unique column of `agent_runners` gets the frozen `conflict`
         // outcome (`docs/contracts/runner-v1/errors/conflict.json`), never an unhandled 500.
-        // Redeeming no longer writes the self-reported `runner_name`, so this is defense in
-        // depth against a future unique column the statement touches.
+        // Redeeming never writes the self-reported `runner_name`, so this is defense in depth
+        // against a future unique column the statement touches.
         AppError::Conflict(_) | AppError::Store(StoreError::Conflict(_)) => {
             tracing::warn!("enrollment rejected: runner name already in use");
             protocol_error(

@@ -185,7 +185,7 @@ async fn claim_next(b: &Board, first: &ClaimedAttempt) -> ClaimedAttempt {
 }
 
 async fn follow_ups(b: &Board, original: &str) -> Vec<(String, String, String)> {
-    tack_db::queries::execution_requests::follow_ups_of_request(&b.repo, original)
+    tack_test_support::probe::follow_ups_of_request(&b.repo, original)
         .await
         .unwrap()
         .into_iter()

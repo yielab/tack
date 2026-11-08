@@ -41,7 +41,8 @@ pub async fn board() -> Board {
         .expect("project");
     let item = make_item(&repo, &project).await;
     add_runner(&repo, "runner-active").await;
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-c1",
             name: "C1",
@@ -61,7 +62,8 @@ pub async fn board() -> Board {
 }
 
 pub async fn add_runner(repo: &Repository, id: &str) {
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        repo,
         NewRunner {
             id,
             name: id,
@@ -79,7 +81,8 @@ pub async fn add_runner(repo: &Repository, id: &str) {
 }
 
 pub async fn add_profile(repo: &Repository, id: &str, tool_policy: &str, limits: &str) {
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        repo,
         NewAgentProfile {
             id,
             name: id,

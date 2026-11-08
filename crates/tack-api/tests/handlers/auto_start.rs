@@ -11,10 +11,10 @@ use tack_api::{AppState, router::build_router};
 use tack_core::models::{
     CreateDependency, CreateItem, CreateProject, CreateRole, DependencyType, ProjectType,
 };
-use tack_db::queries::execution_request_rows::execution_requests_of_item;
 use tack_db::repo::execution::{NewAgentProfile, NewRunner};
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::{Clock, SystemClock};
+use tack_test_support::probe::execution_requests_of_item;
 use tack_test_support::seed;
 use uuid::Uuid;
 
@@ -60,7 +60,8 @@ async fn board() -> Board {
         )
         .await
         .unwrap();
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-1",
             name: "Runner",
@@ -75,7 +76,8 @@ async fn board() -> Board {
     )
     .await
     .unwrap();
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-1",
             name: "Writer",
