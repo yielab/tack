@@ -14,7 +14,7 @@ use tack_runner::{
         engine::ExecutionSpec,
     },
     harness::{
-        DESCRIPTORS, all_descriptors,
+        DESCRIPTORS,
         claude_code::ClaudeCodeGrammar,
         codex::CodexGrammar,
         env_policy,
@@ -2202,7 +2202,7 @@ fn met_column() -> Vec<(ParityRule, ParityCell)> {
 
 #[test]
 fn parity_matrix() {
-    let problems = parity_problems(all_descriptors(), PENDING_CELLS);
+    let problems = parity_problems(&DESCRIPTORS, PENDING_CELLS);
     assert!(
         problems.is_empty(),
         "the parity matrix has gaps:\n{}",
@@ -2258,7 +2258,7 @@ fn parity_a_pending_cell_names_a_registered_agent_and_its_card() {
 
 #[test]
 fn parity_steps_are_visible_exactly_where_the_cli_reports_progress() {
-    for descriptor in all_descriptors() {
+    for descriptor in DESCRIPTORS {
         let steps = descriptor
             .parity
             .iter()
@@ -2278,7 +2278,7 @@ fn parity_steps_are_visible_exactly_where_the_cli_reports_progress() {
 /// because it has no descriptors; this keeps that list equal to what the descriptors say.
 #[test]
 fn the_board_knows_which_agents_report_no_usage_while_they_run() {
-    for descriptor in all_descriptors() {
+    for descriptor in DESCRIPTORS {
         assert_eq!(
             tack_protocol::execution::reports_usage_while_running(descriptor.kind),
             descriptor.reports_progress,
@@ -3041,7 +3041,7 @@ time.sleep(60)
 
     #[test]
     fn every_agent_the_runner_spawns_names_its_model_endpoint_or_leaves_it_to_the_administrator() {
-        for descriptor in all_descriptors() {
+        for descriptor in DESCRIPTORS {
             let named = !descriptor.model_endpoints.is_empty();
             let expected = matches!(descriptor.kind, "claude-code" | "codex");
             assert_eq!(
