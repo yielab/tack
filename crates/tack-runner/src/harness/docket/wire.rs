@@ -119,6 +119,9 @@ pub(super) struct PodReport {
     /// How the team reads the web (`webRead`), kept as it came and read on its own so a mode Tack
     /// has no word for costs the sentence and never the team. Absent from a docket before it.
     pub web_read: Option<Value>,
+    /// The team's web search (`search`), kept as it came and read on its own so a provider Tack
+    /// has no word for costs the answer and never the team. Absent from a docket before it.
+    pub search: Option<Value>,
 }
 
 /// `GET /pods/<pod>/memory`: the entries, each kept as it came and read on its own so an entry
@@ -189,6 +192,28 @@ pub(super) struct PodWebRead {
     pub reason: String,
     #[serde(default)]
     pub fix: String,
+}
+
+/// `search` of a team's report: which service answers the team's searches and what makes it ready.
+#[derive(Debug, Deserialize)]
+pub(super) struct PodSearch {
+    pub provider: String,
+    pub ready: bool,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub fix: String,
+    #[serde(default)]
+    pub options: Vec<PodSearchOption>,
+}
+
+/// One way to set the search up. The key itself never travels: `secret` is only its name.
+#[derive(Debug, Deserialize)]
+pub(super) struct PodSearchOption {
+    pub provider: String,
+    pub command: String,
+    #[serde(default)]
+    pub secret: String,
 }
 
 /// One entry of `needs`.

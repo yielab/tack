@@ -1,0 +1,525 @@
+{
+  "pod": "saas-search",
+  "blueprint": "respond",
+  "members": [
+    {
+      "id": "saas-search-lead",
+      "role": "lead",
+      "model": {
+        "value": "anthropic/claude-haiku-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-search-lead",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "consult",
+          "fetch",
+          "glob",
+          "grep",
+          "read",
+          "skill"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "fetchDomains": [
+          "*"
+        ],
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-search-reviewer",
+      "role": "reviewer",
+      "model": {
+        "value": "anthropic/claude-sonnet-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-search-reviewer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "consult",
+          "fetch",
+          "glob",
+          "grep",
+          "read",
+          "skill"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "fetchDomains": [
+          "*"
+        ],
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-search-researcher",
+      "role": "researcher",
+      "model": {
+        "value": "anthropic/claude-sonnet-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-search-researcher",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "fetch",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "fetchDomains": [
+          "*"
+        ],
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-search-writer",
+      "role": "writer",
+      "model": {
+        "value": "anthropic/claude-haiku-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-search-writer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "write"
+        ],
+        "tools": [
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    },
+    {
+      "id": "saas-search-actor",
+      "role": "actor",
+      "model": {
+        "value": "anthropic/claude-sonnet-5-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-search-actor",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "glob",
+          "read"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
+      }
+    }
+  ],
+  "settings": {
+    "budgetTokens": {
+      "value": null,
+      "source": "default"
+    },
+    "budgetWindow": {
+      "value": "none",
+      "source": "default"
+    },
+    "maxReworkCycles": {
+      "value": 1,
+      "source": "default"
+    },
+    "turnTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "verifyTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "approvalMode": {
+      "value": "wait",
+      "source": "default"
+    },
+    "approvalExpiryHours": {
+      "value": 24,
+      "source": "default"
+    },
+    "inputExpiryHours": {
+      "value": 72,
+      "source": "default"
+    },
+    "allowCommands": {
+      "value": "",
+      "source": "default"
+    },
+    "pipeline": {
+      "value": null,
+      "source": "default"
+    },
+    "schedule": {
+      "value": null,
+      "source": "default"
+    },
+    "projectInstructions": {
+      "value": "",
+      "source": "default"
+    },
+    "mcpServers": {
+      "value": null,
+      "source": "default"
+    },
+    "deniedTools": {
+      "value": "",
+      "source": "default"
+    },
+    "requireVerify": {
+      "value": false,
+      "source": "default"
+    },
+    "maxConsultationsPerTask": {
+      "value": 3,
+      "source": "default"
+    },
+    "consultMode": {
+      "value": "park",
+      "source": "default"
+    },
+    "network": {
+      "value": "none",
+      "source": "default"
+    },
+    "profile": {
+      "value": "attended",
+      "source": "default"
+    },
+    "readOnly": {
+      "value": "",
+      "source": "default"
+    },
+    "prepare": {
+      "value": "",
+      "source": "default"
+    },
+    "protects": {
+      "value": "",
+      "source": "default"
+    },
+    "fetchDomains": {
+      "value": "",
+      "source": "default"
+    }
+  },
+  "approvalMode": {
+    "effective": "park",
+    "source": "unset"
+  },
+  "pipeline": {
+    "source": "blueprint 'respond'",
+    "steps": [
+      {
+        "id": "intake",
+        "kind": "agent",
+        "role": "lead",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "research",
+        "kind": "agent",
+        "role": "researcher",
+        "modelClass": "strong",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "draft",
+        "kind": "agent",
+        "role": "writer",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "review",
+        "kind": "agent",
+        "role": "reviewer",
+        "modelClass": "strong",
+        "gate": "verdict",
+        "rework": [
+          {
+            "when": [
+              "request-changes"
+            ],
+            "to": "draft",
+            "max": 1
+          }
+        ]
+      },
+      {
+        "id": "act",
+        "kind": "agent",
+        "role": "actor",
+        "modelClass": "strong",
+        "gate": null,
+        "rework": []
+      }
+    ]
+  },
+  "network": {
+    "mode": "none",
+    "scope": "global",
+    "enforced": true
+  },
+  "fetchDomains": [],
+  "webRead": {
+    "mode": "open",
+    "reason": "a folder team under the jail reads any public host",
+    "fix": ""
+  },
+  "search": {
+    "provider": "brave",
+    "ready": false,
+    "reason": "the Brave Search key is not stored: no secret named 'brave-search'",
+    "fix": "docket setup secret set brave-search --stdin",
+    "options": [
+      {
+        "provider": "searxng",
+        "command": "docket setup search searxng --pod saas-search",
+        "secret": ""
+      },
+      {
+        "provider": "brave",
+        "command": "docket setup search brave --pod saas-search",
+        "secret": "brave-search"
+      }
+    ]
+  },
+  "needs": [
+    {
+      "kind": "fetch-hosts",
+      "name": "fetch-hosts",
+      "fix": "",
+      "satisfied": true,
+      "blocking": true
+    },
+    {
+      "kind": "search-host",
+      "name": "search-host",
+      "fix": "docket setup secret set brave-search --stdin",
+      "satisfied": false,
+      "blocking": false
+    },
+    {
+      "kind": "isolation",
+      "name": "isolation",
+      "fix": "",
+      "satisfied": true,
+      "blocking": false
+    }
+  ],
+  "delivers": [
+    "report"
+  ],
+  "methods": [
+    {
+      "name": "anti-tautology",
+      "source": "recipe:anti-tautology",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "cross-family-review",
+      "source": "recipe:cross-family-review",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "explore-then-edit",
+      "source": "recipe:explore-then-edit",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "frugal",
+      "source": "recipe:frugal",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "intake",
+      "source": "recipe:intake",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "mutation",
+      "source": "recipe:mutation",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "parallel-explore",
+      "source": "recipe:parallel-explore",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "reflexion",
+      "source": "recipe:reflexion",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "research-review",
+      "source": "recipe:research-review",
+      "missingRoles": [
+        "analyst"
+      ],
+      "default": false
+    },
+    {
+      "name": "secure-build",
+      "source": "recipe:secure-build",
+      "missingRoles": [
+        "implementer",
+        "security-vetter"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-first",
+      "source": "recipe:spec-first",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "spec-writer",
+      "source": "recipe:spec-writer",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "strong-plan-cheap-edit",
+      "source": "recipe:strong-plan-cheap-edit",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "tdd",
+      "source": "recipe:tdd",
+      "missingRoles": [
+        "implementer"
+      ],
+      "default": false
+    },
+    {
+      "name": "web-research",
+      "source": "recipe:web-research",
+      "missingRoles": [
+        "analyst"
+      ],
+      "default": false
+    }
+  ],
+  "budget": {
+    "tokens": null,
+    "used": 0,
+    "window": "none",
+    "windowStart": null
+  },
+  "workDir": "/scratch/home/.docket/state/workspaces/pods/saas-search/workdir",
+  "configSource": "/scratch/search-dir",
+  "configDigest": "c943c1a1bfed85a1bd1b93e775619a2bd060376a7d43b8eb1f04668c0fb76663",
+  "drift": "no",
+  "profile": {
+    "name": "attended",
+    "violations": []
+  },
+  "pipelineSource": "blueprint 'respond'",
+  "workspaceKind": "workdir",
+  "repoConfigDir": "",
+  "readOnly": [
+    "/scratch/toolchain/node"
+  ],
+  "paused": false
+}

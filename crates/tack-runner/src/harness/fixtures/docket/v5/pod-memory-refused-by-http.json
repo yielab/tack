@@ -7,7 +7,7 @@
   "reason": "The readme is rebuilt by CI.",
   "provenance": {
     "task": "task-capture-memory",
-    "date": "2026-11-04",
+    "date": "2026-11-08",
     "commit": "0000000000000000000000000000000000000000"
   },
   "stale": false,

@@ -638,6 +638,38 @@ describe('TeamsPanel sheet', () => {
     expect(read.textContent).not.toContain('To fix');
   });
 
+  it('says what web search the team has, the fix when it is not ready, and nothing when docket says nothing', async () => {
+    const options = [
+      { provider: 'searxng', command: 'docket setup search searxng --pod saas-code', secret: '' },
+      { provider: 'brave', command: 'docket setup search brave --pod saas-code', secret: 'brave-search' },
+    ];
+    const none = { provider: 'none', ready: false, reason: 'no search service', fix: options[0].command, options };
+    mockApi([{ ...FULL_TEAM, report: { ...FULL_TEAM.report, search: none } }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const search = card(c, 'saas-code').querySelector('[data-testid="team-search"]')!;
+    expect(search.textContent).toContain('None: no search service');
+    expect(search.textContent).toContain('To fix: docket setup search searxng --pod saas-code');
+    expect(search.textContent).toContain('Or: docket setup search brave --pod saas-code');
+    expect(search.querySelector('button[aria-label="Help: Search"]')).not.toBeNull();
+    const ready = { provider: 'brave', ready: true, reason: 'Web search goes through Brave.', fix: '', options };
+    mockApi([{ ...FULL_TEAM, report: { ...FULL_TEAM.report, search: ready } }]);
+    const d = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const brave = card(d, 'saas-code').querySelector('[data-testid="team-search"]')!;
+    expect(brave.textContent).toContain('Brave Search: ready');
+    expect(brave.textContent).not.toContain('To fix');
+    expect(brave.textContent).not.toContain('Or:');
+    // A docket that does not say draws no line, and no "Not reported" for it.
+    mockApi([{ ...FULL_TEAM }]);
+    const e = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    expect(card(e, 'saas-code').querySelector('[data-testid="team-search"]')).toBeNull();
+  });
+
   it('says a need that only degrades the work is not a blocker', async () => {
     const needs = [{ kind: 'service', name: 'PDFs are read', fix: 'docket setup sandbox on', satisfied: false, blocking: false }];
     mockApi([{ ...SOLO, report: { ...SOLO.report, needs } }]);

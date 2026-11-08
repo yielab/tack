@@ -148,14 +148,12 @@
         "tools": [
           "consult",
           "edit",
-          "fetch",
           "glob",
           "grep",
           "read",
           "rec__entries__add",
           "rec__entries__update",
           "rec__export",
-          "rec__query",
           "skill",
           "write"
         ],
@@ -163,11 +161,8 @@
           "write": [
             "entries"
           ],
-          "query": true
+          "query": false
         },
-        "fetchDomains": [
-          "*"
-        ],
         "notComputed": [
           "mcp",
           "service"
@@ -321,6 +316,24 @@
     "reason": "a folder team under the jail reads any public host",
     "fix": ""
   },
+  "search": {
+    "provider": "none",
+    "ready": false,
+    "reason": "no search service: SearXNG is free and runs in Docker, or use a Brave Search API key (docket setup search brave --pod saas-notes)",
+    "fix": "docket setup search searxng --pod saas-notes",
+    "options": [
+      {
+        "provider": "searxng",
+        "command": "docket setup search searxng --pod saas-notes",
+        "secret": ""
+      },
+      {
+        "provider": "brave",
+        "command": "docket setup search brave --pod saas-notes",
+        "secret": "brave-search"
+      }
+    ]
+  },
   "needs": [],
   "delivers": [
     "report",
@@ -464,8 +477,8 @@
     "windowStart": null
   },
   "workDir": "/scratch/notes",
-  "configSource": "/home/ox/.local/lib/docket/venv/lib/python3.11/site-packages/docket/templates/recipes/records",
-  "configDigest": "684915f612aace312c3d9a9d74a3308217cbce2ed03e75f2d952cdf0c92d16a3",
+  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
+  "configDigest": "47a1b2a9254590b2a4072945c6749176cd70f3ca098dd54170ffd7e63c9022cc",
   "drift": "no",
   "profile": {
     "name": "attended",

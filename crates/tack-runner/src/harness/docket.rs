@@ -123,6 +123,10 @@ const POD_CONTRACT: &str = "podContract";
 /// the web, and why) and each of its needs says whether it `blocking`.
 const WEB_READ: &str = "webRead";
 
+/// The feature of `GET /health` under which a team's report carries `search` (which web search it
+/// has, whether it is ready and the command that makes it so).
+const SEARCH: &str = "search";
+
 /// The feature of `GET /health` under which a paused team can be resumed over HTTP and its report
 /// carries `budget`.
 const POD_RESUME: &str = "podResume";

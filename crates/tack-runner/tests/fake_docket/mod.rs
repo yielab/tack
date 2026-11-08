@@ -342,6 +342,8 @@ struct Pod {
     contract: Option<Value>,
     /// What the report says of `webRead` when the docket lists the feature.
     web_read: Option<Value>,
+    /// What the report says of `search` instead of the capture's, when the docket lists the feature.
+    search: Option<Value>,
     /// What the report says of `budget` instead of the capture's: an object holding any of its
     /// four keys.
     budget: Option<Value>,
@@ -414,6 +416,8 @@ struct World {
     pod_contract: Option<bool>,
     /// `/health` lists `webRead`, and a team with a `webRead` says it.
     web_read_listed: bool,
+    /// `/health` lists `search`, and a team's report says what web search it has.
+    search_listed: bool,
     /// A docket that lists `podResume`: a team's report carries `budget` and `POST
     /// /pods/<pod>/resume` clears a pause. Without it the route answers `404`, as a docket without
     /// the route would, and the report carries no `budget`.
@@ -506,6 +510,7 @@ impl FakeDocket {
             without_pod_pause: false,
             pod_contract: None,
             web_read_listed: false,
+            search_listed: false,
             pod_resume: false,
             isolation_posture: None,
             without_budget_outcome: false,
@@ -569,6 +574,7 @@ impl FakeDocket {
                 fetch: false,
                 contract: None,
                 web_read: None,
+                search: None,
                 budget: None,
                 memory: Vec::new(),
             },
@@ -711,6 +717,24 @@ impl FakeDocket {
             .get_mut(name)
             .unwrap_or_else(|| panic!("no team {name}"))
             .web_read = Some(web_read);
+    }
+
+    /// A docket that lists `search`: a team's report says what web search it has, the capture's
+    /// answer unless [`Self::set_search`] gave the team another.
+    pub fn with_search(&self) {
+        self.shared.lock().unwrap().search_listed = true;
+    }
+
+    /// What the team's `search` says: an object with `provider`, `ready`, `reason`, `fix` and
+    /// `options`.
+    pub fn set_search(&self, name: &str, search: Value) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .search = Some(search);
     }
 
     /// A docket that lists `podResume`: a team's report and its row of the list say what it may
@@ -1340,6 +1364,9 @@ fn features(state: &World) -> Value {
     if state.web_read_listed {
         listed.push("webRead");
     }
+    if state.search_listed {
+        listed.push("search");
+    }
     if state.pod_resume {
         listed.push("podResume");
     }
@@ -1635,6 +1662,12 @@ fn pod_report_value(state: &World, name: &str) -> Option<Value> {
         report.as_object_mut().unwrap().remove("webRead");
     } else if let Some(web_read) = &pod.web_read {
         report["webRead"] = web_read.clone();
+    }
+    // The captured reports carry `search`; a docket that does not list the feature sends none.
+    if !state.search_listed {
+        report.as_object_mut().unwrap().remove("search");
+    } else if let Some(search) = &pod.search {
+        report["search"] = search.clone();
     }
     put_budget(state, pod, &mut report);
     Some(report)
@@ -1952,6 +1985,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             fetch: false,
             contract: None,
             web_read: None,
+            search: None,
             budget: None,
             memory: Vec::new(),
         },
