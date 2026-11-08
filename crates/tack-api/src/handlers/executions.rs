@@ -765,7 +765,7 @@ pub fn routes(state: OperatorExecutionState) -> Router {
 /// `POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s
 /// run left stopped at its own step budget, instead of posting a new one.
 /// Refused `not_found` when `id` names no request, `unprocessable` when its own ending never
-/// offered Continue (decision 5's table) or its token limit is fully spent.
+/// offered Continue or its token limit is fully spent.
 #[utoipa::path(
     post,
     path = "/api/executions/{request_id}/continue",

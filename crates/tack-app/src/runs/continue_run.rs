@@ -29,7 +29,7 @@ fn not_found(reason: &str) -> Refusal {
     )
 }
 
-/// What the request named is not a run whose kept step may be continued: decision 5's table — no
+/// What the request named is not a run whose kept step may be continued: no
 /// such request, or one whose own ending never offered Continue (any failure that is not a step
 /// budget stop with its work kept, a token-bound stop, a stop that changed nothing, or a docket
 /// too old for `retryContinues`/`budgetOutcome`).
@@ -51,8 +51,8 @@ async fn continue_source(
 }
 
 /// A new execution request that follows the same docket task `source_request_id`'s run left
-/// stopped at its own step budget, with what was left of its token limit (decision 6). Refused
-/// when the named request does not exist, or its own ending never offered Continue (decision 5) —
+/// stopped at its own step budget, with what was left of its token limit. Refused
+/// when the named request does not exist, or its own ending never offered Continue —
 /// never offered at all, offered `false`, or left no team and task to follow.
 pub async fn continue_run(
     repo: &Repository,

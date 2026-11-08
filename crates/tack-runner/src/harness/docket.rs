@@ -1429,9 +1429,9 @@ impl DocketAdapter {
                 additional: BTreeMap::from([("team".to_owned(), json!(info.pod))]),
             },
             usage: Usage {
-                // A continuation's task carries the whole task's usage, old hops included
-                // (decision 6): its own baseline, what the task had already used when the retry
-                // was sent, is taken back out so the run counts only its new hops.
+                // A continuation's task carries the whole task's usage, old hops included: its
+                // own baseline, what the task had already used when the retry was sent, is
+                // taken back out so the run counts only its new hops.
                 tokens_in: measurement(
                     usage
                         .and_then(|usage| usage.total.input)
@@ -2243,7 +2243,7 @@ impl HarnessAdapter for DocketAdapter {
                 api,
                 in_repository,
                 turn: TurnNote::of(&spec.work.request.metadata).is_some(),
-                // A restart during a continuation (decision 6's "Restarts") still has to count
+                // A restart during a continuation still has to count
                 // only the new hops: the baseline travels in the request's own metadata, the same
                 // way `start_continuation` reads it the first time.
                 baseline_usage: baseline_usage_of(&spec.work.request.metadata),
@@ -2435,8 +2435,8 @@ fn baseline_usage_of(metadata: &Value) -> Option<(u64, u64)> {
 }
 
 impl DocketAdapter {
-    /// A request that continues a step another run's task already stopped at (decision 6, Phase
-    /// 87), instead of posting a new task: `process_id` is that run's own `pod/task`, the same
+    /// A request that continues a step another run's task already stopped at, instead of
+    /// posting a new task: `process_id` is that run's own `pod/task`, the same
     /// shape `register` keys a live run by. Needs both `retryContinues` (the route itself) and
     /// `budgetOutcome` (without it docket cannot tell a step's own budget stop from a confused
     /// model, so the work it kept is not there to continue either); missing either rejects the

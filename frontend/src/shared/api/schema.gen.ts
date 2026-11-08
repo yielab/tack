@@ -761,9 +761,9 @@ export interface paths {
         put?: never;
         /**
          * `POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s
-         *     run left stopped at its own step budget, instead of posting a new one (Phase 87, decision 6).
+         *     run left stopped at its own step budget, instead of posting a new one.
          *     Refused `not_found` when `id` names no request, `unprocessable` when its own ending never
-         *     offered Continue (decision 5's table) or its token limit is fully spent.
+         *     offered Continue or its token limit is fully spent.
          */
         post: operations["continue_execution"];
         delete?: never;
@@ -3827,9 +3827,8 @@ export interface components {
         } | {
             /**
              * @description Ticked by a person on the "Done when" list. Only the board reads it:
-             *     the brief and the verifier ignore it. Absent means not ticked, so
-             *     older rows and files read as before and an unticked check is stored
-             *     exactly as it always was.
+             *     the brief and the verifier ignore it. Absent means not ticked, and an
+             *     unticked check is stored without the key.
              */
             checked?: boolean;
             id: string;
@@ -4511,7 +4510,7 @@ export interface components {
         };
         /**
          * @description Response body for `POST /api/executions/{id}/continue` — a new request that follows the same
-         *     docket task the named run left stopped at its own step budget (Phase 87, decision 6), or an
+         *     docket task the named run left stopped at its own step budget, or an
          *     idempotent replay of one already made.
          */
         ContinueResponse: {
@@ -4601,7 +4600,7 @@ export interface components {
              *     exist is `not_found` (`details.reason = "from_run_not_found"`); one that belongs to
              *     another project, or left no branch to continue from, is `unprocessable`
              *     (`details.reason` is `"from_run_different_project"` or `"from_run_no_kept_work"`). Absent,
-             *     `metadata.rework_base` is read only when the caller set it directly, as before.
+             *     `metadata.rework_base` is read only when the caller set it directly.
              */
             from_run?: string | null;
             idempotency_key: string;
