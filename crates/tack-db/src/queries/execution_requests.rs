@@ -172,8 +172,7 @@ pub async fn rework_source_of_request(
 /// — `ActualExecution.additional` is `#[serde(flatten)]`, so docket's own `team` key sits at the
 /// top level of the stored JSON, never nested under a literal `"additional"`; `terminal_reason.task`),
 /// whether that attempt's own ending
-/// offered Continue and why not when it did not (`terminal_reason.next.continue`, decision 5's
-/// table), the tokens that attempt's own usage counted when the retry is sent, and the token limit
+/// offered Continue and why not when it did not (`terminal_reason.next.continue`), the tokens that attempt's own usage counted when the retry is sent, and the token limit
 /// the source request itself ran with.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct ContinueSourceRow {

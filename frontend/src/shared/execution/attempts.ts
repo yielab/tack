@@ -229,8 +229,8 @@ export function folderRunSummary(terminalReason: unknown): string | null {
 
 // ─── A step's own budget stop (`code: "step_budget"` or `"budget"` with `next`) ────
 
-/** Whether a new request may follow this run's own docket task instead of starting fresh
- *  (decision 6), and if not, why, in the backend's own words. Read from `terminal_reason.next.
+/** Whether a new request may follow this run's own docket task instead of starting fresh,
+ *  and if not, why, in the backend's own words. Read from `terminal_reason.next.
  *  continue`, which docket.rs writes only for a step's own budget stop (code `step_budget` or
  *  `budget`); `null` for every other ending, including one from a docket too old to say. */
 export interface ContinueOffer {
