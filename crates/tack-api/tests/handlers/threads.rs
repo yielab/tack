@@ -276,7 +276,8 @@ async fn runnable() -> (Setup, String) {
 async fn runnable_after_patching(patch: Value) -> (Setup, String) {
     let repo = tack_test_support::setup_test_db().await;
     let workspace = tack_test_support::create_test_workspace(&repo).await;
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-1",
             name: "Runner",

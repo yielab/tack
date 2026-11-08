@@ -10,7 +10,7 @@ export function writerName(principal: string, profileName: string): string {
 }
 
 /** True for a message the thread's profile wrote (a reply, or the notice that a turn failed or could not start). */
-export const isReply = (m: ThreadMessage): boolean => m.principal.startsWith('thread:');
+const isReply = (m: ThreadMessage): boolean => m.principal.startsWith('thread:');
 
 export interface Entry {
   message: ThreadMessage;
@@ -60,7 +60,7 @@ export function composerState(thread: Thread, turns: readonly Turn[]): ComposerS
   return { disabled: false, reason: null };
 }
 
-export function capitalize(text: string): string {
+function capitalize(text: string): string {
   return text === '' ? text : text[0].toUpperCase() + text.slice(1);
 }
 

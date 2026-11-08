@@ -11,7 +11,7 @@ use std::future::Future;
 use common::{RUNNER_ID, Running, running_attempt, world};
 use serde_json::{Value, json};
 use tack_app::runs::complete::{Completed, CompletionReport, complete};
-use tack_db::queries::{execution_attempts, execution_request_rows, execution_requests};
+use tack_db::queries::{execution_attempts, execution_requests};
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
 use tack_test_support::completion::{actual_execution, terminal_reason_of, usage_not_measured};
@@ -170,28 +170,11 @@ async fn item_status(world: &common::World) -> String {
 }
 
 #[tokio::test]
-async fn a_success_leaves_the_items_status_alone_whatever_the_snapshot_names() {
-    for (artifacts, policy) in [
-        (json!([{"kind": "patch", "size_bytes": 12}]), json!(null)),
-        (
-            json!([{"kind": "patch", "size_bytes": 12}]),
-            json!("done_on_success"),
-        ),
-        (json!([]), json!("done_on_success")),
-    ] {
+async fn a_success_leaves_the_items_status_alone() {
+    for artifacts in [json!([{"kind": "patch", "size_bytes": 12}]), json!([])] {
         let world = world().await;
         let run = running_attempt(&world, "complete-status").await;
         let before = item_status(&world).await;
-        // A request stored before the policy was removed still carries it: read, and ignored.
-        let mut snapshot: Value = serde_json::from_str(
-            &execution_requests::request_snapshot(&world.repo, &run.request_id)
-                .await
-                .unwrap()
-                .expect("snapshot"),
-        )
-        .unwrap();
-        snapshot["status_map_policy_id"] = policy;
-        seed::execution_request_snapshot(&world.repo, &run.request_id, &snapshot.to_string()).await;
 
         let Completed::Committed { .. } = finish(
             &world,
@@ -209,10 +192,11 @@ async fn a_success_leaves_the_items_status_alone_whatever_the_snapshot_names() {
     }
 }
 
-async fn follow_ups(world: &common::World) -> Vec<execution_request_rows::ExecutionRequestRow> {
-    let mut rows = execution_request_rows::execution_requests_of_item(&world.repo, &world.item_id)
-        .await
-        .unwrap();
+async fn follow_ups(world: &common::World) -> Vec<tack_test_support::probe::ExecutionRequestRow> {
+    let mut rows =
+        tack_test_support::probe::execution_requests_of_item(&world.repo, &world.item_id)
+            .await
+            .unwrap();
     rows.retain(|row| row.idempotency_key.starts_with("rework-"));
     rows
 }

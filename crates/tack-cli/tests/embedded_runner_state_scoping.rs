@@ -34,7 +34,7 @@ impl Drop for ServerGuard {
 /// Starts `tack serve --with-runner` against a fresh database and
 /// `storage_dir` under its own `root`, with its current directory set to
 /// `shared_cwd` — shared with the other server this test starts, so the
-/// crate's bare, cwd-relative legacy default would collide between them if
+/// standalone runner's bare, cwd-relative default would collide between them if
 /// the state directory were not scoped to `storage_dir`.
 fn start_server_with_runner(shared_cwd: &Path, root: tempfile::TempDir) -> ServerGuard {
     let database_url = format!("sqlite:{}/tack.db?mode=rwc", root.path().display());
@@ -153,7 +153,7 @@ fn boot_and_enroll(shared_cwd: &Path, prefix: &str, label: &str) -> (String, Pat
 /// Two servers, each against its own database and `storage_dir`, started in
 /// turn from the same working directory: each must enroll its own runner,
 /// under its own state directory, and neither may fall back to the shared
-/// cwd's bare legacy default. Server A is checked (and dropped) before
+/// cwd's bare default. Server A is checked (and dropped) before
 /// server B ever starts — a collision is a property of where the *first*
 /// server writes, so proving it needs only one server on disk at a time.
 #[test]

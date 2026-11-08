@@ -160,15 +160,6 @@ impl WorkflowConfig {
             .map(|s| s.name.as_str())
     }
 
-    /// Return the name of the first in-progress status (by order), or None.
-    pub fn find_first_in_progress_status(&self) -> Option<&str> {
-        self.statuses
-            .iter()
-            .filter(|s| s.category == StatusCategory::InProgress)
-            .min_by_key(|s| s.order)
-            .map(|s| s.name.as_str())
-    }
-
     /// Return true if `status` maps to the Done category in this workflow.
     pub fn is_done_status(&self, status: &str) -> bool {
         self.statuses

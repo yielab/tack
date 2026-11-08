@@ -896,17 +896,6 @@ fn check_automation(
     problems: &mut Vec<String>,
     warnings: &mut Vec<String>,
 ) {
-    for (key, given) in [
-        ("on_start_status", auto.on_start_status.take()),
-        ("on_finish_status", auto.on_finish_status.take()),
-    ] {
-        if given.is_some() {
-            warnings.push(format!(
-                "automation.{key} is {}",
-                crate::models::STATUS_SET_BY_A_PERSON
-            ));
-        }
-    }
     let origin = auto.code_origin.as_deref().map(str::trim);
     if let Some(origin) = origin
         && !["folder", "new_folder", "url", "none"].contains(&origin)
@@ -1213,8 +1202,6 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
             .and_then(|id| profile_by_id.get(id))
             .map(|p| p.name.clone()),
         default_model: project.default_model.clone(),
-        on_finish_status: None,
-        on_start_status: None,
         definition_of_done: project.definition_of_done.clone(),
         autonomy: parts.autonomy.clone(),
         auto_start: Some(parts.auto_start.clone()),

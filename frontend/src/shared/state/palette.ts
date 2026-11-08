@@ -21,7 +21,7 @@ export const PALETTE_SWATCHES: [Palette, string, string][] = [
 
 const KEY = 'tack_palette';
 
-export function getStoredPalette(): Palette {
+function getStoredPalette(): Palette {
   try {
     const v = localStorage.getItem(KEY);
     if (v === 'harbor' || v === 'teal' || v === 'clay' || v === 'graphite') return v;
@@ -36,7 +36,7 @@ const [palette, setPaletteSignal] = createSignal<Palette>(getStoredPalette());
 /** Reactive accessor — drives the palette picker in Settings. */
 export const currentPalette = palette;
 
-export function applyPalette(p: Palette): void {
+function applyPalette(p: Palette): void {
   const el = document.documentElement;
   if (p === 'teal') el.removeAttribute('data-palette');
   else el.setAttribute('data-palette', p);

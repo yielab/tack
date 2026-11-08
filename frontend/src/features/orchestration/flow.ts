@@ -46,7 +46,7 @@ export const agentLaneKey = (kind: string): string => `agent:${kind}`;
 
 /** The lane a profile is drawn in: its team's, or, naming none, the single agent it runs. A team nobody
  *  reports has no lane. This places a profile on the screen; who gets a card is `/routing`'s answer. */
-export function laneOf(profile: AgentProfileSummary, ctx: Pick<LaneContext, 'teams'>): string | null {
+function laneOf(profile: AgentProfileSummary, ctx: Pick<LaneContext, 'teams'>): string | null {
   const team = teamOf(profile);
   if (team) return ctx.teams.find((t) => t.name === team)?.reported ? teamLaneKey(team) : null;
   return agentLaneKey(agentKindOf(profile, ctx.teams));
@@ -133,7 +133,7 @@ export function blockersOf(itemId: string, edges: readonly Dependency[]): string
 
 export type StationKey = 'up-next' | 'working' | 'needs-you' | 'review' | 'done' | `step-${number}`;
 
-export const stepStation = (index: number): StationKey => `step-${index}`;
+const stepStation = (index: number): StationKey => `step-${index}`;
 
 /** The index of the step a hop belongs to: the first whose role is the hop's, without regard to case. */
 export function stepIndexOf(steps: readonly TeamStep[], hop: Pick<LatestHop, 'role'> | null | undefined): number | null {
@@ -186,7 +186,7 @@ export function sentBackOf(steps: readonly TeamStep[], hop: LatestHop | null | u
 }
 
 /** What a station is called in a sentence. */
-export function stationLabel(key: StationKey, steps: readonly TeamStep[]): string {
+function stationLabel(key: StationKey, steps: readonly TeamStep[]): string {
   switch (key) {
     case 'up-next':
       return 'up next';

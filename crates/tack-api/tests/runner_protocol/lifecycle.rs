@@ -20,8 +20,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::queries::{
-    agent_runners, execution_artifacts, execution_attempts, execution_completion_replays,
-    execution_decisions, execution_events, execution_requests, team_activity,
+    agent_runners, execution_attempts, execution_decisions, execution_requests, team_activity,
 };
 use tack_db::{
     Repository,
@@ -136,7 +135,8 @@ impl Fixture {
         // eligibility-reject before ever reaching the fencing/idempotency/
         // replay behavior these tests actually exist to prove.
         let capability_snapshot = full_capabilities(clock.now(), 2, 2).to_string();
-        repo.register_runner(
+        tack_test_support::seed::register_runner(
+            &repo,
             NewRunner {
                 id: RUNNER_ID,
                 name: "C2 Runner",
@@ -151,7 +151,8 @@ impl Fixture {
         )
         .await
         .expect("runner");
-        repo.create_agent_profile(
+        tack_test_support::seed::create_agent_profile(
+            &repo,
             NewAgentProfile {
                 id: "profile-c2",
                 name: "C2 Profile",
@@ -403,19 +404,19 @@ impl Fixture {
     }
 
     async fn event_count(&self, attempt_id: &str) -> i64 {
-        execution_events::event_count_of_attempt(&self.repo, attempt_id)
+        tack_test_support::probe::event_count_of_attempt(&self.repo, attempt_id)
             .await
             .unwrap()
     }
 
     async fn completion_replay_count(&self, attempt_id: &str) -> i64 {
-        execution_completion_replays::replay_count_of_attempt(&self.repo, attempt_id)
+        tack_test_support::probe::replay_count_of_attempt(&self.repo, attempt_id)
             .await
             .unwrap()
     }
 
     async fn artifact_count(&self, attempt_id: &str) -> i64 {
-        execution_artifacts::artifact_count_of_attempt(&self.repo, attempt_id)
+        tack_test_support::probe::artifact_count_of_attempt(&self.repo, attempt_id)
             .await
             .unwrap()
     }

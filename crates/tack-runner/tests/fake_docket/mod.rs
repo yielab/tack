@@ -432,7 +432,7 @@ struct World {
     /// A docket before `retryContinues`: the features do not list it, and `POST .../retry` is not
     /// served (the fake answers `404`, as a docket without the route would).
     without_retry_continues: bool,
-    /// A docket with `podFetch` (its Phase 61): `/health` lists it. Off by default, as no docket
+    /// A docket with `podFetch`: `/health` lists it. Off by default, as no docket
     /// captured so far serves it.
     pod_fetch: bool,
     /// What a retried task does next, scripted ahead of the `POST .../retry` that reads it: the
@@ -594,7 +594,7 @@ impl FakeDocket {
             .folder = true;
     }
 
-    /// A docket that lists `conversation` (its Phase 55): a task posted with `conversation:
+    /// A docket that lists `conversation`: a task posted with `conversation:
     /// {maxTurns}` continues turn by turn, each turn answering a `turn` escalation.
     pub fn with_conversation(&self) {
         self.shared.lock().unwrap().conversation = true;
@@ -2766,7 +2766,7 @@ fn task_record(state: &World, task: &Task) -> Value {
         object.insert("current".to_owned(), current);
     }
     // A budget stop is not a settled task, but it still names the task's cumulative usage so
-    // far — the figure a continuation's own baseline is read from (decision 6, Phase 87) — the
+    // far — the figure a continuation's own baseline is read from — the
     // same way a `done` task's record does.
     if task.status == "done"
         || (task.status == "failed" && task.script.failure_kind.as_deref() == Some("budget"))

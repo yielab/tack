@@ -238,9 +238,10 @@ impl Repository {
         }
         let current: Option<String> = row.get("event_checkpoint");
         if current.as_deref() == Some(checkpoint) {
-            // Legacy pre-054 attempt whose checkpoint already advanced but has
-            // no replay row: no fingerprint to compare, so this is not proven
-            // to be a reused key with different content. Benign/retryable.
+            // The checkpoint already advanced but its replay row was purged
+            // (`purge_stale_execution_replays`): no fingerprint to compare, so
+            // this is not proven to be a reused key with different content.
+            // Benign/retryable.
             tx.commit().await?;
             return Ok(EventApplyResult::Conflict);
         }

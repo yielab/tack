@@ -98,7 +98,7 @@ async fn fleet_race_between_two_runners_grants_exactly_one_lease() {
     // Direct proof, not just "one response had a lease": exactly one
     // execution_attempts row exists for this request, and the request
     // moved to `leased` — not "queued twice" or "leased twice".
-    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+    let attempt_count = tack_test_support::probe::attempt_count_of_request(&repo, &request_id)
         .await
         .unwrap();
     assert_eq!(attempt_count, 1, "no blind duplicate execution");
@@ -158,11 +158,11 @@ async fn duplicated_credential_race_grants_exactly_one_lease() {
     let won: Vec<&Value> = leases.iter().filter(|l| !l.is_null()).copied().collect();
     assert_eq!(won.len(), 1, "got {body_a} / {body_b}");
 
-    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+    let attempt_count = tack_test_support::probe::attempt_count_of_request(&repo, &request_id)
         .await
         .unwrap();
     assert_eq!(attempt_count, 1);
-    let distinct_fences = execution_attempts::fence_count_of_request(&repo, &request_id)
+    let distinct_fences = tack_test_support::probe::fence_count_of_request(&repo, &request_id)
         .await
         .unwrap();
     assert_eq!(
@@ -270,7 +270,7 @@ async fn revoked_credential_rejected_everywhere_freezes_attempt() {
 
     // The runner row itself is genuinely revoked in the database, not just
     // rejected at the HTTP layer by coincidence.
-    let lifecycle = agent_runners::runner_lifecycle(&repo, &runner.runner_id)
+    let lifecycle = tack_test_support::probe::runner_lifecycle(&repo, &runner.runner_id)
         .await
         .unwrap()
         .expect("runner exists");

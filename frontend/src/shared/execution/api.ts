@@ -166,7 +166,7 @@ export interface CreateExecutionInput {
   metadata: unknown;
   timeout_seconds: number;
   /** A previous request's id, to start this run from the work it kept instead of the project's
-   *  base commit (Phase 87, decision 7): the server reads that request's own branch and sets
+   *  base commit: the server reads that request's own branch and sets
    *  `metadata.rework_base` itself — this never carries a branch directly. Refused `not_found`
    *  for an id that names no request, `unprocessable` for one of another project or one that
    *  left no branch to continue from. */
@@ -216,7 +216,7 @@ export interface RequeueExecutionResult {
   replayed: boolean;
 }
 
-/** `POST /executions/{id}/continue` success body (Phase 87, decision 6): a new request that
+/** `POST /executions/{id}/continue` success body: a new request that
  *  follows the same docket task the named run left stopped at its own step's budget, instead of
  *  posting a new one, or an idempotent replay of one already made. */
 export interface ContinueExecutionResult {
@@ -297,8 +297,8 @@ export const executionsApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-  /** `POST /executions/{id}/continue` — no body; refused `not_found`/`unprocessable` per
-   *  decision 5's table (`docs/closed-cycles/plans/phase-87.md`). */
+  /** `POST /executions/{id}/continue` — no body; refused `not_found` for an id that names no
+   *  request and `unprocessable` for a run that cannot continue. */
   continue: (requestId: string) =>
     request<ContinueExecutionResult>(`/executions/${encodeURIComponent(requestId)}/continue`, {
       method: 'POST',

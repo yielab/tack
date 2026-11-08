@@ -2292,7 +2292,7 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
 /// A task still running in docket when the runner restarted: with the claim in
 /// the journal, a resumable agent and a lease the board still renews it is
 /// followed to its end with no recovery report; anything unproven reports
-/// `process_running` and ends for an operator, as before.
+/// `process_running` and ends for an operator.
 #[tokio::test]
 async fn a_running_agent_that_outlived_the_runner_is_followed_again() {
     for (label, claimed, resumable, lease_renewed, followed) in [

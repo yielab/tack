@@ -19,22 +19,6 @@ pub async fn stored_session_orphaned(state_dir: &Path, database_url: &str) -> an
     Ok(!exists)
 }
 
-/// Names the runner the stored session belongs to after this computer, when it still has the
-/// generated name an earlier version gave it; a runner a person named is left alone. Best
-/// effort: a failure is logged, never a reason not to start.
-pub async fn name_stored_runner_after_this_computer(state_dir: &Path, database_url: &str) {
-    let Some(runner_id) = tack_runner::client::persisted_session_runner_id(state_dir) else {
-        return;
-    };
-    match runner_admin::name_local_runner_after_host(database_url, &runner_id, &host_name()).await {
-        Ok(true) => tracing::info!(%runner_id, "named the embedded runner after this computer"),
-        Ok(false) => {}
-        Err(error) => {
-            tracing::warn!(%error, "could not name the embedded runner after this computer");
-        }
-    }
-}
-
 /// Self-provisions a runner and returns its one-time token, redacted and never logged; the caller
 /// redeems it over loopback HTTP like any runner.
 pub async fn self_provision(database_url: &str) -> anyhow::Result<EnrollmentCredential> {

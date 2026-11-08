@@ -29,16 +29,16 @@ type TeamLine = components['schemas']['TeamLine'];
 
 export const NODE_W = 200;
 export const NODE_H = 62;
-export const COL_GAP = 80;
-export const ROW_GAP = 14;
-export const HEADER_H = 40;
-export const PAD = 12;
+const COL_GAP = 80;
+const ROW_GAP = 14;
+const HEADER_H = 40;
+const PAD = 12;
 
 // ── Model ────────────────────────────────────────────────────────────────────────────────────────
 
 export type MapColumn = 'roles' | 'profiles' | 'teams' | 'members';
 
-export const MAP_COLUMNS: ReadonlyArray<{ key: MapColumn; title: string }> = [
+const MAP_COLUMNS: ReadonlyArray<{ key: MapColumn; title: string }> = [
   { key: 'roles', title: 'Roles' },
   { key: 'profiles', title: 'Profiles' },
   { key: 'teams', title: 'Teams' },
@@ -144,7 +144,7 @@ export function linkWidth(tasks: number): number {
 }
 
 /** Whether a computer's name says it is the one the board runs on. */
-export const isThisComputer = (name: string): boolean => name.startsWith('This computer') || name.startsWith('local-');
+const isThisComputer = (name: string): boolean => name.startsWith('This computer');
 
 function runsOn(entry: TeamEntry, runners: MapInput['runners']): string {
   if (!entry.reported) return 'No computer reports it';

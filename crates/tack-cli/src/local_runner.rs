@@ -19,7 +19,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tack_app::local_runner::{
     EmbeddedRunner, RunnerHost, RunnerProcess, config_path_from, ensure_loopback,
-    has_stored_session, migrate_legacy_state_dir, state_dir_under,
+    has_stored_session, state_dir_under,
 };
 use tack_runner::{
     ConfigError, ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
@@ -142,19 +142,13 @@ async fn ensure_runner_credential(
     let state_dir = &runner_config.state_dir;
     let database_url = &server_config.database_url;
     if has_stored_session(state_dir) {
-        if crate::local_enrollment::stored_session_orphaned(state_dir, database_url).await? {
-            tracing::info!(
-                "the embedded runner's stored credential belongs to a database this server is \
-                 no longer using; provisioning a fresh identity instead of reusing it"
-            );
-        } else {
-            crate::local_enrollment::name_stored_runner_after_this_computer(
-                state_dir,
-                database_url,
-            )
-            .await;
+        if !crate::local_enrollment::stored_session_orphaned(state_dir, database_url).await? {
             return Ok(());
         }
+        tracing::info!(
+            "the embedded runner's stored credential belongs to a database this server is \
+             no longer using; provisioning a fresh identity instead of reusing it"
+        );
     }
     let credential = crate::local_enrollment::self_provision(database_url).await?;
     runner_config.enrollment_credential = Some(credential);
@@ -207,13 +201,8 @@ impl CliRunnerHost {
         let command_line = if state_dir_named {
             ConfigOverrides::default()
         } else {
-            let state_dir = state_dir_under(&server_config.storage_dir);
-            migrate_legacy_state_dir(
-                Path::new(tack_runner::config::DEFAULT_STATE_DIR),
-                &state_dir,
-            );
             ConfigOverrides {
-                state_dir: Some(state_dir),
+                state_dir: Some(state_dir_under(&server_config.storage_dir)),
                 ..ConfigOverrides::default()
             }
         };

@@ -31,7 +31,8 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
     let workspace_id = create_test_workspace(&repo).await;
     let project = make_project(&repo, workspace_id).await;
     let item_id = make_item(&repo, &project).await.id.to_string();
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: RUNNER_ID,
             name: "Viewed runner",
@@ -46,7 +47,8 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
     )
     .await
     .expect("runner");
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: PROFILE_ID,
             name: "Viewed profile",

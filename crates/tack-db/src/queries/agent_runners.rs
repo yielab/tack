@@ -23,34 +23,6 @@ pub async fn runner_by_credential_hash(
     .await?)
 }
 
-/// A runner's name and stored credential hash, as a test checks them after a
-/// route changed them.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct RunnerIdentityRow {
-    pub name: String,
-    pub credential_hash: String,
-}
-
-/// The name and credential hash of runner `runner_id`, or `None` when there is none.
-pub async fn runner_identity(
-    repo: &Repository,
-    runner_id: &str,
-) -> Result<Option<RunnerIdentityRow>, StoreError> {
-    Ok(sqlx::query_as::<_, RunnerIdentityRow>(
-        "SELECT name, credential_hash FROM agent_runners WHERE id = ?",
-    )
-    .bind(runner_id)
-    .fetch_optional(repo.pool())
-    .await?)
-}
-
-/// One runner's lifecycle columns.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct RunnerLifecycle {
-    pub state: String,
-    pub revoked_at: Option<String>,
-}
-
 /// How many more attempts the runner can take, or `None` when no runner has this id.
 pub async fn available_capacity(
     repo: &Repository,
@@ -58,19 +30,6 @@ pub async fn available_capacity(
 ) -> Result<Option<i64>, StoreError> {
     Ok(
         sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = ?")
-            .bind(runner_id)
-            .fetch_optional(repo.pool())
-            .await?,
-    )
-}
-
-/// The runner's state and when it was revoked, or `None` when no runner has this id.
-pub async fn runner_lifecycle(
-    repo: &Repository,
-    runner_id: &str,
-) -> Result<Option<RunnerLifecycle>, StoreError> {
-    Ok(
-        sqlx::query_as("SELECT state, revoked_at FROM agent_runners WHERE id = ?")
             .bind(runner_id)
             .fetch_optional(repo.pool())
             .await?,
@@ -108,17 +67,4 @@ pub async fn capability_snapshots_of_active_runners(
         .bind(fleet_id)
         .fetch_all(repo.pool())
         .await?)
-}
-
-/// When the runner last sent a heartbeat, or `None` when it never has. An id no runner has is
-/// `StoreError::NotFound`.
-pub async fn runner_last_heartbeat_at(
-    repo: &Repository,
-    runner_id: &str,
-) -> Result<Option<String>, StoreError> {
-    sqlx::query_scalar("SELECT last_heartbeat_at FROM agent_runners WHERE id = ?")
-        .bind(runner_id)
-        .fetch_optional(repo.pool())
-        .await?
-        .ok_or(StoreError::not_found("runner"))
 }

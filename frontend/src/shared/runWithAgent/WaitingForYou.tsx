@@ -43,7 +43,7 @@ const scopeLine = (): string => {
 };
 
 /** The sentence the count stands for, read aloud and shown on hover. */
-export function waitingSentence(count: number): string {
+function waitingSentence(count: number): string {
   if (count === 0) return 'Nothing is waiting for you';
   return count === 1 ? '1 thing is waiting for you' : `${count} things are waiting for you`;
 }
@@ -289,7 +289,7 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
  * The badge's accessible name. Its visible text is the count, so the name begins with it
  * (WCAG 2.5.3 Label in Name) — the sentence alone says "Nothing" where the screen shows "0".
  */
-export const badgeLabel = (count: number): string => (count === 0 ? `0: ${waitingSentence(0)}` : waitingSentence(count));
+const badgeLabel = (count: number): string => (count === 0 ? `0: ${waitingSentence(0)}` : waitingSentence(count));
 
 /** The top bar's indicator: the same count, and a press brings the list into view. */
 export const WaitingBadge: Component = () => {

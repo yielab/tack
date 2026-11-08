@@ -166,14 +166,13 @@ pub async fn rework_source_of_request(
     .await?)
 }
 
-/// What a run's `continues` reads from the request it names (Phase 87, decision 6): the item it
+/// What a run's `continues` reads from the request it names: the item it
 /// belongs to (a continuation is always posted on the same item — nothing a caller sends chooses
 /// it), the docket team and task its own newest attempt left stopped at (`actual_execution.team`
 /// — `ActualExecution.additional` is `#[serde(flatten)]`, so docket's own `team` key sits at the
 /// top level of the stored JSON, never nested under a literal `"additional"`; `terminal_reason.task`),
 /// whether that attempt's own ending
-/// offered Continue and why not when it did not (`terminal_reason.next.continue`, decision 5's
-/// table), the tokens that attempt's own usage counted when the retry is sent, and the token limit
+/// offered Continue and why not when it did not (`terminal_reason.next.continue`), the tokens that attempt's own usage counted when the retry is sent, and the token limit
 /// the source request itself ran with.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct ContinueSourceRow {
@@ -342,90 +341,4 @@ pub async fn rework_cap_of_item(
     .fetch_optional(repo.pool())
     .await?;
     Ok(cap.flatten())
-}
-
-/// A request a failed verification queued after another.
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct FollowUp {
-    pub id: String,
-    pub metadata: String,
-    pub request_snapshot: String,
-}
-
-/// The requests that rework `request_id`, oldest first.
-pub async fn follow_ups_of_request(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<Vec<FollowUp>, StoreError> {
-    Ok(sqlx::query_as(
-        "SELECT id, metadata, request_snapshot FROM execution_requests \
-         WHERE json_extract(metadata, '$.rework_of') = ? ORDER BY created_at, rowid",
-    )
-    .bind(request_id)
-    .fetch_all(repo.pool())
-    .await?)
-}
-
-/// The agent profile a request ran, `None` when it names none or the request is gone.
-pub async fn agent_profile_of_request(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<Option<String>, StoreError> {
-    Ok(
-        sqlx::query_scalar("SELECT agent_profile_id FROM execution_requests WHERE id = ?")
-            .bind(request_id)
-            .fetch_optional(repo.pool())
-            .await?
-            .flatten(),
-    )
-}
-
-/// What a request was queued with, as its columns hold it.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct RequestInputsRow {
-    pub selector_id: String,
-    pub repository_snapshot: String,
-    pub requested_model: Option<String>,
-    pub permission_policy: String,
-    pub agent_profile_id: String,
-    pub timeout_seconds: i64,
-}
-
-/// The selector, repository, model, permissions, profile and timeout of one request, or `None`
-/// when no request has this id.
-pub async fn request_inputs(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<Option<RequestInputsRow>, StoreError> {
-    Ok(sqlx::query_as(
-        "SELECT selector_id, repository_snapshot, requested_model, permission_policy,
-                agent_profile_id, timeout_seconds FROM execution_requests WHERE id = ?",
-    )
-    .bind(request_id)
-    .fetch_optional(repo.pool())
-    .await?)
-}
-
-/// What a poll left on a request that waits: its state, the code and sentence of the reason, and
-/// when the wait began.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct WaitingRow {
-    pub state: String,
-    pub waiting_code: Option<String>,
-    pub waiting_reason: Option<String>,
-    pub waiting_since: Option<String>,
-}
-
-/// The waiting columns of a request. An id no request has is `StoreError::NotFound`.
-pub async fn waiting_of_request(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<WaitingRow, StoreError> {
-    sqlx::query_as(
-        "SELECT state, waiting_code, waiting_reason, waiting_since FROM execution_requests WHERE id = ?",
-    )
-    .bind(request_id)
-    .fetch_optional(repo.pool())
-    .await?
-    .ok_or(StoreError::not_found("request"))
 }

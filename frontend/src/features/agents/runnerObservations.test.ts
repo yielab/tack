@@ -34,16 +34,7 @@ function runner(overrides: Partial<RunnerSummary>): RunnerSummary {
 }
 
 describe('findThisMachineRunner / countOtherActiveRunners', () => {
-  it('finds only an active runner named with the local- prefix', () => {
-    const runners = [
-      runner({ runner_id: 'a', name: 'local-abc', state: 'active' }),
-      runner({ runner_id: 'b', name: 'remote-fleet-box', state: 'active' }),
-    ];
-    expect(findThisMachineRunner(runners)?.runner_id).toBe('a');
-    expect(countOtherActiveRunners(runners)).toBe(1);
-  });
-
-  it('finds the embedded runner under the name "This computer (host name)" too', () => {
+  it('finds only an active runner named "This computer (host name)"', () => {
     const runners = [
       runner({ runner_id: 'a', name: 'This computer (box)', state: 'active' }),
       runner({ runner_id: 'b', name: 'other-box', state: 'active' }),
@@ -52,11 +43,11 @@ describe('findThisMachineRunner / countOtherActiveRunners', () => {
     expect(countOtherActiveRunners(runners)).toBe(1);
   });
 
-  it('takes the online local- runner with the newest heartbeat, else the newest', () => {
+  it('takes the online runner of this computer with the newest heartbeat, else the newest', () => {
     const rows = [
-      runner({ runner_id: 'old', name: 'local-old', last_heartbeat_at: '2026-10-17T08:00:00Z', online: false }),
-      runner({ runner_id: 'newer-offline', name: 'local-offline', last_heartbeat_at: '2026-10-17T11:00:00Z', online: false }),
-      runner({ runner_id: 'online', name: 'local-online', last_heartbeat_at: '2026-10-17T10:00:00Z', online: true }),
+      runner({ runner_id: 'old', name: 'This computer (old)', last_heartbeat_at: '2026-10-17T08:00:00Z', online: false }),
+      runner({ runner_id: 'newer-offline', name: 'This computer (offline)', last_heartbeat_at: '2026-10-17T11:00:00Z', online: false }),
+      runner({ runner_id: 'online', name: 'This computer (online)', last_heartbeat_at: '2026-10-17T10:00:00Z', online: true }),
     ];
     expect(findThisMachineRunner(rows)?.runner_id).toBe('online');
     expect(findThisMachineRunner(rows.slice(0, 2))?.runner_id).toBe('newer-offline');
@@ -70,14 +61,14 @@ describe('findThisMachineRunner / countOtherActiveRunners', () => {
     expect(countOtherActiveRunners(rows)).toBe(1);
   });
 
-  it('never counts a revoked or pending local- row as this machine', () => {
-    const runners = [runner({ name: 'local-abc', state: 'revoked' })];
+  it('never counts a revoked or pending row as this machine', () => {
+    const runners = [runner({ name: 'This computer (abc)', state: 'revoked' })];
     expect(findThisMachineRunner(runners)).toBeNull();
     expect(countOtherActiveRunners(runners)).toBe(0);
   });
 
   it('does not count this machine\'s own runner as an "other machine"', () => {
-    const runners = [runner({ name: 'local-abc', state: 'active' })];
+    const runners = [runner({ name: 'This computer (abc)', state: 'active' })];
     expect(countOtherActiveRunners(runners)).toBe(0);
   });
 });

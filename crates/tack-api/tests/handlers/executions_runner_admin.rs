@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    queries::{agent_enrollment_tokens, agent_runners, execution_request_rows},
+    queries::agent_enrollment_tokens,
     repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult},
 };
 use tack_test_support::{create_test_workspace, setup_test_db};
@@ -37,8 +37,8 @@ async fn project_of(repo: &Repository, item_id: &str) -> String {
 async fn request_row(
     repo: &Repository,
     request_id: &str,
-) -> execution_request_rows::ExecutionRequestRow {
-    execution_request_rows::execution_request_row(repo, request_id)
+) -> tack_test_support::probe::ExecutionRequestRow {
+    tack_test_support::probe::execution_request_row(repo, request_id)
         .await
         .unwrap()
         .expect("request row")
@@ -87,7 +87,8 @@ async fn setup() -> (axum::Router, Repository, String) {
         .await
         .expect("item");
     let clock = SystemClock;
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-active",
             name: "Active",
@@ -102,7 +103,8 @@ async fn setup() -> (axum::Router, Repository, String) {
     )
     .await
     .expect("runner");
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-c1",
             name: "C1",
@@ -582,7 +584,7 @@ async fn provision_local_runner_writes_through_own_pool_to_same_db() {
     assert!(response.runner_id.starts_with("runr_"));
     assert!(!response.enrollment_token.is_empty());
 
-    let runner = agent_runners::runner_identity(&repo, &response.runner_id)
+    let runner = tack_test_support::probe::runner_identity(&repo, &response.runner_id)
         .await
         .expect("lookup");
     assert!(
@@ -608,9 +610,8 @@ async fn provision_local_runner_fails_on_an_unparseable_database_url() {
     ));
 }
 
-/// The embedded runner is named after the computer it runs on, a taken name
-/// gets the next number, and only a name the board generated is replaced: one a
-/// person chose stays.
+/// The embedded runner is named after the computer it runs on, and a taken name
+/// gets the next number.
 #[tokio::test]
 async fn the_embedded_runner_is_named_after_this_computer() {
     assert_eq!(
@@ -634,7 +635,7 @@ async fn the_embedded_runner_is_named_after_this_computer() {
     let name_of = |id: String| {
         let repo = repo.clone();
         async move {
-            agent_runners::runner_identity(&repo, &id)
+            tack_test_support::probe::runner_identity(&repo, &id)
                 .await
                 .expect("runner name")
                 .expect("runner")
@@ -656,34 +657,6 @@ async fn the_embedded_runner_is_named_after_this_computer() {
         name_of(second.runner_id.clone()).await,
         "This computer (workstation) 2"
     );
-
-    // An earlier version's generated name becomes this computer's; a chosen one stays.
-    seed::agent_runner_named(
-        &repo,
-        &first.runner_id,
-        "local-2f1c9a2e-0b7d-4c55-9d1e-3a6f8b7c4d10",
-    )
-    .await;
-    seed::agent_runner_named(&repo, &second.runner_id, "gpu-box").await;
-    assert!(
-        runner_admin::name_local_runner_after_host(&database_url, &first.runner_id, "workstation")
-            .await
-            .expect("rename")
-    );
-    assert!(
-        !runner_admin::name_local_runner_after_host(
-            &database_url,
-            &second.runner_id,
-            "workstation"
-        )
-        .await
-        .expect("left alone")
-    );
-    assert_eq!(
-        name_of(first.runner_id).await,
-        "This computer (workstation)"
-    );
-    assert_eq!(name_of(second.runner_id).await, "gpu-box");
 }
 
 /// `local_runner_id_exists` is the authoritative check for distinguishing a
@@ -869,7 +842,7 @@ async fn list_executions_item_ids_finds_item_predating_every_row() {
     let noise_count = (executions::ListExecutionsQuery::MAX_LIMIT as usize) + 5;
     seed::execution_requests_queued(&repo, "noise", &noise_item_id, noise_count, base).await;
 
-    let total = execution_request_rows::execution_request_count(&repo)
+    let total = tack_test_support::probe::execution_request_count(&repo)
         .await
         .unwrap();
     assert!(
@@ -1455,7 +1428,8 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         .await
         .expect("long comment");
     }
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-b",
             name: "B",
@@ -1574,7 +1548,8 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
 async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
     let (_app, repo, item_id) = setup().await;
     let item_uuid: Uuid = item_id.parse().unwrap();
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-b",
             name: "B",
@@ -1968,7 +1943,8 @@ async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_o
     )
     .await
     .unwrap();
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-open",
             name: "Open",
@@ -2016,7 +1992,8 @@ fn bare_body(item_id: &str, key: &str) -> Value {
 }
 
 async fn add_profile(repo: &Repository, id: &str) {
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        repo,
         NewAgentProfile {
             id,
             name: id,
@@ -2132,7 +2109,8 @@ async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_s
     .enumerate()
     {
         let id = format!("profile-off-{n}");
-        repo.create_agent_profile(
+        tack_test_support::seed::create_agent_profile(
+            &repo,
             NewAgentProfile {
                 id: &id,
                 name: &id,
@@ -2284,7 +2262,8 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
     for (n, (limits, budgets, timeout, tokens, source, _seconds)) in rows.into_iter().enumerate() {
         let tokens = Some(tokens);
         let id = format!("profile-limits-{n}");
-        repo.create_agent_profile(
+        tack_test_support::seed::create_agent_profile(
+            &repo,
             NewAgentProfile {
                 id: &id,
                 name: &id,
@@ -2391,7 +2370,8 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{limits}: {err}");
         assert_eq!(err["error"]["message"], message);
-        repo.create_agent_profile(
+        tack_test_support::seed::create_agent_profile(
+            &repo,
             NewAgentProfile {
                 id: "profile-stored-bad",
                 name: "stored bad",
@@ -2416,7 +2396,8 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
 #[tokio::test]
 async fn the_runner_list_says_which_runners_are_online() {
     let (app, repo, _item_id) = setup().await;
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-stale",
             name: "Stale",
@@ -2517,7 +2498,7 @@ async fn add_item(repo: &Repository, project: Uuid, title: &str) -> String {
 }
 
 async fn requests_of(repo: &Repository, item_id: &str) -> Vec<(String, String, String)> {
-    execution_request_rows::execution_requests_of_item(repo, item_id)
+    tack_test_support::probe::execution_requests_of_item(repo, item_id)
         .await
         .unwrap()
         .into_iter()
@@ -2527,7 +2508,7 @@ async fn requests_of(repo: &Repository, item_id: &str) -> Vec<(String, String, S
 
 /// What the first request of an item stored at `permission_policy.<key>`.
 async fn permission_of(repo: &Repository, item_id: &str, key: &str) -> Option<Value> {
-    let rows = execution_request_rows::execution_requests_of_item(repo, item_id)
+    let rows = tack_test_support::probe::execution_requests_of_item(repo, item_id)
         .await
         .unwrap();
     let snapshot: Value = serde_json::from_str(&rows.first()?.request_snapshot).unwrap();
@@ -2539,7 +2520,8 @@ async fn network_of(repo: &Repository, item_id: &str) -> Option<bool> {
 }
 
 async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Value) {
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        repo,
         NewAgentProfile {
             id,
             name: id,
@@ -2568,8 +2550,7 @@ async fn status_of(repo: &Repository, item_id: &str) -> String {
 async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap() {
     let (repo, state, item_id, project_id) = auto_start_board().await;
     let bare = add_item(&repo, project_id, "no role").await;
-    let version = repo
-        .get_item_version(item_id.parse().unwrap())
+    let version = tack_test_support::probe::get_item_version(&repo, item_id.parse().unwrap())
         .await
         .unwrap()
         .expect("item version");
@@ -2623,7 +2604,7 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     assert_eq!(status_of(&repo, &next).await, "To Do");
 
     // The run ends and the task is still in the start status: it has run, so it is not started again.
-    let request = execution_request_rows::execution_requests_of_item(&repo, &item_id)
+    let request = tack_test_support::probe::execution_requests_of_item(&repo, &item_id)
         .await
         .unwrap()
         .remove(0);
@@ -2734,7 +2715,8 @@ async fn the_auto_start_tick_starts_a_task_with_a_profile_in_its_run_settings_an
 #[tokio::test]
 async fn the_auto_start_tick_waits_for_a_group_where_two_computers_answer() {
     let (repo, state, _item_id, project_id) = auto_start_board().await;
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-second",
             name: "Second",
@@ -2810,7 +2792,7 @@ async fn the_auto_start_tick_gives_a_run_the_network_its_tools_for_the_agent_nam
 }
 
 // A run that does not say `network` takes its profile's; one that says so keeps its own; a
-// profile without the key behaves as before (off).
+// profile without the key is off.
 #[tokio::test]
 async fn a_runs_network_comes_from_the_request_then_the_profile_then_off() {
     let (app, repo, item_id) = setup().await;

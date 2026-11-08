@@ -652,9 +652,9 @@ Error handling: the `extract()` helper parses the response body regardless of st
 
 **Lives in:** `crates/tack-test-support/src/`
 
-**Owns:** what the other crates' tests share: `setup_test_db()` (a migrated in-memory `Repository`), the `seed` module (one function per table, which plants the rows a test needs, including a `created_at` or a stored state, below the store's own commands), `ControllableClock` (a `Clock` a test sets and advances), `poll_until`, `fake_agent` (a script that stands in for `claude` when a test runs the real server and runner) and fixture loading. It depends on `tack-protocol`, `tack-core` and `tack-db`, and is the one crate that enables `tack-db`'s `raw-pool` feature.
+**Owns:** what the other crates' tests share: `setup_test_db()` (a migrated in-memory `Repository`), the `seed` module (one function per table, which plants the rows a test needs, including a `created_at` or a stored state, below the store's own commands), the `probe` module (what a test asks of the store that the program never does: counts, single columns, rows read back), `ControllableClock` (a `Clock` a test sets and advances), `poll_until`, `fake_agent` (a script that stands in for `claude` when a test runs the real server and runner) and fixture loading. It depends on `tack-protocol`, `tack-core` and `tack-db`, and is the one crate that enables `tack-db`'s `raw-pool` feature.
 
-A test plants rows with `tack_test_support::seed` and reads them back with `tack_db::queries::`, so a test of a route or a use case never names SQL. Every crate may use it as a dev-dependency; `tack-api`'s `tests/common` keeps its own test-app helpers because they need the router.
+A test plants rows with `tack_test_support::seed` and reads them back with `tack_db::queries::` or, for a question only a test asks, `tack_test_support::probe`, so a test of a route or a use case never names SQL. Every crate may use it as a dev-dependency; `tack-api`'s `tests/common` keeps its own test-app helpers because they need the router.
 
 ---
 

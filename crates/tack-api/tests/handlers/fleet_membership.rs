@@ -17,7 +17,7 @@ use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
 use tack_db::{
     Repository,
-    queries::{agent_fleets, execution_attempts, execution_requests},
+    queries::{execution_attempts, execution_requests},
 };
 use tack_protocol::execution::ExecutionState;
 use uuid::Uuid;
@@ -210,9 +210,10 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
 
     // Directly verify the write landed in `agent_fleet_members` (not just
     // that the endpoint returned 200).
-    let member_row_exists = agent_fleets::fleet_has_member(&repo, &fleet_id, &member_id)
-        .await
-        .unwrap();
+    let member_row_exists =
+        tack_test_support::probe::fleet_has_member(&repo, &fleet_id, &member_id)
+            .await
+            .unwrap();
     assert!(member_row_exists, "membership row was not persisted");
 
     // `GET /api/runners?fleet_id=` reflects the new membership.
@@ -294,7 +295,7 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
     let state = execution_requests::request_state(&repo, &request_id)
         .await
         .unwrap();
-    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+    let attempt_count = tack_test_support::probe::attempt_count_of_request(&repo, &request_id)
         .await
         .unwrap();
     assert_eq!(state, Some(ExecutionState::Queued));
@@ -333,7 +334,7 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
     let db_state = execution_attempts::attempt_state(&repo, attempt_id)
         .await
         .unwrap();
-    let db_runner_id = execution_attempts::runner_of_attempt(&repo, attempt_id)
+    let db_runner_id = tack_test_support::probe::runner_of_attempt(&repo, attempt_id)
         .await
         .unwrap();
     assert_eq!(db_state, Some(ExecutionState::Leased));
@@ -351,7 +352,7 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
     assert_eq!(status, StatusCode::OK, "{removed}");
     assert_eq!(removed["state"], "removed");
     let member_row_exists_after_removal =
-        agent_fleets::fleet_has_member(&repo, &fleet_id, &member_id)
+        tack_test_support::probe::fleet_has_member(&repo, &fleet_id, &member_id)
             .await
             .unwrap();
     assert!(
@@ -409,7 +410,9 @@ async fn adding_member_to_nonexistent_fleet_or_runner_writes_nothing() {
     assert_eq!(body["error"]["code"], "not_found");
 
     // Neither adversarial call left a row behind.
-    let row_count = agent_fleets::fleet_member_count(&repo).await.unwrap();
+    let row_count = tack_test_support::probe::fleet_member_count(&repo)
+        .await
+        .unwrap();
     assert_eq!(
         row_count, 0,
         "a rejected add must not leave a membership row behind"

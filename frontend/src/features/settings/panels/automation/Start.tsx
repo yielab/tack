@@ -11,7 +11,7 @@ interface Props {
   save: (patch: UpdateProject) => void | Promise<void>;
 }
 
-export const NO_PROFILE_REASON = 'Choose a profile for at least one role in Teams';
+const NO_PROFILE_REASON = 'Choose a profile for at least one role in Teams';
 
 /** A task starts by itself when it reaches a status. */
 const Start: Component<Props> = (props) => {

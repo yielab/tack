@@ -56,7 +56,8 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
     let project = common::make_project(&repo, workspace).await;
     let item = common::make_item(&repo, &project).await;
     let clock = FakeClock::new();
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        &repo,
         NewRunner {
             id: "runner-f2",
             name: "Runner F2",
@@ -71,7 +72,8 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
     )
     .await
     .unwrap();
-    repo.create_agent_profile(
+    tack_test_support::seed::create_agent_profile(
+        &repo,
         NewAgentProfile {
             id: "profile-f2",
             name: "Profile F2",

@@ -6,7 +6,7 @@ import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 
 /** The shapes docket makes a team from; a missing team's shape is where the file or the person says so. */
-export const TEAM_SHAPES = ['build', 'respond', 'operate', 'routine'] as const;
+const TEAM_SHAPES = ['build', 'respond', 'operate', 'routine'] as const;
 
 /** The shape a team gets when nothing said which: the one every project has. */
 const DEFAULT_SHAPE = 'build';

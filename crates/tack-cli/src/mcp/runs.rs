@@ -169,10 +169,5 @@ fn create_execution(client: &TackClient, args: &Value) -> Result<Value, String> 
         timeout_seconds,
     };
     let body = execution::create_execution_body(selector.as_ref(), values);
-    let mut answer = call(client.post("/executions", &body))?;
-    // A caller written before the setting was removed still sends it: accepted, and told.
-    if args.get("status_map_policy_id").is_some() {
-        answer["notice"] = tack_core::models::STATUS_SET_BY_A_PERSON.into();
-    }
-    Ok(answer)
+    call(client.post("/executions", &body))
 }

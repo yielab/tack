@@ -23,27 +23,23 @@ export type { EmptyStateProps } from './EmptyState';
 export { default as Field, FieldShell, HelpHint, HelpNote } from './Field';
 export type { FieldProps, FieldShellProps, FieldHelp } from './Field';
 
-export { default as HelpButton } from './HelpButton';
-
 export { default as Select } from './Select';
 export type { SelectProps, SelectOption } from './Select';
 
 export { default as Modal } from './Modal';
 export type { ModalProps } from './Modal';
 
-export { default as Card } from './Card';
 export type { CardProps } from './Card';
 
 export { default as Switch } from './Switch';
 export type { SwitchProps } from './Switch';
 
-export { default as ConfirmDialog, createConfirm } from './ConfirmDialog';
+export { createConfirm } from './ConfirmDialog';
 export type { ConfirmOptions, ConfirmDialogProps } from './ConfirmDialog';
 
-export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
 
-export { default as Fold, readFoldOpen, saveFoldOpen } from './Fold';
+export { default as Fold } from './Fold';
 export type { FoldProps } from './Fold';
 
 export { default as Tabs } from './Tabs';
@@ -51,26 +47,24 @@ export type { TabsProps, TabItem } from './Tabs';
 
 // Redesign primitives (Tack.dc.html) — token-styled atoms shared across the
 // shell, board, and drawer.
-export { default as Avatar, AvatarStack, hueFromName, initialsOf } from './Avatar';
+export { default as Avatar, AvatarStack } from './Avatar';
 export { teamInitials } from './teamInitials';
 export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 
-export { default as TypeTile, typeTone } from './TypeTile';
+export { default as TypeTile } from './TypeTile';
 export type { TypeTileProps } from './TypeTile';
 
 export { default as TypeList } from './TypeList';
 
 // GroupHeader, ItemPath and ParentPicker are imported from their own files: the header opens the run dialog, which imports this kit.
-export { default as ProgressBar, progressText, needsYouText } from './ProgressBar';
 export type { ProgressBarProps } from './ProgressBar';
 
-export { default as PriorityDot, priorityColor, priorityFill, priorityLabel } from './PriorityDot';
+export { default as PriorityDot, priorityLabel } from './PriorityDot';
 export type { PriorityDotProps } from './PriorityDot';
 
-export { default as WipChip, wipChipStyle } from './WipChip';
+export { default as WipChip } from './WipChip';
 export type { WipChipProps } from './WipChip';
 
-export { default as KbdHint } from './KbdHint';
 export type { KbdHintProps } from './KbdHint';
 
 export { default as RunState } from './RunState';

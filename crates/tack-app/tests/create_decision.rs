@@ -218,7 +218,7 @@ async fn a_stale_fence_or_an_ended_lease_is_stale_and_writes_nothing() {
         DecisionCreated::Stale
     );
     assert_eq!(
-        execution_decisions::decision_count_of_attempt(&world.repo, &run.attempt_id)
+        tack_test_support::probe::decision_count_of_attempt(&world.repo, &run.attempt_id)
             .await
             .unwrap(),
         0

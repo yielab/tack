@@ -2,7 +2,7 @@ import { type Component, Show, createSignal } from 'solid-js';
 import { Badge } from '../ui';
 
 /** A short label for why a merge did not happen, and what to do about it. */
-export function describeMergeNote(note: string): { label: string; todo: string } {
+function describeMergeNote(note: string): { label: string; todo: string } {
   const n = note.toLowerCase();
   if (n.includes('waiting for ci') || n.includes('still running') || n.includes('pending')) {
     return { label: 'Waiting for CI to merge', todo: 'Nothing yet. Tack tries again when CI finishes; you can also press Merge on the run.' };

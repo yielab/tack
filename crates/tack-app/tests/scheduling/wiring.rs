@@ -34,7 +34,8 @@ async fn setup_runner(
     heartbeat_offset_secs: Option<i64>,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.register_runner(
+    tack_test_support::seed::register_runner(
+        repo,
         NewRunner {
             id,
             name: id,
@@ -395,7 +396,7 @@ async fn fresh_runner_with_no_heartbeat_can_claim_its_first_request() {
     let (repo, item_id) = setup_repo().await;
     let now = Utc::now();
     setup_codex_runner(&repo, "runner-fresh", 1, 1, None, now).await;
-    let heartbeat = queries::agent_runners::runner_last_heartbeat_at(&repo, "runner-fresh")
+    let heartbeat = tack_test_support::probe::runner_last_heartbeat_at(&repo, "runner-fresh")
         .await
         .expect("read heartbeat column");
     assert_eq!(
@@ -475,7 +476,7 @@ async fn waiting_row(
     repo: &Repository,
     id: &str,
 ) -> (String, Option<String>, Option<String>, Option<String>) {
-    let row = queries::execution_requests::waiting_of_request(repo, id)
+    let row = tack_test_support::probe::waiting_of_request(repo, id)
         .await
         .expect("request row");
     (

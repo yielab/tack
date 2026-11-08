@@ -113,7 +113,7 @@ function runnerWith(harnesses: unknown[]) {
     protocol_version: 1,
     data: [
       {
-        runner_id: 'runr_1', name: 'local-abc', state: 'active', labels: null, labels_raw: '{}',
+        runner_id: 'runr_1', name: 'This computer (abc)', state: 'active', labels: null, labels_raw: '{}',
         total_capacity: 1, available_capacity: 1,
         capability_snapshot: { harnesses }, capability_snapshot_raw: '{}',
         protocol_version: 1, runner_version: '0.1.0', last_heartbeat_at: null, revoked_at: null,
@@ -331,7 +331,7 @@ describe('AgentsPage — composition', () => {
         data: [
           {
             runner_id: 'runr_1',
-            name: 'local-abc',
+            name: 'This computer (abc)',
             state: 'active',
             labels: null,
             labels_raw: '{}',

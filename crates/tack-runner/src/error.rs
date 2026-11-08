@@ -6,13 +6,6 @@ use thiserror::Error;
 pub enum ConfigError {
     #[error("runner configuration is invalid")]
     Invalid,
-    /// Named by its key alone, never its contents: the table is checked
-    /// before any parser text could be produced.
-    #[error(
-        "runner configuration has a [provider] table, which this version no longer reads: \
-         each agent signs in with its own login, so remove the table"
-    )]
-    ProviderTable,
     /// A top-level key the file's schema does not have, named by the key alone: never a value.
     /// `is_table` is set when the file wrote it as a `[table]`.
     #[error(

@@ -19,11 +19,11 @@ use chrono::{DateTime, Duration, Utc};
 use tack_db::repo::execution::{
     AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult,
     CancellationObservation, CancellationObservationInput, ClaimedExecution, Completion,
-    CompletionResult, CredentialRotationResult, EnqueueResult, EnrollmentToken, EventApplyResult,
-    EventBatch, HeartbeatBatchResult, HeartbeatLease, Lease, NewAgentProfile, NewArtifact,
-    NewDecision, NewEvent, NewExecutionRequest, NewRunner, OperatorRequeueResult,
-    RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
-    RedeemEnrollmentResult, RequestSelection, resume_attempt_after_decisions,
+    CompletionResult, CredentialRotationResult, EnqueueResult, EventApplyResult, EventBatch,
+    HeartbeatBatchResult, HeartbeatLease, Lease, NewAgentProfile, NewArtifact, NewDecision,
+    NewEvent, NewExecutionRequest, NewRunner, OperatorRequeueResult, RecoveryObservation,
+    RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
+    resume_attempt_after_decisions,
 };
 use tack_db::{Repository, init_pool, migrations};
 use tack_protocol::Clock;
@@ -94,7 +94,8 @@ impl Fixture {
         let project = make_project(&repo, workspace).await;
         let item = make_item(&repo, &project).await;
         let clock = FakeClock::new();
-        repo.register_runner(
+        tack_test_support::seed::register_runner(
+            &repo,
             NewRunner {
                 id: "runner-a",
                 name: "Runner A",
@@ -109,7 +110,8 @@ impl Fixture {
         )
         .await
         .unwrap();
-        repo.create_agent_profile(
+        tack_test_support::seed::create_agent_profile(
+            &repo,
             NewAgentProfile {
                 id: "profile-a",
                 name: "Profile A",
@@ -353,16 +355,13 @@ impl Fixture {
 
     /// Issues an enrollment token for "runner-a" expiring in 5 minutes.
     pub async fn issue_token(&self, id: &str, token_hash: &str) {
-        self.repo
-            .issue_enrollment_token(
-                EnrollmentToken {
-                    id,
-                    runner_id: "runner-a",
-                    token_hash,
-                    expires_at: self.clock.now() + Duration::minutes(5),
-                },
-                self.clock.now(),
-            )
+        let now = self.clock.now();
+        sqlx::query("INSERT INTO agent_enrollment_tokens (id, runner_id, token_hash, expires_at, created_at) VALUES (?, 'runner-a', ?, ?, ?)")
+            .bind(id)
+            .bind(token_hash)
+            .bind((now + Duration::minutes(5)).to_rfc3339())
+            .bind(now.to_rfc3339())
+            .execute(self.repo.pool())
             .await
             .unwrap();
     }
@@ -510,14 +509,16 @@ impl Fixture {
             .await
     }
 
-    /// The older, non-idempotency-tracked completion path (`true` if the
-    /// attempt was still open to complete), for the one test proving it
-    /// shares the fencing/terminal-lock invariants with [`Self::complete`].
+    /// Completes and says only whether the attempt was still open to complete (committed or
+    /// replayed), for the test proving the fencing and terminal-lock invariants.
     pub async fn complete_raw(&self, completion: Completion<'_>) -> bool {
-        self.repo
-            .complete_execution(completion, self.clock.now())
-            .await
-            .unwrap()
+        matches!(
+            self.repo
+                .complete_execution_result(completion, self.clock.now())
+                .await
+                .unwrap(),
+            CompletionResult::Committed(_) | CompletionResult::Replayed(_)
+        )
     }
 
     /// Rotates "runner-a"'s credential, keeping the sqlx-level `Result` —

@@ -8,7 +8,6 @@ use std::time::Duration as StdDuration;
 use chrono::{Duration, TimeZone, Utc};
 use tack_app::background::Loops;
 use tack_app::{observability, retention};
-use tack_db::queries;
 use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_test_support::{poll_until, seed};
@@ -49,7 +48,7 @@ async fn the_spawned_retention_loop_purges_stale_rows_and_keeps_fresh_ones() {
     .await;
     running_attempt(&world, "fresh").await;
     assert_eq!(
-        queries::execution_claim_replays::replay_count(&world.repo)
+        tack_test_support::probe::claim_replay_count(&world.repo)
             .await
             .unwrap(),
         2,
@@ -67,7 +66,7 @@ async fn the_spawned_retention_loop_purges_stale_rows_and_keeps_fresh_ones() {
     );
 
     let purged = poll_until(StdDuration::from_secs(3), async || {
-        (queries::execution_claim_replays::replay_count(&world.repo)
+        (tack_test_support::probe::claim_replay_count(&world.repo)
             .await
             .unwrap()
             == 1)
@@ -175,7 +174,7 @@ async fn a_failing_purge_is_retried_next_cycle_and_does_not_end_the_loop() {
     .await;
     seed::execution_claim_replays_shown(&world.repo).await;
     let retried = poll_until(StdDuration::from_secs(5), async || {
-        (queries::execution_claim_replays::replay_count(&world.repo)
+        (tack_test_support::probe::claim_replay_count(&world.repo)
             .await
             .unwrap()
             == 0)

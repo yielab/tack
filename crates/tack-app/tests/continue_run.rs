@@ -1,5 +1,5 @@
 //! `continue_run`: a new execution request that follows the same docket task a stopped run left
-//! behind (Phase 87, decisions 5 and 6), instead of posting a new one.
+//! behind, instead of posting a new one.
 
 use crate::support;
 use tack_protocol::Clock;
@@ -47,8 +47,7 @@ async fn leave_budget_stop(
                 .to_string(),
             ),
             // `additional` is `#[serde(flatten)]` on `ActualExecution`, so docket's own `team`
-            // key sits at the top level of the stored JSON, never nested (a real bug this test
-            // once matched instead of catching: Phase 87's live proof, docs/closed-cycles/plans/phase-87.md).
+            // key sits at the top level of the stored JSON, never nested.
             actual_execution: Some(&json!({"team": pod}).to_string()),
         },
     )

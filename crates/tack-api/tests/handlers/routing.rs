@@ -90,20 +90,19 @@ async fn board() -> Board {
 
 impl Board {
     async fn profile(&self, id: &str, tool_policy: Value) {
-        self.state
-            .repo
-            .create_agent_profile(
-                NewAgentProfile {
-                    id,
-                    name: id,
-                    instructions: "work safely",
-                    tool_policy: &tool_policy.to_string(),
-                    limits: "{}",
-                },
-                SystemClock.now(),
-            )
-            .await
-            .unwrap();
+        tack_test_support::seed::create_agent_profile(
+            &self.state.repo,
+            NewAgentProfile {
+                id,
+                name: id,
+                instructions: "work safely",
+                tool_policy: &tool_policy.to_string(),
+                limits: "{}",
+            },
+            SystemClock.now(),
+        )
+        .await
+        .unwrap();
     }
 
     async fn item(&self, title: &str, status: &str, parent: Option<Uuid>) -> Uuid {

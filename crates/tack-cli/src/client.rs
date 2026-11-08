@@ -241,54 +241,16 @@ fn extract(resp: Response) -> anyhow::Result<serde_json::Value> {
     }
 }
 
-/// The operator execution/fleet/runner/profile routes (`/api/executions`,
-/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`)
-/// answer errors with the stable runner-v1 protocol
-/// envelope, `{"error": {"code": "...", "message": "...", "details": {...},
-/// "retryable": bool}}` — `error` is an *object* there, not the plain
-/// `{"error": "text"}`/`{"message": "text"}` string every other route uses.
-/// Try the plain-string shapes first (unchanged behavior for every existing
-/// command), and only when `error` is an object, surface its `code`
-/// alongside `message` — e.g. `"409: idempotency_conflict: ..."` instead of
-/// the generic "server error" `.as_str()` on an object silently produces.
-/// This is what makes `idempotency_conflict`/`invalid_transition`/
-/// `stale_lease`/`conflict` read as distinct, actionable outcomes instead
-/// of collapsing into one opaque line — `code` is there for a script to
-/// grep on; `message` is the human-readable half.
+/// Every route answers an error with the envelope `{"error": {"code": "...", "message": "...",
+/// "details": {...}}}`: the line is `code: message`, so `idempotency_conflict`,
+/// `invalid_transition`, `stale_lease` and `conflict` read as distinct outcomes a script can grep
+/// for.
 fn error_msg(body: &serde_json::Value) -> String {
-    if let Some(s) = body
-        .get("error")
-        .or_else(|| body.get("message"))
-        .and_then(|v| v.as_str())
-    {
-        return s.to_string();
-    }
-    if let Some(obj) = body.get("error").and_then(|v| v.as_object()) {
-        let code = obj.get("code").and_then(|v| v.as_str());
-        let message = obj.get("message").and_then(|v| v.as_str());
-        if let (Some(code), Some(message)) = (code, message) {
-            return format!("{code}: {message}");
-        }
-        if let Some(message) = message {
-            return message.to_string();
-        }
-    }
-    "server error".to_string()
-}
-
-// ── Response helpers ──────────────────────────────────────────────────────────
-
-/// Format a status code for user-facing output
-pub fn status_label(code: StatusCode) -> &'static str {
-    match code.as_u16() {
-        400 => "Bad request",
-        401 => "Unauthorized (check TACK_API_TOKEN)",
-        403 => "Forbidden",
-        404 => "Not found",
-        409 => "Conflict",
-        412 => "Precondition failed (item changed — re-read and retry)",
-        422 => "Validation failed",
-        _ => "Error",
+    let error = &body["error"];
+    match (error["code"].as_str(), error["message"].as_str()) {
+        (Some(code), Some(message)) => format!("{code}: {message}"),
+        (None, Some(message)) => message.to_string(),
+        _ => "server error".to_string(),
     }
 }
 

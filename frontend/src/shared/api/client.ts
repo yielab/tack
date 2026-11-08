@@ -44,11 +44,7 @@ function browserSessionStorage(): Storage | null {
   }
 }
 
-/**
- * Ensure an API token can never follow a changed API origin. The legacy
- * localStorage key is deleted rather than migrated: long-lived privileged
- * browser credentials are not part of the new session strategy.
- */
+/** Ensure an API token can never follow a changed API origin. */
 function scopedStorage(): { storage: Storage; key: string } | null {
   const storage = browserSessionStorage();
   if (!storage) return null;
@@ -58,11 +54,6 @@ function scopedStorage(): { storage: Storage; key: string } | null {
     storage.removeItem(scopedTokenKey(previousOrigin));
   }
   storage.setItem(TOKEN_ORIGIN_KEY, origin);
-  try {
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    // A browser may disable persistent storage independently of sessionStorage.
-  }
   return { storage, key: scopedTokenKey(origin) };
 }
 

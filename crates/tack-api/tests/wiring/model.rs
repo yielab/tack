@@ -12,10 +12,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{
-    Repository,
-    queries::{execution_attempts, execution_requests},
-};
+use tack_db::{Repository, queries::execution_requests};
 
 const OPERATOR_TOKEN: &str = "model-wiring-operator-token";
 const BASE_REVISION: &str = "f6b0123456789abcdef0123456789abcdef0123";
@@ -540,10 +537,11 @@ async fn assert_provenance_case(case: ProvenanceCase) {
         "{}",
         case.name
     );
-    let (db_started, db_ended) = execution_attempts::started_and_ended_at(&repo, &live.attempt_id)
-        .await
-        .unwrap()
-        .expect("attempt row");
+    let (db_started, db_ended) =
+        tack_test_support::probe::started_and_ended_at(&repo, &live.attempt_id)
+            .await
+            .unwrap()
+            .expect("attempt row");
     assert!(db_started.is_some() && db_ended.is_some(), "{}", case.name);
 }
 

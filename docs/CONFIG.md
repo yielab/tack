@@ -145,8 +145,8 @@ The settings:
   variable does not reach an agent. The model a run uses is one optional string in the agent's own
   spelling, chosen per request or per project; see [Choosing a
   model](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-model). No `TACK_*`
-  variable names a model, provider or endpoint. A runner whose settings file has a `[provider.*]` table
-  refuses to start and names the table.
+  variable names a model, provider or endpoint. A runner whose settings file has a key or a table it
+  does not read (a `[provider.*]` table among them) refuses to start and names it.
 - **Log visibility.** The default filter is `tack={level},tower_http={level}`: a target directive
   matches by prefix, so `tack` covers every Tack crate, the embedded runner's enrollment, claim and
   completion lines among them, and `TACK_LOG_LEVEL` sets their level. The per-request trace is `debug`,

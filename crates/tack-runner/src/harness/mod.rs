@@ -402,11 +402,6 @@ pub const DESCRIPTORS: [&local_process::HarnessDescriptor; 4] = [
     &opencode::DESCRIPTOR,
 ];
 
-/// Every harness this build registers, for a test that must hold each of them to a rule.
-pub fn all_descriptors() -> &'static [&'static local_process::HarnessDescriptor] {
-    &DESCRIPTORS
-}
-
 /// The reason a run whose time ran out ends with, for every agent: "The run's time ran out after
 /// N minutes" (seconds under one minute), and "while it waited for an answer" when a question was
 /// open.
@@ -573,7 +568,9 @@ impl AdapterRegistry {
         }
     }
 
-    pub fn register_adapter(
+    /// Registers an adapter with no probe, for a test's fake.
+    #[cfg(test)]
+    pub(crate) fn register_adapter(
         &mut self,
         kind: DomainHarnessKind,
         adapter: Box<dyn HarnessAdapter>,

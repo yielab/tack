@@ -2,39 +2,34 @@
 //! byte-for-byte, their bytes are pinned, and the pull-request rendering of
 //! `ready.json` is a fixed string.
 
-use tack_protocol::mrp::{MergeReadinessPack, render_markdown, summary_line};
+use tack_protocol::mrp::{MergeReadinessPack, render_markdown};
 
-/// (fixture, its bytes, FNV-1a 64 of those bytes, `summary_line`)
-const FIXTURES: [(&str, &str, u64, &str); 5] = [
+/// (fixture, its bytes, FNV-1a 64 of those bytes)
+const FIXTURES: [(&str, &str, u64); 5] = [
     (
         "ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/ready.json"),
         0xc2b1_f791_13ac_3662,
-        "Ready to merge (low risk)",
     ),
     (
         "not-ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/not-ready.json"),
         0x96cc_27df_71b8_f2b6,
-        "Not ready (high risk)",
     ),
     (
         "manual-only",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/manual-only.json"),
         0x55b4_80c5_4c35_00c2,
-        "Needs review (medium risk)",
     ),
     (
         "verifier-failed",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json"),
         0x733d_cfa7_0dbd_506c,
-        "Not ready (high risk)",
     ),
     (
         "signed-with-next-steps",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/signed-with-next-steps.json"),
         0xc794_b12e_2565_8fc3,
-        "Not ready (high risk)",
     ),
 ];
 
@@ -50,12 +45,11 @@ fn pack(json: &str) -> MergeReadinessPack {
 
 #[test]
 fn every_fixture_round_trips() {
-    for (name, json, pin, summary) in FIXTURES {
+    for (name, json, pin) in FIXTURES {
         assert_eq!(fnv1a64(json.as_bytes()), pin, "{name}: pin");
         let parsed = pack(json);
         let pretty = serde_json::to_string_pretty(&parsed).expect("serializes");
         assert_eq!(format!("{pretty}\n"), json, "{name}: byte-for-byte");
-        assert_eq!(summary_line(&parsed), summary, "{name}: summary_line");
     }
 }
 

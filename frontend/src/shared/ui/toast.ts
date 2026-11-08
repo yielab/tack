@@ -18,7 +18,7 @@ export function useToasts() {
   return toasts;
 }
 
-export function showToast(
+function showToast(
   message: string,
   type: ToastType = 'info',
   duration: number = 4000
