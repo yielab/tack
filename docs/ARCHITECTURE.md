@@ -33,7 +33,7 @@ crates/
 ├── tack-cli/      The single `tack` binary — runs the server (tack serve, the
 │                  composition root) and the CLI client
 ├── tack-test-support/  Test helpers shared by the other crates' tests: setup_test_db(),
-│                  seed, ControllableClock, fixtures, a fake `claude`
+│                  seed, probe, ControllableClock, fixtures, a fake `claude`
 └── tack-evals/    Development harness (not released): runs a task through a real
                    server and runner in a throwaway world and records what it left
 
@@ -128,7 +128,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 
 **tack-cli** (the single `tack` binary):
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI — the primary, UI-first entry point. `serve.rs` is the composition root: it opens the database, builds the `Repository` and the `AppState`, calls `tack_api::serve()` and hands `tack_app::loop_config::LoopConfig` (the loops' settings, owned by `tack-app` and flattened into `AppConfig`) the `Loops` to start
-- CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
+- CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `types`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/revoke-token/start/doctor/secret), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
 - `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly. Only `serve.rs` names `tack-db`, to build the `Repository` it hands to the server and the loops
 
