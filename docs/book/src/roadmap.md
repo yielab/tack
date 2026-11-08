@@ -135,7 +135,7 @@ against docket `f8dd565e` and prill `6b95423`; `--check` reports docket's new `s
 team answer (additive; the fixtures are not recaptured yet). Open: the Reviewer
 profile's verdict is not stored, so the verifier figure judges prill's pack only; the verifier-suite
 labels; `allowed_hosts` has no editor; Codex, opencode and docket baselines; C4-1's L6 waits for the
-`v0.2.0-beta.1` release; the plan's decision 8 (dollars in the metrics) is still open.
+`v0.2.0-beta.1` release.
 
 An audit of the four harnesses found that the board contains an agent well (scopes, change sets, a
 second secret for decisions, demotion after a revert) and the machine does not: the network is never
@@ -519,8 +519,8 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   dependencies from the lockfile, and every run has a limit that says where it comes from.
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-77.md).
 - **Phase 75 — limits in tokens.** ADR 0024. A limit is in tokens and nothing has one by default; cache
-  reads are shown and never counted; every limit says who applies it; dollars are an estimate shown
-  last; what Tack sends an agent carries nothing twice.
+  reads are shown and never counted; every limit says who applies it; what Tack sends an agent carries
+  nothing twice.
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-75.md).
 - **Phase 74 — what the first real project found.** ADR 0023. Twenty defects fixed where each fact is
   owned: a run that cannot start ends Failed with the reason, one rule says whether a computer is

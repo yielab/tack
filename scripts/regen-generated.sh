@@ -36,6 +36,8 @@ fi
 # frontend/src/shared/api/schema.gen.ts — derived from docs/openapi.json.
 if [ -d frontend/node_modules ]; then
   npm --prefix frontend run gen:api >/dev/null
+else
+  echo "regen-generated: frontend/node_modules is missing, so schema.gen.ts was NOT regenerated (cd frontend && npm ci)" >&2
 fi
 
 # docs/book/src/developer/api-reference.md — derived from docs/openapi.json,
