@@ -234,7 +234,6 @@ async fn a_type_word_is_not_a_vocabulary_key() {
     assert_eq!(body["error"]["code"], "invalid_vocabulary_key");
 }
 
-
 #[tokio::test]
 async fn automation_settings_round_trip_and_clear() {
     let (app, _) = common::test_app().await;

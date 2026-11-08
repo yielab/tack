@@ -1339,7 +1339,10 @@ async fn mcp_propose_answers_applied_waiting_or_both_and_passes_a_refusal_on() {
             json!({ "reason": "cycle" }),
         ))
         .respond_with(wiremock::ResponseTemplate::new(400).set_body_json(json!({
-            "error": "operation 1: it closes a cycle; operation 2: no status \"Nope\""
+            "error": {
+                "code": "invalid_request",
+                "message": "operation 1: it closes a cycle; operation 2: no status \"Nope\""
+            }
         })))
         .mount(&server)
         .await;

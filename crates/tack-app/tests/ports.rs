@@ -73,7 +73,7 @@ fn an_empty_loop_configuration_is_the_default_one() {
 }
 
 #[test]
-fn the_backup_interval_has_a_floor_and_the_poll_needs_a_token() {
+fn the_backup_interval_has_a_floor() {
     let mut config = LoopConfig::default();
     assert_eq!(config.backup_interval(), None);
     config.backup_interval_secs = Some(5);
@@ -81,9 +81,4 @@ fn the_backup_interval_has_a_floor_and_the_poll_needs_a_token() {
         config.backup_interval().map(|interval| interval.as_secs()),
         Some(MIN_BACKUP_INTERVAL_SECS)
     );
-
-    config.github_poll_seconds = 60;
-    assert!(!config.github_poll_enabled());
-    config.github_token = Some("token".to_owned());
-    assert!(config.github_poll_enabled());
 }

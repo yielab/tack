@@ -95,11 +95,18 @@ async fn a_move_the_rule_refuses_leaves_the_row_and_its_version_as_they_were() {
     let (repo, project) = fixture().await;
     let epic = make(&repo, &project, "Checkout", "epic", None).await;
     let task = make(&repo, &project, "Pay", "task", Some(epic.id)).await;
-    let version = repo.get_item_version(epic.id).await.unwrap();
+    let version = tack_test_support::probe::get_item_version(&repo, epic.id)
+        .await
+        .unwrap();
 
     let error = refusal(move_to(&repo, &project, &epic, Some(task.id)).await);
     assert!(matches!(error, CoreError::ParentLoop { .. }), "{error}");
-    assert_eq!(repo.get_item_version(epic.id).await.unwrap(), version);
+    assert_eq!(
+        tack_test_support::probe::get_item_version(&repo, epic.id)
+            .await
+            .unwrap(),
+        version
+    );
     assert_eq!(
         repo.get_item(epic.id).await.unwrap().unwrap().parent_id,
         None

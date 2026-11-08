@@ -856,37 +856,6 @@ pub async fn provision_local_runner(
     }
 }
 
-/// Gives a local runner that still carries the name the board used to
-/// generate for it (`local-` and a UUID) the name [`provision_local_runner`]
-/// would give it now, so a runner enrolled earlier keeps its identity and
-/// still reads as this computer. A runner with any other name was named by a
-/// person and is left alone, as is one whose id is unknown. Returns whether a
-/// runner was renamed.
-pub async fn name_local_runner_after_host(
-    database_url: &str,
-    runner_id: &str,
-    host: &str,
-) -> Result<bool, ProvisionLocalRunnerError> {
-    let pool = tack_db::init_pool(database_url)
-        .await
-        .map_err(StoreError::from)?;
-    let repo = Repository::new(pool);
-    for attempt in 1..=LOCAL_NAME_ATTEMPTS {
-        match repo
-            .rename_generated_local_runner(
-                runner_id,
-                &this_computer_name(host, attempt),
-                SystemClock.now(),
-            )
-            .await
-        {
-            Err(StoreError::Conflict(_)) => {}
-            result => return Ok(result?),
-        }
-    }
-    Ok(false)
-}
-
 /// Whether `runner_id` still exists at `database_url` — opens and drops its
 /// own short-lived pool exactly like [`provision_local_runner`] itself does,
 /// against the same URL the caller's own server already opened successfully.

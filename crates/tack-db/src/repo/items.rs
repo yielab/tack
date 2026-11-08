@@ -277,21 +277,6 @@ impl Repository {
         .transpose()
     }
 
-    /// The optimistic-concurrency counter an `ETag` is derived from
-    /// (migration 034). A
-    /// dedicated read rather than folding `version` into [`get_item`](Self::get_item)'s
-    /// `Item`-shaped query: `tack_core::models::Item` has no `version` field,
-    /// so a caller that needs the counter asks for it separately rather than
-    /// widening the domain model for one internal reader.
-    #[instrument(skip(self))]
-    pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, StoreError> {
-        sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
-            .bind(id.to_string())
-            .fetch_optional(self.pool())
-            .await
-            .map_err(StoreError::from)
-    }
-
     /// Read the body and ETag counter from one database snapshot.  Two plain
     /// reads can otherwise observe different writers and send a body whose
     /// ETag describes a later version.
@@ -442,22 +427,6 @@ impl Repository {
             .execute(self.pool())
             .await?;
         Ok(result.rows_affected() > 0)
-    }
-
-    #[instrument(skip(self))]
-    pub async fn count_items_by_status(
-        &self,
-        project_id: Uuid,
-        status: &str,
-    ) -> Result<i64, StoreError> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ? AND hidden = 0",
-        )
-        .bind(project_id.to_string())
-        .bind(status)
-        .fetch_one(self.pool())
-        .await?;
-        Ok(count)
     }
 
     #[instrument(skip(self))]

@@ -278,50 +278,6 @@ impl RecoveryDisposition {
             Self::AlreadyTerminal => "already_terminal",
         }
     }
-
-    /// The attempt transition implied by this disposition, if it is not a
-    /// terminal acknowledgement.
-    pub const fn attempt_transition(self) -> Option<ExecutionState> {
-        match self {
-            Self::SafePreSpawnRequeue => Some(ExecutionState::Lost),
-            Self::NeedsOperator => Some(ExecutionState::NeedsOperator),
-            Self::AlreadyTerminal => None,
-        }
-    }
-
-    /// The request transition implied by this disposition, if it is not a
-    /// terminal acknowledgement.
-    pub const fn request_transition(self) -> Option<ExecutionState> {
-        match self {
-            Self::SafePreSpawnRequeue => Some(ExecutionState::Queued),
-            Self::NeedsOperator => Some(ExecutionState::NeedsOperator),
-            Self::AlreadyTerminal => None,
-        }
-    }
-
-    /// Checks only the public lifecycle/observation preconditions. A true
-    /// result for safe requeue is necessary, not sufficient: authoritative
-    /// process absence and `started_at` absence remain server-side checks.
-    pub const fn is_compatible_with(
-        self,
-        state: ExecutionState,
-        observation: RecoveryObservation,
-    ) -> bool {
-        let active = matches!(
-            state,
-            ExecutionState::Leased
-                | ExecutionState::Preparing
-                | ExecutionState::Running
-                | ExecutionState::WaitingDecision
-        );
-        match self {
-            Self::SafePreSpawnRequeue => {
-                active && matches!(observation, RecoveryObservation::ProcessStopped)
-            }
-            Self::NeedsOperator => active,
-            Self::AlreadyTerminal => state.is_terminal(),
-        }
-    }
 }
 
 impl std::str::FromStr for RecoveryDisposition {

@@ -143,34 +143,7 @@ async fn patch_if_match_maps_412_to_a_conflict_specific_message() {
     );
 }
 
-#[test]
-fn status_label_covers_412() {
-    assert_eq!(
-        status_label(StatusCode::PRECONDITION_FAILED),
-        "Precondition failed (item changed — re-read and retry)"
-    );
-}
-
-// ── error_msg: runner-v1 protocol error envelope ──────────────
-//
-// The execution/fleet/runner/profile operator routes answer errors with
-// `{"error": {"code": ..., "message": ..., ...}}` — `error` is an
-// *object*, unlike every pre-existing route's `{"error": "text"}`. These
-// pin that both shapes are handled, that the object shape surfaces the
-// stable `code` (not just prose), and that the legacy string shape is
-// completely unaffected.
-
-#[test]
-fn error_msg_reads_the_plain_string_shape_unchanged() {
-    let body = serde_json::json!({ "error": "not found" });
-    assert_eq!(error_msg(&body), "not found");
-}
-
-#[test]
-fn error_msg_reads_the_message_key_shape_unchanged() {
-    let body = serde_json::json!({ "message": "bad request" });
-    assert_eq!(error_msg(&body), "bad request");
-}
+// ── error_msg: the error envelope ──────────────
 
 #[test]
 fn error_msg_surfaces_code_and_message_from_protocol_envelope() {

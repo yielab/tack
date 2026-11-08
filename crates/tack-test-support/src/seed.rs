@@ -115,16 +115,6 @@ pub async fn agent_runners_silent(repo: &Repository) {
         .expect("seed agent_runners silent");
 }
 
-/// Renames a runner directly, bypassing the unique-name checks of a route.
-pub async fn agent_runner_named(repo: &Repository, runner_id: &str, name: &str) {
-    sqlx::query("UPDATE agent_runners SET name = ? WHERE id = ?")
-        .bind(name)
-        .bind(runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed agent_runners name");
-}
-
 /// A write lock held on the `agent_runners` table, released by [`RunnerRowHold::release`].
 pub struct RunnerRowHold(sqlx::Transaction<'static, sqlx::Sqlite>);
 
@@ -472,7 +462,8 @@ pub async fn runner_with_profile(
     capacity: i64,
 ) {
     use tack_db::repo::execution::{NewAgentProfile, NewRunner};
-    repo.register_runner(
+    register_runner(
+        repo,
         NewRunner {
             id: runner_id,
             name: "Seeded runner",
@@ -487,7 +478,8 @@ pub async fn runner_with_profile(
     )
     .await
     .expect("seed runner");
-    repo.create_agent_profile(
+    create_agent_profile(
+        repo,
         NewAgentProfile {
             id: profile_id,
             name: "Seeded profile",
@@ -1209,4 +1201,48 @@ pub async fn agent_profile_in_fleet(
         .execute(repo.pool())
         .await
         .expect("seed agent_profiles fleet");
+}
+
+/// Inserts a runner row as given, outside enrollment.
+pub async fn register_runner(
+    repo: &Repository,
+    input: tack_db::repo::execution::NewRunner<'_>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), tack_db::StoreError> {
+    let now = now.to_rfc3339();
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, labels, total_capacity, \
+         available_capacity, capability_snapshot, protocol_version, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(input.id)
+    .bind(input.name)
+    .bind(input.credential_hash)
+    .bind(input.labels)
+    .bind(input.total_capacity)
+    .bind(input.available_capacity)
+    .bind(input.capability_snapshot)
+    .bind(input.protocol_version)
+    .bind(&now)
+    .bind(&now)
+    .execute(repo.pool())
+    .await?;
+    Ok(())
+}
+
+/// Inserts an agent profile row as given.
+pub async fn create_agent_profile(
+    repo: &Repository,
+    input: tack_db::repo::execution::NewAgentProfile<'_>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), tack_db::StoreError> {
+    let now = now.to_rfc3339();
+    sqlx::query(
+        "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(input.id).bind(input.name).bind(input.instructions)
+    .bind(input.tool_policy).bind(input.limits).bind(&now).bind(&now)
+    .execute(repo.pool()).await?;
+    Ok(())
 }

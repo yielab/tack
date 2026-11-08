@@ -9,7 +9,7 @@ use tack_protocol::execution::{AttemptId, Checkpoint, EventRecord, FencingToken,
 use common::{RUNNER_ID, running_attempt, world};
 use serde_json::{Value, json};
 use tack_app::runs::report_events::{EventReport, EventsReported, report_events};
-use tack_db::queries::{execution_attempts, execution_events};
+use tack_db::queries::execution_attempts;
 use tack_protocol::Clock;
 
 async fn report(
@@ -81,7 +81,7 @@ async fn a_batch_lands_once_and_the_same_batch_again_is_a_replay() {
     assert!(replay.replayed);
     assert_eq!(replay.committed_checkpoint, Checkpoint::new("cp-1"));
     assert_eq!(
-        execution_events::event_count_with_id(&world.repo, &run.attempt_id, "evt-1")
+        tack_test_support::probe::event_count_with_id(&world.repo, &run.attempt_id, "evt-1")
             .await
             .unwrap(),
         1,
@@ -139,7 +139,7 @@ async fn other_events_under_a_used_checkpoint_conflict_for_good_and_a_misplaced_
         "neither batch moved the checkpoint"
     );
     assert_eq!(
-        execution_events::event_count_of_attempt(&world.repo, &run.attempt_id)
+        tack_test_support::probe::event_count_of_attempt(&world.repo, &run.attempt_id)
             .await
             .unwrap(),
         1
@@ -163,7 +163,7 @@ async fn a_fence_that_is_not_current_writes_nothing() {
     .await;
     assert_eq!(stale, EventsReported::Stale);
     assert_eq!(
-        execution_events::event_count_of_attempt(&world.repo, &run.attempt_id)
+        tack_test_support::probe::event_count_of_attempt(&world.repo, &run.attempt_id)
             .await
             .unwrap(),
         0

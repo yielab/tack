@@ -11,7 +11,7 @@ use std::future::Future;
 use common::{RUNNER_ID, Running, running_attempt, world};
 use serde_json::{Value, json};
 use tack_app::runs::complete::{Completed, CompletionReport, complete};
-use tack_db::queries::{execution_attempts, execution_request_rows, execution_requests};
+use tack_db::queries::{execution_attempts, execution_requests};
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
 use tack_test_support::completion::{actual_execution, terminal_reason_of, usage_not_measured};
@@ -192,10 +192,11 @@ async fn a_success_leaves_the_items_status_alone() {
     }
 }
 
-async fn follow_ups(world: &common::World) -> Vec<execution_request_rows::ExecutionRequestRow> {
-    let mut rows = execution_request_rows::execution_requests_of_item(&world.repo, &world.item_id)
-        .await
-        .unwrap();
+async fn follow_ups(world: &common::World) -> Vec<tack_test_support::probe::ExecutionRequestRow> {
+    let mut rows =
+        tack_test_support::probe::execution_requests_of_item(&world.repo, &world.item_id)
+            .await
+            .unwrap();
     rows.retain(|row| row.idempotency_key.starts_with("rework-"));
     rows
 }

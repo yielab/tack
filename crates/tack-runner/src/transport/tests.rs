@@ -1281,7 +1281,7 @@ mod slot_loop {
             crate::client::journal::OwnerOnlyJournal::new(root.path().join("journal")),
             WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
         )
-        .with_concurrency(2);
+        .with_active(crate::active::ActiveAttempts::new(2));
         let mut config = RunnerConfig::defaults();
         config.state_dir = root.path().join("state");
         fs::create_dir_all(&config.state_dir).expect("state dir");
@@ -1393,7 +1393,7 @@ mod slot_loop {
             crate::client::journal::OwnerOnlyJournal::new(root.path().join("journal")),
             WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
         )
-        .with_concurrency(2);
+        .with_active(crate::active::ActiveAttempts::new(2));
         let mut config = RunnerConfig::defaults();
         config.state_dir = root.path().join("state");
         fs::create_dir_all(&config.state_dir).expect("state dir");
@@ -1870,7 +1870,7 @@ mod slot_loop {
             journal.clone(),
             WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
         )
-        .with_concurrency(2);
+        .with_active(crate::active::ActiveAttempts::new(2));
         let mut config = RunnerConfig::defaults();
         config.state_dir = root.path().join("state");
         fs::create_dir_all(&config.state_dir).expect("state dir");

@@ -209,11 +209,6 @@ impl LoopConfig {
         }
     }
 
-    /// Whether the GitHub poll will run: an interval and a token are both set.
-    pub fn github_poll_enabled(&self) -> bool {
-        self.github_poll_seconds > 0 && self.github_token.is_some()
-    }
-
     /// The backup interval after the floor, `None` when none is configured.
     pub fn backup_interval(&self) -> Option<Duration> {
         let requested = self.backup_interval_secs?;

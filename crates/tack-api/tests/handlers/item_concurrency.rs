@@ -432,7 +432,10 @@ async fn multi_field_wip_rejection_writes_nothing_no_version_bump() {
         assert_eq!(moved.status(), StatusCode::OK);
     }
     let target = create_item(&app, project_id, "Must remain unchanged").await;
-    let before = state.repo.get_item_version(target).await.unwrap().unwrap();
+    let before = tack_test_support::probe::get_item_version(&state.repo, target)
+        .await
+        .unwrap()
+        .unwrap();
 
     let rejected = req(
         &app,
@@ -448,7 +451,10 @@ async fn multi_field_wip_rejection_writes_nothing_no_version_bump() {
     assert_eq!(item["title"], "Must remain unchanged");
     assert_eq!(item["status"], "Backlog");
     assert_eq!(
-        state.repo.get_item_version(target).await.unwrap().unwrap(),
+        tack_test_support::probe::get_item_version(&state.repo, target)
+            .await
+            .unwrap()
+            .unwrap(),
         before
     );
 }
@@ -525,7 +531,10 @@ async fn before_update_failure_cannot_partially_apply_patch() {
     let (app, state) = app_with_state().await;
     let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Original").await;
-    let before = state.repo.get_item_version(item_id).await.unwrap().unwrap();
+    let before = tack_test_support::probe::get_item_version(&state.repo, item_id)
+        .await
+        .unwrap()
+        .unwrap();
 
     // The trigger runs after the transaction has performed every validation
     // but before SQLite applies the one generated UPDATE. It is a deterministic
@@ -552,7 +561,10 @@ async fn before_update_failure_cannot_partially_apply_patch() {
     assert!(item["description"].is_null());
     assert!(item["assignee"].is_null());
     assert_eq!(
-        state.repo.get_item_version(item_id).await.unwrap().unwrap(),
+        tack_test_support::probe::get_item_version(&state.repo, item_id)
+            .await
+            .unwrap()
+            .unwrap(),
         before
     );
 }

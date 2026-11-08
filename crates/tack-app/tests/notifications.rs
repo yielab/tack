@@ -562,20 +562,19 @@ async fn reports(world: &World, snapshot: &str) {
 /// A profile that names the docket team `team`.
 async fn team_profile(world: &World, id: &str, team: &str) {
     let policy = serde_json::json!({"agent": "docket", "docket": {"team": team}}).to_string();
-    world
-        .repo
-        .create_agent_profile(
-            tack_db::repo::execution::NewAgentProfile {
-                id,
-                name: id,
-                instructions: "work",
-                tool_policy: &policy,
-                limits: "{}",
-            },
-            world.clock.now(),
-        )
-        .await
-        .expect("profile");
+    tack_test_support::seed::create_agent_profile(
+        &world.repo,
+        tack_db::repo::execution::NewAgentProfile {
+            id,
+            name: id,
+            instructions: "work",
+            tool_policy: &policy,
+            limits: "{}",
+        },
+        world.clock.now(),
+    )
+    .await
+    .expect("profile");
 }
 
 /// A role of `project` whose profile is `profile`; the role's id.

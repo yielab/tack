@@ -404,13 +404,10 @@ async fn a_run_created_with_origin_mcp_keeps_it_in_the_snapshot() {
     let root = tempfile::tempdir().unwrap();
     let gh = github("check-runs-all-success.json", 200, 0).await;
     let (b, a) = finished(root.path(), &gh, l3()).await;
-    let profile = tack_db::queries::execution_requests::agent_profile_of_request(
-        &b.state.repo,
-        &a.request_id,
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let profile = tack_test_support::probe::agent_profile_of_request(&b.state.repo, &a.request_id)
+        .await
+        .unwrap()
+        .unwrap();
     for (key, origin, kept) in [
         ("o-mcp", Some("mcp"), true),
         ("o-other", Some("cli"), false),

@@ -22,7 +22,6 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_db::{
     Repository,
-    queries::agent_runners,
     repo::execution::{EnrollmentToken, NewRunner},
 };
 use tack_test_support::{create_test_workspace, seed, setup_test_db};
@@ -66,7 +65,8 @@ impl Fixture {
         let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
         let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
         let capability_snapshot = full_capabilities(clock.now(), 2, 2).to_string();
-        repo.register_runner(
+        tack_test_support::seed::register_runner(
+            &repo,
             NewRunner {
                 id: RUNNER_ID,
                 name: "C2 Runner",
@@ -102,7 +102,7 @@ impl Fixture {
     }
 
     async fn credential_hash_of(&self, runner_id: &str) -> String {
-        agent_runners::runner_identity(&self.repo, runner_id)
+        tack_test_support::probe::runner_identity(&self.repo, runner_id)
             .await
             .unwrap()
             .expect("runner")
@@ -110,7 +110,7 @@ impl Fixture {
     }
 
     async fn runner_name(&self, runner_id: &str) -> String {
-        agent_runners::runner_identity(&self.repo, runner_id)
+        tack_test_support::probe::runner_identity(&self.repo, runner_id)
             .await
             .unwrap()
             .expect("runner")
@@ -268,9 +268,8 @@ async fn enrollment_and_refresh_rotation_replaces_credential() {
     );
 }
 
-// A refresh never renames the runner: the board's row owns the name. A runner provisioned as
-// `local-<uuid>` that reports `local-runner` while another row already holds that name used to
-// hit the UNIQUE column and fail; now it is accepted and the name stays.
+// A refresh never renames the runner: the board's row owns the name. A runner that reports
+// `local-runner` while another row already holds that name is accepted, and its name stays.
 #[tokio::test]
 async fn refresh_never_writes_the_runner_name() {
     let fx = Fixture::new().await;
@@ -306,15 +305,9 @@ async fn refresh_never_writes_the_runner_name() {
 
 // ---------------------------------------------------------------------
 // 2. Two default-configured runners self-report the identical
-//    `runner_name` (both default it from `TACK_RUNNER_ID`). Without the
-//    `_runner_name`/removed `name=?` special-casing in
-//    `crates/tack-db/src/repo/execution.rs::redeem_enrollment_token`, this
-//    would silently overwrite the operator-assigned, uniquely-named
-//    pending-runner row and crash the second enrollment on
-//    `agent_runners`'s `UNIQUE` `name` constraint (two curl enrollments
-//    differing only in token, first 200, second 500). Load-bearing:
-//    reverting that change makes this test fail with a 500 on the second
-//    enrollment.
+//    `runner_name` (both default it from `TACK_RUNNER_ID`). Redeeming never
+//    writes it over the operator-assigned, uniquely-named pending-runner row,
+//    so neither enrollment collides on `agent_runners`'s `UNIQUE` `name`.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
