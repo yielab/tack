@@ -19171,6 +19171,17 @@
             },
             "description": "The record sets the team keeps, with how many rows each holds. Absent when the harness\nhas no such thing or did not say."
           },
+          "search": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamSearch",
+                "description": "The web search the team has: which provider, whether it is ready and the one command that\nmakes it so. Absent means the harness did not say, which is not the same as no search; no\nfield may carry a harness's own key name."
+              }
+            ]
+          },
           "shape": {
             "type": [
               "string",
@@ -19249,6 +19260,70 @@
             "type": "string"
           }
         }
+      },
+      "TeamSearch": {
+        "type": "object",
+        "description": "The web search a team has, in the harness's own sentence.",
+        "required": [
+          "provider",
+          "ready",
+          "reason"
+        ],
+        "properties": {
+          "fix": {
+            "type": "string",
+            "description": "The one command that makes the search ready; empty when it is."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamSearchOption"
+            },
+            "description": "The ways to set the search up, each a command on the harness's computer."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/TeamSearchProvider"
+          },
+          "ready": {
+            "type": "boolean",
+            "description": "Whether the team can search now."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the search is as it is, a sentence the harness wrote."
+          }
+        }
+      },
+      "TeamSearchOption": {
+        "type": "object",
+        "description": "One way to set a team's search up.",
+        "required": [
+          "provider",
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The command, run where the harness is."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/TeamSearchProvider"
+          },
+          "secret": {
+            "type": "string",
+            "description": "The name of the secret the option needs, never its value; empty when it needs none."
+          }
+        }
+      },
+      "TeamSearchProvider": {
+        "type": "string",
+        "description": "Which service answers a team's searches.",
+        "enum": [
+          "none",
+          "searxng",
+          "brave",
+          "custom"
+        ]
       },
       "TeamStep": {
         "type": "object",

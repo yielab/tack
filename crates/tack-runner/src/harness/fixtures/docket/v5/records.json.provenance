@@ -4,7 +4,7 @@ status: 200
 tack-sends: yes
 note: the sets the team declares, with their columns and row counts
 command: curl -X GET http://127.0.0.1:<port>/pods/saas-notes/records (bearer token from docket's --token-file)
-docket: docket 0.3.0b1 (API 6), source checkout 2ce62d69
+docket: docket 0.3.0b1 (API 6), source checkout ee17a1fd
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
-date: 2026-11-04
+date: 2026-11-08
 redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid, review codes (as zeros)

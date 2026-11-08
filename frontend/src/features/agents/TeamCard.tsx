@@ -1,6 +1,7 @@
 import { type Component, type JSX, For, Show, createUniqueId } from 'solid-js';
-import { Badge, Button } from '../../shared/ui';
+import { Badge, Button, HelpHint } from '../../shared/ui';
 import { BOOK } from '../../shared/help/routes';
+import { HELP } from '../../shared/help/texts';
 import type { components } from '../../shared/api/schema.gen';
 import {
   agentName,
@@ -13,6 +14,9 @@ import {
   webText,
   networkText,
   webReadText,
+  searchText,
+  searchFixText,
+  searchOrText,
   pausedText,
   plainName,
   queueText,
@@ -480,6 +484,20 @@ const TeamCard: Component<TeamCardProps> = (props) => {
                         <Show when={read.mode === 'closed' && read.fix}>
                           <p class="text-caption" style={MUTED}>To fix: {read.fix}</p>
                         </Show>
+                      </>
+                    )}
+                  </Rule>
+                )}
+              </Show>
+              {/* Said only by an agent that says it, like the Web line. */}
+              <Show when={report()?.search}>
+                {(search) => (
+                  <Rule id="search" label="Search" agent={agent()} value={search()}>
+                    {(found) => (
+                      <>
+                        <span>{searchText(found)} <HelpHint label="Search" help={HELP.search} /></span>
+                        <Show when={searchFixText(found)}>{(fix) => <p class="text-caption" style={MUTED}>{fix()}</p>}</Show>
+                        <Show when={searchOrText(found)}>{(or) => <p class="text-caption" style={MUTED}>{or()}</p>}</Show>
                       </>
                     )}
                   </Rule>

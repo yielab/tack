@@ -169,7 +169,6 @@
         "tools": [
           "consult",
           "edit",
-          "fetch",
           "glob",
           "grep",
           "read",
@@ -180,9 +179,6 @@
           "write": [],
           "query": false
         },
-        "fetchDomains": [
-          "*"
-        ],
         "notComputed": [
           "mcp",
           "service"
@@ -255,7 +251,7 @@
       "source": "default"
     },
     "pipeline": {
-      "value": "6798da221c6e49937c46c719b0b3e5f9142d2afc07e9e05141a08901475db363",
+      "value": "5775888e17e5918eefb0180007cc9f1bff2ade744c79c1d33afae36388204a5e",
       "source": "set"
     },
     "schedule": {
@@ -316,7 +312,7 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "bound pipeline (hash 6798da221c6e...)",
+    "source": "bound pipeline (hash 5775888e17e5...)",
     "steps": [
       {
         "id": "lead",
@@ -389,6 +385,24 @@
     "reason": "a folder team under the jail reads any public host",
     "fix": ""
   },
+  "search": {
+    "provider": "searxng",
+    "ready": false,
+    "reason": "the search service 'search' does not answer at http://127.0.0.1:8888",
+    "fix": "docket setup search searxng --pod saas-contract",
+    "options": [
+      {
+        "provider": "searxng",
+        "command": "docket setup search searxng --pod saas-contract",
+        "secret": ""
+      },
+      {
+        "provider": "brave",
+        "command": "docket setup search brave --pod saas-contract",
+        "secret": "brave-search"
+      }
+    ]
+  },
   "needs": [
     {
       "kind": "fetch-hosts",
@@ -400,8 +414,8 @@
     {
       "kind": "search-host",
       "name": "search-host",
-      "fix": "",
-      "satisfied": true,
+      "fix": "docket setup search searxng --pod saas-contract",
+      "satisfied": false,
       "blocking": false
     },
     {
@@ -548,14 +562,14 @@
     "windowStart": null
   },
   "workDir": "/scratch/home/.docket/state/workspaces/pods/saas-contract/workdir",
-  "configSource": "/home/ox/.local/lib/docket/venv/lib/python3.11/site-packages/docket/templates/recipes/web-research",
-  "configDigest": "6d860fe8c961dfbdf23e4b71a44e35cf3fecd8e63d123e1daed232f2974124be",
+  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/web-research",
+  "configDigest": "6045a40c9953689be9c73607caf78d500bb5d1f209e172177665e1712a49ece8",
   "drift": "no",
   "profile": {
     "name": "attended",
     "violations": []
   },
-  "pipelineSource": "bound pipeline (hash 6798da221c6e...)",
+  "pipelineSource": "bound pipeline (hash 5775888e17e5...)",
   "workspaceKind": "workdir",
   "repoConfigDir": "",
   "readOnly": [

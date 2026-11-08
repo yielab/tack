@@ -291,6 +291,11 @@ pub struct TeamReport {
     /// no web; no field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_read: Option<TeamWebRead>,
+    /// The web search the team has: which provider, whether it is ready and the one command that
+    /// makes it so. Absent means the harness did not say, which is not the same as no search; no
+    /// field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<TeamSearch>,
 }
 
 /// How a team reads the web and why.
@@ -316,6 +321,50 @@ pub enum TeamWebMode {
     Listed,
     /// No web: no member reads it.
     Closed,
+}
+
+/// The web search a team has, in the harness's own sentence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamSearch {
+    pub provider: TeamSearchProvider,
+    /// Whether the team can search now.
+    pub ready: bool,
+    /// Why the search is as it is, a sentence the harness wrote.
+    pub reason: String,
+    /// The one command that makes the search ready; empty when it is.
+    #[serde(default)]
+    pub fix: String,
+    /// The ways to set the search up, each a command on the harness's computer.
+    #[serde(default)]
+    pub options: Vec<TeamSearchOption>,
+}
+
+/// Which service answers a team's searches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamSearchProvider {
+    /// No search service is set up.
+    None,
+    /// A SearXNG service the operator runs.
+    Searxng,
+    /// The Brave Search API, with the operator's key.
+    Brave,
+    /// A service the operator wrote.
+    Custom,
+}
+
+/// One way to set a team's search up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamSearchOption {
+    pub provider: TeamSearchProvider,
+    /// The command, run where the harness is.
+    pub command: String,
+    /// The name of the secret the option needs, never its value; empty when it needs none.
+    #[serde(default)]
+    pub secret: String,
 }
 
 /// The kind of a [`TeamNeed`] that a signed-in agent meets.
@@ -400,6 +449,7 @@ impl TeamReport {
             budget: None,
             memory: None,
             web_read: None,
+            search: None,
         }
     }
 

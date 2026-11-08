@@ -9,15 +9,16 @@ use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, MemoryDecision, MemoryEntry,
     MemoryEvidence, ModelListSource, ModelsReport, SignInReport, SignInState, TeamBudget,
     TeamDecides, TeamDelivers, TeamMember, TeamMemory, TeamMethod, TeamNeed, TeamNetwork,
-    TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind,
-    TeamViolation, TeamWebMode, TeamWebRead, WorksIn,
+    TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamSearch, TeamSearchOption,
+    TeamSearchProvider, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, TeamWebMode,
+    TeamWebRead, WorksIn,
 };
 
 use super::{
     client::Client,
     wire::{
         MemberReach, MemoryItem, MemoryList, PodBudget, PodList, PodMember, PodMethod, PodNeed,
-        PodNetwork, PodReport, PodRow, PodStep, PodWebRead, RecordList, StatusAnswer,
+        PodNetwork, PodReport, PodRow, PodSearch, PodStep, PodWebRead, RecordList, StatusAnswer,
     },
 };
 
@@ -179,6 +180,51 @@ pub(super) fn web_read(report: &mut PodReport, listed: bool) -> Option<TeamWebRe
         mode,
         reason: read.reason,
         fix: read.fix,
+    })
+}
+
+/// The provider docket names, in Tack's words; a word Tack has none for is unsaid.
+fn search_provider(word: &str) -> Option<TeamSearchProvider> {
+    match word {
+        "none" => Some(TeamSearchProvider::None),
+        "searxng" => Some(TeamSearchProvider::Searxng),
+        "brave" => Some(TeamSearchProvider::Brave),
+        "custom" => Some(TeamSearchProvider::Custom),
+        _ => None,
+    }
+}
+
+/// The web search the team has, in docket's own sentence (`search`). Absent from a docket that does
+/// not list the feature, and when the answer cannot be read: the team's report never fails for it.
+pub(super) fn search(report: &mut PodReport, listed: bool) -> Option<TeamSearch> {
+    let raw = report.search.take().filter(|_| listed)?;
+    let read: PodSearch = serde_json::from_value(raw)
+        .inspect_err(|why| tracing::warn!(%why, "docket's search could not be read"))
+        .ok()?;
+    let provider = search_provider(&read.provider).or_else(|| {
+        tracing::warn!(
+            provider = read.provider,
+            "docket's search names a provider Tack has no word for"
+        );
+        None
+    })?;
+    let options = read
+        .options
+        .into_iter()
+        .map(|option| {
+            Some(TeamSearchOption {
+                provider: search_provider(&option.provider)?,
+                command: option.command,
+                secret: option.secret,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(TeamSearch {
+        provider,
+        ready: read.ready,
+        reason: read.reason,
+        fix: read.fix,
+        options,
     })
 }
 
@@ -438,6 +484,7 @@ struct Listed {
     memory: bool,
     memory_decide: bool,
     web_read: bool,
+    search: bool,
 }
 
 impl Listed {
@@ -449,6 +496,7 @@ impl Listed {
             memory: client.has_feature(super::MEMORY_STATUS).await,
             memory_decide: client.has_feature(super::MEMORY_DECIDE).await,
             web_read: client.has_feature(super::WEB_READ).await,
+            search: client.has_feature(super::SEARCH).await,
         }
     }
 }
@@ -465,6 +513,7 @@ async fn team(client: &Client, row: &PodRow, listed: Listed) -> Result<TeamRepor
     let contract = contract(&mut report, listed.contract);
     let budget = budget(&mut report, listed.resume);
     let web_read = web_read(&mut report, listed.web_read);
+    let search = search(&mut report, listed.search);
     let memory = memory(client, name, listed).await;
     let works_in = works_in(row, &report);
     let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
@@ -512,6 +561,7 @@ async fn team(client: &Client, row: &PodRow, listed: Listed) -> Result<TeamRepor
         budget,
         memory,
         web_read,
+        search,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson

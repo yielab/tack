@@ -23,8 +23,9 @@ pub use capabilities::{
     ParityColumn, ParityLine, ParityRule, RunnerCapabilities, SignInReport, SignInState,
     TeamBudget, TeamDecides, TeamDelivers, TeamFacts, TeamMember, TeamMemory, TeamMethod,
     TeamMisfit, TeamNeed, TeamNeeds, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport,
-    TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, TeamWebMode, TeamWebRead,
-    WITHOUT_LIVE_USAGE, WorksIn, reports_usage_while_running, team_misfits, validate_parity,
+    TeamSearch, TeamSearchOption, TeamSearchProvider, TeamStep, TeamStepCheck, TeamStepKind,
+    TeamViolation, TeamWebMode, TeamWebRead, WITHOUT_LIVE_USAGE, WorksIn,
+    reports_usage_while_running, team_misfits, validate_parity,
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,
