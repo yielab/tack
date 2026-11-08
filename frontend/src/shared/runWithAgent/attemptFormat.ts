@@ -178,7 +178,7 @@ export function describeModelProvenance(provenance: ModelProvenance | null): Mod
 // ─── Outcome ────────────────────────────────────────────────────────────────
 
 /** The size of the patch an attempt left, or 0 when it left none. */
-export function attemptPatchBytes(terminalReason: unknown): number {
+function attemptPatchBytes(terminalReason: unknown): number {
   const arts = obj(terminalReason).artifacts;
   const patch = (Array.isArray(arts) ? arts : []).find((a) => obj(a).kind === 'patch');
   return num(obj(patch).size_bytes) ?? 0;
@@ -186,7 +186,7 @@ export function attemptPatchBytes(terminalReason: unknown): number {
 
 /** Whether a person still has to accept or reject the attempt: a terminal
  *  attempt that left a patch or a kept workspace (the backend's `needs_review`). */
-export function isReviewableAttempt(attempt: Pick<AttemptSummary, 'state' | 'terminal_reason'>): boolean {
+function isReviewableAttempt(attempt: Pick<AttemptSummary, 'state' | 'terminal_reason'>): boolean {
   return (
     isTerminalAttemptState(attempt.state) &&
     (attemptPatchBytes(attempt.terminal_reason) > 0 || typeof obj(attempt.terminal_reason).workspace_kept_at === 'string')
@@ -308,7 +308,7 @@ export interface AttemptOutcome {
 export const NEEDS_A_PERSON_TEXT = 'The agent needed a person to decide, and nobody did';
 
 /** What a run that ended with the code `cancel_failed` says when the runner gave no sentence of its own. */
-export const CANCEL_FAILED_TEXT = "The run was asked to stop, but some of the agent's processes could not be stopped; check this computer for leftovers";
+const CANCEL_FAILED_TEXT = "The run was asked to stop, but some of the agent's processes could not be stopped; check this computer for leftovers";
 
 /** `terminal_reason` is untyped on the wire; read it defensively. */
 export function describeAttemptOutcome(state: string, terminalReason: unknown): AttemptOutcome {

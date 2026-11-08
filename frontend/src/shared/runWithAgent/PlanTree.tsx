@@ -65,7 +65,7 @@ export const inputStyle = {
   background: 'transparent',
 } as const;
 
-export const chipStyle = {
+const chipStyle = {
   border: '1px solid var(--color-border-light)',
   color: 'var(--color-text-primary)',
   'background-color': 'var(--color-bg-subtle)',
@@ -81,13 +81,13 @@ export function parentOf(rs: Row[], i: number): number | null {
 }
 
 /** The entries directly under `parent` (null for the top level), in the order they are listed. */
-export const childrenOf = (rs: Row[], parent: number | null): number[] => rs.flatMap((_, j) => (parentOf(rs, j) === parent ? [j] : []));
+const childrenOf = (rs: Row[], parent: number | null): number[] => rs.flatMap((_, j) => (parentOf(rs, j) === parent ? [j] : []));
 
 /** The entries an entry waits on that are in the list; never itself. */
-export const waitsOn = (rs: Row[], i: number): number[] => rs[i].depends_on.filter((d) => d !== i && d < rs.length);
+const waitsOn = (rs: Row[], i: number): number[] => rs[i].depends_on.filter((d) => d !== i && d < rs.length);
 
 /** Whether every entry above an entry is ticked, so it can be sent under them. */
-export function ancestorsTicked(rs: Row[], i: number): boolean {
+function ancestorsTicked(rs: Row[], i: number): boolean {
   const p = parentOf(rs, i);
   // A parent that was already decided does not hold its children back.
   return p === null || ((rs[p].selected || !!rs[p].locked) && ancestorsTicked(rs, p));

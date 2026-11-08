@@ -1,7 +1,7 @@
 import { readContinueOffer } from '../execution';
 
 /** A running run's token count turns amber at this share of its limit. */
-export const RUN_LIMIT_WARNING = 0.8;
+const RUN_LIMIT_WARNING = 0.8;
 
 /** Whether `used` has reached the warning share of `limit`; false without a limit. */
 export function isNearLimit(used: number | null | undefined, limit: number | null | undefined): boolean {

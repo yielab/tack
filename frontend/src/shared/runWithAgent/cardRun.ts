@@ -20,7 +20,7 @@ export interface CardRun {
 }
 
 /** A project's default priority: what a new item gets, and so what a card need not repeat. */
-export const DEFAULT_PRIORITY = 'medium';
+const DEFAULT_PRIORITY = 'medium';
 
 /** What the chip adds to Ready for review when the verifier's pack recommends reject. */
 const REJECT_NOTE = 'verifier says reject';

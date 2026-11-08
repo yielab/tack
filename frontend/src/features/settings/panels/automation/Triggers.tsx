@@ -12,8 +12,8 @@ import { DEFERRED_EVENTS, EVENT_CHOICES, WEEKDAYS, minuteOf, scheduleText, timeT
 const SCHEDULE = 'schedule';
 
 /** The largest quiet period and daily cap the server accepts. */
-export const MAX_QUIET_SECONDS = 3_600;
-export const MAX_DAILY_CAP = 100;
+const MAX_QUIET_SECONDS = 3_600;
+const MAX_DAILY_CAP = 100;
 
 const clamp = (raw: string, min: number, max: number) => Math.min(max, Math.max(min, Math.trunc(Number(raw) || 0)));
 

@@ -6,7 +6,7 @@
 import type { CapabilityValue, HarnessCapability } from './types';
 
 /** The name a person reads for each agent kind. */
-export const AGENT_NAMES: Readonly<Record<string, string>> = {
+const AGENT_NAMES: Readonly<Record<string, string>> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',

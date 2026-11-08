@@ -16,7 +16,7 @@ export interface RunChoices {
 
 export const NO_CHOICES: RunChoices = { group: false, refused: new Map() };
 
-export function choicesOf(options: unknown): RunChoices {
+function choicesOf(options: unknown): RunChoices {
   if (!Array.isArray(options)) return NO_CHOICES;
   const rows = options as RunOption[];
   return {

@@ -25,7 +25,6 @@ export type {
   TeamStepReport,
   TeamStepState,
 } from './types';
-export { TERMINAL_EXECUTION_STATES, isTerminalExecutionState } from './types';
 
 export type {
   ExecutionSummary,
@@ -104,11 +103,8 @@ export {
   gateFeatureAcrossRunners,
   gateApiFeature,
   listReportedHarnessKinds,
-  harnessProbeStatus,
   NO_DATA_REASON,
 } from './capabilities';
-
-export { VersionedCache, SequenceAllocator } from './cache';
 
 export type { ExecutionInvalidationEvent, ExecutionRealtimeStatus, ExecutionRealtimeOptions, ExecutionRealtime } from './realtime';
 export { createExecutionRealtime } from './realtime';
@@ -126,13 +122,11 @@ export { createExecutionStore } from './store';
 export type { Routed } from './routing';
 export { routingApi } from './routing';
 export type { MemoryEntry, TeamMemoryDecided, TeamBudget, TeamEntry, TeamMember, TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamReport, TeamResumed, TeamStep } from './teams';
-export { missingHarnessFix, missingTeamFix } from './missing';
-export { teamsApi, teamChoices, supervisionText, stepText, networkText, webReadText, searchText, searchFixText, searchOrText, queueText, memberReachText, webText, misfitText, notSentText, unmetNeeds, degradedNeeds, degradedText, deliversText, firstLine, runnableFirst, methodsByType, isTeamOfOne, podsOnly, teamProposes, pausedText, resumedText, budgetSpent, resumeGate, memoryCommands, learntNewestFirst, MEMORY_DECIDE_REASON, plainName, SHARED_PROPOSALS_TEXT } from './teams';
+export { teamsApi, teamChoices, supervisionText, stepText, networkText, webReadText, searchText, searchFixText, searchOrText, queueText, memberReachText, webText, misfitText, notSentText, degradedNeeds, degradedText, deliversText, firstLine, runnableFirst, methodsByType, isTeamOfOne, podsOnly, teamProposes, pausedText, resumedText, resumeGate, memoryCommands, learntNewestFirst, MEMORY_DECIDE_REASON, plainName, SHARED_PROPOSALS_TEXT } from './teams';
 
 export type { AgentCapabilityId, AgentCapabilityLine } from './agents';
 export {
   AGENT_KINDS,
-  AGENT_NAMES,
   agentName,
   agentCapabilityLines,
   agentCanSentence,

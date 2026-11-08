@@ -70,4 +70,3 @@ export function createConfirm(): [
   return [ask, ConfirmHost];
 }
 
-export default ConfirmDialog;

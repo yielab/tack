@@ -1,7 +1,7 @@
 import type { DecisionOption, DecisionRecord } from '../execution';
 
 /** The id of the way out: a question's own refusal, drawn as a plain action beside the answer, not as a choice. */
-export const DECLINE_ID = 'decline';
+const DECLINE_ID = 'decline';
 
 /** Where a question takes text: the field's name, whether it must be filled, and the choices it opens under. */
 export interface AnswerText {
