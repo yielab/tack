@@ -294,7 +294,7 @@ export interface RunStepPrompt {
   tokens: number | null;
 }
 
-/** A step's own budget, read off the hop that ran out of it (Phase 87, docket's `budgetOutcome`):
+/** A step's own budget, read off the hop that ran out of it (docket's `budgetOutcome`):
  *  the bound that ran out (`rounds`, `toolCalls`, `time` or `tokens`), the figures, who set it
  *  (`step`, `role`, `pod` or `default`), whether the stop kept the step's work (docket pins the
  *  tree only for an Implementer hop), and where to raise it when docket says. */

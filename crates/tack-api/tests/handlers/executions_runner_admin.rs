@@ -2792,7 +2792,7 @@ async fn the_auto_start_tick_gives_a_run_the_network_its_tools_for_the_agent_nam
 }
 
 // A run that does not say `network` takes its profile's; one that says so keeps its own; a
-// profile without the key behaves as before (off).
+// profile without the key is off.
 #[tokio::test]
 async fn a_runs_network_comes_from_the_request_then_the_profile_then_off() {
     let (app, repo, item_id) = setup().await;

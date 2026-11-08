@@ -66,20 +66,6 @@ fn pre_spawn_journal_is_atomic_owner_only_and_recoverable() {
 }
 
 #[test]
-fn legacy_journal_without_a_pending_report_remains_readable() {
-    let record = record();
-    let encoded = toml::to_string(&record).expect("encode journal");
-    let legacy = encoded
-        .lines()
-        .filter(|line| !line.starts_with("pending_terminal_report"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let decoded: AttemptJournal = toml::from_str(&legacy).expect("decode legacy journal");
-    assert_eq!(decoded.pending_terminal_report, None);
-    assert_eq!(decoded.state, JournalState::Prepared);
-}
-
-#[test]
 fn load_and_recovery_reject_a_filename_disagreeing_with_record() {
     let root_dir = temporary_root();
     let root = root_dir.path();

@@ -216,7 +216,7 @@ pub struct CreateExecution {
     /// exist is `not_found` (`details.reason = "from_run_not_found"`); one that belongs to
     /// another project, or left no branch to continue from, is `unprocessable`
     /// (`details.reason` is `"from_run_different_project"` or `"from_run_no_kept_work"`). Absent,
-    /// `metadata.rework_base` is read only when the caller set it directly, as before.
+    /// `metadata.rework_base` is read only when the caller set it directly.
     #[serde(default)]
     pub from_run: Option<String>,
 }
@@ -723,7 +723,7 @@ pub struct RequeueResponse {
 }
 
 /// Response body for `POST /api/executions/{id}/continue` — a new request that follows the same
-/// docket task the named run left stopped at its own step budget (Phase 87, decision 6), or an
+/// docket task the named run left stopped at its own step budget, or an
 /// idempotent replay of one already made.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ContinueResponse {
@@ -763,7 +763,7 @@ pub fn routes(state: OperatorExecutionState) -> Router {
 }
 
 /// `POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s
-/// run left stopped at its own step budget, instead of posting a new one (Phase 87, decision 6).
+/// run left stopped at its own step budget, instead of posting a new one.
 /// Refused `not_found` when `id` names no request, `unprocessable` when its own ending never
 /// offered Continue (decision 5's table) or its token limit is fully spent.
 #[utoipa::path(

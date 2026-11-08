@@ -177,7 +177,7 @@ pub fn check_limits(limits: &serde_json::Value) -> Result<(), String> {
 }
 
 /// Whether a profile's role needs the network (`tool_policy.network`): true only when it is
-/// the boolean `true`; absent, `false` or anything else is off, as every profile was before.
+/// the boolean `true`; absent, `false` or anything else is off.
 pub fn profile_network(tool_policy: &serde_json::Value) -> bool {
     tool_policy.get("network").and_then(|v| v.as_bool()) == Some(true)
 }

@@ -94,8 +94,8 @@ export interface RunWithAgentFormValues {
   /** Sent as is when set: the run may not have more autonomy than this. */
   autonomy?: 'L3';
   /** A previous request's id to start this run from: the server reads that run's own branch and
-   *  sets `metadata.rework_base` itself (Phase 87, decision 7 — "Start over from this run's
-   *  work"). Absent, the run starts from the project's base commit, as today. */
+   *  sets `metadata.rework_base` itself ("Start over from this run's work"). Absent, the run
+   *  starts from the project's base commit. */
   fromRun?: string;
 }
 
@@ -475,7 +475,7 @@ export interface RunWithAgentModalProps {
   initialTokenLimit?: number;
   /** Starts the run attended, as "Run again at L3" does: it may not have more than this autonomy. */
   autonomy?: 'L3';
-  /** "Start over from this run's work" (Phase 87, decision 7): the stopped run whose kept work this
+  /** "Start over from this run's work": the stopped run whose kept work this
    *  one starts from, sent on as `from_run`. */
   fromRun?: string;
   /** Tests only: replaces the capabilities the submit gate reads. The target

@@ -10,10 +10,9 @@ export function isNearLimit(used: number | null | undefined, limit: number | nul
 
 /** Whether an attempt's `terminal_reason` says its token limit stopped it: the runner's
  *  `token_limit`, or docket's `budget` when the hop it stopped at carries no step bound of its
- *  own (the shape docket sent before Phase 87's `budgetOutcome`, or a hop whose bound really is
- *  `tokens` — Tack's own limit, read above). A step's own round, tool-call or time budget
- *  (`code: "step_budget"`, or a `budget` hop whose bound is one of those) is never a token
- *  stop — see `docs/closed-cycles/plans/phase-87.md`, decision 1. */
+ *  own (a docket without `budgetOutcome`, or a hop whose bound really is `tokens` — Tack's own
+ *  limit, read above). A step's own round, tool-call or time budget (`code: "step_budget"`, or a
+ *  `budget` hop whose bound is one of those) is never a token stop. */
 export function stoppedByLimit(terminalReason: unknown): boolean {
   const reason = (terminalReason ?? {}) as { code?: unknown; reason?: unknown; steps?: unknown };
   const says = (word: string) => reason.code === word || reason.reason === word;
@@ -26,13 +25,13 @@ export function stoppedByLimit(terminalReason: unknown): boolean {
   return bound === undefined || bound === null || bound === 'tokens';
 }
 
-/** Whether `terminal_reason` already carries docket's `next.continue` (Phase 87's
+/** Whether `terminal_reason` already carries docket's `next.continue` (its
  *  `budgetOutcome`) — regardless of whether it reads `possible: true` or `false`. When it does,
- *  `ContinueOrStartOver` owns the "stopped" telling for this attempt (decision 5: "Start over
- *  from this run's work, with twice the limit" **replaces** "Run again with more" for a tokens
- *  stop that kept work); `RunLimitNote`'s own "Stopped at its limit" block must not also show,
- *  or the two repeat each other. A docket too old to send `next` at all leaves this false, and
- *  `RunLimitNote` keeps telling that stop exactly as it always has. */
+ *  `ContinueOrStartOver` owns the "stopped" telling for this attempt ("Start over from this
+ *  run's work, with twice the limit" **replaces** "Run again with more" for a tokens stop that
+ *  kept work); `RunLimitNote`'s own "Stopped at its limit" block must not also show, or the two
+ *  repeat each other. A docket that sends no `next` leaves this false, and `RunLimitNote` tells
+ *  that stop itself. */
 export function hasBudgetStopOffer(terminalReason: unknown): boolean {
   return readContinueOffer(terminalReason) !== null;
 }

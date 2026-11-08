@@ -7,7 +7,7 @@ use tack_db::{Repository, init_pool, migrations};
 
 const AT_096: &str = "096_planner_researcher_write_plan";
 
-/// The text migration 096 (card M) shipped, byte for byte.
+/// The text migration 096 shipped, byte for byte.
 const PLANNER_096: &str = "Plan the work. Do not modify project files; the only file you write is `tack-plan.json`, at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.";
 const RESEARCHER_096: &str = "Investigate the question. Do not modify project files; the only file you may write is `tack-plan.json`. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.";
 /// The text before 096: not covered by 097's guard.
