@@ -1282,9 +1282,8 @@ pub enum AcceptanceCriterion {
         title: String,
         text: String,
         /// Ticked by a person on the "Done when" list. Only the board reads it:
-        /// the brief and the verifier ignore it. Absent means not ticked, so
-        /// older rows and files read as before and an unticked check is stored
-        /// exactly as it always was.
+        /// the brief and the verifier ignore it. Absent means not ticked, and an
+        /// unticked check is stored without the key.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         checked: bool,
     },

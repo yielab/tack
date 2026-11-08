@@ -1,4 +1,4 @@
-//! Continuing a stopped step (Phase 87, decisions 5 and 6): a run whose task ran out of its own
+//! Continuing a stopped step: a run whose task ran out of its own
 //! budget — not a cliff, docket's own ADR 0038 — kept its work and may be told to go on. Continuing
 //! is a new execution request, like a rework (`runs/complete/rework.rs`), but it never creates a
 //! new docket task: the harness follows the same one (`harness/docket.rs`'s `continue_task`

@@ -4399,10 +4399,8 @@ async fn a_tokens_budget_stop_keeps_the_code_budget_even_with_the_feature() {
     let reason = &outcome.terminal_reason;
     assert_eq!(reason["code"], json!("budget"));
     assert_eq!(reason["message"], json!("docket said: task budget spent"));
-    // Card L's live proof (docs/closed-cycles/plans/phase-87.md) found a real tokens-bound stop left with
-    // neither key despite a genuine commit: `from_run` refused the very run decision 5's table
-    // says to offer it from first. The code stays `budget` (never `step_budget`); only the kept
-    // branch is new here.
+    // A tokens-bound stop that kept a commit names its branch, so `from_run` can start over from
+    // it. The code stays `budget` (never `step_budget`); only the kept branch is added.
     let branch = reason["branch"].as_str().expect("branch");
     let head = reason["head_commit"].as_str().expect("head_commit");
     assert_eq!(
@@ -4561,8 +4559,7 @@ async fn a_budget_hops_verdict_is_never_read_and_it_reports_instead() {
     );
 }
 
-/// Decision 5's table ("Continue or Start over" in `docs/closed-cycles/plans/phase-87.md`): what `next.continue`
-/// on a budget stop says, and when it says nothing at all.
+/// What `next.continue` on a budget stop says, and when it says nothing at all.
 #[tokio::test]
 async fn a_budget_stops_next_continue_follows_decision_fives_table() {
     // Bound rounds/toolCalls/time, treeChanged true, both features: possible.
@@ -4725,7 +4722,7 @@ fn continue_task_metadata(pod: &str, task: &str, used: (u64, u64)) -> Value {
     })
 }
 
-/// Decision 6, Phase 87: a continuing request follows the same docket task with exactly one
+/// A continuing request follows the same docket task with exactly one
 /// `POST .../retry` — no new task is ever posted for it — and counts only the hops the retry
 /// itself added, never what the first try had already spent.
 #[tokio::test]
@@ -7006,8 +7003,7 @@ const CLIENT_ROUTES: [&str; 21] = [
 const NOT_IN_CLIENT: [&str; 0] = [];
 
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
-/// that stays running, and `current` and `updatedSince` need one. `retry` was captured against a
-/// live docket for Card L (`docs/closed-cycles/plans/phase-87.md`) and moved out of this list.
+/// that stays running, and `current` and `updatedSince` need one.
 const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
 
 #[test]

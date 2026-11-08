@@ -92,7 +92,7 @@ impl Rework {
 /// is planned on the same item, harness, profile and model with what to fix in a fenced block,
 /// starting from the branch `actual_execution` (what the runner reports, not yet stored) names.
 /// Budgets are the scheduler's and never read here. Nothing is planned otherwise; the item
-/// waits for review as before.
+/// waits for review.
 pub(super) async fn plan<R, Fut>(
     repo: &Repository,
     now: DateTime<Utc>,

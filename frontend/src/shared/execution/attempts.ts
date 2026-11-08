@@ -156,7 +156,7 @@ const plainText = (v: unknown): string | null => (typeof v === 'string' && v.tri
 const plainTexts = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : [];
 
-/** A hop's `budget` (Phase 87, `budgetOutcome`): `null` for a hop that ran clean, or when the
+/** A hop's `budget` (docket's `budgetOutcome`): `null` for a hop that ran clean, or when the
  *  value on the wire is not the shape docket sends. */
 function readHopBudget(value: unknown): RunStepBudget | null {
   if (!isRecord(value)) return null;
@@ -172,8 +172,7 @@ function readHopBudget(value: unknown): RunStepBudget | null {
   };
 }
 
-/** The hops of a docket task, in order; `undefined` when the run has none (a run from before the
- *  field existed, or a task with no hops). Read defensively: a key the run lacks reads as absent. */
+/** The hops of a docket task, in order; `undefined` when the run has none. Read defensively: a key the run lacks reads as absent. */
 export function readRunSteps(terminalReason: unknown): RunStep[] | undefined {
   const raw = isRecord(terminalReason) ? terminalReason.steps : undefined;
   if (!Array.isArray(raw)) return undefined;
@@ -228,7 +227,7 @@ export function folderRunSummary(terminalReason: unknown): string | null {
   return isRecord(terminalReason) ? plainText(terminalReason.summary) : null;
 }
 
-// ─── A step's own budget stop (`code: "step_budget"` or `"budget"` with `next`, Phase 87) ────
+// ─── A step's own budget stop (`code: "step_budget"` or `"budget"` with `next`) ────
 
 /** Whether a new request may follow this run's own docket task instead of starting fresh
  *  (decision 6), and if not, why, in the backend's own words. Read from `terminal_reason.next.

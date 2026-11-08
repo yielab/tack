@@ -431,9 +431,6 @@ impl RunnerConfig {
                 let Ok(table) = toml::from_str::<toml::Table>(contents) else {
                     return ConfigError::Invalid;
                 };
-                if table.contains_key("provider") {
-                    return ConfigError::ProviderTable;
-                }
                 // serde names the key it refused; the key is looked up in the file's own
                 // top-level table so only a key that is really there is ever reported, never
                 // a value or any parser text.

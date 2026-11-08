@@ -5,8 +5,8 @@
 //! # Use cases
 //!
 //! A use case is one `pub async fn <verb>(repo: &Repository, clock: &dyn Clock, <args>) ->
-//! Result<T, AppError>` in `runs/<verb>.rs`, taking plain values and holding the rule the
-//! handler used to hold (idempotency keys, fencing checks, `validate_transition`). A handler
+//! Result<T, AppError>` in `runs/<verb>.rs`, taking plain values and holding the rule
+//! (idempotency keys, fencing checks, `validate_transition`). A handler
 //! extracts, calls, maps the error and responds. A test of a rule calls it directly on
 //! `setup_test_db()`.
 //!

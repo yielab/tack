@@ -166,7 +166,7 @@ pub async fn rework_source_of_request(
     .await?)
 }
 
-/// What a run's `continues` reads from the request it names (Phase 87, decision 6): the item it
+/// What a run's `continues` reads from the request it names: the item it
 /// belongs to (a continuation is always posted on the same item — nothing a caller sends chooses
 /// it), the docket team and task its own newest attempt left stopped at (`actual_execution.team`
 /// — `ActualExecution.additional` is `#[serde(flatten)]`, so docket's own `team` key sits at the

@@ -257,8 +257,8 @@ fn item_source_only_manual_is_trusted() {
 #[test]
 fn item_source_default_is_unknown_and_untrusted() {
     // The Rust-level default matters wherever `#[serde(default)]` or
-    // `Default::default()` is used to backfill a missing value (an old
-    // export payload, a `FromStr` fallback) — it must be the *safe*
+    // `Default::default()` is used to backfill a missing value (a
+    // hand-built payload, a `FromStr` fallback) — it must be the *safe*
     // value, not `Manual`.
     assert_eq!(ItemSource::default(), ItemSource::Unknown);
     assert!(!ItemSource::default().is_trusted());
@@ -307,8 +307,8 @@ fn item_source_serde_rename_all_snake_case() {
 
 /// The exact scenario `handlers::export::run_import` relies on to make
 /// the trust marker survive an export → import round-trip: an `Item`
-/// deserialized from JSON that predates this field (or from a
-/// hand-built payload that never had it) must resolve to `Unknown`
+/// deserialized from JSON without this field (a hand-built payload that
+/// never had it) must resolve to `Unknown`
 /// (untrusted), never silently to `Manual`.
 #[test]
 fn item_deserialization_defaults_missing_source_to_unknown() {
@@ -316,7 +316,7 @@ fn item_deserialization_defaults_missing_source_to_unknown() {
         "id": Uuid::new_v4(),
         "project_id": Uuid::new_v4(),
         "parent_id": null,
-        "title": "Pre-existing export without a source field",
+        "title": "An export without a source field",
         "description": null,
         "item_type": "task",
         "status": "To Do",
@@ -334,7 +334,7 @@ fn item_deserialization_defaults_missing_source_to_unknown() {
         "created_at": chrono::Utc::now().to_rfc3339(),
         "updated_at": chrono::Utc::now().to_rfc3339(),
     });
-    let item: Item = serde_json::from_value(value).expect("deserialize legacy item JSON");
+    let item: Item = serde_json::from_value(value).expect("deserialize item JSON without a source");
     assert_eq!(item.source, ItemSource::Unknown);
     assert!(!item.source.is_trusted());
 }
