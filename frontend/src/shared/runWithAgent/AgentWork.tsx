@@ -237,7 +237,7 @@ export function classWords(model: string | null, modelClass: string | null): str
 }
 
 /** Where docket found a prompt, in plain words; a scope this screen does not know reads as "other". */
-export function scopeWords(scope: string): string {
+function scopeWords(scope: string): string {
   return SCOPE_WORDS[scope] ?? 'other';
 }
 

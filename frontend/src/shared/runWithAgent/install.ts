@@ -2,10 +2,10 @@ import type { FolderCheck } from '../api/projects';
 import type { AgentSafetyReport } from '../help/texts';
 
 /** The runner's own sentence for a profile that runs no commands, so the dialog and the timeline agree. */
-export const NO_INSTALL = 'No install: this profile runs no commands';
+const NO_INSTALL = 'No install: this profile runs no commands';
 
-export const INSTALL_OFF = 'Install turned off';
-export const NO_LOCKFILE = 'No lockfile: nothing is installed';
+const INSTALL_OFF = 'Install turned off';
+const NO_LOCKFILE = 'No lockfile: nothing is installed';
 
 /** Where the install of a run happens, in the words of the Prepares line. */
 export const INSTALL_CONTAINMENT = {

@@ -40,24 +40,6 @@ describe('the remembered columns', () => {
     localStorage.setItem('tack_list_cols', '{not json');
     expect([...loadHiddenColumns()]).toEqual(['item_type']);
   });
-
-  it('take the choice the Table stored, once: it is copied under the new name and the old one removed', () => {
-    localStorage.setItem('tack_table_cols', JSON.stringify(['assignee', 'needs_review']));
-    expect([...loadHiddenColumns()].sort()).toEqual(['assignee', 'details', 'run']);
-    expect(localStorage.getItem('tack_table_cols')).toBeNull();
-    expect(JSON.parse(localStorage.getItem('tack_list_cols')!).sort()).toEqual(['assignee', 'details', 'run']);
-
-    // A later change is the List's own; nothing is read from the Table again.
-    saveHiddenColumns(new Set(['due_date']));
-    localStorage.setItem('tack_table_cols', JSON.stringify(['status']));
-    expect([...loadHiddenColumns()]).toEqual(['due_date']);
-  });
-
-  it('keep what the List stored over what the Table left', () => {
-    localStorage.setItem('tack_list_cols', JSON.stringify(['status']));
-    localStorage.setItem('tack_table_cols', JSON.stringify(['assignee']));
-    expect([...loadHiddenColumns()]).toEqual(['status']);
-  });
 });
 
 describe('the remembered row height', () => {
@@ -70,13 +52,6 @@ describe('the remembered row height', () => {
   it('comes back as saved', () => {
     saveDensity('compact');
     expect(loadDensity()).toBe('compact');
-  });
-
-  it('takes the Table’s choice once', () => {
-    localStorage.setItem('tack_table_density', 'compact');
-    expect(loadDensity()).toBe('compact');
-    expect(localStorage.getItem('tack_table_density')).toBeNull();
-    expect(localStorage.getItem('tack_list_density')).toBe('compact');
   });
 });
 

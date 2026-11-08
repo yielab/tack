@@ -144,8 +144,7 @@ describe('shared/api/client', () => {
     expect(fetchMock.mock.calls[0][1]!.credentials).toBe('same-origin');
   });
 
-  it('keeps a bearer token only in the current session and never migrates the legacy local value', () => {
-    localStorage.setItem('tack_api_token', 'legacy-secret');
+  it('keeps a bearer token only in the current session', () => {
     tokenStore.set('session-secret');
 
     expect(tokenStore.get()).toBe('session-secret');

@@ -109,7 +109,7 @@ export function useAutomation(item: () => Item) {
 export type Automation = ReturnType<typeof useAutomation>;
 
 /** Who would do a task that has not run, as the Now panel says it: the profile and its team, or why nobody is chosen. */
-export function whoWouldDoIt(automation: Automation): string | null {
+function whoWouldDoIt(automation: Automation): string | null {
   const c = automation.chosen();
   if (!c) return null;
   if (!c.profile) return 'No profile is chosen yet: you pick the agent when you run it';

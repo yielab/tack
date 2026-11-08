@@ -55,17 +55,6 @@ export type ExecutionState =
   | 'lost'
   | 'needs_operator';
 
-/** `docs/contracts/runner-v1/lifecycle-transitions.json`'s `terminal_states`. */
-export const TERMINAL_EXECUTION_STATES: ReadonlySet<ExecutionState> = new Set([
-  'succeeded',
-  'failed',
-  'cancelled',
-]);
-
-export function isTerminalExecutionState(state: ExecutionState): boolean {
-  return TERMINAL_EXECUTION_STATES.has(state);
-}
-
 /**
  * A tagged runner/fleet placement selector. Mirrors
  * `crates/tack-orch/src/execution/types.rs`'s `RunnerSelector`

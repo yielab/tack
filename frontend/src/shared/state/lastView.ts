@@ -5,8 +5,6 @@ export type Lens = typeof LENSES[number];
 export function getLastLens(): Lens {
   try {
     const v = localStorage.getItem(KEY);
-    // The Table view was folded into the List: a remembered Table opens the List.
-    if (v === 'table') return 'list';
     if (v && LENSES.includes(v as Lens)) return v as Lens;
   } catch { /* ignore */ }
   return 'board';

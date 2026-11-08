@@ -7,13 +7,13 @@ import { AGENT_LEVELS } from '../../../../shared/agents/levels';
 import { Block, Heading, Note, inputStyle } from './parts';
 
 /** The most one change set can hold, and the most a day's limit may be: the server refuses more. */
-export const MAX_CREATES_PER_CHANGE_SET = 100;
-export const MAX_CREATES_PER_DAY = 10_000;
+const MAX_CREATES_PER_CHANGE_SET = 100;
+const MAX_CREATES_PER_DAY = 10_000;
 
 const OFF: Setting = { level: 'propose', creates_per_change_set: 0, creates_per_day: 0 };
 
 /** Why a level cannot be chosen now, or null when it can. A rung is never hidden, only said to be off. */
-export function levelOffReason(project: Project | undefined): string | null {
+function levelOffReason(project: Project | undefined): string | null {
   return project ? null : 'The project has not loaded yet';
 }
 
