@@ -129,7 +129,7 @@ export type { Routed } from './routing';
 export { routingApi } from './routing';
 export type { MemoryEntry, TeamMemoryDecided, TeamBudget, TeamEntry, TeamMember, TeamMemory, TeamMethod, TeamMisfit, TeamNeed, TeamReport, TeamResumed, TeamStep } from './teams';
 export { missingHarnessFix, missingTeamFix } from './missing';
-export { teamsApi, teamChoices, supervisionText, stepText, networkText, webReadText, queueText, memberReachText, webText, misfitText, notSentText, unmetNeeds, degradedNeeds, degradedText, deliversText, firstLine, runnableFirst, methodsByType, isTeamOfOne, podsOnly, teamProposes, pausedText, resumedText, budgetSpent, resumeGate, memoryCommands, learntNewestFirst, MEMORY_DECIDE_REASON, plainName, SHARED_PROPOSALS_TEXT } from './teams';
+export { teamsApi, teamChoices, supervisionText, stepText, networkText, webReadText, searchText, searchFixText, searchOrText, queueText, memberReachText, webText, misfitText, notSentText, unmetNeeds, degradedNeeds, degradedText, deliversText, firstLine, runnableFirst, methodsByType, isTeamOfOne, podsOnly, teamProposes, pausedText, resumedText, budgetSpent, resumeGate, memoryCommands, learntNewestFirst, MEMORY_DECIDE_REASON, plainName, SHARED_PROPOSALS_TEXT } from './teams';
 
 export type { AgentCapabilityId, AgentCapabilityLine } from './agents';
 export {

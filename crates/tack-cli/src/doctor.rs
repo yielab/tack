@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tack_protocol::execution::{
     CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability, ModelListSource,
-    SignInState, TeamWebMode, TeamWebRead,
+    SignInState, TeamSearch, TeamSearchProvider, TeamWebMode, TeamWebRead,
 };
 use tack_runner::{ConfigOverrides, RunnerConfig, bootstrap, harness::process::ProcessLimits};
 
@@ -451,10 +451,11 @@ fn docket_lines(capability: &HarnessCapability, daemon: &Result<String, String>)
             format!("attended (fix: {})", fixes.join("; "))
         };
         lines.push(format!(
-            "  team {}: {state} · {}{}",
+            "  team {}: {state} · {}{}{}",
             team.name,
             reads_line(team.read_only.as_deref()),
-            web_line(team.web_read.as_ref())
+            web_line(team.web_read.as_ref()),
+            search_line(team.search.as_ref())
         ));
     }
     lines
@@ -474,6 +475,25 @@ fn web_line(web: Option<&TeamWebRead>) -> String {
     match (web.mode, web.fix.as_str()) {
         (TeamWebMode::Closed, fix) if !fix.is_empty() => format!(" · {mode} (fix: {fix})"),
         _ => format!(" · {mode}"),
+    }
+}
+
+/// The web search a team has, in docket's own words, when this docket says it; nothing for one that
+/// does not. A search that is not ready carries the command that makes it so.
+fn search_line(search: Option<&TeamSearch>) -> String {
+    let Some(search) = search else {
+        return String::new();
+    };
+    let provider = match search.provider {
+        TeamSearchProvider::None => "none",
+        TeamSearchProvider::Searxng => "SearXNG",
+        TeamSearchProvider::Brave => "Brave Search",
+        TeamSearchProvider::Custom => "your own service",
+    };
+    match (search.ready, search.fix.as_str()) {
+        (true, _) => format!(" · search: {provider}"),
+        (false, fix) if !fix.is_empty() => format!(" · search: {provider}, not ready (fix: {fix})"),
+        (false, _) => format!(" · search: {provider}, not ready"),
     }
 }
 

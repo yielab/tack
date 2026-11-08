@@ -23,6 +23,8 @@
 # docket's own records port and reads them back by task (rows, the two 400s, `limit`, what each member reaches).
 # A team's memory (accepted, pending, refused and a stale entry) is recorded by docket's own function in the throwaway home,
 # since no model writes the `## Memory` section of a reply; the three status queries are then read over HTTP.
+# A team whose search is Brave without a stored key is made by applying a folder that holds the recipe's own Brave
+# `services/search.yaml`; the key never travels over HTTP, so the capture holds only the secret's name.
 # An approval that expires is not reachable (docket's deadline is hours): that
 # fixture stays constructed. It refuses to run when DOCKET_HOME is unset or is the operator's
 # ~/.docket, and it never reads that folder. The bearer token docket writes is read from its
@@ -712,6 +714,29 @@ mkdir -p "$OTHER_DIR"
 printf 'shape: build\n' >"$OTHER_DIR/pod.yaml"
 OPTIONAL_KEYS=accept rec pod-apply-shape-mismatch POST /pods/saas-team/apply yes "a folder whose pod.yaml names a shape the team was not made from: 400 naming both" \
   --body "$(jq -cn --arg directory "$OTHER_DIR" '{directory: $directory}')"; expect 400 pod-apply-shape-mismatch
+
+# A team whose web search is the Brave one and whose key is not stored. A plan of record switches
+# provider by applying a directory whose `services/search.yaml` is the chosen one, so the folder
+# holds the recipe's own Brave document and nothing else. The throwaway home holds no secret, so
+# docket says the search is not ready and names the one command that stores the key; the key
+# itself never travels over HTTP. Every other team shows the answer when no search service is set.
+guard
+rec_search=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' \
+  -d '{"name": "saas-search", "blueprint": "respond", "ensure": true}' "$BASE/pods")
+[ "$(jq -r '.created' <<<"$rec_search")" = true ] || die "docket would not make the search team: $rec_search"
+SEARCH_DIR=$SCRATCH/search-dir
+mkdir -p "$SEARCH_DIR/services"
+guard
+BRAVE_RECIPE=$("${DOCKET_ENV[@]}" "$DOCKET_PY" -I -c 'import sys; from docket.kernel import templates; print(templates.RECIPES_DIR / "web-research" / "brave" / "services" / "search.yaml")') \
+  || die "could not find the web-research recipe's Brave service"
+cp "$BRAVE_RECIPE" "$SEARCH_DIR/services/search.yaml"
+guard
+search_applied=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' \
+  -d "$(jq -cn --arg directory "$SEARCH_DIR" '{directory: $directory}')" "$BASE/pods/saas-search/apply")
+jq -e '.items' >/dev/null <<<"$search_applied" || die "docket would not apply the Brave search service: $search_applied"
+rec pod-search GET /pods/saas-search yes "a team whose search service is Brave and whose key is not stored: search.provider brave, ready false, the reason and the one fix command, and both ways to set a search up with the name of the secret each needs (never its value)"; expect 200 pod-search
+[ "$(jq -r '.search.provider' <<<"$LAST_BODY")" = brave ] && [ "$(jq -r '.search.ready' <<<"$LAST_BODY")" = false ] \
+  || die "the search team is not on Brave without a key: $LAST_BODY"
 
 # A task that names a method the team cannot staff: accepted, then refused at claim with
 # failureKind pipeline and the roles in the sentence, before any hop.

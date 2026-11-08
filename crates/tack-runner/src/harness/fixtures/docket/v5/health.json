@@ -24,7 +24,8 @@
     "podResume",
     "memoryStatus",
     "memoryDecide",
-    "webRead"
+    "webRead",
+    "search"
   ],
   "dispatch": {
     "on": true,

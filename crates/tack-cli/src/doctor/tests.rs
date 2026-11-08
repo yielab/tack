@@ -297,6 +297,41 @@ fn a_teams_line_says_how_it_reads_the_web_when_docket_says() {
     );
 }
 
+/// A team that says what web search it has puts it in its line, with the fix when it is not ready.
+#[test]
+fn a_teams_line_says_what_search_it_has_when_docket_says() {
+    use tack_protocol::execution::{TeamSearch, TeamSearchProvider};
+    let search = |provider, ready, fix: &str| {
+        Some(TeamSearch {
+            provider,
+            ready,
+            reason: "why".to_owned(),
+            fix: fix.to_owned(),
+            options: Vec::new(),
+        })
+    };
+    assert_eq!(search_line(None), "");
+    assert_eq!(
+        search_line(search(TeamSearchProvider::Searxng, true, "").as_ref()),
+        " · search: SearXNG"
+    );
+    assert_eq!(
+        search_line(
+            search(
+                TeamSearchProvider::Brave,
+                false,
+                "docket setup secret set brave-search --stdin"
+            )
+            .as_ref()
+        ),
+        " · search: Brave Search, not ready (fix: docket setup secret set brave-search --stdin)"
+    );
+    assert_eq!(
+        search_line(search(TeamSearchProvider::None, false, "").as_ref()),
+        " · search: none, not ready"
+    );
+}
+
 /// Under docket the report states the API, whether the daemon answers, and
 /// one line per team with what keeps it from running lights-out.
 #[test]
@@ -330,6 +365,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             budget: None,
             memory: None,
             web_read: None,
+            search: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
@@ -356,6 +392,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             budget: None,
             memory: None,
             web_read: None,
+            search: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
@@ -379,6 +416,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             budget: None,
             memory: None,
             web_read: None,
+            search: None,
         },
     ]);
     assert_eq!(
