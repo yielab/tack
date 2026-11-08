@@ -58,10 +58,10 @@ current crate, route, migration and test counts; quote those counts from it, nev
 **tack-protocol** (the contract; depends on nothing in the workspace):
 - The neutral runner-v1 types (`execution/`: request, attempt, event, artifact and decision types), the attempt lifecycle (`lifecycle::validate_transition` is the one table; `lifecycle::sources`, `lease_held` and `terminal` read the states a change may start from off it, and `tack-db`'s `Move` builds every `UPDATE` guard from those, so no query spells a state) and capability negotiation, both the server's handlers and `tack-runner` build on
 - `execution/messages.rs`: every runner request and response (enrollment, refresh, claim, heartbeat, accept and start, events, decisions, artifact manifest, cancellation observation and completion; the recovery observation is in `types.rs`); the handlers in `tack-api` and the transport in `tack-runner` both serialize and deserialize these structs, and `tests/runner_contract/protocol.rs` round-trips every matching fixture through them. A runner request carries an `x-request-id` the runner makes per request; `runner_auth::with_request_id` scopes it around the handler so every error envelope names it
-- `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and keeps runner-observed wall-clock cost structurally separate from harness/vendor-reported token and dollar usage
+- `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and reports the runner-observed wall-clock time of an attempt apart from the harness's self-reported token usage
 - `mrp.rs`: the `mrp-v1` merge-readiness pack, its types, validation and pull-request rendering, as plain data; `prepare.rs`: the prepare step
 - The one `Clock` trait and `SystemClock`; `utoipa` is behind an `openapi` feature
-- Every dollar-valued field across the runs crates is named `*_usd_estimated` — token counts are the primary, trustworthy measure; absent usage is a typed "not measured", never a fabricated `0`
+- Usage is tokens and time: no crate computes, stores or shows a price in money. Absent usage is a typed "not measured", never a fabricated `0`
 
 **tack-core** (pure, zero I/O; depends on `tack-protocol`):
 - Domain models: `Project`, `Item`, `Sprint`, `Role`, `Comment`, `Dependency`, etc.
@@ -73,7 +73,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - Item briefs (`brief.rs`): types, validation and Markdown rendering, as plain data
 - The merge policy (`autonomy.rs`): `Level`, `Facts`, `Hold` and the pure `evaluate`, including the team's ceiling (`Hold::HarnessCeiling`)
 - Which profile a run gets, read up the item's chain of ancestors (`run_defaults.rs`, `resolve`), whether a profile may run an item (`hierarchy.rs`, `runnable`: a group only with a profile that plans) and which waiting tasks a project starts (`auto_start.rs`, `pick`), all pure
-- Recurrence (`recurrence.rs`: when the next copy of a repeating task is due) and the rate card (`rate_card.rs`)
+- Recurrence (`recurrence.rs`: when the next copy of a repeating task is due)
 - The project file (`outline.rs`, `outline/bundle.rs`): the types of every section, `resolve` for items, `check` for a whole file against a board and `to_bundle` for the export
 
 **tack-orch** (pure; depends on `tack-protocol` and `tack-core`; no database, no clock, no I/O):

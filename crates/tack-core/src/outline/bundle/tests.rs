@@ -146,8 +146,8 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("profiles: \"P\": limits.budgets.tokens must be a positive whole number"),
         ),
         (
-            "profiles: [{ name: P, limits: { budgets: { cost_usd: 2 } } }]",
-            Problem("profiles: \"P\": limits.budgets.cost_usd was removed"),
+            "profiles: [{ name: P, limits: { budgets: { max_turns: 2 } } }]",
+            Problem("profiles: \"P\": limits.budgets.max_turns is not a limit"),
         ),
         (
             "profiles: [{ name: P, fleet: Nowhere }]",

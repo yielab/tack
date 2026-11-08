@@ -383,15 +383,14 @@ async fn a_token_limit_that_is_not_a_positive_whole_number_is_refused() {
 }
 
 #[tokio::test]
-async fn dollars_are_not_a_limit() {
+async fn only_tokens_is_a_run_budget() {
     let board = board().await;
-    let mut request = bare_request(board.item_id, "k-limits-dollars");
+    let mut request = bare_request(board.item_id, "k-limits-unknown");
     request.agent_profile_id = Some("profile-c1".into());
-    request.budgets = json!({"cost_usd": 1.5});
+    request.budgets = json!({"max_turns": 3});
     let refusal = start(&board, request).await.unwrap_err();
     assert_eq!(refusal.status(), 400);
-    assert_eq!(refusal.details["field"], "budgets.cost_usd");
-    assert_eq!(refusal.details["reason"], "field_removed");
+    assert_eq!(refusal.details["field"], "budgets.max_turns");
 }
 
 #[tokio::test]

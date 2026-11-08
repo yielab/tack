@@ -871,7 +871,6 @@ where
                 tokens_in: not_measured(),
                 tokens_out: not_measured(),
                 duration_ms: not_measured(),
-                cost_usd: not_measured(),
                 additional: BTreeMap::new(),
             },
         };

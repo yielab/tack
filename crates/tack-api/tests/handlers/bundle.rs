@@ -224,19 +224,9 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     let app = app().await;
     let projects = count(&app, "/api/projects").await;
     let profiles = count(&app, "/api/agent-profiles").await;
-    // An older file still says `usd_per_day`: it imports without it, and the preview says so.
-    let older = MY_SAAS.replace(
-        "tokens_per_day: 2000000,",
-        "tokens_per_day: 2000000, usd_per_day: 20,",
-    );
-    let (status, out) = import(&app, "/api/projects/outline?dry_run=true", &older).await;
+    let (status, out) = import(&app, "/api/projects/outline?dry_run=true", MY_SAAS).await;
     assert_eq!(status, StatusCode::OK, "{out}");
     assert_eq!(out["dry_run"], true);
-    let ignored = json!("Dollars per day is no longer a limit; this value is ignored.");
-    assert!(
-        out["warnings"].as_array().unwrap().contains(&ignored),
-        "{out}"
-    );
     assert_eq!(section(&out, "roles")["created"], 7);
     assert_eq!(count(&app, "/api/projects").await, projects);
     assert_eq!(count(&app, "/api/agent-profiles").await, profiles);
@@ -263,6 +253,20 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     let (_, third) = import(&app, &uri, MY_SAAS).await;
     assert_eq!(section(&third, "roles")["not_mentioned"], 1);
     assert_eq!(count(&app, &format!("/api/projects/{pid}/roles")).await, 8);
+}
+
+#[tokio::test]
+async fn a_budget_the_file_names_but_tack_does_not_have_is_refused() {
+    let app = app().await;
+    let projects = count(&app, "/api/projects").await;
+    let unknown = MY_SAAS.replace(
+        "tokens_per_day: 2000000,",
+        "tokens_per_day: 2000000, turns_per_day: 20,",
+    );
+    let (status, out) = import(&app, "/api/projects/outline", &unknown).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{out}");
+    assert!(out.to_string().contains("turns_per_day"), "{out}");
+    assert_eq!(count(&app, "/api/projects").await, projects);
 }
 
 #[tokio::test]

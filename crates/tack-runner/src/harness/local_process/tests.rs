@@ -284,7 +284,6 @@ async fn a_run_reports_the_request_model_as_requested() {
         outcome.usage.tokens_in.source,
         MeasurementSource::NotMeasured
     );
-    assert_eq!(outcome.usage.cost_usd.value, None);
 }
 
 /// `(requested by the request, observed by the harness) -> (model, source)`.

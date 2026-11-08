@@ -3529,24 +3529,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/settings/rate-card": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** GET /api/settings/rate-card */
-        get: operations["get_rate_card"];
-        /** PUT /api/settings/rate-card */
-        put: operations["put_rate_card"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/sprints/{id}": {
         parameters: {
             query?: never;
@@ -4146,17 +4128,11 @@ export interface components {
              */
             usage?: unknown;
             /**
-             * @description `tack_protocol::usage_provenance::UsageEconomics` — two
-             *     independently-provenanced dollar dimensions, never summed. Absent
-             *     usage/timestamps serialize as `{"value": null, "source":
-             *     "not_measured"}`, never a structural zero; no runner infra cost-rate
-             *     is stored anywhere in this schema today, so
-             *     `runner_time_cost.cost_usd_estimated` is always `not_measured` in
-             *     every real response from this endpoint. `#[schema(...)]` below
-             *     points the generated document at the real type, the same fix as
-             *     `model_provenance` above.
+             * Format: int64
+             * @description Time the runner itself witnessed between the attempt's start and end,
+             *     in milliseconds; `null` until both are known, never a partial duration.
              */
-            usage_economics: components["schemas"]["UsageEconomics"];
+            wall_clock_ms?: number | null;
             workspace_id?: string | null;
         };
         AutoStartState: {
@@ -4561,11 +4537,6 @@ export interface components {
             tokens_in: number;
             /** Format: int64 */
             tokens_out: number;
-            /**
-             * Format: double
-             * @description Absent without a rate card or when it does not list the model.
-             */
-            usd?: number | null;
         };
         /** @description One docket team's tokens in the window, counted as in [`CostByModel`]. */
         CostByTeam: {
@@ -4578,11 +4549,6 @@ export interface components {
             tokens_in: number;
             /** Format: int64 */
             tokens_out: number;
-            /**
-             * Format: double
-             * @description Absent without a rate card or when any of the team's models is unlisted.
-             */
-            usd?: number | null;
         };
         CreateComment: {
             author?: string | null;
@@ -4619,7 +4585,7 @@ export interface components {
              * @description A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
              *     `null`: no limit for this run even when the profile has one; a positive integer: that
              *     many. `0`, a negative number or a non-number is refused (`invalid_request`, field
-             *     `budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`).
+             *     `budgets.tokens`). Any other key is refused (`invalid_request`, field `budgets.<key>`).
              */
             budgets: unknown;
             environment: unknown;
@@ -5322,21 +5288,10 @@ export interface components {
         FactoryMetrics: {
             /** Format: int64 */
             attempts: number;
-            /** @description Tokens and attempts per model, priced when a card lists it. */
+            /** @description Tokens and attempts per model. */
             cost_by_model: components["schemas"]["CostByModel"][];
             /** @description Tokens and attempts per docket team; `No team` for runs that name none. */
             cost_by_team: components["schemas"]["CostByTeam"][];
-            /**
-             * Format: int64
-             * @description Attempts whose model the rate card does not list, so not in `cost_usd`.
-             */
-            cost_unpriced_attempts?: number | null;
-            /**
-             * Format: double
-             * @description Tokens priced by the rate card, plus the human minutes at its hour
-             *     rate. Absent without a rate card.
-             */
-            cost_usd?: number | null;
             /**
              * Format: int64
              * @description Attempts with at least one escalation the agent's policy settled itself, and no
@@ -5362,12 +5317,6 @@ export interface components {
              */
             lights_off_rate: components["schemas"]["Ratio"];
             merges_by_trigger: components["schemas"]["MergesByTrigger"];
-            /**
-             * Format: int64
-             * @description Models the window's attempts named, and how many of them the rate card prices (none
-             *     without a card): the cost card says "N of M models priced" from this pair.
-             */
-            models: number;
             /** @description accepted ÷ reviewed. */
             mrp_acceptance_rate: components["schemas"]["Ratio"];
             /**
@@ -5378,11 +5327,8 @@ export interface components {
             /** Format: int64 */
             mrp_unreviewed: number;
             outcomes: components["schemas"]["Outcomes"];
-            /** Format: int64 */
-            priced_models: number;
             quality?: null | components["schemas"]["Quality"];
             quality_unavailable?: string | null;
-            rate_card_as_of?: string | null;
             runs_by_start: components["schemas"]["RunsByStart"];
             since?: string | null;
             verification_tax: components["schemas"]["VerificationTax"];
@@ -5785,14 +5731,6 @@ export interface components {
          * @enum {string}
          */
         MeasurementSource: "measured" | "estimated" | "not_measured";
-        /** @description A nullable metric paired with its provenance, avoiding fabricated zeros. */
-        Measurement_f64: {
-            source: components["schemas"]["MeasurementSource"];
-            /** Format: double */
-            value?: number;
-        } & {
-            [key: string]: unknown;
-        };
         /**
          * @description What a person decides about a memory entry that waits for them.
          * @enum {string}
@@ -5895,13 +5833,6 @@ export interface components {
          * @enum {string}
          */
         MissingKind: "team" | "harness";
-        /** @description Dollars per million tokens of one model. */
-        ModelPrice: {
-            /** Format: double */
-            input_per_mtok: number;
-            /** Format: double */
-            output_per_mtok: number;
-        };
         /**
          * @description What an execution request asked for vs. what an attempt ran on: both
          *     model strings in full, and who named the served one (`reported`,
@@ -6490,18 +6421,6 @@ export interface components {
              */
             per_100_actions?: number | null;
         };
-        RateCard: {
-            /** @description The date the prices were read, as the operator wrote it. */
-            as_of: string;
-            /** Format: double */
-            ci_minute: number;
-            /** Format: double */
-            human_hour: number;
-            /** @description Price per model string, exactly as a run names its model. */
-            models: {
-                [key: string]: components["schemas"]["ModelPrice"];
-            };
-        };
         /** @description A ratio with the counts it came from. */
         Ratio: {
             /** Format: int64 */
@@ -6549,20 +6468,8 @@ export interface components {
         };
         /** @description One repository's figures from prill's store. */
         RepositoryQuality: {
-            /**
-             * Format: double
-             * @description Tokens of the attempts that opened this repository's pull requests,
-             *     priced by the rate card. Absent without a card.
-             */
-            cost_usd?: number | null;
             /** @description prill's `metrics/v1` document, as prill printed it. */
             metrics: Record<string, never>;
-            /**
-             * Format: double
-             * @description prill's `qualified` ÷ `cost_usd`. Absent without a card, without a
-             *     `qualified` count, or when the cost is zero.
-             */
-            qualified_per_usd?: number | null;
             /** @description `owner/repo`. */
             repository: string;
         };
@@ -6788,19 +6695,6 @@ export interface components {
             /** Format: int64 */
             total_capacity: number;
             updated_at: string;
-        };
-        /**
-         * @description Runner-observed wall-clock time cost — entirely different provenance
-         *     from the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the
-         *     runner/API directly witnesses (attempt start/end), never wrapped in a
-         *     [`Measurement`] since there is no "estimated" wall clock. No infra rate
-         *     is stored anywhere in this schema today, so `cost_usd_estimated` stays
-         *     `not_measured` unless a caller supplies `runner_rate_usd_per_hour`.
-         */
-        RunnerTimeCost: {
-            cost_usd_estimated: components["schemas"]["Measurement_f64"];
-            /** Format: int64 */
-            wall_clock_ms?: number | null;
         };
         RunnerV1Error: {
             /**
@@ -7969,20 +7863,6 @@ export interface components {
             constraints: components["schemas"]["Constraint"][];
             definition_of_done?: string | null;
             risk?: null | components["schemas"]["Risk"];
-        };
-        /**
-         * @description Two independently-provenanced dollar dimensions, deliberately never
-         *     summed into one figure — see this module's doc comment.
-         */
-        UsageEconomics: {
-            /**
-             * @description Pass-through of `Usage.cost_usd` — the harness/vendor's own
-             *     self-reported dollar figure, provenance (`measured` / `estimated` /
-             *     `not_measured`) preserved verbatim, never reinterpreted.
-             */
-            model_token_cost_usd_estimated: components["schemas"]["Measurement_f64"];
-            /** @description This module's own derived dimension — see [`RunnerTimeCost`]. */
-            runner_time_cost: components["schemas"]["RunnerTimeCost"];
         };
         VerificationTax: {
             /**
@@ -12793,59 +12673,6 @@ export interface operations {
                 };
             };
             /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_rate_card: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The rate card, or null when none was entered */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": null | components["schemas"]["RateCard"];
-                };
-            };
-        };
-    };
-    put_rate_card: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RateCard"];
-            };
-        };
-        responses: {
-            /** @description The saved rate card */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RateCard"];
-                };
-            };
-            /** @description A price is negative or not a number */
             422: {
                 headers: {
                     [name: string]: unknown;

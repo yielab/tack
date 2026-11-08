@@ -99,10 +99,7 @@ fn the_exit_status_alone_decides_the_verdict() {
         assert_eq!(report.succeeded, succeeded, "{exit:?}");
         assert_eq!(report.terminal_reason["code"], code, "{exit:?}");
         assert_eq!(report.terminal_reason["stdout"]["text_preview"], stdout);
-        assert_eq!(
-            (report.observed_model, report.tokens_in, report.cost_usd),
-            (None, None, None)
-        );
+        assert_eq!((report.observed_model, report.tokens_in), (None, None));
     }
     let failed = CodexGrammar.report(&run, &finished(ProcessExit::Exited(17), ""));
     assert!(
@@ -342,7 +339,6 @@ fn usage_is_read_from_the_turn_completed_line() {
             "{transcript:?}"
         );
         assert_eq!(report.observed_model, None, "{transcript:?}");
-        assert_eq!(report.cost_usd, None, "{transcript:?}");
     }
 }
 

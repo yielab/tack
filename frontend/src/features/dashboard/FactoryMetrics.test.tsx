@@ -81,8 +81,6 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
   },
   mrp_produced: 2,
   mrp_unreviewed: 2,
-  models: 0,
-  priced_models: 0,
   cost_by_model: [],
   cost_by_team: [],
   work_quality: {
@@ -304,7 +302,7 @@ describe('FactoryMetrics', () => {
   });
 });
 
-describe('FactoryMetrics sources and cost', () => {
+describe('FactoryMetrics sources and tokens', () => {
   const PRILL_QUALITY = {
     source: 'prill',
     prill_version: '0.4.2',
@@ -319,8 +317,6 @@ describe('FactoryMetrics sources and cost', () => {
           qualified: 3,
           qualifiedRate: 0.3,
         },
-        cost_usd: 12.5,
-        qualified_per_usd: 0.24,
       },
     ],
   } as unknown as FactoryMetrics['quality'];
@@ -340,7 +336,7 @@ describe('FactoryMetrics sources and cost', () => {
   });
 
   it('with quality, each repository shows the figures of the verifier under its version', async () => {
-    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, quality: PRILL_QUALITY, cost_usd: 12.5, rate_card_as_of: '2026-10-01' });
+    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, quality: PRILL_QUALITY });
     const { container } = mount();
     await flush();
     await flush();
@@ -354,38 +350,24 @@ describe('FactoryMetrics sources and cost', () => {
     expect(text).toContain('90.0%');
     expect(text).toContain('Escaped defects');
     expect(text).toContain('3 qualified');
-    expect(text).toContain('0.24 qualified per dollar');
   });
 
-  it('with cost_usd, shows the cost and the date the prices were read', async () => {
-    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, cost_usd: 12.5, cost_unpriced_attempts: 2, models: 4, priced_models: 3, rate_card_as_of: '2026-10-01' });
+  it('shows tokens and no price', async () => {
+    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, quality: PRILL_QUALITY });
     const { container } = mount();
     await flush();
     await flush();
 
     const text = container.textContent ?? '';
-    expect(text).toContain('≈ $12.50 (estimated)');
-    expect(text).toContain('3 of 4 models priced');
-    expect(text).toContain('Prices as of 2026-10-01');
-    expect(text).toContain('2 attempts not priced');
+    expect(text).not.toContain('$');
+    expect(text).not.toMatch(/rate card|per dollar|priced/i);
   });
 
-  it('without cost_usd, says the cost is not measured because there is no rate card', async () => {
-    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, cost_usd: null });
-    const { container } = mount();
-    await flush();
-    await flush();
-
-    expect(container.textContent).toContain('Enter a rate card below to see cost.');
-    expect(container.textContent).toContain('Not measured');
-    expect(container.textContent).not.toContain('$12.50');
-  });
-
-  it('Cost by model lists each model, and an unpriced one says not priced', async () => {
+  it('Tokens by model lists each model with its counted tokens and cache reads', async () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
       cost_by_model: [
-        { model: 'claude-sonnet-5-5', tokens_in: 1000, cache_read: 7000, tokens_out: 200, attempts: 3, usd: 1.25 },
+        { model: 'claude-sonnet-5-5', tokens_in: 1000, cache_read: 7000, tokens_out: 200, attempts: 3 },
         { model: 'opaque/unlisted', tokens_in: 40, cache_read: 0, tokens_out: 5, attempts: 1 },
       ],
       cost_by_team: [{ team: 'platform', tokens_in: 1040, cache_read: 7000, tokens_out: 205, attempts: 4 }],
@@ -395,15 +377,12 @@ describe('FactoryMetrics sources and cost', () => {
     await flush();
 
     const text = container.textContent ?? '';
-    expect(text).toContain('Cost by model');
+    expect(text).toContain('Tokens by model');
     expect(text).toContain('claude-sonnet-5-5');
-    expect(text).toContain('≈ $1.25 (estimated)');
     // Counted tokens in their own column, the cache reads beside them.
     expect(text).toContain('Cache reads');
     const sonnet = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('claude-sonnet-5-5'));
     expect([...sonnet!.querySelectorAll('td')].map((td) => td.textContent).slice(1, 4)).toEqual(['1000', '7000', '200']);
-    const unlisted = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('opaque/unlisted'));
-    expect(unlisted?.textContent).toContain('not priced');
     expect(text).toContain('By team');
   });
 

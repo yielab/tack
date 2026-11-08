@@ -36,7 +36,7 @@ describe('attemptsApi', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/a%2Fb/attempts');
   });
 
-  it('list(requestId) returns real AttemptSummary rows, including model_provenance and usage_economics', async () => {
+  it('list(requestId) returns real AttemptSummary rows, including model_provenance and wall_clock_ms', async () => {
     const row = {
       attempt_id: 'att_1',
       request_id: 'exec_1',
@@ -59,10 +59,7 @@ describe('attemptsApi', () => {
       created_at: '2026-08-06T12:00:00Z',
       updated_at: '2026-08-06T12:05:00Z',
       model_provenance: { requested: 'opaque/model-alpha', served: 'opaque/model-alpha', source: 'reported' },
-      usage_economics: {
-        model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
-        runner_time_cost: { wall_clock_ms: 295000, cost_usd_estimated: { value: null, source: 'not_measured' } },
-      },
+      wall_clock_ms: 295000,
     };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ protocol_version: 1, data: [row] }));
     const { data } = await attemptsApi.list('exec_1');

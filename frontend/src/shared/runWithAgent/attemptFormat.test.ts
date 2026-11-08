@@ -5,55 +5,13 @@ import {
   describeAttemptStatus,
   neverStarted,
   readAttemptUsage,
-  formatApproxCost,
   formatCountedTokens,
   formatTokenCount,
   describeModelProvenance,
   inProject,
   limitShare,
-  formatRunnerTimeCost,
-  formatUsageEconomics,
-  formatUsdMeasurement,
   formatWallClock,
 } from './attemptFormat';
-
-describe('formatUsdMeasurement — "Not measured" must be exact for absent usage', () => {
-  it('renders the literal "Not measured" for source: not_measured, never $0.00 / — / blank', () => {
-    const text = formatUsdMeasurement({ value: null, source: 'not_measured' });
-    expect(text).toBe('Not measured');
-    expect(text).toBe(NOT_MEASURED_TEXT);
-    expect(text).not.toContain('$0');
-    expect(text).not.toBe('—');
-    expect(text).not.toBe('');
-  });
-
-  it('defensively treats a null value as "Not measured" even if source somehow disagrees', () => {
-    // The backend guarantees these are always paired, but this function does
-    // not trust that pairing blindly (see its own doc comment) — a null
-    // value never renders as a number regardless of what `source` claims.
-    expect(formatUsdMeasurement({ value: null, source: 'measured' })).toBe('Not measured');
-  });
-
-  it('a real measured zero is a genuine, distinct fact — never collapsed into "Not measured"', () => {
-    const text = formatUsdMeasurement({ value: 0, source: 'measured' });
-    expect(text).toBe('$0.00 (measured)');
-    expect(text).not.toBe('Not measured');
-  });
-
-  it('renders a real measured value with its provenance label', () => {
-    expect(formatUsdMeasurement({ value: 1.5, source: 'measured' })).toBe('$1.50 (measured)');
-  });
-
-  it('renders a real estimated value with its provenance label', () => {
-    expect(formatUsdMeasurement({ value: 2.4956, source: 'estimated' })).toBe('$2.50 (estimated)');
-  });
-
-  it('uses more precision for a small nonzero value so it never rounds down to $0.00', () => {
-    const text = formatUsdMeasurement({ value: 0.0021, source: 'estimated' });
-    expect(text).toBe('$0.0021 (estimated)');
-    expect(text).not.toBe('$0.00 (estimated)');
-  });
-});
 
 describe('formatWallClock', () => {
   it('renders a distinct "Unknown" message for null — never the same text as "Not measured"', () => {
@@ -72,34 +30,6 @@ describe('formatWallClock', () => {
 
   it('formats hours, minutes and seconds', () => {
     expect(formatWallClock(3_725_000)).toBe('1h 2m 5s');
-  });
-});
-
-describe('formatRunnerTimeCost / formatUsageEconomics — never summed, always two line items', () => {
-  it('reports both dimensions as "Not measured" for the real-world every-response-today case', () => {
-    const usage = {
-      model_token_cost_usd_estimated: { value: null, source: 'not_measured' as const },
-      runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' as const } },
-    };
-    const display = formatUsageEconomics(usage);
-    expect(display.modelTokenCostUsd).toBe('Not measured');
-    expect(display.runnerTime.costUsd).toBe('Not measured');
-    expect(display.runnerTime.wallClock).toContain('Unknown');
-  });
-
-  it('keeps the two dollar dimensions independently provenanced, never equal by accident', () => {
-    const cost = formatRunnerTimeCost({
-      wall_clock_ms: 1_800_000, // 30 minutes
-      cost_usd_estimated: { value: 1.5, source: 'estimated' },
-    });
-    expect(cost.wallClock).toBe('30m 0s');
-    expect(cost.costUsd).toBe('$1.50 (estimated)');
-
-    const usage = formatUsageEconomics({
-      model_token_cost_usd_estimated: { value: 0.42, source: 'measured' },
-      runner_time_cost: { wall_clock_ms: 1_800_000, cost_usd_estimated: { value: 1.5, source: 'estimated' } },
-    });
-    expect(usage.modelTokenCostUsd).not.toBe(usage.runnerTime.costUsd);
   });
 });
 
@@ -219,24 +149,18 @@ describe('a run whose proposals could not be used', () => {
   });
 });
 
-describe('formatTokenCount / formatApproxCost', () => {
+describe('formatTokenCount', () => {
   it('shortens token counts without losing what matters', () => {
     expect([12, 999, 3_284, 12_500, 286_414, 1_077_873, 12_400_000].map(formatTokenCount)).toEqual([
       '12', '999', '3.3K', '13K', '286K', '1.08M', '12.4M',
     ]);
     expect(formatTokenCount(2_000)).toBe('2K');
   });
-
-  it('a harness dollar figure is always approximate, and unmeasured stays "Not measured"', () => {
-    expect(formatApproxCost({ value: 1.3368, source: 'measured' })).toBe('≈ $1.34 (estimated)');
-    expect(formatApproxCost({ value: 0.0042, source: 'estimated' })).toBe('≈ $0.0042 (estimated)');
-    expect(formatApproxCost({ value: null, source: 'not_measured' })).toBe(NOT_MEASURED_TEXT);
-  });
 });
 
 describe('formatCountedTokens — a counted token is a new one', () => {
   const attempt = (usage: Record<string, unknown>, counted_tokens: number | null = null) =>
-    readAttemptUsage({ usage, counted_tokens, terminal_reason: null, actual_execution: null, usage_economics: { model_token_cost_usd_estimated: { value: null, source: 'not_measured' }, runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } } } } as never);
+    readAttemptUsage({ usage, counted_tokens, terminal_reason: null, actual_execution: null, wall_clock_ms: null } as never);
   const measured = (value: number) => ({ value, source: 'measured' });
 
   it("prints the server's counted figure and shows the reads beside it, never recomputing", () => {

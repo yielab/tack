@@ -114,7 +114,6 @@ fn no_mcp_server_loads_not_even_the_accounts_claude_ai_connectors() {
 #[test]
 fn the_policy_and_model_reach_the_command_line() {
     let mut spec = request(&["Read", "Edit"], true);
-    spec.work.request.budgets = serde_json::json!({"cost_usd": 1.5});
     let args = invocation(&spec).expect("invocation").args;
 
     let value_of = |flag: &str| {
@@ -123,8 +122,6 @@ fn the_policy_and_model_reach_the_command_line() {
     };
     assert_eq!(value_of("--tools"), "Read,Edit");
     assert_eq!(value_of("--model"), "opaque/model-alpha");
-    // A dollar budget in an old snapshot is read and ignored: no flag carries it.
-    assert!(!args.iter().any(|arg| arg == "--max-budget-usd"));
     assert_eq!(value_of("--output-format"), "stream-json");
     assert_eq!(value_of("--setting-sources"), "");
     // The attribution reminder is switched off (measured on 2.1.302).
@@ -335,7 +332,6 @@ fn a_success_transcript_yields_model_version_and_usage() {
     assert_eq!(report.observed_model.as_deref(), Some("claude-sonnet-5"));
     assert_eq!(report.harness_version.as_deref(), Some("2.1.223"));
     assert_eq!((report.tokens_in, report.tokens_out), (Some(2), Some(18)));
-    assert_eq!(report.cost_usd, Some(0.0350687));
 
     let routed = include_str!("../fixtures/claude_code/2.1.261/gateway-routed-result.jsonl");
     let report = read(ProcessExit::Exited(1), routed);
@@ -350,7 +346,7 @@ fn a_success_transcript_yields_model_version_and_usage() {
 #[test]
 fn tokens_in_counts_the_cache_and_model_usage_names_every_model() {
     let init = r#"{"type":"system","subtype":"init","model":"claude-sonnet-5-5","claude_code_version":"2.1.273"}"#;
-    let result = r#"{"type":"result","is_error":false,"num_turns":6,"total_cost_usd":1.3368094,
+    let result = r#"{"type":"result","is_error":false,"num_turns":6,
         "usage":{"input_tokens":12,"cache_creation_input_tokens":286414,"cache_read_input_tokens":791447,"output_tokens":3284},
         "modelUsage":{
           "claude-haiku-4-5":{"inputTokens":300,"outputTokens":40,"cacheReadInputTokens":0,"cacheCreationInputTokens":0},
@@ -424,10 +420,6 @@ fn a_transcript_is_failed_by_is_error_or_by_a_missing_result() {
         assert!(!report.succeeded, "{value}");
         assert_eq!(report.terminal_reason[field], value);
     }
-    assert_eq!(
-        read(ProcessExit::Exited(1), exhausted).cost_usd,
-        Some(0.013149)
-    );
 }
 
 /// With no JSON line at all the exit status is all there is, and the

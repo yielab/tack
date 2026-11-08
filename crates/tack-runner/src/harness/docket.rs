@@ -890,7 +890,6 @@ fn hop_progress(finished: bool, hop: &HopEvent) -> Progress {
             tokens_in: measurement(Some(input)),
             tokens_out: measurement(Some(output)),
             duration_ms: measurement(hop.duration_ms),
-            cost_usd: measurement(None),
             additional,
         });
     }
@@ -1441,7 +1440,6 @@ impl DocketAdapter {
                     }),
                 ),
                 duration_ms: measurement(Some(elapsed)),
-                cost_usd: measurement(None),
                 additional,
             },
         }
@@ -1599,7 +1597,7 @@ impl DocketAdapter {
                        "task": info.task}),
             ),
             // The team's budget was spent before a step (`failureKinds`): the run says so and how
-            // it goes on, and not docket's text, which keeps a dollar figure Tack does not report.
+            // it goes on, and not docket's text, which names a figure Tack does not report.
             "blocked"
                 if failure_kind == Some("pod_budget")
                     && self.client.has_feature("failureKinds").await =>

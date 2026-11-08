@@ -151,7 +151,6 @@ fn events_become_a_report_over_captured_fixtures() {
         let report = read(transcript, exit);
         assert_eq!(report.succeeded, succeeded, "{transcript:?}");
         assert_eq!(report.observed_model, None, "{transcript:?}");
-        assert_eq!(report.cost_usd, None, "{transcript:?}");
         if succeeded {
             assert_eq!(
                 (report.tokens_in, report.tokens_out),

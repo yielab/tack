@@ -35,10 +35,7 @@ function attempt(overrides: Partial<AttemptSummary> = {}): AttemptSummary {
     created_at: '2026-08-06T12:00:00Z',
     updated_at: '2026-08-06T12:05:00Z',
     model_provenance: null,
-    usage_economics: {
-      model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
-      runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
-    },
+    wall_clock_ms: null,
     pull_request: null,
     review: null,
     ...overrides,
@@ -168,7 +165,7 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('Ran on m1, as requested.');
   });
 
-  it('leads the usage with tokens, counts the cache, names the models and shows no dollar figure', () => {
+  it('leads the usage with tokens, counts the cache, names the models and shows no price', () => {
     const c = mount([
       attempt({
         actual_execution: { harness_kind: 'claude-code', model: 'claude-sonnet-5-5', model_source: 'reported' },
@@ -182,10 +179,7 @@ describe('AttemptList', () => {
           models: ['claude-sonnet-5-5'],
         },
         counted_tokens: 289_710,
-        usage_economics: {
-          model_token_cost_usd_estimated: { value: 1.3368, source: 'measured' },
-          runner_time_cost: { wall_clock_ms: 113_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
-        },
+        wall_clock_ms: 113_000,
       }),
     ]);
     const usage = c.querySelector('[data-testid="attempt-usage"]')!;
@@ -199,10 +193,9 @@ describe('AttemptList', () => {
     expect(usage.textContent).toContain('6 model calls');
     expect(usage.textContent).toContain('1m 53s');
     expect(usage.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
-    // Limits and reports are in tokens: the harness's dollar estimate stays in the data and is not shown.
     expect(usage.querySelector('[data-testid="usage-cost"]')).toBeNull();
     expect(usage.textContent).not.toMatch(/\$|Cost|estimate/);
-    // One time figure: the runner-time dollar tile, never measured, is gone.
+    // One time figure, and nothing reads "Not measured" beside it.
     expect(usage.textContent!.match(/Not measured/g)).toBeNull();
   });
 
@@ -264,22 +257,19 @@ describe('AttemptList', () => {
     expect(c.textContent).not.toContain('Not yet reported');
   });
 
-  it('renders "Not measured" (exact) for the real-world every-response-today usage_economics shape — never $0.00', () => {
+  it('renders "Not measured" (exact) for an attempt that reported no usage — never a zero', () => {
     const c = mount([attempt()]);
     expect(c.textContent).toContain('Not measured');
-    expect(c.textContent).not.toContain('$0.00');
+    expect(c.textContent).not.toContain('$');
   });
 
-  it('shows no dollar figure even when the harness reported one: the cost stays in the data, the screen speaks in tokens', () => {
+  it('shows the runner-witnessed time and no dollar figure', () => {
     const c = mount([
       attempt({
-        usage_economics: {
-          model_token_cost_usd_estimated: { value: 0.42, source: 'measured' },
-          runner_time_cost: { wall_clock_ms: 295_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
-        },
+        wall_clock_ms: 295_000,
       }),
     ]);
-    expect(c.textContent).not.toContain('$0.42');
+    expect(c.textContent).not.toContain('$');
     expect(c.textContent).not.toContain('Cost');
     expect(c.textContent).toContain('4m 55s');
   });
@@ -835,10 +825,7 @@ describe('AttemptList', () => {
     const FINISHED = () => attempt({
       terminal_reason: { workspace_kept_at: '/w/1', result: 'Done.', steps: [{ role: 'lead', model: 'm-1', class: 'strong', verdict: 'approved', prompts: [], assumptions: [], questions: [] }] },
       counted_tokens: 100,
-      usage_economics: {
-        model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
-        runner_time_cost: { wall_clock_ms: 65_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
-      },
+      wall_clock_ms: 65_000,
       merge: { enabled: true, reason: null },
     });
     const FILES = [art('a1', 'patch', 'changes.patch'), art('a2', 'log', 'run.log'), art('a3', 'mrp', 'pack.json')];

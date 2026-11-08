@@ -81,3 +81,11 @@ provisional limit of 2 000 000 tokens per run (`DEFAULT_PROVISIONAL_TOKENS` in
 `None` turns it off). The run's request records the limit as provisional
 (`metadata.limit_source`), so a run stopped by it can be told apart from one with a limit of its own.
 Decisions 2 to 4 are unchanged. Phase 94 cards that change this: none.
+
+## Note, 2026-11-08: no dollar figure remains anywhere
+
+Decision 3 took dollars out of the limits; this closes the rest. The rate card (its form, its route and
+its stored card), the Factory metrics page's cost figures (`cost_usd`, `qualified_per_usd`), the
+`cost_usd` field of a runner's usage report and the harnesses' reading of the agents' own cost estimates
+are deleted, and a budget key Tack does not have is refused rather than ignored. Nothing in Tack
+computes, stores, receives, shows or documents a price in money. Decisions 1, 2 and 4 are unchanged.

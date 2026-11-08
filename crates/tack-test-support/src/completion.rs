@@ -48,7 +48,6 @@ pub fn usage(tokens_in: u64, tokens_out: u64) -> Usage {
         "tokens_in": {"value": tokens_in, "source": "measured"},
         "tokens_out": {"value": tokens_out, "source": "measured"},
         "duration_ms": {"value": null, "source": "not_measured"},
-        "cost_usd": {"value": null, "source": "not_measured"}
     }))
     .expect("a minimal usage")
 }
@@ -59,7 +58,6 @@ pub fn usage_not_measured() -> Usage {
         "tokens_in": {"value": null, "source": "not_measured"},
         "tokens_out": {"value": null, "source": "not_measured"},
         "duration_ms": {"value": null, "source": "not_measured"},
-        "cost_usd": {"value": null, "source": "not_measured"}
     }))
     .expect("a not-measured usage")
 }

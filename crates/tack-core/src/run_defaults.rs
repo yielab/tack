@@ -147,7 +147,7 @@ pub fn proposed_limit(p90: i64) -> i64 {
 }
 
 /// What a profile's `limits` may hold: `budgets.tokens` and `timeout_seconds` are positive whole
-/// numbers or absent, and `budgets.cost_usd` was removed. The message names the field in full.
+/// numbers or absent, and `budgets` holds nothing else. The message names the field in full.
 pub fn check_limits(limits: &serde_json::Value) -> Result<(), String> {
     let whole = |value: &serde_json::Value| value.as_u64().filter(|n| *n > 0).is_some();
     let Some(limits) = limits.as_object() else {
@@ -161,11 +161,10 @@ pub fn check_limits(limits: &serde_json::Value) -> Result<(), String> {
         let Some(budgets) = budgets.as_object() else {
             return Err("limits.budgets must be an object".to_owned());
         };
-        if budgets.contains_key("cost_usd") {
-            return Err(
-                "limits.budgets.cost_usd was removed; a limit is in tokens (limits.budgets.tokens)"
-                    .to_owned(),
-            );
+        if let Some(key) = budgets.keys().find(|key| key.as_str() != "tokens") {
+            return Err(format!(
+                "limits.budgets.{key} is not a limit; the only budget is limits.budgets.tokens"
+            ));
         }
         if budgets.get("tokens").is_some_and(|v| !whole(v)) {
             return Err("limits.budgets.tokens must be a positive whole number".to_owned());
@@ -675,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    fn a_profiles_limits_hold_positive_whole_numbers_and_no_dollars() {
+    fn a_profiles_limits_hold_positive_whole_numbers_and_only_tokens() {
         use serde_json::json;
         // (limits, the message it is refused with, None when it is fine)
         let rows = [
@@ -716,9 +715,9 @@ mod tests {
                 Some("limits.timeout_seconds must be a positive whole number"),
             ),
             (
-                json!({"budgets": {"cost_usd": 2.0}}),
+                json!({"budgets": {"max_turns": 2}}),
                 Some(
-                    "limits.budgets.cost_usd was removed; a limit is in tokens (limits.budgets.tokens)",
+                    "limits.budgets.max_turns is not a limit; the only budget is limits.budgets.tokens",
                 ),
             ),
             (

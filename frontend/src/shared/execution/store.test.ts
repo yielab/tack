@@ -52,10 +52,7 @@ function attemptSummary(overrides: Partial<AttemptSummary> = {}): AttemptSummary
     created_at: '2026-08-06T12:00:00Z',
     updated_at: '2026-08-06T12:00:00Z',
     model_provenance: null,
-    usage_economics: {
-      model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
-      runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
-    },
+    wall_clock_ms: null,
     ...overrides,
   };
 }

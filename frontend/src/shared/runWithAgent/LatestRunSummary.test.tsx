@@ -21,10 +21,7 @@ const ATTEMPT = {
   counted_tokens: 289_710,
   started_at: '2026-10-08T12:00:05Z', ended_at: '2026-10-08T12:02:00Z',
   created_at: '2026-10-08T12:00:00Z', updated_at: '2026-10-08T12:02:00Z', model_provenance: null,
-  usage_economics: {
-    model_token_cost_usd_estimated: { value: 1.3368, source: 'measured' },
-    runner_time_cost: { wall_clock_ms: 115_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
-  },
+  wall_clock_ms: 115_000,
   pull_request: null, review: null,
 };
 

@@ -481,7 +481,7 @@ principal real. Sin eso, la etiqueta es ambigua.
 | Ronda 0 (C0-3) | L4 las dos revisiones → una con motivo obligatorio y principal real | Migración probada, con un test visto fallar |
 | Ronda 3 | L3: la lista de Tack de "lo que examina al agente" se aplica a los cuatro agentes; la de docket se queda como retención durante el run | Que GR9 y GR17 estén dentro |
 | Ronda 4 | L8 los nombres `subtasks-from-plan` (nunca el campo de `plan-v1`); L6 los shims de compatibilidad | La release `v0.2.0-beta.1` está publicada |
-| Cuando decida | L5 los dólares en las métricas | **Decisión 8** |
+| Cuando decida | L5 los dólares en las métricas | **Decisión 8**, tomada 2026-11-08: se borran |
 | Se queda | L7 el texto `"ceiling L<n>"` (hasta que docket dé un código); L10 los alias fijos; E5 y E6 | — |
 
 ---
@@ -627,8 +627,9 @@ Rondas 1 y 2 no comparten archivos y pueden correr a la vez si hay máquina.
    candidatos fuera de git.
 7. **Tiempo humano.** Unas 3 h para etiquetar el suite verifier y ~1 h a la semana para promover
    candidatos. Lo haría una sola persona.
-8. **Los dólares de las métricas (L5).** `cost_usd` y `qualified_per_usd` contradicen "solo tokens".
-   ¿Se borran (recomendado) o se justifica la tarifa?
+8. **Los dólares de las métricas (L5).** *Tomada 2026-11-08: se borran.* Nada en Tack calcula, guarda, recibe,
+   muestra ni documenta un precio en dólares: la tarifa, `cost_usd`, `qualified_per_usd` y el `cost_usd` del
+   informe de uso de los agentes. Los límites y el uso son tokens (ADR 0024).
 9. **Canal de los avisos** (nocturno y de tendencia): ¿el inbox de Tack (recomendado), un archivo o un
    webhook?
 10. **Número externo (Harbor o Terminal-Bench):** ¿ahora o cuando haya release pública?
