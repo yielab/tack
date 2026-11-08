@@ -53,7 +53,9 @@ ADR; ADR 0024 has a dated note; built in `develop` the same day). Three cards:
   frontend's unused exports and dependencies are deleted: 3 406 lines removed and 1 159 added. Migrations, docket's
   feature probes and the runner protocol's optional fields stay.
 
-Open: the metrics screenshot in the User guide still shows the removed cost card.
+The live suite (35 tests, Claude Haiku 5.5 through docket, about 149 000 input tokens) passes in one
+run against docket `3caccedd` and prill `6b95423`, and `--check` reports no drift. Open: the metrics
+screenshot in the User guide still shows the removed cost card.
 
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
 file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:

@@ -153,6 +153,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   provider; fixtures from docket `ee17a1fd`); and the tree cleaned: Tack's answers for its own removed settings and
   earlier builds deleted (C4-1's L6 included), test-only store probes in `tack-test-support`, unread fixtures and unused
   frontend exports and dependencies gone. Kept on purpose: migrations, docket feature probes, runner-v1 optional fields.
+  The live suite passes 35/35 against docket `3caccedd` and `--check` reports no drift; the metrics screenshot needs a retake.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
