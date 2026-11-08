@@ -218,14 +218,6 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("automation.default_profile \"Ghost\""),
         ),
         (
-            "automation: { on_finish_status: Done }",
-            Warning("automation.on_finish_status is ignored: the status is set by a person"),
-        ),
-        (
-            "automation: { on_start_status: Nowhere }",
-            Warning("automation.on_start_status is ignored: the status is set by a person"),
-        ),
-        (
             "automation: { auto_start: { status: Nowhere } }",
             Problem("automation.auto_start.status \"Nowhere\""),
         ),

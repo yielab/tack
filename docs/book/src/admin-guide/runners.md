@@ -522,9 +522,7 @@ or a board with no token, gets no pull request and nothing else changes.
 
 **The item's status.** A run never changes it: not when it starts, not when it succeeds and not when
 a person accepts the attempt's merge-readiness pack. The task stays in its column until a person moves
-it. A request that still names a status move (`status_map_policy_id`, `--status-map-policy`, or `on_start_status`
-and `on_finish_status` in a project) is accepted, and the answer says "ignored: the status is set by a
-person".
+it.
 
 ## Starting tasks by itself
 

@@ -104,7 +104,6 @@ pub fn full_request(item_id: Uuid) -> RunRequest {
         agent_profile_id: Some("profile-c1".into()),
         requested_harness_kind: Some("codex".into()),
         requested_model: None,
-        agent_profile_snapshot: None,
         repository_snapshot: Some(
             json!({"kind":"git","remote":"https://example.test/c1.git","base_revision":"abc123","subdirectory":null}),
         ),

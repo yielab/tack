@@ -142,10 +142,8 @@ per-endpoint listing precisely so they do not get duplicated by one.
   `POST .../attempts/{n}/review` (`accepted` or `rejected`, and a `reason` that a rejection
   must carry, or it is a `400`): it is recorded with the caller as reviewer, the first review
   is the record and a second is a `409`. Accepting never moves the item.
-- A run never changes an item's status. A request that sends `status_map_policy_id` to
-  `POST /api/executions`, or `on_start_status` or `on_finish_status` to `PATCH /api/projects/{id}`,
-  is accepted, the field is ignored, and the answer carries `notice: "ignored: the status is set by
-  a person"`.
+- A run never changes an item's status. `POST /api/executions` refuses a key it does not name
+  (`invalid_request`, `details.field` the key).
 - `GET /api/projects/{id}/metrics/factory` accepts an optional RFC 3339 `since`; every
   ratio carries its numerator and denominator, and a value that cannot be measured is
   `null` with a `null_reason`, never `0`.

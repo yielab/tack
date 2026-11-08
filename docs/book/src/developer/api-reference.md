@@ -89,7 +89,7 @@ Projects: the top-level container for work.
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored | `Project` |
+| 200 | Updated project | `Project` |
 | 400 | Validation error | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
 

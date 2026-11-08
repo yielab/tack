@@ -578,16 +578,6 @@ async fn a_request_with_a_different_repository_is_refused() {
     assert_eq!(refusal.details["reason"], "repository_differs_from_project");
 }
 
-#[tokio::test]
-async fn a_request_that_still_carries_the_profile_snapshot_is_refused() {
-    let board = board().await;
-    let mut request = full_request(board.item_id);
-    request.agent_profile_snapshot = Some(Value::Null);
-    let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status(), 400);
-    assert_eq!(refusal.details["field"], "agent_profile_snapshot");
-    assert_eq!(refusal.details["reason"], "field_removed");
-}
 
 #[tokio::test]
 async fn an_unknown_profile_is_not_found_and_an_unknown_item_too() {

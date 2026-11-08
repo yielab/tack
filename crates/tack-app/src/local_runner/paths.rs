@@ -35,35 +35,6 @@ pub fn state_dir_under(storage_dir: &str) -> PathBuf {
     Path::new(storage_dir).join("runner")
 }
 
-/// Best-effort recovery for an install whose runner state still sits at the bare, cwd-relative
-/// `legacy_dir` instead of the database-scoped directory: renames it to `new_dir` so an
-/// already-enrolled credential is not stranded. No-op if `new_dir` already exists (existing
-/// state is never clobbered). A failed rename leaves the legacy directory in place and logged;
-/// the caller provisions a fresh identity instead.
-pub fn migrate_legacy_state_dir(legacy_dir: &Path, new_dir: &Path) {
-    if new_dir.exists() || !legacy_dir.is_dir() {
-        return;
-    }
-    if let Some(parent) = new_dir.parent()
-        && let Err(error) = std::fs::create_dir_all(parent)
-    {
-        tracing::warn!(
-            %error,
-            "could not prepare the embedded runner's new state directory; its legacy state is left in place"
-        );
-        return;
-    }
-    match std::fs::rename(legacy_dir, new_dir) {
-        Ok(()) => tracing::info!(
-            "migrated the embedded runner's on-disk state to the directory scoped to this server's own storage configuration"
-        ),
-        Err(error) => tracing::warn!(
-            %error,
-            "could not migrate the embedded runner's legacy state directory; it is left in place and a fresh identity will be provisioned instead"
-        ),
-    }
-}
-
 /// The settings file the variable names. Set but empty, it names none and the default is not
 /// read either: that is how a script asks for defaults only. Unset, the default when that file
 /// exists.

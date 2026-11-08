@@ -170,28 +170,11 @@ async fn item_status(world: &common::World) -> String {
 }
 
 #[tokio::test]
-async fn a_success_leaves_the_items_status_alone_whatever_the_snapshot_names() {
-    for (artifacts, policy) in [
-        (json!([{"kind": "patch", "size_bytes": 12}]), json!(null)),
-        (
-            json!([{"kind": "patch", "size_bytes": 12}]),
-            json!("done_on_success"),
-        ),
-        (json!([]), json!("done_on_success")),
-    ] {
+async fn a_success_leaves_the_items_status_alone() {
+    for artifacts in [json!([{"kind": "patch", "size_bytes": 12}]), json!([])] {
         let world = world().await;
         let run = running_attempt(&world, "complete-status").await;
         let before = item_status(&world).await;
-        // A request stored before the policy was removed still carries it: read, and ignored.
-        let mut snapshot: Value = serde_json::from_str(
-            &execution_requests::request_snapshot(&world.repo, &run.request_id)
-                .await
-                .unwrap()
-                .expect("snapshot"),
-        )
-        .unwrap();
-        snapshot["status_map_policy_id"] = policy;
-        seed::execution_request_snapshot(&world.repo, &run.request_id, &snapshot.to_string()).await;
 
         let Completed::Committed { .. } = finish(
             &world,

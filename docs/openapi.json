@@ -4176,7 +4176,7 @@
         },
         "responses": {
           "200": {
-            "description": "Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored",
+            "description": "Updated project",
             "content": {
               "application/json": {
                 "schema": {
@@ -11363,6 +11363,7 @@
       },
       "CreateExecution": {
         "type": "object",
+        "description": "A key the request does not name is refused (`invalid_request`, `field` the key), so a\nsetting the server does not read is never taken for one it obeys.",
         "required": [
           "item_id",
           "idempotency_key",
@@ -11468,7 +11469,8 @@
             ],
             "description": "`false` declines the runner's verifier for this run. The runner's own\nconfiguration decides whether a verifier exists; `true` never enables one."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateExecutionResponse": {
         "type": "object",
@@ -11480,13 +11482,6 @@
           "replayed"
         ],
         "properties": {
-          "notice": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Present when the request named a setting that was removed: \"ignored: the status is set by\na person\"."
-          },
           "protocol_version": {
             "type": "integer",
             "format": "int32",

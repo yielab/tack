@@ -19,7 +19,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tack_app::local_runner::{
     EmbeddedRunner, RunnerHost, RunnerProcess, config_path_from, ensure_loopback,
-    has_stored_session, migrate_legacy_state_dir, state_dir_under,
+    has_stored_session, state_dir_under,
 };
 use tack_runner::{
     ConfigError, ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
@@ -207,13 +207,8 @@ impl CliRunnerHost {
         let command_line = if state_dir_named {
             ConfigOverrides::default()
         } else {
-            let state_dir = state_dir_under(&server_config.storage_dir);
-            migrate_legacy_state_dir(
-                Path::new(tack_runner::config::DEFAULT_STATE_DIR),
-                &state_dir,
-            );
             ConfigOverrides {
-                state_dir: Some(state_dir),
+                state_dir: Some(state_dir_under(&server_config.storage_dir)),
                 ..ConfigOverrides::default()
             }
         };

@@ -200,10 +200,6 @@ pub fn turn_principal(thread: Uuid) -> String {
     format!("thread:{thread}")
 }
 
-/// The thread a label names, when it is a thread's.
-pub fn thread_of_label(label: &str) -> Option<Uuid> {
-    Uuid::parse_str(label.strip_prefix("thread:")?).ok()
-}
 
 /// Why a title or a body cannot be accepted, or `None` when it can.
 pub fn title_problem(title: &str) -> Option<String> {
@@ -624,12 +620,6 @@ mod tests {
         assert_eq!(may_post(&full, at(1), false), Err(TurnStop::Closed));
     }
 
-    #[test]
-    fn labels_name_the_thread_they_come_from() {
-        let id = Uuid::new_v4();
-        assert_eq!(thread_of_label(&turn_principal(id)), Some(id));
-        assert_eq!(thread_of_label("agent:x"), None);
-    }
 
     #[test]
     fn titles_bodies_and_references_are_bounded() {

@@ -188,7 +188,6 @@ The file is **accepted with a warning** for:
 - a built-in profile it tries to redefine;
 - a fleet name the board does not have: the profile then runs on any computer;
 - an autonomy level or auto-start the import lowered;
-- `on_start_status` or `on_finish_status` in `automation`: they are ignored, because a run never moves a task;
 - an item whose status the workflow does not have: it starts in the first status;
 - an unknown priority, which becomes medium;
 - an item with no value for a required field;

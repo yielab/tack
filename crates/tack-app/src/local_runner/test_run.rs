@@ -96,7 +96,6 @@ pub async fn start_test_run(
         agent_profile_id: Some(profile.id),
         requested_harness_kind: Some(harness_kind),
         requested_model: None,
-        agent_profile_snapshot: None,
         repository_snapshot: None,
         permission_policy: PermissionRequest::new(tools, Some(false)),
         budgets: json!({}),

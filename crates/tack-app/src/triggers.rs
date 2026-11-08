@@ -462,7 +462,6 @@ async fn begin_run(
         agent_profile_id: Some(trigger.profile.clone()),
         requested_harness_kind: None,
         requested_model: None,
-        agent_profile_snapshot: None,
         repository_snapshot: None,
         permission_policy: permissions,
         budgets: json!({}),
