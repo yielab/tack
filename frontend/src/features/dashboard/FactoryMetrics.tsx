@@ -4,7 +4,6 @@ import { api } from '../../shared/api';
 import { Select, Skeleton } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { JSX } from 'solid-js';
-import RateCardForm from './RateCardForm';
 import Card from '../../shared/ui/Card';
 import QualityFigures from './QualityFigures';
 
@@ -34,11 +33,6 @@ function percent(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-/** Every dollar figure is Tack's estimate from the rate card, never a bill. */
-function dollars(v: number): string {
-  return `≈ $${v.toFixed(2)} (estimated)`;
-}
-
 /** The windows the page can be read over, in days; `all` is all time. */
 const WINDOWS = [
   { value: 'all', label: 'All time' },
@@ -56,7 +50,7 @@ export default function FactoryMetrics() {
   const projectId = params.id!;
 
   const [period, setPeriod] = createSignal('all');
-  const [metrics, { refetch }] = createResource(period, (w) => api.metrics.factoryMetrics(projectId, sinceOf(w)));
+  const [metrics] = createResource(period, (w) => api.metrics.factoryMetrics(projectId, sinceOf(w)));
 
   return (
     <div class="flex flex-col gap-[18px]">
@@ -117,10 +111,6 @@ export default function FactoryMetrics() {
             {(m) => <OutcomesCard outcomes={m.outcomes} />}
           </MetricCard>
 
-          <MetricCard title="Cost" data={metrics()!}>
-            {(m) => <CostCard costUsd={m.cost_usd} unpricedAttempts={m.cost_unpriced_attempts} asOf={m.rate_card_as_of} pricedModels={m.priced_models} models={m.models} />}
-          </MetricCard>
-
           <MetricCard title={qualityTitle(metrics()!.quality)} data={metrics()!}>
             {(m) => <QualityCard quality={m.quality} unavailable={m.quality_unavailable} />}
           </MetricCard>
@@ -132,7 +122,7 @@ export default function FactoryMetrics() {
           <QualityFigures quality={metrics()!.work_quality} />
         </Card>
         <CostTable
-          title="Cost by model"
+          title="Tokens by model"
           label="Model"
           rows={metrics()!.cost_by_model.map((r) => ({ ...r, name: r.model ?? 'No model named' }))}
         />
@@ -141,14 +131,13 @@ export default function FactoryMetrics() {
         </Show>
       </Show>
 
-      <RateCardForm onSaved={() => void refetch()} />
     </div>
   );
 }
 
-type CostRow = { name: string; tokens_in: number; cache_read: number; tokens_out: number; attempts: number; usd?: number | null };
+type CostRow = { name: string; tokens_in: number; cache_read: number; tokens_out: number; attempts: number };
 
-/** Counted tokens and attempts per name, the cache reads beside them and not in them; dollars only where the rate card priced the row. */
+/** Counted tokens and attempts per name, the cache reads beside them and not in them. */
 function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
   return (
     <Card class="px-5 py-[18px] flex flex-col gap-2.5">
@@ -161,7 +150,6 @@ function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
             <th class="font-normal">Cache reads</th>
             <th class="font-normal">Tokens out</th>
             <th class="font-normal">Attempts</th>
-            <th class="font-normal">Cost</th>
           </tr>
         </thead>
         <tbody>
@@ -173,7 +161,6 @@ function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
                 <td>{row.cache_read}</td>
                 <td>{row.tokens_out}</td>
                 <td>{row.attempts}</td>
-                <td>{row.usd === null || row.usd === undefined ? 'not priced' : dollars(row.usd)}</td>
               </tr>
             )}
           </For>
@@ -311,36 +298,6 @@ function OutcomesCard(props: { outcomes: Outcomes }) {
   );
 }
 
-/** Cost is Tack's: tokens priced by the rate card, plus human minutes at its hour rate. */
-function CostCard(props: { costUsd?: number | null; unpricedAttempts?: number | null; asOf?: string | null; pricedModels: number; models: number }) {
-  return (
-    <div class="flex flex-col gap-2">
-      <Show
-        when={props.costUsd !== null && props.costUsd !== undefined}
-        fallback={
-          <div>
-            <p class="text-sm text-content">Not measured</p>
-            <p class="text-xs text-content-muted">Enter a rate card below to see cost.</p>
-          </div>
-        }
-      >
-        <div>
-          <p class="text-2xl font-heading text-content">{dollars(props.costUsd!)}</p>
-          <div class="text-xs text-content-subtle mt-2 space-y-1">
-            <p>{props.pricedModels} of {props.models} models priced</p>
-            <Show when={props.asOf}>
-              <p>Prices as of {props.asOf}</p>
-            </Show>
-            <Show when={props.unpricedAttempts}>
-              <p>{count(props.unpricedAttempts!, 'attempt')} not priced: the rate card does not list their model</p>
-            </Show>
-          </div>
-        </div>
-      </Show>
-    </div>
-  );
-}
-
 /** The card's title names the verifier's version when it answered. */
 function qualityTitle(quality: Quality | null | undefined): string {
   return quality ? `Quality (from the verifier, version ${quality.prill_version})` : 'Quality';
@@ -390,12 +347,6 @@ function RepositoryQualityBlock(props: { repo: RepositoryQuality }) {
             {' '}({percent(m().qualifiedRate!)})
           </Show>
         </p>
-      </Show>
-      <Show when={props.repo.cost_usd !== null && props.repo.cost_usd !== undefined}>
-        <p>Cost: {dollars(props.repo.cost_usd!)}</p>
-      </Show>
-      <Show when={props.repo.qualified_per_usd !== null && props.repo.qualified_per_usd !== undefined}>
-        <p>{props.repo.qualified_per_usd!.toFixed(2)} qualified per dollar</p>
       </Show>
     </div>
   );

@@ -802,7 +802,7 @@ async fn the_attempt_list_carries_the_counted_tokens() {
             "cache reads are left out",
             Some(
                 json!({"tokens_in": measured(1_000_000), "tokens_out": measured(9_000),
-                "duration_ms": unmeasured, "cost_usd": unmeasured, "cache_read_tokens": 412_000}),
+                "duration_ms": unmeasured, "cache_read_tokens": 412_000}),
             ),
             json!(597_000),
         ),
@@ -810,14 +810,14 @@ async fn the_attempt_list_carries_the_counted_tokens() {
             "no cache figure counts the whole input",
             Some(
                 json!({"tokens_in": measured(48_000), "tokens_out": measured(210),
-                "duration_ms": unmeasured, "cost_usd": unmeasured}),
+                "duration_ms": unmeasured}),
             ),
             json!(48_210),
         ),
         (
             "nothing measured is null, not zero",
             Some(json!({"tokens_in": unmeasured, "tokens_out": unmeasured,
-                "duration_ms": unmeasured, "cost_usd": unmeasured})),
+                "duration_ms": unmeasured})),
             Value::Null,
         ),
         ("no usage reported is null", None, Value::Null),

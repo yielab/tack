@@ -1,7 +1,7 @@
 //! Proves `create_execution`'s model resolution
 //! (`tack_app::model_policy_wiring::resolve_request_model_policy`) and
 //! `GET /api/executions/{id}/attempts`'s `model_provenance`/
-//! `usage_economics` fields work through the real production router
+//! `wall_clock_ms` fields work through the real production router
 //! (`tack_api::router::build_router`), not a handler-local harness. Every
 //! claim is checked against persisted database state or an exact JSON
 //! shape, never a bare 2xx status.
@@ -299,7 +299,7 @@ async fn create_execution_resolves_model_by_precedence_tier() {
 
 // =======================================================================
 // `GET /api/executions/{id}/attempts` carries honest
-// `model_provenance`/`usage_economics` — proved end to end through
+// `model_provenance`/`wall_clock_ms` — proved end to end through
 // claim → accept → start → completion.
 // =======================================================================
 
@@ -340,7 +340,7 @@ async fn complete_attempt(
 
 /// Drives an execution request through claim, accept and start — stopping
 /// short of completion so callers can inspect the in-flight
-/// `model_provenance`/`usage_economics` shape (still honestly absent) before
+/// `model_provenance`/`wall_clock_ms` shape (still honestly absent) before
 /// choosing how to complete it.
 async fn claim_accept_start(
     app: &axum::Router,
@@ -413,13 +413,12 @@ async fn claim_accept_start(
 }
 
 /// The `usage` shape for a completion whose harness never reported real
-/// token/duration/cost numbers — every dimension `not_measured`, not zero.
+/// token/duration numbers — every dimension `not_measured`, not zero.
 fn not_measured_usage() -> Value {
     json!({
         "tokens_in": {"value": null, "source": "not_measured"},
         "tokens_out": {"value": null, "source": "not_measured"},
         "duration_ms": {"value": null, "source": "not_measured"},
-        "cost_usd": {"value": null, "source": "not_measured"},
     })
 }
 
@@ -475,7 +474,7 @@ async fn get_attempts(app: &axum::Router, request_id: &str) -> Value {
 }
 
 #[tokio::test]
-async fn attempt_summary_hides_provenance_and_costs_before_completion() {
+async fn attempt_summary_hides_provenance_and_wall_clock_before_completion() {
     let (app, _repo, item_id, _project_id) = setup().await;
     let live = claim_accept_start(&app, &item_id, "provenance-in-flight", "opaque/model-f6b").await;
 
@@ -489,17 +488,9 @@ async fn attempt_summary_hides_provenance_and_costs_before_completion() {
         "no actual_execution has been reported yet — provenance must be honestly absent, not guessed"
     );
     assert_eq!(
-        attempt["usage_economics"]["runner_time_cost"]["wall_clock_ms"],
+        attempt["wall_clock_ms"],
         Value::Null,
         "ended_at is not yet known — wall_clock_ms must stay null, never a fabricated partial duration"
-    );
-    assert_eq!(
-        attempt["usage_economics"]["runner_time_cost"]["cost_usd_estimated"],
-        json!({"value": null, "source": "not_measured"})
-    );
-    assert_eq!(
-        attempt["usage_economics"]["model_token_cost_usd_estimated"],
-        json!({"value": null, "source": "not_measured"})
     );
 }
 
@@ -509,17 +500,13 @@ struct ProvenanceCase {
     actual_model_id: &'static str,
     usage: Value,
     expected_provenance: Value,
-    expected_cost: Value,
 }
 
 /// Runs one [`ProvenanceCase`] end to end (claim → accept → start →
-/// completion) and asserts its expected `model_provenance`/cost shape,
-/// plus the cross-cutting invariants that hold regardless of which case:
-/// the runner-time dollar dimension always stays `not_measured` (no
-/// infra cost-rate exists in this schema, so it must never borrow the
-/// harness's own figure or default to 0), and `wall_clock_ms` is computed
-/// independently here — not trusted from the handler's own arithmetic —
-/// and cross-checked against the database.
+/// completion) and asserts its expected `model_provenance`, plus the
+/// cross-cutting invariant that holds regardless of which case:
+/// `wall_clock_ms` is computed independently here — not trusted from the
+/// handler's own arithmetic — and cross-checked against the database.
 async fn assert_provenance_case(case: ProvenanceCase) {
     let (app, repo, item_id, _project_id) = setup().await;
     let live = claim_accept_start(&app, &item_id, case.key, "opaque/model-f6b").await;
@@ -541,20 +528,6 @@ async fn assert_provenance_case(case: ProvenanceCase) {
         "{}",
         case.name
     );
-    assert_eq!(
-        attempt["usage_economics"]["model_token_cost_usd_estimated"], case.expected_cost,
-        "{}",
-        case.name
-    );
-
-    let runner_cost = &attempt["usage_economics"]["runner_time_cost"]["cost_usd_estimated"];
-    assert_eq!(
-        runner_cost["value"],
-        Value::Null,
-        "{}: must be null, not 0",
-        case.name
-    );
-    assert_eq!(runner_cost["source"], "not_measured");
 
     let started_at: DateTime<Utc> = attempt["started_at"].as_str().unwrap().parse().unwrap();
     let ended_at: DateTime<Utc> = attempt["ended_at"].as_str().unwrap().parse().unwrap();
@@ -562,7 +535,7 @@ async fn assert_provenance_case(case: ProvenanceCase) {
         .signed_duration_since(started_at)
         .num_milliseconds();
     assert_eq!(
-        attempt["usage_economics"]["runner_time_cost"]["wall_clock_ms"],
+        attempt["wall_clock_ms"],
         json!(expected_wall_clock_ms),
         "{}",
         case.name
@@ -575,7 +548,7 @@ async fn assert_provenance_case(case: ProvenanceCase) {
 }
 
 #[tokio::test]
-async fn attempt_summary_reports_provenance_and_cost_after_completion() {
+async fn attempt_summary_reports_provenance_and_wall_clock_after_completion() {
     let cases = [
         ProvenanceCase {
             name: "matched: requested and actual model agree",
@@ -585,10 +558,8 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
                 "tokens_in": {"value": 1000, "source": "measured"},
                 "tokens_out": {"value": 500, "source": "measured"},
                 "duration_ms": {"value": 300000, "source": "measured"},
-                "cost_usd": {"value": 0.42, "source": "measured"},
             }),
             expected_provenance: json!({"requested": "opaque/model-f6b", "served": "opaque/model-f6b", "source": "reported"}),
-            expected_cost: json!({"value": 0.42, "source": "measured"}),
         },
         ProvenanceCase {
             name: "mismatched: the harness ran a different declared model than requested",
@@ -600,7 +571,6 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
                 "served": "opaque/model-f6b-mismatch",
                 "source": "reported",
             }),
-            expected_cost: json!({"value": null, "source": "not_measured"}),
         },
     ];
 

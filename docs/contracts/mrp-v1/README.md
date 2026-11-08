@@ -36,7 +36,7 @@ The pack is defined by `schema.json` (JSON Schema 2020-12) and contains:
 - **judge**: A blind model judge's verdict (model family, rubric with verdicts per criterion), null if not run
 - **risk**: Risk tier (low|medium|high) and reasons
 - **recommendation**: Merge decision (merge|review|reject) and rationale
-- **usage**: Verifier token consumption (tokens_in, tokens_out) — not a dollar field
+- **usage**: Verifier token consumption (tokens_in, tokens_out)
 - **signature**: `{"kind": "none"}`, or `{"kind": "in-toto", "statement_sha256"}` when the runner's `[verify] sign_key` made prill sign: the hash of the staged `mrp.intoto.json` envelope (media type `application/vnd.in-toto+json`)
 - **produced_by**: Producer identification (program, version)
 - **stages** (optional): every stage the verifier knows, each `{name, status}` plus an optional `reason`; absent when the verifier reports none

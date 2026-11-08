@@ -121,8 +121,7 @@ fn bounded_preview(text: &str, max_chars: usize) -> String {
 /// codex-cli 0.149.1, 2026-09-20; `fixtures/codex/README.md`), plus
 /// `cached_input_tokens`, the part of `input_tokens` the cache served. The
 /// cache-write and reasoning counts are not read: whether `input_tokens`
-/// already includes them is not documented. `cost_usd` stays `None`: no such
-/// field exists in the output. A stream with no `turn.completed` line leaves
+/// already includes them is not documented. A stream with no `turn.completed` line leaves
 /// every figure `None`.
 fn usage_from_output(stdout: &str) -> (Option<u64>, Option<u64>, UsageDetail) {
     for line in stdout.lines() {
@@ -262,7 +261,6 @@ fn app_server_report(result: &ProcessResult) -> Option<RunReport> {
         tokens_in,
         tokens_out,
         duration_ms: None,
-        cost_usd: None,
         usage_detail: UsageDetail::default(),
     })
 }
@@ -523,7 +521,6 @@ impl HarnessGrammar for CodexGrammar {
             tokens_in,
             tokens_out,
             duration_ms: None,
-            cost_usd: None,
             usage_detail,
         }
     }
@@ -558,8 +555,8 @@ impl HarnessGrammar for CodexGrammar {
             usage: capability(
                 CapabilitySupport::Advisory,
                 "input_tokens and output_tokens are real measurements, read from `exec \
-                 --json`'s terminal `turn.completed` line, measured on codex-cli 0.149.1; no \
-                 cost_usd field exists in the output, so cost is never reported",
+                 --json`'s terminal `turn.completed` line, measured on codex-cli 0.149.1; \
+                 the output carries no cost figure",
             ),
             proposals: Some(capability(
                 CapabilitySupport::Supported,

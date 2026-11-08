@@ -1,11 +1,11 @@
 //! The rows behind the Quality figures of `GET /api/projects/{id}/metrics/factory`: one row per
 //! attempt in the window with everything a figure or a cut needs, so the arithmetic lives in one
 //! place above and none of it in SQL. `since` is an RFC 3339 instant compared to the attempt's
-//! `created_at` with `julianday`; `None` is all time. No `cost_usd` is read anywhere here.
+//! `created_at` with `julianday`; `None` is all time.
 
 use sqlx::{AssertSqlSafe, Row};
 
-use crate::repo::rate_card::RUN_MODEL_SQL;
+use crate::repo::metrics::RUN_MODEL_SQL;
 use crate::{Repository, StoreError};
 
 /// One attempt of the project, with its request, its review and its pull request.
@@ -21,7 +21,7 @@ pub struct QualityAttempt {
     pub profile: Option<String>,
     /// The agent that ran: the one the runner reported, else the one asked for.
     pub harness: Option<String>,
-    /// The model the run is priced as (`RUN_MODEL_SQL`).
+    /// The model the run is reported under (`RUN_MODEL_SQL`).
     pub model: Option<String>,
     pub team: Option<String>,
     /// The fingerprint of the prompt templates the request was composed with.

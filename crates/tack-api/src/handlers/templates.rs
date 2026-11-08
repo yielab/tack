@@ -414,7 +414,6 @@ pub async fn save_project_as_template(
                     tokens_per_day: s.budgets.tokens_per_day,
                     auto_merges_per_day: s.budgets.auto_merges_per_day,
                     queue_items_max: s.budgets.queue_items_max,
-                    ..Default::default()
                 }),
                 merge_on_done: Some(s.merge_on_done),
             });

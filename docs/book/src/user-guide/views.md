@@ -260,7 +260,7 @@ Read-only project statistics, in the sidebar.
 
 Read-only, per project — **Factory metrics** in the sidebar. It answers how well agent work is
 going on this project: how often a run needed a person, how long the person took, what verification
-cost, how many changes were accepted and merged, and what the runs cost. A card with nothing to
+cost, how many changes were accepted and merged, and how many tokens the runs used. A card with nothing to
 measure says **Not measured** and why, never `0`. Every card is defined in
 [Factory metrics](reviewing-runs.md#factory-metrics).
 

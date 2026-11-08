@@ -1,7 +1,6 @@
 //! Factory metrics: the raw aggregates behind `GET /api/projects/{id}/metrics/factory`,
 //! read straight from rows of one project. `since` is an RFC 3339 instant stored
 //! rows are compared against with `julianday` (`created_at >= since`); `None` is all time.
-//! No `cost_usd` is read anywhere here.
 
 use sqlx::{AssertSqlSafe, Row};
 
@@ -386,4 +385,78 @@ pub async fn lights_off(
     .fetch_one(repo.pool())
     .await?;
     Ok((row.get("lights_off"), row.get("merged_items")))
+}
+
+/// The model a run is reported under, over `execution_attempts a` joined to
+/// `execution_requests r`: the model the agent reported, else the one the run
+/// asked for. A run on the agent's default that reported none has no model.
+pub const RUN_MODEL_SQL: &str =
+    "COALESCE(json_extract(a.actual_execution, '$.model'), r.requested_model)";
+
+/// One model's tokens in a team, over the attempts counted.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct SpendRow {
+    /// `None` for a run that reported no model and asked for none.
+    pub model: Option<String>,
+    /// The docket team of the attempts' resolved agent profile.
+    pub team: Option<String>,
+    /// Every input token, cache reads and writes included.
+    pub tokens_in: i64,
+    /// Of `tokens_in`, the ones the prompt cache served: shown, never counted.
+    pub cache_read: i64,
+    pub tokens_out: i64,
+    pub attempts: i64,
+}
+
+/// The project's attempts created since `since` (all time when `None`), by
+/// model and team. An attempt that carries `usage.by_model` counts once per
+/// model in it, with its cache reads and writes in `tokens_in`; any other
+/// counts under [`RUN_MODEL_SQL`] with its `tokens_in` and `tokens_out`.
+pub async fn spend_by_model(
+    repo: &Repository,
+    project: &str,
+    since: Option<&str>,
+) -> Result<Vec<SpendRow>, StoreError> {
+    // The fragments are constants of this crate; only values are bound.
+    let from = "FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id";
+    let team =
+        "json_extract(r.request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team')";
+    let filter = "i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))";
+    Ok(sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT model, team,
+                COALESCE(SUM(tokens_in), 0) AS tokens_in,
+                COALESCE(SUM(cache_read), 0) AS cache_read,
+                COALESCE(SUM(tokens_out), 0) AS tokens_out,
+                COUNT(*) AS attempts
+         FROM (
+           SELECT m.key AS model, {team} AS team,
+                  COALESCE(json_extract(m.value, '$.input'), 0)
+                    + COALESCE(json_extract(m.value, '$.cache_read'), 0)
+                    + COALESCE(json_extract(m.value, '$.cache_write'), 0) AS tokens_in,
+                  COALESCE(json_extract(m.value, '$.cache_read'), 0) AS cache_read,
+                  COALESCE(json_extract(m.value, '$.output'), 0) AS tokens_out
+           {from}, json_each(a.usage, '$.by_model') m
+           WHERE json_type(a.usage, '$.by_model') = 'object' AND {filter}
+           UNION ALL
+           SELECT {model} AS model, {team} AS team,
+                  COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0) AS tokens_in,
+                  {cache_read} AS cache_read,
+                  COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0) AS tokens_out
+           {from}
+           WHERE json_type(a.usage, '$.by_model') IS NOT 'object' AND {filter}
+         )
+         GROUP BY model, team",
+        model = RUN_MODEL_SQL,
+        cache_read = CACHE_READ_SQL
+    )))
+    .bind(project)
+    .bind(since)
+    .bind(since)
+    .bind(project)
+    .bind(since)
+    .bind(since)
+    .fetch_all(repo.pool())
+    .await?)
 }

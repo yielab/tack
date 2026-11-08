@@ -26,7 +26,7 @@ use tack_db::{
 };
 use tack_protocol::event_kind;
 use tack_protocol::execution::{ExecutionRequestId, ExecutionState, RecoveryKey, StableErrorCode};
-use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
+use tack_protocol::usage_provenance::{ModelProvenance, derive_attempt_facts};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -190,7 +190,7 @@ pub struct CreateExecution {
     /// A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
     /// `null`: no limit for this run even when the profile has one; a positive integer: that
     /// many. `0`, a negative number or a non-number is refused (`invalid_request`, field
-    /// `budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`).
+    /// `budgets.tokens`). Any other key is refused (`invalid_request`, field `budgets.<key>`).
     pub budgets: Value,
     pub environment: Value,
     pub metadata: Value,
@@ -598,17 +598,9 @@ pub struct AttemptSummary {
     /// generate an empty `{}` schema.
     #[schema(value_type = Option<ModelProvenance>, nullable)]
     pub model_provenance: Option<Value>,
-    /// `tack_protocol::usage_provenance::UsageEconomics` — two
-    /// independently-provenanced dollar dimensions, never summed. Absent
-    /// usage/timestamps serialize as `{"value": null, "source":
-    /// "not_measured"}`, never a structural zero; no runner infra cost-rate
-    /// is stored anywhere in this schema today, so
-    /// `runner_time_cost.cost_usd_estimated` is always `not_measured` in
-    /// every real response from this endpoint. `#[schema(...)]` below
-    /// points the generated document at the real type, the same fix as
-    /// `model_provenance` above.
-    #[schema(value_type = UsageEconomics)]
-    pub usage_economics: Value,
+    /// Time the runner itself witnessed between the attempt's start and end,
+    /// in milliseconds; `null` until both are known, never a partial duration.
+    pub wall_clock_ms: Option<u64>,
     /// The pull request this attempt opened on GitHub, or `null`.
     pub pull_request: Option<AttemptPullRequest>,
     /// The operator's verdict on this attempt, or `null` while unreviewed.
@@ -1655,20 +1647,14 @@ fn attempt_summary(
     merge: AttemptMerge,
     rerun_at_l3: Option<AttemptRerun>,
 ) -> AttemptSummary {
-    // `derive_attempt_facts` is a convenience "service handler" —
-    // takes the exact raw column shapes `AttemptListingRow` already
-    // carries, so nothing here re-derives provenance/economics
-    // logic. No runner infra cost-rate is stored anywhere in this
-    // schema today, so `runner_rate_usd_per_hour` is always `None`
-    // here — `runner_time_cost.cost_usd_estimated` stays honestly
-    // `not_measured`, never a fabricated rate.
+    // `derive_attempt_facts` takes the exact raw column shapes
+    // `AttemptListingRow` already carries, so nothing here re-derives
+    // provenance logic.
     let facts = derive_attempt_facts(
         requested_model,
         attempt.actual_execution.as_deref(),
-        attempt.usage.as_deref(),
         attempt.started_at.as_deref().and_then(parse_rfc3339),
         attempt.ended_at.as_deref().and_then(parse_rfc3339),
-        None,
     );
     let counted_tokens = attempt
         .usage
@@ -1745,8 +1731,7 @@ fn attempt_summary(
         model_provenance: facts.model_provenance.map(|provenance| {
             serde_json::to_value(provenance).expect("ModelProvenance serializes")
         }),
-        usage_economics: serde_json::to_value(facts.usage_economics)
-            .expect("UsageEconomics serializes"),
+        wall_clock_ms: facts.wall_clock_ms,
     }
 }
 

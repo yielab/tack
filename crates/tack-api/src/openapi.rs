@@ -999,8 +999,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── Settings ──────────────────────────────────────────────────────
         handlers::settings::get_backup_settings,
         handlers::settings::put_backup_settings,
-        crate::rate_card::get_rate_card,
-        crate::rate_card::put_rate_card,
         // ── Embedded runner control (ADR 0005 decisions 2 and 6) ────────────
         handlers::local_runner::get_local_runner,
         handlers::local_runner::put_local_runner,
@@ -1160,8 +1158,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::metrics_quality::StopCount,
         handlers::metrics_quality::QualityCut,
         handlers::metrics_quality::CutRow,
-        crate::rate_card::RateCard,
-        crate::rate_card::ModelPrice,
         handlers::mrp::MrpResponse,
         handlers::mrp::MrpViewed,
         handlers::executions::RunnerV1ErrorEnvelope,
@@ -1214,12 +1210,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,
         handlers::executions::ContinueResponse,
-        // ── AttemptSummary.model_provenance/usage_economics real shape ──────
+        // ── AttemptSummary.model_provenance real shape ──────────────────────
         tack_protocol::usage_provenance::ModelProvenance,
         tack_protocol::execution::MeasurementSource,
-        tack_protocol::execution::Measurement<f64>,
-        tack_protocol::usage_provenance::RunnerTimeCost,
-        tack_protocol::usage_provenance::UsageEconomics,
         // ── Operator-scoped decision resolution — schema-only mirrors of
         // `handlers::decisions`; see `ExecutionOperatorExtrasApiDoc`'s
         // own doc comment above. ────────────────────────────────────────

@@ -122,8 +122,6 @@ what to change if you want otherwise, and the most the project can reach with th
 folders the team's sandbox may read besides its own. A line the agent did not report reads "Not reported by
 Docket", so "no network" and "the agent did not say" are never mixed up.
 
-Dollars are never a limit.
-
 ## How do I send it work?
 
 The sheet lists the roles of the chosen project that send work to the team, and the profiles that use it; press a

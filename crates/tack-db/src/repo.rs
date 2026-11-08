@@ -17,7 +17,6 @@ pub mod notifications;
 pub mod prill_records;
 pub mod projects;
 pub mod pull_requests;
-pub mod rate_card;
 pub mod roles;
 pub mod sprints;
 pub mod team_activity;

@@ -159,7 +159,6 @@ fn report_from_result_line(
         }),
         tokens_out: usage.output,
         duration_ms: result.get("duration_ms").and_then(Value::as_u64),
-        cost_usd: result.get("total_cost_usd").and_then(Value::as_f64),
         usage_detail: usage.detail,
     }
 }
@@ -492,8 +491,7 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                 CapabilitySupport::Advisory,
                 "Token totals, cache reads and writes, model calls and the models used are read \
                  from the result line's `modelUsage` (every model, auxiliary ones included) or, \
-                 without it, `usage`; `total_cost_usd` is Claude Code's own estimate at list \
-                 price, not a bill. While it runs, each model call's tokens are read from its \
+                 without it, `usage`; any cost figure it prints is not read. While it runs, each model call's tokens are read from its \
                  `assistant` line, once per message id, with the output low until the result.",
             ),
             proposals: Some(capability(

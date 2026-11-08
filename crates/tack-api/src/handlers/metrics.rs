@@ -1,10 +1,9 @@
-//! Factory metrics: what the agent fleet cost a project in attempts, human
+//! Factory metrics: what the agent fleet spent on a project in attempts, human
 //! minutes and tokens, and what became of its pull requests. Every number is
 //! computed from rows; every ratio carries its numerator and denominator, and a
 //! figure with nothing to measure is `null` with its reason (`denominator_zero`
 //! or `not_measured`), never 0. Quality figures are prill's, read from its
-//! store and named as prill's. Dollars are Tack's estimate: tokens priced by the
-//! operator's rate card; a harness's own `cost_usd` is never read or summed.
+//! store and named as prill's. Nothing here is priced: spend is tokens.
 
 use crate::extract::{Json, Path, Query};
 use axum::extract::State;
@@ -18,8 +17,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use tack_db::queries::metrics as quality_rows;
+use tack_db::repo::metrics::SpendRow;
 use tack_db::repo::metrics::{self as rows, WaitRow};
-use tack_db::repo::rate_card::SpendRow;
 
 use super::metrics_quality::{WorkQuality, work_quality};
 use crate::error::{ApiError, ApiResult};
@@ -105,14 +104,6 @@ pub struct RepositoryQuality {
     /// prill's `metrics/v1` document, as prill printed it.
     #[schema(value_type = Object)]
     pub metrics: serde_json::Value,
-    /// Tokens of the attempts that opened this repository's pull requests,
-    /// priced by the rate card. Absent without a card.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost_usd: Option<f64>,
-    /// prill's `qualified` ÷ `cost_usd`. Absent without a card, without a
-    /// `qualified` count, or when the cost is zero.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub qualified_per_usd: Option<f64>,
 }
 
 /// What prill measured. Present only when prill answered.
@@ -173,20 +164,7 @@ pub struct FactoryMetrics {
     pub quality: Option<Quality>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality_unavailable: Option<String>,
-    /// Tokens priced by the rate card, plus the human minutes at its hour
-    /// rate. Absent without a rate card.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost_usd: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rate_card_as_of: Option<String>,
-    /// Attempts whose model the rate card does not list, so not in `cost_usd`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost_unpriced_attempts: Option<i64>,
-    /// Models the window's attempts named, and how many of them the rate card prices (none
-    /// without a card): the cost card says "N of M models priced" from this pair.
-    pub models: i64,
-    pub priced_models: i64,
-    /// Tokens and attempts per model, priced when a card lists it.
+    /// Tokens and attempts per model.
     pub cost_by_model: Vec<CostByModel>,
     /// Tokens and attempts per docket team; `No team` for runs that name none.
     pub cost_by_team: Vec<CostByTeam>,
@@ -204,9 +182,6 @@ pub struct CostByModel {
     pub cache_read: i64,
     pub tokens_out: i64,
     pub attempts: i64,
-    /// Absent without a rate card or when it does not list the model.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usd: Option<f64>,
 }
 
 /// One docket team's tokens in the window, counted as in [`CostByModel`].
@@ -217,33 +192,21 @@ pub struct CostByTeam {
     pub cache_read: i64,
     pub tokens_out: i64,
     pub attempts: i64,
-    /// Absent without a rate card or when any of the team's models is unlisted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usd: Option<f64>,
 }
 
 const NO_TEAM: &str = "No team";
 
-fn priced_row(card: &crate::rate_card::RateCard, row: &SpendRow) -> Option<f64> {
-    crate::rate_card::price(card, row.model.as_deref()?, row.tokens_in, row.tokens_out)
-}
-
 struct CostLine {
     key: Option<String>,
-    /// Every input token, cache reads included: what the rate card prices.
+    /// Every input token, cache reads included.
     tokens_in: i64,
     cache_read: i64,
     tokens_out: i64,
     attempts: i64,
-    usd: Option<f64>,
 }
 
-/// The spend rows folded by `key`, each line priced only when every row in it is.
-fn cost_lines(
-    spend: &[SpendRow],
-    card: Option<&crate::rate_card::RateCard>,
-    key: impl Fn(&SpendRow) -> Option<String>,
-) -> Vec<CostLine> {
+/// The spend rows folded by `key`.
+fn cost_lines(spend: &[SpendRow], key: impl Fn(&SpendRow) -> Option<String>) -> Vec<CostLine> {
     let mut lines: std::collections::BTreeMap<Option<String>, CostLine> = Default::default();
     for row in spend {
         let k = key(row);
@@ -253,16 +216,11 @@ fn cost_lines(
             cache_read: 0,
             tokens_out: 0,
             attempts: 0,
-            usd: card.map(|_| 0.0),
         });
         line.tokens_in += row.tokens_in;
         line.cache_read += row.cache_read;
         line.tokens_out += row.tokens_out;
         line.attempts += row.attempts;
-        line.usd = line
-            .usd
-            .zip(card.and_then(|card| priced_row(card, row)))
-            .map(|(sum, usd)| sum + usd);
     }
     lines.into_values().collect()
 }
@@ -446,35 +404,8 @@ pub async fn factory_metrics(
             DENOMINATOR_ZERO
         };
 
-    let card = crate::rate_card::load(&state.repo).await;
-    let spend = tack_db::repo::rate_card::spend_by_model(repo, &project, since).await?;
-    let (mut cost, mut unpriced) = (0.0, 0);
-    let mut repo_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
-    if let Some(card) = &card {
-        for row in &spend {
-            let Some(priced) = priced_row(card, row) else {
-                unpriced += row.attempts;
-                continue;
-            };
-            cost += priced;
-            if let Some(repo) = &row.repo {
-                *repo_cost.entry(repo.clone()).or_default() += priced;
-            }
-        }
-        let minutes: f64 = decision_waits
-            .iter()
-            .chain(&mrp_waits)
-            .filter_map(|w| {
-                minutes_between(
-                    w.viewed_at.as_deref().unwrap_or(&w.created_at),
-                    &w.resolved_at,
-                )
-            })
-            .sum();
-        cost += minutes / 60.0 * card.human_hour;
-    }
-    let cost_by_model = cost_lines(&spend, card.as_ref(), |row| row.model.clone());
-    let cost_by_team = cost_lines(&spend, card.as_ref(), |row| {
+    let spend = tack_db::repo::metrics::spend_by_model(repo, &project, since).await?;
+    let cost_by_team = cost_lines(&spend, |row| {
         Some(row.team.clone().unwrap_or_else(|| NO_TEAM.into()))
     })
     .into_iter()
@@ -484,15 +415,9 @@ pub async fn factory_metrics(
         cache_read: line.cache_read,
         tokens_out: line.tokens_out,
         attempts: line.attempts,
-        usd: line.usd,
     })
     .collect();
-    let models = cost_by_model.iter().filter(|l| l.key.is_some()).count();
-    let priced_models = cost_by_model
-        .iter()
-        .filter(|l| l.key.is_some() && l.usd.is_some())
-        .count();
-    let cost_by_model = cost_by_model
+    let cost_by_model = cost_lines(&spend, |row| row.model.clone())
         .into_iter()
         .map(|line| CostByModel {
             model: line.key,
@@ -500,7 +425,6 @@ pub async fn factory_metrics(
             cache_read: line.cache_read,
             tokens_out: line.tokens_out,
             attempts: line.attempts,
-            usd: line.usd,
         })
         .collect();
     let work_quality = quality_figures(&state, &storage, &project, since).await?;
@@ -508,20 +432,9 @@ pub async fn factory_metrics(
         Ok((version, found)) => {
             let repositories = found
                 .into_iter()
-                .map(|(repository, metrics)| {
-                    let cost_usd = card
-                        .as_ref()
-                        .map(|_| repo_cost.get(&repository).copied().unwrap_or(0.0));
-                    let qualified_per_usd = cost_usd
-                        .zip(metrics.get("qualified").and_then(serde_json::Value::as_f64))
-                        .filter(|(cost, _)| *cost > 0.0)
-                        .map(|(cost, qualified)| qualified / cost);
-                    RepositoryQuality {
-                        repository,
-                        metrics,
-                        cost_usd,
-                        qualified_per_usd,
-                    }
+                .map(|(repository, metrics)| RepositoryQuality {
+                    repository,
+                    metrics,
                 })
                 .collect();
             (
@@ -584,11 +497,6 @@ pub async fn factory_metrics(
         lights_off_rate: ratio(lights_off, merged_items, DENOMINATOR_ZERO),
         quality,
         quality_unavailable,
-        cost_usd: card.as_ref().map(|_| cost),
-        rate_card_as_of: card.as_ref().map(|c| c.as_of.clone()),
-        cost_unpriced_attempts: card.as_ref().map(|_| unpriced),
-        models: i64::try_from(models).unwrap_or(i64::MAX),
-        priced_models: i64::try_from(priced_models).unwrap_or(i64::MAX),
         cost_by_model,
         cost_by_team,
         work_quality,

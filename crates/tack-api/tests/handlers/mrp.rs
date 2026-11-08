@@ -546,7 +546,6 @@ pub(crate) fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
             "tokens_in": {"value": 1, "source": "measured"},
             "tokens_out": {"value": 1, "source": "measured"},
             "duration_ms": {"value": 1, "source": "measured"},
-            "cost_usd": {"value": null, "source": "not_measured"},
         },
     })
 }

@@ -58,6 +58,7 @@ Most migrations only add tables and columns. These remove or reshape data:
 | 092 | Dollars per day is no longer a limit: the `usd_per_day` column of a project's budgets is dropped. Every limit is in tokens. |
 | 103 | The automatic status moves are gone: `projects.on_start_status`, `projects.on_finish_status` and `execution_requests.status_map_policy_id` are dropped. |
 | 109 | A person's review of an attempt is one record: the merge-readiness pack's `mrp_reviews` table is folded into `attempt_reviews` (reason, pack and, from now on, reviewer) and dropped; the time a pack was opened moves onto the pack's artifact. A review given before names no reviewer. |
+| 112 | No price in money remains in Tack: a rate card entered before is deleted. Usage already recorded keeps the figures it was stored with; nothing reads them. |
 
 If you had registered a docket control plane through the old bridge, none of it survives in the
 running database. The rows exist only in the automatic snapshot beside your database file. That

@@ -159,7 +159,7 @@ Clicking the chip opens the task's **Execution** tab:
 
 The drawer follows the run as it happens: the **Now** panel under the header reads **Running** —
 *The agent is working on it* — with **Follow live** and **Stop**, and the Execution tab shows **Run 1**
-with the runner that took it. What the agent did, the tokens it used and its cost appear when it
+with the runner that took it. What the agent did, and the tokens it used appear when it
 finishes:
 
 <img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Work panel at the top of the drawer reads Running, 'The agent is working on it', 'Used 0 of 2 000 000 tokens', with Follow live and Stop buttons and a Run again button below it.">
@@ -168,8 +168,7 @@ finishes:
 
 When the run finishes, the same tab is the record of what happened: one run card with its status,
 the verdict it waits for (**Accept** or **Reject…**), what the agent concluded, what it did and
-what it got, and its usage — tokens counted against the limit, folded under **Usage**; opened, it
-also gives the approximate cost, which is the agent's own estimate at list price, not your bill.
+what it got, and its usage — tokens counted against the limit, folded under **Usage**.
 (The **Now** panel under the header gives the same in short.) This agent only wrote text and its profile allows only read tools, so no change was expected
 and the run reads **Finished — no changes recorded**, and **What the agent concluded** is the announcement itself:
 
