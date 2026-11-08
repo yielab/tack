@@ -157,14 +157,12 @@
         "tools": [
           "consult",
           "edit",
-          "fetch",
           "glob",
           "grep",
           "read",
           "rec__entries__add",
           "rec__entries__update",
           "rec__export",
-          "rec__query",
           "rec__tack_proposals__add",
           "rec__tack_proposals__update",
           "skill",
@@ -175,11 +173,8 @@
             "entries",
             "tack_proposals"
           ],
-          "query": true
+          "query": false
         },
-        "fetchDomains": [
-          "*"
-        ],
         "notComputed": [
           "mcp",
           "service"
@@ -333,6 +328,24 @@
     "reason": "a folder team under the jail reads any public host",
     "fix": ""
   },
+  "search": {
+    "provider": "none",
+    "ready": false,
+    "reason": "no search service: SearXNG is free and runs in Docker, or use a Brave Search API key (docket setup search brave --pod saas-notes)",
+    "fix": "docket setup search searxng --pod saas-notes",
+    "options": [
+      {
+        "provider": "searxng",
+        "command": "docket setup search searxng --pod saas-notes",
+        "secret": ""
+      },
+      {
+        "provider": "brave",
+        "command": "docket setup search brave --pod saas-notes",
+        "secret": "brave-search"
+      }
+    ]
+  },
   "needs": [],
   "delivers": [
     "report",
@@ -477,7 +490,7 @@
   },
   "workDir": "/scratch/notes",
   "configSource": "/scratch/plan-team",
-  "configDigest": "226b824f8ead27bc7415c93b46d57ff77740df91a53b0bc684848f65ee057098",
+  "configDigest": "d95a78af9849f2510fafee1c7cf182236bf3837dcf74c2aacff0f1e7099a9798",
   "drift": "no",
   "profile": {
     "name": "attended",

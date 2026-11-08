@@ -7531,6 +7531,7 @@ export interface components {
              *     has no such thing or did not say.
              */
             records?: components["schemas"]["TeamRecordSet"][] | null;
+            search?: null | components["schemas"]["TeamSearch"];
             /**
              * @description A label the harness gives the team's shape, shown as it came and never sent anywhere.
              *     Absent means the harness did not say; no field may carry a harness's own key
@@ -7555,6 +7556,31 @@ export interface components {
             runner: string;
             team: string;
         };
+        /** @description The web search a team has, in the harness's own sentence. */
+        TeamSearch: {
+            /** @description The one command that makes the search ready; empty when it is. */
+            fix?: string;
+            /** @description The ways to set the search up, each a command on the harness's computer. */
+            options?: components["schemas"]["TeamSearchOption"][];
+            provider: components["schemas"]["TeamSearchProvider"];
+            /** @description Whether the team can search now. */
+            ready: boolean;
+            /** @description Why the search is as it is, a sentence the harness wrote. */
+            reason: string;
+        };
+        /** @description One way to set a team's search up. */
+        TeamSearchOption: {
+            /** @description The command, run where the harness is. */
+            command: string;
+            provider: components["schemas"]["TeamSearchProvider"];
+            /** @description The name of the secret the option needs, never its value; empty when it needs none. */
+            secret?: string;
+        };
+        /**
+         * @description Which service answers a team's searches.
+         * @enum {string}
+         */
+        TeamSearchProvider: "none" | "searxng" | "brave" | "custom";
         /** @description One step of the way a team handles a task. */
         TeamStep: {
             checked_by?: null | components["schemas"]["TeamStepCheck"];

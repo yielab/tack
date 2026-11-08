@@ -715,6 +715,81 @@ async fn probe_reads_how_a_team_reads_the_web_only_when_docket_lists_it_and_it_a
     assert!(web.is_none());
 }
 
+/// `search` is read only from a docket that lists it: the provider, whether it is ready, docket's
+/// sentence, the one fix and the ways to set it up, with a secret's name and never its value.
+#[tokio::test]
+async fn probe_reads_a_teams_web_search_only_when_docket_lists_it() {
+    use tack_protocol::execution::TeamSearchProvider;
+    let scene = scene();
+    let search_of = |teams: Vec<tack_protocol::execution::TeamReport>| teams[0].search.clone();
+
+    // The capture of a team with no search service: not ready, with the command that sets one up.
+    let fake = pods_fake().await;
+    fake.with_search();
+    let none =
+        search_of(adapter(&fake, &scene).probe().await.teams.expect("teams")).expect("search");
+    assert_eq!(none.provider, TeamSearchProvider::None);
+    assert!(!none.ready);
+    assert_eq!(none.fix, format!("docket setup search searxng --pod {POD}"));
+    assert_eq!(
+        none.options
+            .iter()
+            .map(|option| (
+                option.provider,
+                option.command.as_str(),
+                option.secret.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (TeamSearchProvider::Searxng, none.fix.as_str(), ""),
+            (
+                TeamSearchProvider::Brave,
+                format!("docket setup search brave --pod {POD}").as_str(),
+                "brave-search"
+            ),
+        ]
+    );
+
+    // Brave without its key stored: not ready, and the fix stores the key.
+    fake.set_search(POD, fake_docket::fixture("pod-search")["search"].clone());
+    let brave =
+        search_of(adapter(&fake, &scene).probe().await.teams.expect("teams")).expect("search");
+    assert_eq!(brave.provider, TeamSearchProvider::Brave);
+    assert!(!brave.ready);
+    assert_eq!(brave.fix, "docket setup secret set brave-search --stdin");
+    assert!(
+        brave.reason.contains("key is not stored"),
+        "{}",
+        brave.reason
+    );
+
+    // A ready search carries no fix.
+    fake.set_search(
+        POD,
+        json!({"provider": "searxng", "ready": true, "reason": "Web search goes through searxng at 127.0.0.1:8888.", "fix": "", "options": []}),
+    );
+    let ready =
+        search_of(adapter(&fake, &scene).probe().await.teams.expect("teams")).expect("search");
+    assert!(ready.ready && ready.fix.is_empty());
+
+    // A provider Tack has no word for, or an answer it cannot read, costs the search and never the team.
+    for unreadable in [
+        json!({"provider": "bing", "ready": true, "reason": "", "fix": "", "options": []}),
+        json!({"provider": "brave", "ready": "yes"}),
+        json!({"provider": "none", "ready": false, "options": [{"provider": "bing", "command": "x", "secret": ""}]}),
+    ] {
+        fake.set_search(POD, unreadable);
+        let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+        assert!(search_of(teams).is_none());
+    }
+
+    // A docket that does not list the feature sends none, whatever it holds.
+    let older = pods_fake().await;
+    older.set_search(POD, fake_docket::fixture("pod-search")["search"].clone());
+    let teams = adapter(&older, &scene).probe().await.teams.expect("teams");
+    assert!(search_of(teams).is_none());
+}
+
 #[tokio::test]
 async fn probe_says_whether_the_proposals_are_shared_across_tasks_only_when_the_listing_has_a_scope()
  {
@@ -1711,6 +1786,7 @@ async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_tea
     let fake = pods_fake().await;
     fake.with_pod_contract();
     fake.with_web_read();
+    fake.with_search();
     fake.add_folder_pod("saas-contract");
     fake.set_contract("saas-contract", contract_of("pod-contract"));
     let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
@@ -1741,8 +1817,8 @@ async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_tea
         broken.missing_roles.is_empty(),
         "an unloadable file says no roles"
     );
-    // A folder team under the jail meets all three needs; only the fetch hosts block the work,
-    // and docket says so for a need whether or not it is met.
+    // Only the fetch hosts block the work, and docket says so for a need whether or not it is met.
+    // The team has no search service, which docket reads from the same state as its `search`.
     let needs = team.needs.as_deref().expect("needs");
     assert_eq!(
         needs
@@ -1756,7 +1832,7 @@ async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_tea
             .collect::<Vec<_>>(),
         [
             ("fetch-hosts", true, true, Some(true)),
-            ("search-host", true, true, Some(false)),
+            ("search-host", false, false, Some(false)),
             ("isolation", true, true, Some(false))
         ],
         "a met need has no fix"
@@ -1767,16 +1843,17 @@ async fn probe_reads_a_bound_method_a_broken_one_and_the_needs_of_a_captured_tea
         web.reason,
         "a folder team under the jail reads any public host"
     );
-    // What docket says of the web agrees with what the members hold: each of them but a role that
-    // sends has `fetch`, here the whole team.
-    assert!(
-        team.members
-            .as_deref()
-            .unwrap()
-            .iter()
-            .all(|member| member.reads_web == Some(true)
-                && member.web_hosts.as_deref() == Some(&["*".to_owned()][..]))
-    );
+    // What docket says of the web agrees with what the members hold: each of them but the writer,
+    // which drafts from the handoff and denies `fetch`, has it.
+    let members = team.members.as_deref().unwrap();
+    for member in members {
+        if member.role == "writer" {
+            assert_eq!(member.reads_web, Some(false), "{member:?}");
+        } else {
+            assert_eq!(member.reads_web, Some(true), "{member:?}");
+            assert_eq!(member.web_hosts.as_deref(), Some(&["*".to_owned()][..]));
+        }
+    }
 }
 
 #[tokio::test]
@@ -1785,6 +1862,7 @@ async fn the_fake_serves_a_contract_with_the_keys_of_the_captured_reports() {
     fake.with_pod_contract();
     fake.with_pod_resume();
     fake.with_web_read();
+    fake.with_search();
     fake.add_folder_pod("saas-contract");
     // The first method of the capture is the one whose file does not load.
     fake.set_contract("saas-contract", contract_of("pod-contract"));
@@ -1886,6 +1964,7 @@ async fn the_fake_serves_a_budget_and_a_resume_with_the_keys_of_the_captures() {
     fake.with_pod_resume();
     fake.with_pod_contract();
     fake.with_web_read();
+    fake.with_search();
     fake.pause_pod(POD, "budget");
     let (_, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
     if let Err(why) = same_shape(&report, &fake_docket::fixture("pod-budget"), "pod-budget") {
@@ -1997,6 +2076,8 @@ async fn probe_reads_the_captured_reports_of_every_kind_of_team_as_docket_sent_t
     assert_eq!(dev.methods.as_ref().map(Vec::len), Some(15));
     assert_eq!(dev.needs, Some(Vec::new()));
     assert_eq!(dev.paused, None);
+    let search = dev.search.as_ref().expect("search");
+    assert!(!search.ready && search.fix.starts_with("docket setup search"));
     let budget = dev.budget.as_ref().expect("budget");
     assert_eq!(
         (
@@ -2040,9 +2121,20 @@ async fn probe_reads_the_captured_reports_of_every_kind_of_team_as_docket_sent_t
             .collect::<Vec<_>>(),
         [
             ("fetch-hosts", true),
-            ("search-host", true),
+            ("search-host", false),
             ("isolation", true)
         ]
+    );
+    // The need and the team's `search` read the same state, so they cannot disagree.
+    let search = contract.search.as_ref().expect("search");
+    assert!(!search.ready);
+    assert_eq!(
+        Some(search.fix.as_str()),
+        contract
+            .needs
+            .as_deref()
+            .and_then(|needs| needs.iter().find(|need| need.name == "search-host"))
+            .map(|need| need.fix.as_str())
     );
     // A bound pipeline and the researchers' needs do not make the team lights-out.
     assert_eq!(contract.decides, Some(TeamDecides::AsksAPerson));
@@ -7429,6 +7521,7 @@ async fn captured_docket() -> FakeDocket {
     fake.with_pod_contract();
     fake.with_pod_resume();
     fake.with_web_read();
+    fake.with_search();
     fake
 }
 

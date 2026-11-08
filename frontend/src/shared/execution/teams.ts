@@ -118,6 +118,34 @@ export function webReadText(web: NonNullable<TeamReport['web_read']>): string {
   return web.reason ? `${WEB_READ_TEXT[web.mode]}: ${web.reason}` : WEB_READ_TEXT[web.mode];
 }
 
+type TeamSearch = NonNullable<TeamReport['search']>;
+
+const SEARCH_PROVIDER_TEXT: Record<TeamSearch['provider'], string> = {
+  none: 'None',
+  searxng: 'SearXNG',
+  brave: 'Brave Search',
+  custom: 'Your own service',
+};
+
+/** The web search a team has: the provider, then "ready" or the harness's own reason it is not. */
+export function searchText(search: TeamSearch): string {
+  const provider = SEARCH_PROVIDER_TEXT[search.provider];
+  if (search.ready) return `${provider}: ready`;
+  return search.reason ? `${provider}: ${search.reason}` : `${provider}: not ready`;
+}
+
+/** The one command that makes a search that is not ready work, or null when it is ready or none is named. */
+export function searchFixText(search: TeamSearch): string | null {
+  return !search.ready && search.fix ? `To fix: ${search.fix}` : null;
+}
+
+/** For a team with no search at all, the way to set one up that the fix does not already name. */
+export function searchOrText(search: TeamSearch): string | null {
+  if (search.provider !== 'none') return null;
+  const other = (search.options ?? []).find((option) => option.command && option.command !== search.fix);
+  return other ? `Or: ${other.command}` : null;
+}
+
 export function queueText(queue: { waiting: number; running: number }): string {
   return `${queue.waiting} waiting, ${queue.running} running`;
 }

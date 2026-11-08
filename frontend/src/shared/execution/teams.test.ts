@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, degradedNeeds, degradedText, webReadText, type TeamEntry, type TeamReport } from './teams';
+import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, degradedNeeds, degradedText, webReadText, searchText, searchFixText, searchOrText, type TeamEntry, type TeamReport } from './teams';
 
 const pod = (name: string, report: Partial<TeamReport> = {}): TeamEntry =>
   ({ name, harness: 'docket', reported: true, profiles: [], report: { name, profile: 'attended', ...report } }) as TeamEntry;
@@ -98,6 +98,29 @@ describe('what a report says about the work', () => {
     expect(degradedNeeds(report).map((n) => n.name)).toEqual(['pdfs']);
     expect(degradedText('saas-research', degradedNeeds(report))).toBe('saas-research: pdfs is not met, and the run goes on without it. docket setup sandbox on');
     expect(degradedNeeds(undefined)).toEqual([]);
+  });
+
+  it('says_what_search_a_team_has_in_plain_words_with_the_fix_and_the_other_way', () => {
+    const options = [
+      { provider: 'searxng', command: 'docket setup search searxng --pod saas', secret: '' },
+      { provider: 'brave', command: 'docket setup search brave --pod saas', secret: 'brave-search' },
+    ];
+    type Search = NonNullable<TeamReport['search']>;
+    const ready = { provider: 'searxng', ready: true, reason: 'Web search goes through searxng.', fix: '', options } as Search;
+    expect(searchText(ready)).toBe('SearXNG: ready');
+    expect(searchFixText(ready)).toBeNull();
+    expect(searchOrText(ready)).toBeNull();
+    const noKey = { provider: 'brave', ready: false, reason: "the Brave Search key is not stored: no secret named 'brave-search'", fix: 'docket setup secret set brave-search --stdin', options } as Search;
+    expect(searchText(noKey)).toBe("Brave Search: the Brave Search key is not stored: no secret named 'brave-search'");
+    expect(searchFixText(noKey)).toBe('To fix: docket setup secret set brave-search --stdin');
+    // Only a team with no search is offered the other way; one on a provider is fixed in place.
+    expect(searchOrText(noKey)).toBeNull();
+    const none = { provider: 'none', ready: false, reason: 'no search service', fix: 'docket setup search searxng --pod saas', options } as Search;
+    expect(searchText(none)).toBe('None: no search service');
+    expect(searchFixText(none)).toBe('To fix: docket setup search searxng --pod saas');
+    expect(searchOrText(none)).toBe('Or: docket setup search brave --pod saas');
+    expect(searchText({ ...none, reason: '' })).toBe('None: not ready');
+    expect(searchText({ ...ready, provider: 'custom' })).toBe('Your own service: ready');
   });
 
   it('says_how_a_team_reads_the_web_in_the_harnesses_own_words', () => {
