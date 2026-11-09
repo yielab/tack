@@ -264,4 +264,4 @@ cost, how many changes were accepted and merged, and how many tokens the runs us
 measure says **Not measured** and why, never `0`. Every card is defined in
 [Factory metrics](reviewing-runs.md#factory-metrics).
 
-<img src="../screenshots/factory-metrics.png" width="98%" alt="The Factory metrics page: escalation rate 50% (1 decision / 2 attempts), human minutes per decision Not measured with its reason, decided alone 0%, human minutes per pack review, pack acceptance rate 100%, verification tax 4.2% in tokens with its inputs, pull-request outcomes, and a cost card that says Not measured.">
+<img src="../screenshots/factory-metrics.png" width="98%" alt="The Factory metrics page: escalation rate 50% (1 decision / 2 attempts), human minutes per decision Not measured with its reason, decided alone 0%, human minutes per pack review, pack acceptance rate 100%, verification tax 4.2% in tokens with its inputs, the pull-request outcomes, and a Quality card that says the verifier is not installed.">

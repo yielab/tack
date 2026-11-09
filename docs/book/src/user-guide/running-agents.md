@@ -406,7 +406,7 @@ you to approve it blind; the timeline says to answer it in docket, where it is s
 
 If you answer a question in docket itself, with its own command, instead of in Tack, the question here closes as **Answered in docket** and the timeline says so; it is not an expiry and it is not marked as your answer. The team goes on, and its next question appears here at once. This needs a docket recent enough to tell Tack when a question was settled; with an older one the question stays open here until the run ends.
 
-<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below, then the decision-token field.">
+<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Send answer button sits below, then the decision-token field.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
 sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the
