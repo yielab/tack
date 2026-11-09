@@ -54,8 +54,8 @@ ADR; ADR 0024 has a dated note; built in `develop` the same day). Three cards:
   feature probes and the runner protocol's optional fields stay.
 
 The live suite (35 tests, Claude Haiku 5.5 through docket, about 149 000 input tokens) passes in one
-run against docket `3caccedd` and prill `6b95423`, and `--check` reports no drift. Open: the metrics
-screenshot in the User guide still shows the removed cost card.
+run against docket `3caccedd` and prill `6b95423`, and `--check` reports no drift. The README and book screenshots
+were retaken on 2026-11-09 (`make screenshots`).
 
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
 file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
