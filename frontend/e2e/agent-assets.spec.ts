@@ -241,14 +241,12 @@ test('hero gif', async ({ page }) => {
   await page.getByRole('button', { name: `Run with agent: ${ITEM_TITLE}` }).click();
   await page.waitForTimeout(700);
 
-  // Four built-in profiles exist beside this one, and the dialog opens on
-  // the Implementer: pick the connection check's own profile.
-  await page.getByRole('group', { name: 'Profile' }).getByRole('button', { name: PROFILE_NAME, exact: true }).click();
+  // "Who does it": the agent first, then the connection check's own profile
+  // (four built-in profiles sit beside it, and the dialog opens on the Implementer).
+  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
   await page.waitForTimeout(500);
-
-  await page.getByText('Advanced for this run').click();
-  await page.waitForTimeout(400);
-  await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('claude-code');
+  await dialog.getByRole('radio', { name: PROFILE_NAME, exact: true }).check();
   await page.waitForTimeout(900);
 
   // ── Scene: submit the real dialog ───────────────────────────────────────

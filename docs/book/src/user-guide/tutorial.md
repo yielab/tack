@@ -84,7 +84,7 @@ its **Done when** list (the acceptance criteria), and a collapsed **For the agen
 checklist — one line per thing a person checks before calling the task done. **Add check** adds
 a line, and each line saves when you leave it:
 
-<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' on its Overview tab: the Run with agent button and the task's fields above, then the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day — each with Up, Down and Remove, an Add check button, a collapsed For the agent section, and Link GitHub issue.">
+<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' on its Overview tab: the status Backlog, the Work panel saying nothing has run yet with a Run with agent button, the tabs, the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day — each with Up, Down and Remove, an Add check button, and the For the agent, GitHub issue and Details folds closed.">
 
 **For the agent** holds what only the agent needs — checks a machine runs, limits on what it
 may touch, and the risk you see — and this announcement needs none of it. The agent receives the
@@ -100,7 +100,7 @@ command, exactly as you would to use it by hand. Tack then finds it.
 Until you turn it on, **nothing here runs an agent** — Tack is a project manager with agent
 execution off. Open the **Agents** page from the sidebar. Step 1 is the one switch that matters:
 
-<img src="../screenshots/tutorial/07-agents-off.png" width="98%" alt="The Agents page with execution off: step 1 'Agent execution on this machine' shows a Stopped badge, 'Off since this server started' and a Turn on button; step 2 says to turn execution on to see what is installed; step 3 Sign in waits on step 2; the Test run section begins below.">
+<img src="../screenshots/tutorial/07-agents-off.png" width="98%" alt="The Agents page with execution off: step 1 'Agent execution on this machine' shows a Stopped badge, 'Off since this server started' and a Turn on button; step 2 says to turn execution on to see what is installed; step 3 Sign in waits on step 2; the Test run section's Run test button is disabled until an agent is installed.">
 
 Click **Turn on**. It starts at once, with no restart and no second program. Step 2 lists the agents it found on this machine with their installed versions;
 this machine has Codex and Claude Code, and the tutorial uses Claude Code. Step 3 is **Sign in**,
@@ -109,7 +109,7 @@ signed in. Run `<command>` in a terminal.** with a link to that agent's own docu
 holds no model key and never signs in for you. **Run test** at the bottom runs the agent once to
 prove it. While the agent the test would use is not signed in, **Run test** is disabled and says which agent to sign in; when another installed agent is signed in, the test uses that one:
 
-<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex v0.149.1, Claude Code v2.1.304 and OpenCode installed (docket not installed), the Sign in step with one row per installed agent, saying Signed in or giving the command to run; the Test run section with a Run test button; and a collapsed Advanced section.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex and Claude Code installed and contained by this computer, docket not installed, OpenCode installed but refused here until its containment is available; the Sign in step with Codex and Claude Code signed in; the Test run section with a Run test button; what each agent can do as a table; the Teams section; Add a manager; and a collapsed Advanced section.">
 
 ## 7. Set up the project's agent
 
@@ -134,7 +134,7 @@ writes announcements, is told not to call any tool, and is given only the read t
 **Grep** and **Glob** for Claude Code, with **All tools** left unticked). That also tells Tack it
 is not expected to change files:
 
-<img src="../screenshots/tutorial/10-agent-profile.png" width="40%" alt="The create-profile form: name 'Announcement writer', instructions to write a 400-word launch announcement and reply with the text only without calling any tool, an empty Summary shown as the profile's tooltip, Tools with All tools unticked and only Read, Grep and Glob ticked for claude-code, and Create and Cancel buttons.">
+<img src="../screenshots/tutorial/10-agent-profile.png" width="40%" alt="The create-profile form: name 'Announcement writer', instructions to write a 400-word launch announcement and reply with the text only without calling any tool, an empty Summary and Delivers, Team No team, Web access listed, what the profile does, an empty token limit and time limit, the network switch off, Tools with All tools unticked and only Read, Grep and Glob ticked for claude-code, and Create and Cancel buttons.">
 
 Click **Create**.
 
@@ -143,11 +143,12 @@ Click **Create**.
 Back on the board, every card carries a **Run with agent** button (the ▶ on the card, or the
 same button in the task's drawer). The dialog opens with a one-line summary of the run — the
 profile, the model and where the agent works — and asks only what you might want to change.
-This tutorial picks the profile *Announcement writer* and leaves everything else as it is. What
+This tutorial picks **Claude Code** under **Who does it**, then the profile *Announcement writer*,
+and leaves everything else as it is. What
 each part of the dialog does, and where its defaults come from, is in
 [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
-<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default model · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Web tools unticked; Advanced for this run open with Agent Claude Code, the Model field set to Agent's default, Branch, Claude Code's tool checkboxes, Allowed tools left blank to use the profile's Read, Grep and Glob, Token limit empty for no limit, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
+<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': Who does it with Claude Code chosen among Claude Code, Codex and OpenCode and the profile Announcement writer selected; What will happen: the profile and the agent's default model, a new branch of a local repository, no install, three Done when checks, contained by this computer, web tools off; Ask before each action and Web tools unticked; What the agent will read and Advanced for this run closed; the provisional token limit; Cancel and Start run.">
 
 ## 9. Run it and track it
 
@@ -155,14 +156,14 @@ Click **Start run**. The request queues, the runner picks it up and the agent st
 says so without being asked: the card carries a live status chip, here still **Queued**.
 Clicking the chip opens the task's **Execution** tab:
 
-<img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the 'Draft the launch announcement' card carries a live 'Queued' chip.">
+<img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the strip counts 1 Queued, and the 'Draft the launch announcement' card carries a live 'Queued' chip.">
 
 The drawer follows the run as it happens: the **Now** panel under the header reads **Running** —
 *The agent is working on it* — with **Follow live** and **Stop**, and the Execution tab shows **Run 1**
 with the runner that took it. What the agent did, and the tokens it used appear when it
 finishes:
 
-<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Work panel at the top of the drawer reads Running, 'The agent is working on it', 'Used 0 of 2 000 000 tokens', with Follow live and Stop buttons and a Run again button below it.">
+<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Work panel at the top of the drawer reads Running, 'The agent is working on it', 0 of 2 000 000 tokens against the provisional limit, with Follow live and Stop buttons; Run 1 below says its steps appear as it takes them.">
 
 ## 10. See the result
 
@@ -172,14 +173,14 @@ what it got, and its usage — tokens counted against the limit, folded under **
 (The **Now** panel under the header gives the same in short.) This agent only wrote text and its profile allows only read tools, so no change was expected
 and the run reads **Finished — no changes recorded**, and **What the agent concluded** is the announcement itself:
 
-<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the Execution tab: Run 1 'Finished — no changes recorded', a 'This run is waiting for your verdict' banner with Accept and Reject…, the agent and runner, 'The agent ended without changing any files. What it said is below.' with a Copy path button, What the agent concluded showing the opening of the announcement with a Read full report link, What the agent did as a timeline of three steps (Install skipped, agent.model_call, The run ended), What the agent got (Sandboxed with bwrap, no environment variables, the project's folder), a collapsed Usage line reading about 3 000 tokens counted and 0% of its limit, the request and attempt ids with Copy, a Raw log button, and Show questions & files; the board card behind carries a Finished chip.">
+<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the Execution tab: Run 1 by Claude Code, 'The agent ended without changing any files. What it said is below.', about 3 800 tokens counted, not merged because no branch was pushed, a 'This run is waiting for your verdict' box with Accept and Reject…, What the agent concluded showing the opening of the announcement with Read full report and Download report.md, three Done when checks waiting for a person, Changes saying no files changed, and the Steps, Files from this run, Technical and Details folds; the board card behind carries a Finished chip.">
 
 **Files from this run** is a table of what it produced, each file one click from viewing or downloading: the agent's own run log (the
 announcement is in it), and the record of the change — `changes.patch` (empty here: this agent
 only wrote text), `files.json`, the `brief.json` it was given, and the `evidence.json` manifest
 that ties them together:
 
-<img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 19.1 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 7.0 KB), each with View and Download.">
+<img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 19.3 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 7.6 KB), each with View and Download.">
 
 A run that changes files reads **Finished — needs your review** instead (and a run that was
 allowed to change files but changed nothing reads **Failed**, with that as its reason), and the card carries a
