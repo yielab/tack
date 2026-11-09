@@ -94,11 +94,11 @@ Scoop, Docker and building from source are in the [Quick Start](https://yielab.g
 
 **2. Add a task** and write its acceptance criteria: what must be true when it's done.
 
-<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Run with agent button, the description, a Done when list of three checks and an Add check button." />
+<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Work panel with a Run with agent button, the description, a Done when list of three checks and an Add check button." />
 
 **3. Run it with an agent** and review the result on the task.
 
-<img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: what the agent will read, the profile, Ask before each action, Web tools, and the agent and model for this run." />
+<img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: who does it (the agent and the profile), what will happen, Ask before each action, Web tools, and Start run." />
 
 **Agents** in the sidebar shows which agents Tack found on this computer, whether each
 one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.

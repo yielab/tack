@@ -29,7 +29,7 @@ runner instead, which is an administrator's task: see
 
 The **Agents** page is about this computer only. It holds nothing that belongs to a project.
 
-<img src="../screenshots/tutorial/08-agents-on.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed, a Sign in step with one row per installed agent, and a Run test button.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed and contained, a Sign in step with one row per installed agent, a Run test button, and what each agent can do.">
 
 1. **Turn agents on.** One switch for this computer. It takes effect at once, with no restart.
 2. **See which agents are installed**, with their versions. Tack looks where a terminal would

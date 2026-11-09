@@ -415,15 +415,10 @@ test.describe.serial('tutorial screenshots', () => {
     const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(dialog).toBeVisible();
     await page.waitForTimeout(600);
-    // The profile is a pill; the agent is picked under "Advanced for this run".
-    await dialog.getByRole('button', { name: PROFILE_NAME, exact: true }).click();
-    await dialog.getByText('Advanced for this run').click();
-    // The section remembers it is open on its `toggle` event, which comes a
-    // moment after the click; a change of agent before it closes it again.
-    await page.waitForTimeout(300);
-    await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
+    // "Who does it": the agent is a row of choices, then the profile a radio.
+    await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
+    await dialog.getByRole('radio', { name: PROFILE_NAME, exact: true }).check();
     await page.waitForTimeout(500);
-    await expect(dialog.locator('details', { hasText: 'Advanced for this run' })).toHaveAttribute('open', '');
     await expect(dialog.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled();
     await dialog.screenshot({
       path: path.join(OUT_DIR, '11-run-with-agent.png'),
@@ -606,8 +601,7 @@ test.describe('workflow gif', () => {
     const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(dialog).toBeVisible();
     await page.waitForTimeout(1500);
-    await dialog.getByText('Advanced for this run').click();
-    await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
+    await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
     await page.waitForTimeout(1200);
     await dialog.getByRole('button', { name: 'Start run', exact: true }).click();
     await expect(dialog).toBeHidden();
