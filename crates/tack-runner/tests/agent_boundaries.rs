@@ -968,6 +968,95 @@ fn sandbox_still_starts_git_node_and_python() {
     }
 }
 
+/// A Homebrew-style prefix under `dir`: `bin/tool` links to a keg whose script starts through
+/// `lib/interp`, a link out of the keg as Homebrew's `lib/ld.so` is, so the program's own file
+/// is not enough to start it. `var/data` and `etc/setting` stand for the rest of the prefix.
+fn homebrew_prefix(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let prefix = dir.join("brew");
+    let keg_bin = prefix.join("Cellar/tool/1.0/bin");
+    for sub in [
+        "bin",
+        "lib",
+        "opt",
+        "var/data",
+        "etc",
+        "Cellar/tool/1.0/bin",
+    ] {
+        std::fs::create_dir_all(prefix.join(sub)).expect("directory");
+    }
+    std::fs::write(prefix.join("var/data/secret"), "x").expect("data");
+    std::fs::write(prefix.join("etc/setting"), "x").expect("setting");
+    symlink("/bin/sh", prefix.join("lib/interp")).expect("interpreter link");
+    let script = keg_bin.join("tool");
+    std::fs::write(
+        &script,
+        format!("#!{}/lib/interp\n{body}\n", prefix.display()),
+    )
+    .expect("script");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    symlink("../Cellar/tool/1.0/bin/tool", prefix.join("bin/tool")).expect("link");
+    prefix.join("bin/tool")
+}
+
+/// A harness installed by Homebrew (opencode under `/home/linuxbrew`) is linked against a loader
+/// and libraries the prefix links to; it must start inside the sandbox, and the start must not
+/// show the person anything of the prefix beyond what the program needs.
+#[test]
+fn a_program_installed_in_a_homebrew_prefix_starts_in_a_real_bwrap_and_cannot_change_it() {
+    let dir = root("sandbox-homebrew");
+    let prefix = dir.path().join("brew");
+    let body = format!(
+        "echo started; touch {p}/lib/new 2>/dev/null && echo lib-writable; \
+         touch {p}/Cellar/new 2>/dev/null && echo cellar-writable; \
+         ls {p}/var >/dev/null 2>&1 && echo var-visible; \
+         ls {p}/etc >/dev/null 2>&1 && echo etc-visible; true",
+        p = prefix.display()
+    );
+    let tool = homebrew_prefix(dir.path(), &body);
+    let Some(mut command) = real_bwrap_command(dir.path(), &tool, &[]) else {
+        return;
+    };
+    let output = command.output().expect("bwrap runs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("started"),
+        "the program does not start: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for leaked in ["writable", "visible"] {
+        assert!(!stdout.contains(leaked), "{stdout}");
+    }
+    assert!(!prefix.join("lib/new").exists() && !prefix.join("Cellar/new").exists());
+}
+
+/// The twin: a program whose loader lies in a plain directory is no Homebrew keg, and the sandbox
+/// binds nothing beyond the program itself for it.
+#[test]
+fn a_program_outside_a_homebrew_prefix_gets_nothing_beside_itself() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let dir = root("sandbox-not-homebrew");
+    let loader = dir.path().join("loader");
+    std::fs::create_dir_all(&loader).expect("directory");
+    symlink("/bin/sh", loader.join("interp")).expect("link");
+    let tool = dir.path().join("tool");
+    std::fs::write(
+        &tool,
+        format!("#!{}/interp\necho started\n", loader.display()),
+    )
+    .expect("script");
+    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let Some(mut command) = real_bwrap_command(dir.path(), &tool, &[]) else {
+        return;
+    };
+    let output = command.output().expect("bwrap runs");
+    assert!(
+        !output.status.success(),
+        "a loader outside the program's reach started: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
 #[tokio::test]
 async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
     let path = tack_runner::ProcessEnv::from_process().search_path();

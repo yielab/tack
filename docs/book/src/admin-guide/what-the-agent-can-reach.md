@@ -67,9 +67,11 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   your machine, and holds no Linux capabilities. The network is not
   closed by the sandbox: the agent has to reach its model, and where it may go is
   decided by its profile's [web access](#web-access). The runner decides, for each agent,
-  by starting it once inside `bwrap`. One that cannot start there (a program installed
-  in a virtualenv or under Homebrew, for example) counts as not contained, and
-  `tack runner doctor` and the run say so.
+  by starting it once inside `bwrap`. The agent's own program is shown read-only where it
+  lives, and one installed by Homebrew also brings the prefix's `Cellar`, `opt`, `lib` and
+  `bin` (read-only), where its libraries are; the rest of the prefix is not shown. One that
+  cannot start there (a program installed in a virtualenv, for example) counts as not
+  contained, and `tack runner doctor` and the run say so.
 - **git in a branch of your repository.** When the agent works in a branch of the project's
   repository, its folder keeps the repository's history outside it. The sandbox shows that
   history read-only and the branch's own git state read-write, so `git status`, `git diff` and

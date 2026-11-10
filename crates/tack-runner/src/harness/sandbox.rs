@@ -193,7 +193,8 @@ impl Sandbox {
     /// (a harness may keep state there); of each of `binds`, a directory
     /// under `$HOME`, only the entries it names are shared, when they exist.
     /// A program that
-    /// lives outside the system directories is bound read-only. Each of
+    /// lives outside the system directories is bound read-only, with the Homebrew prefix
+    /// directories it starts from when it is installed there. Each of
     /// `files` is one file shared at the second path, which lies in the
     /// scratch home.
     pub fn wrap(
@@ -294,12 +295,12 @@ impl Sandbox {
         for path in shown {
             let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
             for path in [path, canonical.as_path()] {
-                if !["/usr", "/bin", "/lib", "/etc"]
-                    .iter()
-                    .any(|system| path.starts_with(system))
-                {
+                if !SYSTEM_DIRS.iter().any(|system| path.starts_with(system)) {
                     bind(&mut argv, "--ro-bind", path, path);
                 }
+            }
+            for dir in homebrew_dirs(&canonical) {
+                bind(&mut argv, "--ro-bind", &dir, &dir);
             }
         }
         push(&mut argv, &["--die-with-parent", "--new-session", "--"]);
@@ -314,6 +315,30 @@ impl Sandbox {
         argv.extend(args.iter().cloned());
         Some((bwrap.clone(), argv))
     }
+}
+
+/// The directories every sandbox shows read-only, where a program needs no bind of its own.
+const SYSTEM_DIRS: [&str; 4] = ["/usr", "/bin", "/lib", "/etc"];
+
+/// The directories of a Homebrew prefix a program installed there needs to start, none when
+/// `program` (already resolved) does not live in a keg. A keg's binary is linked against
+/// libraries that Homebrew reaches through the prefix's `opt` and `lib` (its dynamic loader is
+/// `<prefix>/lib/ld.so`, a link out of the keg), and its dependencies are other kegs, so the
+/// program's own file is not enough. `etc`, `var` and the rest of the prefix hold configuration and
+/// data of other packages and stay out of sight.
+fn homebrew_dirs(program: &Path) -> Vec<PathBuf> {
+    let Some(prefix) = program
+        .ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "Cellar"))
+        .and_then(Path::parent)
+    else {
+        return Vec::new();
+    };
+    ["Cellar", "opt", "lib", "bin"]
+        .into_iter()
+        .map(|name| prefix.join(name))
+        .filter(|dir| dir.is_dir() && !SYSTEM_DIRS.iter().any(|system| dir.starts_with(system)))
+        .collect()
 }
 
 fn absolute(path: &Path) -> PathBuf {
