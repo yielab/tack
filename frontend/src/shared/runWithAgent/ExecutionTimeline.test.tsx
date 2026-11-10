@@ -64,6 +64,8 @@ const ATTEMPT_ROW = {
   wall_clock_ms: null,
 };
 
+const LOST_ROW = { request_id: 'req-lost', item_id: 'item-lost', state: 'needs_operator', cancellation_requested_at: null, created_at: '2025-01-02T00:00:00Z' };
+
 let cancelCalls: string[];
 let requeueBody: unknown;
 
@@ -84,6 +86,10 @@ function mockFetch(): typeof fetch {
     if (url.includes('/attempts') && url.includes('req-leased')) {
       return new Response(JSON.stringify({ protocol_version: 1, data: [{ ...ATTEMPT_ROW, request_id: 'req-leased' }] }), { status: 200 });
     }
+    if (url.includes('/attempts') && url.includes('req-lost')) {
+      // The board lost it: the attempt still reads leased.
+      return new Response(JSON.stringify({ protocol_version: 1, data: [{ ...ATTEMPT_ROW, request_id: 'req-lost', state: 'leased' }] }), { status: 200 });
+    }
     if (url.includes('/attempts') && url.includes('req-running')) {
       return new Response(JSON.stringify({ protocol_version: 1, data: [ATTEMPT_ROW] }), { status: 200 });
     }
@@ -91,7 +97,7 @@ function mockFetch(): typeof fetch {
       return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
     }
     if (url.includes('/executions')) {
-      return new Response(JSON.stringify({ protocol_version: 1, data: [...ROWS, ...WAIT_ROWS, ...REFUSED_ROWS] }), { status: 200 });
+      return new Response(JSON.stringify({ protocol_version: 1, data: [...ROWS, ...WAIT_ROWS, ...REFUSED_ROWS, LOST_ROW] }), { status: 200 });
     }
     return new Response(JSON.stringify({}), { status: 200 });
   }) as typeof fetch;
@@ -311,6 +317,17 @@ describe('ExecutionTimeline', () => {
     await flush();
     await flush();
     expect(cancelCalls.some((u) => u.includes('req-running'))).toBe(true);
+  });
+
+  it('a needs_operator run reads Needs you, not Running, though its attempt still reads leased', async () => {
+    const c = mount('item-lost');
+    await flush();
+    await flush();
+    for (let i = 0; i < 4; i++) await flush();
+    const opRow = shownRun(c);
+    const status = opRow.querySelector('[role="status"]')?.textContent ?? opRow.textContent ?? '';
+    expect(status).toContain('Needs you');
+    expect(status).not.toContain('Running');
   });
 
   it('Reconcile is offered ONLY for a needs_operator request, and requires an explicit recovery key + reason', async () => {

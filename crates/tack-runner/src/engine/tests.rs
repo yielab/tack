@@ -1588,6 +1588,52 @@ async fn every_failure_before_the_agent_runs_is_reported_failed_with_its_reason(
     }
 }
 
+/// A project whose own folder is not on this computer — worked in place, or
+/// read by a docket run — ends the run failed with that reason in the same
+/// cycle. Refusing before the journal left the board holding a lease nothing
+/// answered: the run sat four days as "the computer stopped answering".
+#[tokio::test]
+async fn a_project_folder_that_is_not_here_ends_the_run_failed_with_that_reason() {
+    for (mode, harness) in [("in_place", None), ("local_branch", Some("docket"))] {
+        let (root_dir, journal) = fresh_journal(&format!("missing-folder-{mode}"));
+        let root = root_dir.path();
+        let mut claimed = work();
+        let repository = &mut claimed.request.repository.additional;
+        repository.insert("workspace_mode".into(), serde_json::json!(mode));
+        repository.insert(
+            "repository_path".into(),
+            serde_json::json!(root.join("removed-scratch-copy")),
+        );
+        if let Some(kind) = harness {
+            claimed.request.requested_harness_kind =
+                tack_protocol::execution::HarnessKind::new(kind);
+        }
+        let protocol = protocol(claimed, false, false);
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let start_calls = Arc::clone(&adapter.start_calls);
+        let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
+
+        let cycle = engine
+            .run_once(&session(), claim_request())
+            .await
+            .unwrap_or_else(|error| panic!("{mode}: a missing folder is a settled cycle: {error}"));
+
+        assert!(matches!(cycle, RunCycle::Completed { .. }), "{mode}");
+        assert_eq!(start_calls.load(Ordering::SeqCst), 0, "{mode}");
+        let report = single_completion_report(&protocol);
+        assert_eq!(report.terminal_state, ExecutionState::Failed, "{mode}");
+        assert_eq!(
+            report.terminal_reason["message"],
+            WorkspaceError::RepositoryFolderMissing.to_string(),
+            "{mode}"
+        );
+        assert!(
+            journal.unresolved().expect("scanned journal").is_empty(),
+            "{mode}"
+        );
+    }
+}
+
 /// The one `CompletionRequest` a run sent, asserting exactly one was sent.
 fn single_completion_report(protocol: &FakeProtocol) -> CompletionRequest {
     let completions = protocol

@@ -511,6 +511,34 @@ describe('LatestRunSummary: the Now panel in each state', () => {
   });
 });
 
+describe('a run the board lost', () => {
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) await flush();
+  };
+  const panel = (c: Element) => c.querySelector('[data-testid="latest-run"]')!;
+  // The request is needs_operator while its attempt still reads leased: the computer that took it
+  // never answered. It sat four days as "Running · The agent is working on it".
+  it('says it needs a person, why, and offers to requeue or stop it, never that the agent is working', async () => {
+    const lost = {
+      ...RUN,
+      state: 'needs_operator',
+      waiting_code: 'lease_expired',
+      waiting_reason: 'The computer that took this run stopped answering.',
+    };
+    const leased = { ...ATTEMPT, state: 'leased', terminal_reason: null, usage: null, started_at: null, ended_at: null };
+    const c = mount([lost], () => {}, [leased]);
+    await settle();
+    const card = panel(c);
+    expect(card.getAttribute('data-state')).toBe('stuck');
+    expect(card.textContent).toContain('Needs you');
+    expect(c.querySelector('[data-testid="latest-run-stuck"]')!.textContent).toContain('The computer that took this run stopped answering.');
+    expect(card.textContent).not.toContain('The agent is working on it');
+    expect(card.textContent).not.toContain('Follow live');
+    expect(c.querySelector('[data-testid="now-primary"]')!.textContent).toBe('Requeue or stop');
+    expect([...card.querySelectorAll('button')].some((b) => b.textContent === 'Stop')).toBe(true);
+  });
+});
+
 describe('primaryNowAction', () => {
   const base = { hasRun: true, asking: false, askingBehind: false };
   it.each([
@@ -519,6 +547,7 @@ describe('primaryNowAction', () => {
     [{ kind: 'queued', askingBehind: true }, 'answer'],
     [{ kind: 'running' }, null],
     [{ kind: 'running', asking: true }, 'answer'],
+    [{ kind: 'stuck' }, 'recover'],
     [{ kind: 'review' }, 'review'],
     [{ kind: 'failed' }, 'why'],
     [{ kind: 'failed', cancelled: true }, 'again'],
