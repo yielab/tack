@@ -406,6 +406,9 @@ async fn launch(
         state_dir,
         checkout,
     );
+    // Made before the wrap, which may write the repository's cut configuration into it.
+    let _ = fs::remove_dir_all(&scratch);
+    fs::create_dir_all(&scratch).map_err(|e| error(format!("no scratch home ({e})")))?;
     // `None` where the machine has no sandbox: the install runs as the runner.
     let wrapped = sandbox.wrap(
         Path::new("/bin/sh"),
@@ -419,10 +422,9 @@ async fn launch(
         },
     );
     let Some((program, args)) = wrapped else {
+        let _ = fs::remove_dir_all(&scratch);
         return Ok(sh(env.text_pairs()));
     };
-    let _ = fs::remove_dir_all(&scratch);
-    fs::create_dir_all(&scratch).map_err(|e| error(format!("no scratch home ({e})")))?;
     let mut vars = BTreeMap::from([
         ("PATH".to_owned(), env.path_or_standard()),
         (

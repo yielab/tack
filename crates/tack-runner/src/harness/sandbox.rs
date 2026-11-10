@@ -99,6 +99,9 @@ pub struct Sandbox {
     /// Whether an agent that finds none must not run: the administrator's `[sandbox]` setting.
     /// Off, an agent without a sandbox runs but asks before each action.
     required: bool,
+    /// Whether `bwrap` is installed but the system does not let it make a sandbox (on Ubuntu,
+    /// AppArmor refusing a background service the user namespace bwrap needs).
+    refused: bool,
     /// How a run reaches the runner's proxy without a network of its own; set per run by
     /// [`Self::bridged`].
     bridge: Option<Bridge>,
@@ -130,7 +133,23 @@ impl Sandbox {
             home: self.home.clone(),
             looked: true,
             required: self.required,
+            refused: false,
             bridge: None,
+        }
+    }
+
+    /// Whether `bwrap` is installed but this computer does not let it make a sandbox.
+    pub fn is_refused(&self) -> bool {
+        self.refused
+    }
+
+    /// What a person does so that an agent this machine cannot contain is contained.
+    pub fn remedy(&self) -> &'static str {
+        if self.refused {
+            "let bwrap make a sandbox on this computer (on Ubuntu 24.04 and later, an AppArmor \
+             profile for bwrap; see \"What the Agent Can Reach\" in the Administrator guide)"
+        } else {
+            "install bubblewrap"
         }
     }
 
@@ -155,6 +174,7 @@ impl Sandbox {
             home: None,
             looked: false,
             required: false,
+            refused: false,
             bridge: None,
         }
     }
@@ -245,6 +265,11 @@ impl Sandbox {
                 }
             }
         }
+        // After the home binds and before the workspace: a repository under `$HOME` shows on top
+        // of the scratch home, and a workspace inside the repository stays read-write.
+        for (flag, source, destination) in worktree_git(workspace, scratch_home) {
+            bind(&mut argv, flag, &source, &destination);
+        }
         // After the home binds: a workspace or scratch directory under
         // `$HOME` must stay visible on top of the scratch home.
         bind(&mut argv, "--bind", workspace, workspace);
@@ -295,8 +320,78 @@ fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Where the shared repository's configuration, cut to what git needs to read it, is written in
+/// the scratch home.
+const WORKTREE_CONFIG: &str = ".tack-git-config";
+
+/// The binds that make git work in a workspace `git worktree add` made, each `(flag, source,
+/// destination)`; none for a workspace that holds its own repository.
+///
+/// Such a workspace's `.git` is a file naming the worktree's own directory inside the person's
+/// repository (its index and HEAD), which points on to the shared one (objects, refs, hooks). The
+/// worktree's own is shown read-write and the shared one read-only, so the agent reads the
+/// history and the status but cannot rewrite a hook, another branch or the configuration git
+/// runs outside the sandbox. The shared configuration is shown as a copy that keeps only its
+/// `[core]` and `[extensions]` sections: a remote URL or header holding a token stays out of
+/// sight.
+fn worktree_git(workspace: &Path, scratch_home: &Path) -> Vec<(&'static str, PathBuf, PathBuf)> {
+    let Some(own) = std::fs::read_to_string(workspace.join(".git"))
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .find_map(|line| line.strip_prefix("gitdir:"))
+                .map(|dir| workspace.join(dir.trim()))
+        })
+        .and_then(|dir| dir.canonicalize().ok())
+    else {
+        return Vec::new();
+    };
+    let shared = std::fs::read_to_string(own.join("commondir"))
+        .ok()
+        .and_then(|dir| own.join(dir.trim()).canonicalize().ok())
+        .unwrap_or_else(|| own.clone());
+    let mut binds = vec![("--ro-bind", shared.clone(), shared.clone())];
+    if own != shared {
+        binds.push(("--bind", own.clone(), own));
+    }
+    let config = shared.join("config");
+    let copy = scratch_home.join(WORKTREE_CONFIG);
+    match std::fs::read_to_string(&config) {
+        Ok(text) if std::fs::write(&copy, core_sections(&text)).is_ok() => {
+            binds.push(("--ro-bind", copy, config));
+        }
+        // A configuration that cannot be cut is not shown at all.
+        Ok(_) => binds.push(("--ro-bind", PathBuf::from("/dev/null"), config)),
+        Err(_) => {}
+    }
+    binds
+}
+
+/// The `[core]` and `[extensions]` sections of a git configuration file, which say how to read
+/// the repository; every other section (remotes, credentials, includes) is dropped.
+fn core_sections(config: &str) -> String {
+    let mut kept = String::new();
+    let mut keep = false;
+    for line in config.lines() {
+        if let Some(header) = line.trim_start().strip_prefix('[') {
+            let name: String = header
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect::<String>()
+                .to_ascii_lowercase();
+            keep = name == "core" || name == "extensions";
+        }
+        if keep {
+            kept.push_str(line);
+            kept.push('\n');
+        }
+    }
+    kept
+}
+
 /// Looks for `bwrap` on `path` and remembers `home`; both are the runner's
-/// own, read once by the caller.
+/// own, read once by the caller. A `bwrap` that is there but cannot make a sandbox (the system
+/// refuses it a user namespace) counts as none, and the reason says so.
 pub fn detect(path: Option<&OsStr>, home: Option<&Path>) -> Sandbox {
     let found = path.and_then(|path| {
         std::env::split_paths(path)
@@ -305,20 +400,55 @@ pub fn detect(path: Option<&OsStr>, home: Option<&Path>) -> Sandbox {
             .find(|candidate| is_executable(candidate))
     });
     match found {
-        Some(bwrap) => Sandbox {
-            kind: SandboxKind::Bwrap,
-            reason: "bwrap on PATH".to_owned(),
-            bwrap: Some(bwrap),
-            home: home.map(Path::to_path_buf),
-            looked: true,
-            required: false,
-            bridge: None,
+        Some(bwrap) => match tried(&bwrap) {
+            Ok(()) => Sandbox {
+                kind: SandboxKind::Bwrap,
+                reason: "bwrap on PATH".to_owned(),
+                bwrap: Some(bwrap),
+                home: home.map(Path::to_path_buf),
+                looked: true,
+                required: false,
+                refused: false,
+                bridge: None,
+            },
+            Err(why) => Sandbox {
+                looked: true,
+                refused: true,
+                home: home.map(Path::to_path_buf),
+                ..Sandbox::none(&format!(
+                    "bwrap is installed but cannot make a sandbox here: {why}"
+                ))
+            },
         },
         None => Sandbox {
             looked: true,
             ..Sandbox::none("bwrap not on PATH")
         },
     }
+}
+
+/// Whether `bwrap` makes a sandbox on this computer: it starts a shell that does nothing inside
+/// one showing the whole file system read-only, which needs nothing but the user namespace the
+/// system may refuse. The answer only changes with the program, so it is kept per process.
+fn tried(bwrap: &Path) -> Result<(), String> {
+    static TRIED: std::sync::OnceLock<std::sync::Mutex<BTreeMap<PathBuf, Result<(), String>>>> =
+        std::sync::OnceLock::new();
+    let tried = TRIED.get_or_init(Default::default);
+    if let Some(hit) = tried.lock().ok().and_then(|map| map.get(bwrap).cloned()) {
+        return hit;
+    }
+    let args = ["--ro-bind", "/", "/", "--", "/bin/sh", "-c", "exit 0"].map(str::to_owned);
+    let answer = run_probe(
+        bwrap,
+        &args,
+        &BTreeMap::new(),
+        Path::new("/"),
+        Duration::from_secs(10),
+    );
+    if let Ok(mut map) = tried.lock() {
+        map.insert(bwrap.to_path_buf(), answer.clone());
+    }
+    answer
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -387,5 +517,33 @@ pub fn run_probe(
                 |line| line.chars().take(120).collect(),
             )),
         None => Err("timed out".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::core_sections;
+
+    #[test]
+    fn the_shared_configuration_keeps_only_how_to_read_the_repository() {
+        let config = "\
+[core]
+\trepositoryformatversion = 1
+\tbare = false
+[remote \"origin\"]
+\turl = https://x-access-token:ghp_secret@github.com/acme/app.git
+[http \"https://github.com/\"]
+\textraHeader = Authorization: Bearer secret
+[Extensions]
+\tobjectFormat = sha256
+[include]
+\tpath = ~/.gitconfig-work
+";
+        let kept = core_sections(config);
+        assert!(kept.contains("repositoryformatversion = 1"), "{kept}");
+        assert!(kept.contains("objectFormat = sha256"), "{kept}");
+        for gone in ["secret", "remote", "include", "http"] {
+            assert!(!kept.contains(gone), "{gone} is shown: {kept}");
+        }
     }
 }

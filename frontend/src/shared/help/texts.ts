@@ -87,7 +87,14 @@ export interface AgentSafetyReport {
   sandbox?: 'bwrap' | 'none' | 'harness';
   /** Whether the runner's settings require a sandbox; absent on an older runner. */
   sandbox_required?: boolean;
+  /** Whether `bwrap` is installed but the computer does not let it make a sandbox. */
+  sandbox_refused?: boolean;
   decisions?: { support: string };
+}
+
+function blockedText(report: AgentSafetyReport): string {
+  if (report.sandbox_required !== true) return SAFETY_TEXT.blocked;
+  return report.sandbox_refused === true ? SAFETY_TEXT.bwrapRefused : SAFETY_TEXT.needsBubblewrap;
 }
 
 function containedBy(report: AgentSafetyReport): string {
@@ -104,7 +111,7 @@ export function agentSafety(reports: readonly AgentSafetyReport[]): { text: stri
   const unconfined = known.filter((r) => r.sandbox === 'none');
   // docket decides whether to run; the board only asks it about its jail and never refuses on the answer.
   const blocked = unconfined.find((r) => r.harness_kind !== 'docket' && (r.sandbox_required === true || r.decisions?.support !== 'supported'));
-  if (blocked) return { text: blocked.sandbox_required === true ? SAFETY_TEXT.needsBubblewrap : SAFETY_TEXT.blocked, tone: 'blocked' };
+  if (blocked) return { text: blockedText(blocked), tone: 'blocked' };
   const asking = unconfined[0];
   if (asking) {
     const text = asking.sandbox_required === false ? SAFETY_TEXT.optedOut : asking.harness_kind === 'docket' ? SAFETY_TEXT.docketSilent : SAFETY_TEXT.asks;
@@ -121,6 +128,7 @@ export const SAFETY_TEXT = {
   optedOut: 'Not contained: the administrator turned the requirement off',
   docketSilent: 'Not contained, as far as docket says',
   needsBubblewrap: "Doesn't run here: install bubblewrap to contain it",
+  bwrapRefused: "Doesn't run here: bubblewrap is installed but this computer doesn't let it make a sandbox",
   asks: "Not sandboxed on this computer, so the agent asks before each action unless you turn that off",
   blocked: "Doesn't run on this computer: it isn't sandboxed and can't ask before it acts. Install bubblewrap (Linux), or update the agent to a version that can ask.",
 } as const;

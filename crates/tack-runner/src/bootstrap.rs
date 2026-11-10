@@ -302,7 +302,15 @@ fn warn_if_not_contained(config: &RunnerConfig) {
     if !machine.found_none() {
         return;
     }
-    if config.sandbox.required {
+    if machine.is_refused() {
+        tracing::warn!(
+            reason = machine.reason,
+            "bubblewrap (bwrap) is installed but cannot make a sandbox on this computer: Claude \
+             Code, opencode and Codex do not run contained until it can; on Ubuntu 24.04 and \
+             later, AppArmor refuses it the user namespace it needs when the runner is a \
+             service, and an AppArmor profile for bwrap lets it"
+        );
+    } else if config.sandbox.required {
         tracing::warn!(
             "bubblewrap (bwrap) is not installed: Claude Code, opencode and Codex do not run on this \
              computer until it is; install it, or set `required = false` under [sandbox] to run them \

@@ -136,6 +136,26 @@ pub enum SandboxMode {
     Any,
 }
 
+/// Where the agent works: a clone of the seed, or a worktree of it (`git worktree add`, the
+/// project's "branch of your repository"), whose repository lives outside the workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceMode {
+    #[default]
+    Clone,
+    LocalBranch,
+}
+
+impl WorkspaceMode {
+    /// The project's `workspace_mode` on the board's API.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Clone => "clone",
+            Self::LocalBranch => "local_branch",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Verify {
@@ -222,6 +242,8 @@ pub struct Task {
     pub approvals: Approvals,
     #[serde(default)]
     pub sandbox: SandboxMode,
+    #[serde(default)]
+    pub workspace: WorkspaceMode,
     #[serde(default)]
     pub verify: Verify,
     #[serde(default)]

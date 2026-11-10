@@ -114,7 +114,7 @@ function whoWouldDoIt(automation: Automation): string | null {
   if (!c) return null;
   if (!c.profile) return 'No profile is chosen yet: you pick the agent when you run it';
   const team = teamOf(c.profile);
-  return team ? `${c.profile.name} · team ${team}` : c.profile.name;
+  return `Would go to ${team ? `${c.profile.name} · team ${team}` : c.profile.name}`;
 }
 
 /** Under the Run button of a task with no run: who would do it, and why auto-start has not started it yet. */
@@ -123,7 +123,7 @@ export const WhoWouldDoIt: Component<{ automation: Automation }> = (props) => (
     <Show when={whoWouldDoIt(props.automation)}>
       {(text) => (
         <p data-testid="now-who" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          Would go to {text()}
+          {text()}
         </p>
       )}
     </Show>

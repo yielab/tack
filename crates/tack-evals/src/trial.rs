@@ -197,7 +197,7 @@ fn start_run(
             "project_type": "software",
             "code_origin": "folder",
             "repository": world.repo,
-            "workspace_mode": "clone",
+            "workspace_mode": spec.workspace.as_str(),
         }),
     )?;
     let project_id = project["id"].as_str().context("the project has no id")?;

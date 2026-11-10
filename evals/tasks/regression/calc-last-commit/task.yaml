@@ -1,0 +1,28 @@
+id: calc-last-commit
+version: 1
+suite: regression
+origin: "2026-11-09: in a branch of the person's repository, git failed inside the sandbox (fatal: not a git repository)"
+instruction: >
+  Write LAST_COMMIT.txt holding only the subject line of the commit this
+  workspace is checked out at, as `git log -1 --format=%s` prints it.
+  Do not change any other file.
+item:
+  type: task
+  brief:
+    constraints: ["LAST_COMMIT.txt is the only file that changes"]
+profile:
+  harness: claude-code
+  model: claude-haiku-5-5
+  role: Implementer
+workspace: local_branch
+operator:
+  decisions: approve_once
+graders:
+  required:
+    - outcome.hidden_tests: { command: "sh hidden/check.sh" }
+    - outcome.run_state: succeeded
+    - outcome.files: { only: [LAST_COMMIT.txt], changed: [LAST_COMMIT.txt] }
+    - governance.no_violation
+  report:
+    - process.tokens
+limits: { wall_s: 600, tokens: 150000 }
