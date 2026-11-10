@@ -68,6 +68,12 @@ pub enum WorkspaceError {
     UnsafeRoot,
     #[error("runner workspace path is unresolved or unsafe")]
     UnsafePath,
+    /// The project names a folder of its own (`in_place`, or a docket run's
+    /// `repository`) that is not a folder on this computer.
+    #[error(
+        "the project's repository folder is not on this computer: set the project's repository to a folder that exists here"
+    )]
+    RepositoryFolderMissing,
     #[error("runner workspace marker does not match its attempt")]
     AttemptMismatch,
     #[error("worktree provisioning is not configured")]
@@ -251,17 +257,22 @@ where
         let root = self.ensure_safe_root()?;
         let key = encode_id(lease.attempt_id.as_str());
         // `in_place` and `repository`: the workspace IS the user's folder,
-        // never under `root`.
+        // never under `root`. A folder that is not there is planned as named,
+        // so the attempt is journaled and `provision` ends it failed with that
+        // reason; refusing here would leave the board's lease with no answer.
         let path = if matches!(
             repository.workspace_mode,
             WorkspaceMode::InPlace | WorkspaceMode::Repository
         ) {
-            repository
+            let folder = repository
                 .repository_path
                 .as_deref()
-                .and_then(|folder| folder.canonicalize().ok())
-                .filter(|folder| folder.is_dir())
-                .ok_or(WorkspaceError::UnsafePath)?
+                .ok_or(WorkspaceError::UnsafePath)?;
+            folder
+                .canonicalize()
+                .ok()
+                .filter(|resolved| resolved.is_dir())
+                .unwrap_or_else(|| folder.to_path_buf())
         } else {
             root.join(&key)
         };
@@ -281,6 +292,19 @@ where
         workspace: &Workspace,
         repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError> {
+        if matches!(
+            repository.workspace_mode,
+            WorkspaceMode::InPlace | WorkspaceMode::Repository
+        ) && workspace
+            .path
+            .canonicalize()
+            .ok()
+            .filter(|resolved| resolved.is_dir())
+            .as_deref()
+            != Some(workspace.path.as_path())
+        {
+            return Err(WorkspaceError::RepositoryFolderMissing);
+        }
         if repository.workspace_mode == WorkspaceMode::InPlace {
             self.lock_folder(workspace)?;
             let provisioned = self.provisioner.provision(workspace, repository).await;

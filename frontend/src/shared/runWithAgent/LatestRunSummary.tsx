@@ -56,11 +56,12 @@ export interface LatestRunSummaryProps {
 }
 
 /** Which card the run is: it sets the card's state and its actions. */
-export type RunCardKind = 'queued' | 'running' | 'review' | 'failed' | 'merged' | 'done';
+/** `stuck`: the board lost the run (`needs_operator`), so nothing runs and a person requeues or stops it. */
+export type RunCardKind = 'queued' | 'running' | 'stuck' | 'review' | 'failed' | 'merged' | 'done';
 
 /** The one filled button of the panel, chosen by where the item is (Run, Answer the question,
- *  Review and merge, See why it failed, Run again); null when nothing needs doing now. */
-export type NowAction = 'run' | 'answer' | 'review' | 'why' | 'again';
+ *  Requeue or stop, Review and merge, See why it failed, Run again); null when nothing needs doing now. */
+export type NowAction = 'run' | 'answer' | 'recover' | 'review' | 'why' | 'again';
 
 export function primaryNowAction(input: {
   hasRun: boolean;
@@ -76,6 +77,7 @@ export function primaryNowAction(input: {
   switch (input.kind) {
     case 'queued': return input.askingBehind ? 'answer' : null;
     case 'running': return input.asking ? 'answer' : null;
+    case 'stuck': return 'recover';
     case 'review': return 'review';
     case 'failed': return input.cancelled || input.refused ? 'again' : 'why';
     case 'merged':
@@ -84,7 +86,7 @@ export function primaryNowAction(input: {
 }
 
 /** Status words the banner already says, so the line under it does not repeat them. */
-const SAID_BY_BANNER = new Set(['Queued', 'Running', 'Failed', 'Cancelled', 'Not started', 'Needs a person']);
+const SAID_BY_BANNER = new Set(['Queued', 'Running', 'Failed', 'Cancelled', 'Not started', 'Needs a person', 'Needs operator']);
 
 const EXCERPT_CHARS = 220;
 const ANSWER_CHARS = 600;
@@ -136,6 +138,8 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     const run = latest();
     const a = attempt();
     if (run?.state === 'queued') return 'queued';
+    // The request's word decides: its attempt still reads leased or running, but nothing holds it.
+    if (run?.state === 'needs_operator') return 'stuck';
     if (!a) return run && isTerminalStateString(run.state) ? (run.state === 'failed' || run.state === 'cancelled' ? 'failed' : 'done') : 'running';
     if (!isTerminalAttemptState(a.state)) return 'running';
     if (a.state !== 'succeeded') return 'failed';
@@ -145,6 +149,10 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const status = (): { label: string; tone: StateTone } => {
     const a = attempt();
     if (kind() === 'merged') return { label: 'Merged', tone: 'success' };
+    if (kind() === 'stuck') {
+      const s = describeExecutionState('needs_operator');
+      return { label: s.label, tone: s.tone };
+    }
     if (a) return describeAttemptStatus(a, review(), recommendation());
     const s = describeExecutionState(latest()?.state ?? 'queued');
     return { label: s.label, tone: s.tone };
@@ -157,6 +165,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       case 'running':
         if (asking()) return { state: 'needs', docket: 'Needs a person' };
         return stopRequested() ? { state: 'running', docket: 'Cancellation requested' } : { state: 'running' };
+      case 'stuck': return { state: 'needs', docket: 'Needs a person' };
       case 'review': return { state: 'review', docket: 'Needs your review' };
       case 'failed':
         if (needsPerson()) return { state: 'needs', docket: 'Needs a person' };
@@ -429,6 +438,13 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               </p>
             </Show>
 
+            <Show when={kind() === 'stuck'}>
+              <p data-testid="latest-run-stuck" class="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                {latest()?.waiting_reason || 'The board lost touch with the computer that took this run.'} Nothing is
+                running: requeue it or stop it.
+              </p>
+            </Show>
+
             <Show when={kind() === 'running' && eventsFailed()}>
               <LoadError what="the agent's last steps" error={events.error} onRetry={() => void refetch()} />
             </Show>
@@ -583,6 +599,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                   );
                 })()}
               </Show>
+              <Show when={primary() === 'recover'}>{openPrimary('Requeue or stop')}</Show>
               <Show when={primary() === 'review'}>{openPrimary('Review and merge')}</Show>
               <Show when={primary() === 'why'}>{openPrimary(needsPerson() ? 'Open the question' : 'See why it failed')}</Show>
               <Show when={primary() === 'again'}>{runAgain('primary')}</Show>
@@ -591,7 +608,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 <Show when={!asking()}>{open('Follow live')}</Show>
               </Show>
               {/* One word, one place, for stopping a run that is alive: Stop. */}
-              <Show when={kind() === 'running' || kind() === 'queued'}>
+              <Show when={kind() === 'running' || kind() === 'queued' || kind() === 'stuck'}>
                 <Button size="sm" variant="secondary" disabled={stopping() || stopRequested()} loading={stopping()} onClick={() => void stop()}>
                   {stopRequested() ? 'Stopping…' : 'Stop'}
                 </Button>
@@ -636,7 +653,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               {/* Another run is possible from every state that is not in flight, drawn as the quietest
                   button when something else is what to do now. A queued or running run (or one waiting
                   for an answer) is the run; a second one beside it would only compete. */}
-              <Show when={primary() !== 'again' && kind() !== 'queued' && kind() !== 'running' && !(kind() === 'failed' && needsPerson())}>{runAgain('ghost')}</Show>
+              <Show when={primary() !== 'again' && kind() !== 'queued' && kind() !== 'running' && kind() !== 'stuck' && !(kind() === 'failed' && needsPerson())}>{runAgain('ghost')}</Show>
             </div>
 
             <Show when={finished() && !noChange() && kind() !== 'failed' && !isMerged() && attempt()?.merge}>

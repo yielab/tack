@@ -231,7 +231,9 @@ const RequestRow: Component<{
 
   const status = createMemo(() => runStatus(store, props.record));
   // The run in the one language every screen uses: its latest attempt's state, else the request's own.
+  // A run the board lost (needs_operator) is the request's word: its attempt still reads leased or running.
   const banner = () => {
+    if (state() === 'needs_operator') return { state: 'needs' as const, docket: 'Needs a person' as const };
     const a = latestAttempt();
     return a ? attemptRunState(a) : { state: chipState(status().tone, status().label) };
   };
