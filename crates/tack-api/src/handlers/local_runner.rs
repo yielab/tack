@@ -103,6 +103,9 @@ pub struct FolderCheck {
     pub dirty_files: usize,
     /// The install command the checked-out commit's lockfile implies, when it has one.
     pub install: Option<DetectedInstall>,
+    /// The path is in a temporary folder (`/tmp`, `/var/tmp` or the system's temporary
+    /// folder) that may be deleted at any time, and the project's runs with it.
+    pub temporary: bool,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -124,6 +127,7 @@ impl From<app::FolderFacts> for FolderCheck {
                 command: found.command,
                 lockfile: found.lockfile,
             }),
+            temporary: facts.temporary,
         }
     }
 }

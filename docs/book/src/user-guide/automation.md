@@ -337,7 +337,10 @@ These are the folded sections above the ladder. Each saves as soon as you change
 The answer to **Does this project have code?** from when you created the project: an existing folder on this
 computer, or no code yet. Under **Advanced** there is also a repository URL, for a repository the agent
 should clone. For a folder, the tab reads it back in one sentence ("A git repository on branch main, no
-uncommitted files", "A folder without git: the agent will work in it directly", "That path does not exist").
+uncommitted files", "A folder without git: the agent will work in it directly"). Two things are said in red, and
+the folded section's own line says them too ("Not found: …", "Temporary folder: …"): a folder that is no longer on
+this computer, where every run fails, and a folder in `/tmp` or another temporary folder, which the system can
+delete at any time. Point the project at your real repository instead.
 A **Branch** field names the branch to work from. **Install dependencies before each run** is on by default:
 Tack prepares the agent's copy with the command that matches the folder's lockfile, installs nothing when
 there is no lockfile, and uses the command you type in **Install command** instead when you give one. A line

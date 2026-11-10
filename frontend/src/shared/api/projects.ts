@@ -14,6 +14,8 @@ export interface FolderCheck {
   dirty_files: number;
   /** The install command the checked-out commit's lockfile implies. */
   install?: { command: string; lockfile: string } | null;
+  /** In `/tmp`, `/var/tmp` or the system's temporary folder: it may be deleted at any time. */
+  temporary?: boolean;
 }
 
 export const projects = {

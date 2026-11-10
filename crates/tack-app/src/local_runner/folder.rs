@@ -16,6 +16,9 @@ pub struct FolderFacts {
     pub dirty_files: usize,
     /// The install command the checked-out commit's lockfile implies, when it has one.
     pub install: Option<DetectedInstall>,
+    /// The path is in a temporary folder (`/tmp`, `/var/tmp` or the system's temporary
+    /// folder), which the system or the tool that made it may delete at any time.
+    pub temporary: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +88,7 @@ pub async fn check_folder(path: &Path) -> FolderFacts {
         remote_url: None,
         dirty_files: 0,
         install: None,
+        temporary: is_temporary(path),
     };
     if is_git {
         facts.branch = run_git(path, &["rev-parse", "--abbrev-ref", "HEAD"]).await;
@@ -102,6 +106,25 @@ pub async fn check_folder(path: &Path) -> FolderFacts {
         });
     }
     facts
+}
+
+/// Whether `path`, as written or once its links are resolved, lies in a temporary folder.
+// The system's temporary folder is what is asked about here, not a place to write.
+#[allow(clippy::disallowed_methods)]
+pub fn is_temporary(path: &Path) -> bool {
+    let roots = [
+        PathBuf::from("/tmp"),
+        PathBuf::from("/var/tmp"),
+        std::env::temp_dir(),
+    ];
+    let resolved = std::fs::canonicalize(path).ok();
+    roots.iter().any(|root| {
+        let real_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+        [Some(path), resolved.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|candidate| candidate.starts_with(root) || candidate.starts_with(&real_root))
+    })
 }
 
 /// Creates `path` and runs `git init`. An existing non-empty directory (or a file) is refused.
@@ -123,4 +146,22 @@ pub async fn init_folder(path: &Path) -> Result<(), FolderError> {
         .await
         .map(drop)
         .ok_or(FolderError::GitInitFailed)
+}
+
+#[cfg(test)]
+mod temporary_tests {
+    use super::is_temporary;
+    use std::path::Path;
+
+    #[test]
+    fn a_folder_under_a_temporary_root_is_temporary_and_a_home_folder_is_not() {
+        assert!(is_temporary(Path::new(
+            "/tmp/claude-1000/session/scratchpad/copy/my-saas"
+        )));
+        assert!(is_temporary(Path::new("/var/tmp/copy")));
+        let guard = tempfile::tempdir().expect("temporary folder");
+        assert!(is_temporary(guard.path()));
+        assert!(!is_temporary(Path::new("/home/someone/code/project")));
+        assert!(!is_temporary(Path::new("/tmpfoo/project")));
+    }
 }
