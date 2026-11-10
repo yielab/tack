@@ -5406,6 +5406,11 @@ export interface components {
             is_dir: boolean;
             is_git: boolean;
             remote_url?: string | null;
+            /**
+             * @description The path is in a temporary folder (`/tmp`, `/var/tmp` or the system's temporary
+             *     folder) that may be deleted at any time, and the project's runs with it.
+             */
+            temporary: boolean;
         };
         FolderPath: {
             path: string;

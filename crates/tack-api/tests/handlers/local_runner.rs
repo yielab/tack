@@ -298,13 +298,15 @@ async fn check_folder_reports_git_facts() {
     assert_eq!(
         body,
         serde_json::json!({"exists": true, "is_dir": true, "is_git": true, "branch": "trunk",
-            "remote_url": "https://example.com/r.git", "dirty_files": 1, "install": {"command": "npm ci", "lockfile": "package-lock.json"}})
+            "remote_url": "https://example.com/r.git", "dirty_files": 1, "install": {"command": "npm ci", "lockfile": "package-lock.json"},
+            // A test's folder lives in the system's temporary folder, so it is flagged.
+            "temporary": true})
     );
     let (_, body) = check(&plain).await;
     assert_eq!(
         body,
         serde_json::json!({"exists": true, "is_dir": true, "is_git": false, "branch": null,
-            "remote_url": null, "dirty_files": 0, "install": null})
+            "remote_url": null, "dirty_files": 0, "install": null, "temporary": true})
     );
     let (_, body) = check(&file).await;
     assert_eq!(body["exists"], true);

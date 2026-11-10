@@ -404,6 +404,32 @@ describe('Settings panels', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
+  // A project made during an onboarding pointed at the onboarding's own scratch copy; the copy was deleted and every
+  // run failed while this panel showed the path as if it were fine.
+  it.each([
+    [{ exists: true, is_dir: true, is_git: true, branch: 'main', remote_url: null, dirty_files: 0, temporary: true }, 'Temporary folder: /tmp/repo', 'This is a temporary folder'],
+    [{ exists: false, is_dir: false, is_git: false, branch: null, remote_url: null, dirty_files: 0, temporary: true }, 'Not found: /tmp/repo', 'That folder is not on this computer'],
+  ])('automation_panel_says_in_red_when_the_folder_is_temporary_or_gone (%#)', async (facts, summary, sentence) => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).endsWith('/api/local-runner/check-folder')
+        ? Promise.resolve(new Response(JSON.stringify(facts), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+        : base(input, init),
+    );
+    const { container } = mount(() => <AutomationPanel />);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(container.querySelector('#automation-where summary')!.textContent).toContain(summary);
+    expect(container.querySelector('[data-testid="folder-trouble"]')!.textContent).toContain(sentence);
+  });
+
+  it('automation_panel_says_nothing_in_red_for_a_lasting_folder', async () => {
+    const { container } = mount(() => <AutomationPanel />);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(container.querySelector('[data-testid="folder-trouble"]')).toBeNull();
+    expect(container.querySelector('#automation-where summary')!.textContent).toContain('/tmp/repo');
+    expect(container.querySelector('#automation-where summary')!.textContent).not.toContain('Temporary');
+  });
+
   it('automation_panel_changing_the_default_agent_clears_its_default_model', async () => {
     const mutable = PROJECT as { default_harness: string | null; default_model: unknown };
     mutable.default_harness = 'claude-code';

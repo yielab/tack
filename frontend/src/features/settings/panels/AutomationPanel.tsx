@@ -22,6 +22,15 @@ interface SnapshotHarness extends AgentSafetyReport, AgentModelsReport {
   harness_kind: string;
 }
 
+/** What makes a project's folder unfit to run in, in one sentence; null when nothing does. */
+export function folderTrouble(r: FolderCheck): string | null {
+  if (!r.exists) return 'That folder is not on this computer: every run of this project fails until you choose one that is';
+  if (r.temporary) {
+    return 'This is a temporary folder: the system can delete it at any time, and every run of this project would fail. Choose the real repository';
+  }
+  return null;
+}
+
 /** One sentence for what `check-folder` found at a path. */
 function checkSentence(r: FolderCheck): string {
   if (!r.exists) return 'That path does not exist';
@@ -145,7 +154,15 @@ const AutomationPanel: Component = () => {
         : null;
 
   const statuses = () => [...(workflow()?.statuses ?? [])].sort((a, b) => a.order - b.order);
-  const whereSummary = () => (origin() === 'none' ? 'No code yet' : p()?.repository || 'No folder chosen');
+  const whereSummary = () => {
+    if (origin() === 'none') return 'No code yet';
+    const path = p()?.repository;
+    if (!path) return 'No folder chosen';
+    const c = hasFolder() ? check() : undefined;
+    if (c && !c.exists) return `Not found: ${path}`;
+    if (c?.temporary) return `Temporary folder: ${path}`;
+    return path;
+  };
   const howSummary = () =>
     origin() === 'none'
       ? 'No code yet'
@@ -261,7 +278,14 @@ const AutomationPanel: Component = () => {
           <Show when={hasFolder() && folderCheck.error}>
             {(error) => <LoadError what="what is in that folder" error={error()} onRetry={() => void refetchCheck()} />}
           </Show>
-          <Show when={hasFolder() && check()}>
+          <Show when={hasFolder() && check() && folderTrouble(check()!)}>
+            {(trouble) => (
+              <p data-testid="folder-trouble" role="alert" class="text-caption" style={{ color: 'var(--color-danger-600)' }}>
+                {trouble()}
+              </p>
+            )}
+          </Show>
+          <Show when={hasFolder() && check()?.exists}>
             <Note>{checkSentence(check()!)}</Note>
           </Show>
           <Switch

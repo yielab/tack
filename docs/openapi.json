@@ -13571,7 +13571,8 @@
           "exists",
           "is_dir",
           "is_git",
-          "dirty_files"
+          "dirty_files",
+          "temporary"
         ],
         "properties": {
           "branch": {
@@ -13609,6 +13610,10 @@
               "string",
               "null"
             ]
+          },
+          "temporary": {
+            "type": "boolean",
+            "description": "The path is in a temporary folder (`/tmp`, `/var/tmp` or the system's temporary\nfolder) that may be deleted at any time, and the project's runs with it."
           }
         }
       },
