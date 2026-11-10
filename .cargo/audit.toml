@@ -8,4 +8,11 @@
 # `security` job run `cargo audit`, which reads it.
 
 [advisories]
-ignore = []
+ignore = [
+    # libsqlite3-sys 0.30.1 bundles SQLite < 3.54.0, which returns uninitialized memory when a
+    # database is opened beside a -wal of another page size. sqlx-sqlite 0.9.0 (sqlx's newest
+    # release) pins 0.30.1; the fix is libsqlite3-sys >= 0.39. Tack opens no foreign -wal: an
+    # uploaded database is read immutable and the restore swap deletes the old -wal/-shm.
+    # Reviewed 2026-11-10, next review 2027-02-10. Remove when sqlx moves to >= 0.39.
+    "RUSTSEC-2026-0459",
+]

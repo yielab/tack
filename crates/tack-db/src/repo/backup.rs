@@ -90,11 +90,17 @@ impl Repository {
 
 /// How many migrations the database file at `path` has applied, read-only. Used to refuse a
 /// restore of a schema newer than the running binary.
+///
+/// The file is somebody else's upload, so it is opened `immutable`: SQLite then reads the main
+/// file only and never looks for a `-wal` beside it. A crafted `-wal` whose page size differs
+/// from the file's makes an SQLite older than 3.54 return uninitialized memory
+/// (RUSTSEC-2026-0459), and the SQLite that sqlx bundles is older than that.
 pub async fn migration_count_of_file(path: &Path) -> Result<u32, StoreError> {
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .create_if_missing(false)
         .read_only(true)
+        .immutable(true)
         .connect()
         .await?;
     let count: Result<i64, StoreError> = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
@@ -164,3 +170,7 @@ pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), StoreError> {
     conn.close().await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "backup/tests.rs"]
+mod tests;

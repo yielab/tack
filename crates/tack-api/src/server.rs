@@ -336,11 +336,17 @@ fn apply_restore_swap(
     storage_restore: &std::path::Path,
     ts: &str,
 ) -> std::io::Result<RestoreBaks> {
-    // 1. Delete stale WAL/SHM of the DB about to be replaced.
-    let wal = format!("{}-wal", db_path.to_string_lossy());
-    let shm = format!("{}-shm", db_path.to_string_lossy());
-    let _ = std::fs::remove_file(&wal);
-    let _ = std::fs::remove_file(&shm);
+    // 1. Delete stale WAL/SHM of the DB about to be replaced. Only "already gone" is fine: a
+    // sidecar that stays would be opened beside the restored file, and a `-wal` whose page size
+    // differs from the upload's makes SQLite older than 3.54 return uninitialized memory
+    // (RUSTSEC-2026-0459). Nothing has moved yet, so failing here changes nothing.
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = format!("{}{suffix}", db_path.to_string_lossy());
+        match std::fs::remove_file(&sidecar) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+            _ => {}
+        }
+    }
 
     // 2. Move the current DB aside (may not exist on a fresh install).
     let db_bak = format!("{}.bak-{}", db_path.to_string_lossy(), ts);

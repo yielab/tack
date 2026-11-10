@@ -214,6 +214,33 @@ fn restore_swap_deletes_stale_wal_shm() {
     fs::remove_dir_all(dir).ok();
 }
 
+/// A sidecar that cannot be deleted stops the swap before anything moves: booting the restored
+/// file beside the old `-wal` is worse than not restoring.
+#[test]
+fn restore_swap_refuses_when_a_stale_wal_cannot_be_deleted() {
+    let dir_guard = workdir("wal-stuck");
+    let dir = dir_guard.path();
+    let db_path = dir.join("tack.db");
+    let restore_db = dir.join("tack.db.restore");
+    fs::write(&db_path, b"ORIGINAL").unwrap();
+    fs::write(&restore_db, b"RESTORED").unwrap();
+    // A non-empty directory where the `-wal` should be: `remove_file` cannot delete it.
+    fs::create_dir_all(dir.join("tack.db-wal")).unwrap();
+    fs::write(dir.join("tack.db-wal").join("x"), b"x").unwrap();
+
+    let result = apply_restore_swap(
+        &db_path,
+        &restore_db,
+        &dir.join("storage"),
+        &dir.join("storage.restore"),
+        "TS",
+    );
+
+    assert!(result.is_err(), "the swap went on beside a stale -wal");
+    assert_eq!(fs::read(&db_path).unwrap(), b"ORIGINAL");
+    assert_eq!(fs::read(&restore_db).unwrap(), b"RESTORED");
+}
+
 #[tokio::test]
 async fn shutdown_waits_for_a_use_case_a_handler_started() {
     let tasks = TaskTracker::new();

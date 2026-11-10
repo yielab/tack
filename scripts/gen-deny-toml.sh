@@ -77,10 +77,22 @@ zbus_ignores() {
 EOF
 }
 
+# sqlx 0.9.0 (its newest release) pins libsqlite3-sys 0.30.1, which bundles SQLite 3.46; the fix
+# is libsqlite3-sys 0.39 (SQLite 3.54). Tack opens a database it did not write in one place, the
+# restore's schema check, and that open is `immutable` (never reads a `-wal`); the restore swap
+# deletes the old database's `-wal`/`-shm` before the restored file is opened. Remove this the
+# moment a sqlx release depends on libsqlite3-sys >= 0.39, and the same id in .cargo/audit.toml.
+sqlite_ignores() {
+  cat <<'EOF'
+  { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.30.1 bundles SQLite < 3.54.0 (uninitialized memory when a database is opened beside a -wal of another page size); pinned by sqlx-sqlite 0.9.0, its newest release. Tack never opens a foreign -wal: an uploaded database is read immutable and the restore swap deletes the old -wal/-shm. Reviewed 2026-11-10, next review 2027-02-10." },
+EOF
+}
+
 {
   echo '[advisories]'
   echo 'ignore = ['
   zbus_ignores
+  sqlite_ignores
   echo ']'
   echo
   common_policy main
