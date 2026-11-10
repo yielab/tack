@@ -775,19 +775,20 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         }
         if self.sandbox.is_required() {
             return Some(format!(
-                "not contained on this computer ({}), so this agent does not run here; install \
-                 bubblewrap, or set `required = false` under [sandbox] in the runner's settings \
-                 to run it uncontained, asking before each action",
-                self.sandbox.reason
+                "not contained on this computer ({}), so this agent does not run here; {}, or \
+                 set `required = false` under [sandbox] in the runner's settings to run it \
+                 uncontained, asking before each action",
+                self.sandbox.reason,
+                self.sandbox.remedy()
             ));
         }
         let can_ask = self.grammar.capabilities().decisions.support == CapabilitySupport::Supported;
         (!can_ask).then(|| {
             format!(
                 "not sandboxed on this machine ({}) and this agent cannot ask before it acts, \
-                 so it does not run here; install bubblewrap, or update the agent to a version \
-                 that can ask",
-                self.sandbox.reason
+                 so it does not run here; {}, or update the agent to a version that can ask",
+                self.sandbox.reason,
+                self.sandbox.remedy()
             )
         })
     }
@@ -1579,6 +1580,11 @@ where
         additional.insert(
             "sandbox_required".to_owned(),
             serde_json::json!(self.sandbox.is_required()),
+        );
+        // bwrap is installed but the system refuses it: installing it is not the way out.
+        additional.insert(
+            "sandbox_refused".to_owned(),
+            serde_json::json!(self.sandbox.is_refused()),
         );
         additional.insert(
             "egress".to_owned(),

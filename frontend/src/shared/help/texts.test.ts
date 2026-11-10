@@ -15,6 +15,11 @@ describe('agentSafety', () => {
     expect(agentSafety([report])).toEqual({ text: SAFETY_TEXT.needsBubblewrap, tone: 'blocked' });
   });
 
+  it('does not ask to install bubblewrap when it is installed but the computer refuses it', () => {
+    const report = { harness_kind: 'claude-code', sandbox: 'none', sandbox_required: true, sandbox_refused: true, decisions: { support: 'supported' } } as const;
+    expect(agentSafety([report])).toEqual({ text: SAFETY_TEXT.bwrapRefused, tone: 'blocked' });
+  });
+
   it('says when the administrator turned the requirement off, and that docket never blocks', () => {
     const asks = { support: 'supported' };
     expect(agentSafety([{ harness_kind: 'opencode', sandbox: 'none', sandbox_required: false, decisions: asks }])).toEqual({ text: SAFETY_TEXT.optedOut, tone: 'asks' });

@@ -70,6 +70,33 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
   by starting it once inside `bwrap`. One that cannot start there (a program installed
   in a virtualenv or under Homebrew, for example) counts as not contained, and
   `tack runner doctor` and the run say so.
+- **git in a branch of your repository.** When the agent works in a branch of the project's
+  repository, its folder keeps the repository's history outside it. The sandbox shows that
+  history read-only and the branch's own git state read-write, so `git status`, `git diff` and
+  `git log` work. The agent cannot rewrite a hook, another branch or the repository's
+  configuration, and of that configuration it sees only how to read the repository, not the
+  remotes, so a token in a remote URL stays hidden.
+- **A `bwrap` the computer refuses.** On Ubuntu 24.04 and later, AppArmor stops a program from
+  making the user namespace `bwrap` needs unless a profile allows it. A terminal of your desktop
+  often has such a profile and a service started by systemd does not, so `bwrap` can work when
+  you try it by hand and fail for the runner (`bwrap: setting up uid map: Permission denied`).
+  The runner tries `bwrap` once when it starts, and when the computer refuses it, counts it as no
+  sandbox and says so: the Agents page and the run dialog read "bubblewrap is installed but this
+  computer doesn't let it make a sandbox". To allow it, save this profile as
+  `/etc/apparmor.d/bwrap`:
+
+  ```text
+  abi <abi/4.0>,
+  include <tunables/global>
+
+  profile bwrap /usr/bin/bwrap flags=(unconfined) {
+    userns,
+
+    include if exists <local/bwrap>
+  }
+  ```
+
+  Load it with `sudo apparmor_parser -r /etc/apparmor.d/bwrap`, then restart the runner.
 - **The install runs in the same sandbox.** The runner installs the project's dependencies before the
   agent starts, and a package's install script runs as you. It therefore runs inside `bwrap` too, with a
   scratch home, the few environment names it needs and the output read with the registry's tokens removed.
@@ -119,7 +146,7 @@ run asks depends on the sandbox, and it is decided in two places:
 Whatever the dialog or the project says, an agent that nothing contains does not run on that machine
 at all, unless the requirement is off and the agent can ask. The runner refuses the attempt before
 starting it, with "not contained on this computer … so this agent does not run here; install
-bubblewrap". The Agents page, the run dialog and the project's Automation settings show the same
+bubblewrap" (or, where `bwrap` is installed but refused, how to allow it). The Agents page, the run dialog and the project's Automation settings show the same
 reason. A run started through `tack mcp` always asks.
 
 ## What the runner's git refuses

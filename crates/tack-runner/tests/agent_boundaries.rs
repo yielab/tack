@@ -593,6 +593,164 @@ fn sandbox_detect_reports_none_without_bwrap_on_path() {
     assert_eq!(sandbox::detect(None, None).kind, sandbox::SandboxKind::None);
 }
 
+/// A `bwrap` the system refuses (Ubuntu's AppArmor under a service: "setting up uid map:
+/// Permission denied") is no sandbox, and an agent held to one is refused with a way out that is
+/// not "install bubblewrap".
+#[tokio::test]
+async fn a_bwrap_the_system_refuses_is_no_sandbox_and_says_why() {
+    let dir = root("sandbox-refused");
+    let bin = dir.path().join("bin");
+    let state = dir.path().join("state");
+    for path in [&bin, &state] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    let bwrap = bin.join("bwrap");
+    std::fs::write(
+        &bwrap,
+        "#!/bin/sh\necho 'bwrap: setting up uid map: Permission denied' >&2\nexit 1\n",
+    )
+    .expect("fake bwrap");
+    std::fs::set_permissions(&bwrap, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("executable");
+    let found = sandbox::detect(Some(bin.as_os_str()), None);
+    assert_eq!(found.kind, sandbox::SandboxKind::None);
+    assert!(found.found_none() && found.is_refused());
+    assert!(
+        found.reason.contains("installed") && found.reason.contains("uid map"),
+        "{}",
+        found.reason
+    );
+    let agent = bin.join("agent");
+    std::fs::write(&agent, "#!/bin/sh\necho 1.0.0\n").expect("agent");
+    std::fs::set_permissions(&agent, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("executable");
+    let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        program: Box::leak(agent.display().to_string().into_boxed_str()),
+        ..FAKE
+    }));
+    let harness = LocalProcessHarness::discover(
+        DescriptorGrammar(descriptor, true),
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        state.join("staging"),
+        SecretStore::file(state.join("secrets.json")),
+        &tack_runner::ProcessEnv::from_process(),
+    )
+    .expect("the fake program is locatable")
+    .with_probed_sandbox(found.requiring(true));
+    let probe = tack_runner::harness::HarnessProbe::probe(&harness).await;
+    let reason = probe.probe_error.expect("the probe says it may not run");
+    assert!(
+        reason.contains("does not run here")
+            && reason.contains("AppArmor")
+            && !reason.contains("install bubblewrap"),
+        "{reason}"
+    );
+    assert_eq!(probe.additional["sandbox_refused"], true);
+}
+
+/// A workspace `git worktree add` made keeps its repository outside it. Inside the real `bwrap`
+/// git reads its history and status there, but cannot write a hook of the person's repository,
+/// and a token in the repository's remote URL is not shown.
+#[test]
+fn git_works_in_a_worktree_workspace_inside_a_real_bwrap() {
+    let path = tack_runner::ProcessEnv::from_process().search_path();
+    let dir = root("sandbox-worktree");
+    let found = sandbox::detect(path.as_deref(), Some(&dir.path().join("home")));
+    if found.kind != sandbox::SandboxKind::Bwrap {
+        if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+            panic!("bwrap required by TACK_REQUIRE_BWRAP but cannot make a sandbox here");
+        }
+        println!("skipped: no bwrap that makes a sandbox here");
+        return;
+    }
+    let (repo, workspace, scratch) = (
+        dir.path().join("repo"),
+        dir.path().join("workspace"),
+        dir.path().join("scratch"),
+    );
+    for path in [&repo, &scratch] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    let git = |cwd: &std::path::Path, args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .args(["-c", "user.email=t@invalid", "-c", "user.name=t"])
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+    };
+    std::fs::write(repo.join("README.md"), "seed\n").expect("file");
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "the seed commit"]);
+    git(
+        &repo,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://x-access-token:ghp_canary@example.invalid/app.git",
+        ],
+    );
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "--detach",
+            workspace.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    std::fs::write(workspace.join("README.md"), "changed\n").expect("edit");
+
+    let hook = repo.join(".git/hooks/post-checkout");
+    let script = format!(
+        "export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null; \
+         git log -1 --format=%s && git status --porcelain && \
+         (git config --get remote.origin.url || echo no-remote) && \
+         (echo 'touch /tmp/escaped' > {} 2>/dev/null && echo hook-written || echo hook-refused)",
+        hook.display()
+    );
+    let (bwrap, argv) = found
+        .wrap(
+            std::path::Path::new("/bin/sh"),
+            &["-c".to_owned(), script],
+            &workspace,
+            &scratch,
+            &[],
+            sandbox::SharedFiles::default(),
+        )
+        .expect("wrapped");
+    let output = std::process::Command::new(bwrap)
+        .args(argv)
+        .current_dir(&workspace)
+        .output()
+        .expect("bwrap runs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "git inside the sandbox: {stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            "the seed commit",
+            " M README.md",
+            "no-remote",
+            "hook-refused"
+        ],
+        "{stdout}"
+    );
+    assert!(!hook.exists(), "the person's hook is untouched");
+}
+
 #[test]
 fn sandbox_binds_only_absolute_paths() {
     let dir = root("sandbox-relative");

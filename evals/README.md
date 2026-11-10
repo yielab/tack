@@ -49,7 +49,8 @@ A task is a folder of data; its `id` is the name of the folder.
    the approvals and the checks. `graders.required` decides the trial and must not be empty;
    `graders.report` only shows. The known checks are `outcome.hidden_tests`, `outcome.run_state`,
    `outcome.files`, `outcome.plan`, `governance.no_violation`, `verifier.agrees`,
-   `process.tokens` and `process.asks`.
+   `process.tokens` and `process.asks`. `workspace: local_branch` runs the agent in a git worktree
+   of the seed, the project's "branch of your repository", instead of a clone (the default).
 3. `hidden/` is the exam: the agent never sees it. It is copied over the tree the agent left, in
    a directory of its own, and the `outcome.hidden_tests` command runs there (with `PATH` set to
    the system's and nothing else from your environment).
@@ -78,6 +79,7 @@ small model.
 | `calc-fix-subtract-ask` | The run must ask before using Bash; the operator approves it once | codex, opencode (they never open an approval question); docket (its approvals follow its team's autonomy level, not the run's `ask`) |
 | `calc-divide-by-zero` | A change in one file and nothing else | none |
 | `calc-evaluate` | A small feature built on the functions already there | none |
+| `calc-last-commit` | In a branch of the repository (`workspace: local_branch`, a git worktree), git works inside the sandbox: the agent writes the last commit's subject | none |
 | `calc-review-readonly` | A Reviewer reports and changes no file | none |
 | `plan-notes-digest` | A Planner proposes 3 or 4 tasks, one nested under and ordered after another, each with a check | none |
 | `plan-checkout-epic` | A Planner breaks an epic into 2 to 4 tasks, each with a check and the role Implementer | none |

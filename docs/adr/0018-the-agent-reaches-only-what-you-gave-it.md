@@ -107,6 +107,11 @@ Claude Code, opencode and Codex without `bwrap` report the probe error "install 
 refused before spawn; with `required = false` they run as `ask`. The probe carries `sandbox_required`,
 which the run dialog's Sandbox line, the Agents page and `tack runner doctor` read.
 
+2026-11-10: a `bwrap` that is installed but cannot make a sandbox (Ubuntu's AppArmor refusing a
+service the user namespace) counts as none. The runner tries it once at start, the reason and the
+refusal name the way to allow it instead of "install bubblewrap", and the probe carries
+`sandbox_refused`.
+
 ## Note, 2026-11-07: web access is a mode per profile (decision 12)
 
 Decision 12 renames "Allow network" to "Web tools" and keeps it advisory. The maintainer decided on
