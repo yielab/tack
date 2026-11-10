@@ -55,12 +55,10 @@ cleanup() {
   [ -n "$RUNNER_B_PID" ] && kill "$RUNNER_B_PID" 2>/dev/null
   [ -n "$STANDALONE_PID" ] && kill "$STANDALONE_PID" 2>/dev/null
   [ -n "$NORUNNER_PID" ] && kill "$NORUNNER_PID" 2>/dev/null
-  # Shim harness processes record their pid in their marker file; a hung shim
-  # is in the harness's own session (the documented process-group ceiling), so
-  # kill it by recorded pid, not by group.
-  for marker in "$WORK"/harness-runs/run-* ; do
-    [ -f "$marker" ] && kill "$(head -1 "$marker")" 2>/dev/null
-  done
+  # A hung shim is in the harness's own session (the documented process-group
+  # ceiling) and, in a sandbox, in its own pid namespace, so it is found by the
+  # path of the shim it runs, not by group or by a pid it could only know inside.
+  pkill -9 -f "$SHIMS/" 2>/dev/null
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null && wait "$SERVER_PID" 2>/dev/null
   if [ "${SMOKE_KEEP:-0}" = 1 ]; then printf 'SMOKE_KEEP=1: work dir kept at %s\n' "$WORK"
   else rm -rf "$WORK"; fi
@@ -137,19 +135,22 @@ cargo build -p tack-cli -p tack-runner 2>&1 | tail -3
 # Shim harness binaries. Used by the main runner in fake mode, and by step 9's
 # dedicated runner in BOTH modes. A shim answers the adapter's real probe
 # (`--version`) and treats any other invocation as a run:
-# it records a marker (its own pid — the duplicate-execution counter step 9
-# asserts on), drains the prompt from stdin, honors SMOKE_HANG until the
-# release file appears, prints one line and exits 0. Adapters spawn harnesses
+# a SMOKE_HANG run records a marker (the duplicate-execution counter step 9
+# asserts on) and waits for the release, then drains the prompt from stdin,
+# prints one line and exits 0. Adapters spawn harnesses
 # with a cleared environment, so every path is baked in absolute; SMOKE_HANG
 # arrives through the execution request's own `environment` field — which
 # also proves that plumbing end to end.
-# The runners' HOME. A sandboxed harness sees a private /tmp and a scratch HOME,
-# but its own config directory (~/.codex for codex) is bound through at the
-# same path, so the shim's run markers and release file live there: visible to
-# the shim sandboxed or not, and to this script.
+# The runners' HOME. A sandboxed harness sees a private /tmp and a scratch HOME
+# and shares with the host only its workspace and, of its own config directory
+# (~/.codex for codex), the entries the adapter names, when they exist as the
+# harness starts. So the run marker is written into the workspace, which this
+# script reads from the runner's state directory, and the release is a
+# `rules` directory in that config directory (an entry the codex adapter binds
+# read-only), made after the hanging attempt started and so absent for it.
 RUNNER_HOME="$WORK/runner-home"
-SHIMS="$WORK/shims"; MARKERS="$RUNNER_HOME/.codex/smoke-runs"; RELEASE_FILE="$RUNNER_HOME/.codex/smoke-release"
-mkdir -p "$SHIMS" "$MARKERS"
+SHIMS="$WORK/shims"; RELEASE_FILE="$RUNNER_HOME/.codex/rules"
+mkdir -p "$SHIMS" "$RUNNER_HOME/.codex"
 cat > "$SHIMS/claude" <<SHIM
 #!/bin/sh
 PATH=/usr/bin:/bin
@@ -157,10 +158,9 @@ case "\${1:-}" in
   --version|-v) echo "1.0.0"; exit 0 ;;
   auth|login|debug) exit 1 ;;  # the probe's sign-in and model checks: not a run, so no marker
 esac
-marker="$MARKERS/run-\${SMOKE_HANG:+hang-}\$\$-\$(date +%s%N)"
-echo "\$\$" > "\$marker"
+[ "\${SMOKE_HANG:-}" = "1" ] && : > "\$PWD/smoke-run-hang-\$\$"
 cat >/dev/null
-if [ "\${SMOKE_HANG:-}" = "1" ] && [ ! -f "$RELEASE_FILE" ]; then sleep 600; fi
+if [ "\${SMOKE_HANG:-}" = "1" ] && [ ! -e "$RELEASE_FILE" ]; then sleep 600; fi
 echo "smoke-fake-harness-ok"
 exit 0
 SHIM
@@ -375,10 +375,11 @@ else
   tail -8 "$WORK/runner-b.log" | sed 's/^/   | /'
 fi
 
-# Only this step's kill-target request sets SMOKE_HANG, and the shim names
-# those markers run-hang-*; other requests (runner A's, the capacity probe)
-# can therefore never pollute the duplicate-execution count.
-hang_runs() { ls "$MARKERS"/run-hang-* 2>/dev/null | wc -l; }
+# Only this step's kill-target request sets SMOKE_HANG, and only a SMOKE_HANG
+# run leaves a marker, in its workspace under runner B's state directory; other
+# requests (runner A's, the capacity probe) can therefore never pollute the
+# duplicate-execution count.
+hang_runs() { ls "$WORK"/runner-b-state/workspaces/*/smoke-run-hang-* 2>/dev/null | wc -l; }
 S9_RUNNING=0
 REQ9=$(create_execution "$ITEM" "$RUNNER_B" codex smoke-model 600 \
   '{"SMOKE_HANG":{"value":"1","secret_reference":null}}' "smoke-s9-$$")
@@ -405,9 +406,8 @@ else
 fi
 
 RUNS_BEFORE=$(hang_runs)
-SHIM_PID=$(head -1 "$(ls -t "$MARKERS"/run-hang-* 2>/dev/null | head -1)" 2>/dev/null)
 kill -9 "$RUNNER_B_PID" 2>/dev/null   # the runner dies mid-attempt
-kill -9 "$SHIM_PID" 2>/dev/null       # and its harness child (own process group) with it
+pkill -9 -f "$SHIMS/" 2>/dev/null     # and its harness child (own session; its own pid namespace in a sandbox) with it
 RUNNER_B_PID=""
 ok "runner and harness SIGKILLed mid-attempt"
 
@@ -426,7 +426,7 @@ else
   bad "blind duplicate: harness runs $RUNS_BEFORE -> $RUNS_AFTER_RESTART, attempts now $ATTEMPTS_AFTER_RESTART, with no operator decision"
 fi
 
-touch "$RELEASE_FILE"   # from here on the shim completes instead of hanging
+mkdir "$RELEASE_FILE"   # from here on a started shim completes instead of hanging
 REQUEUE=$(curl -H "$AUTH" -sf -X POST "$API/api/executions/$REQ9/requeue" -H 'content-type: application/json' -H "$PRINCIPAL" \
   -d "{\"recovery_key\":\"smoke-requeue-$$\",\"reason\":\"smoke step 9: operator-confirmed restart recovery\"}" \
   | jq -r '.state // .result // empty')
