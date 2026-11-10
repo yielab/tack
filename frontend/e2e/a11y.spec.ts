@@ -470,7 +470,7 @@ test('Board card "Run with agent" modal has no accessibility violations', async 
 
   // The folded-away part is where the fields are: scan it open too.
   await dialog.getByText('Advanced for this run').click();
-  await expect(dialog.getByRole('combobox', { name: 'Agent' })).toBeVisible();
+  await expect(dialog.getByLabel('Token limit')).toBeVisible();
   violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });

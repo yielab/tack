@@ -76,7 +76,8 @@ test('the drawer expands into the item page, with its breadcrumb, properties and
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Items' })).toBeVisible();
   await expect(page.getByLabel('Item title')).toHaveValue(title);
-  await expect(page).toHaveTitle(new RegExp(`^${title}`));
+  // The tab title carries the count of what waits for a person, when there is any: "(6) Title — ...".
+  await expect(page).toHaveTitle(new RegExp(`^(\\(\\d+\\) )?${title}`));
   await expect(page.getByRole('region', { name: 'Properties' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
   const tabs = page.getByRole('tablist');

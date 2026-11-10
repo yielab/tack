@@ -151,7 +151,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // `<Portal>` to `document.body`, outside the dialog subtree — asserted
     // page-wide, not `drawer3`-scoped.
     await drawer3.getByText('Allow once', { exact: true }).click();
-    await drawer3.getByRole('button', { name: 'Resolve' }).click();
+    await drawer3.getByRole('button', { name: 'Send answer' }).click();
     await expect(
       page.getByText(/not configured decision resolution|token entered above is wrong/),
     ).toBeVisible();
@@ -202,7 +202,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // Resolve the REAL decision from its listed row — a genuine POST to the
     // real, mounted resolve route.
     await drawer.getByText('Allow once', { exact: true }).click();
-    await drawer.getByRole('button', { name: 'Resolve' }).click();
+    await drawer.getByRole('button', { name: 'Send answer' }).click();
     // Toast — Portal-rendered outside the dialog subtree, page-wide assert.
     await expect(page.getByText('Answer sent.')).toBeVisible();
     // The list refetches after a successful resolve — the row's own badge
@@ -293,7 +293,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await tokenField.fill('typed-not-saved-token');
     await drawer.getByText('Allow once', { exact: true }).click();
 
-    const resolveButton = drawer.getByRole('button', { name: 'Resolve' });
+    const resolveButton = drawer.getByRole('button', { name: 'Send answer' });
     const resolveHandle = await resolveButton.elementHandle();
     expect(resolveHandle).not.toBeNull();
 
@@ -315,7 +315,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await expect(drawer.getByRole('radio', { name: 'Allow once' })).toBeChecked();
   });
 
-  test('a merge-readiness pack shows one row per criterion, and accepting it with a reason shows the review', async ({
+  test('a merge-readiness pack shows one row per criterion, and accepting it from the verdict banner shows the review', async ({
     page,
     request,
   }) => {
@@ -375,10 +375,10 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await drawer.getByRole('tab', { name: 'Execution' }).click();
 
     await expect(drawer.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
-    await drawer.getByLabel('Reason').fill('Every criterion passed.');
-    await drawer.getByRole('button', { name: 'Accept', exact: true }).click();
+    // The run's one verdict is asked for in the banner; an accept needs no reason, a reject does.
+    await expect(drawer.getByLabel('Reason (required to reject)')).toHaveCount(0);
+    await drawer.getByTestId('review-accept').click();
     await expect(drawer.getByTestId('mrp-review')).toContainText('Accepted');
-    await expect(drawer.getByTestId('mrp-review')).toContainText('Every criterion passed.');
   });
   test('a finished run shows what the agent got, and the prompt it read carries the card-text fence', async ({
     page,
