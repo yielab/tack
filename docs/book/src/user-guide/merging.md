@@ -33,7 +33,7 @@ GitHub token. Tack reads CI when you press it, not before:
 
 When the verifier's pack recommends **rejecting** the change, the button still works, because you decide,
 but it asks you to write why you are merging it anyway. **Merge** stays disabled until you have, and the
-reason is kept with the run as your review of it.
+reason is kept with the run as your review of it, replacing an earlier review of that run if it had one.
 
 The same goes for a change that altered how the work is checked: a test, test or build configuration, a
 manifest or the CI files. When the verifier's pack flags it (a test that proves nothing, a deleted test,

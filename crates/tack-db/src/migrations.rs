@@ -174,6 +174,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("110_prompt_template_sha", &MIGRATION_110[..]),
         ordinary("111_profile_egress_mode", &MIGRATION_111[..]),
         ordinary("112_drop_rate_card", &MIGRATION_112[..]),
+        ordinary("113_default_expiry", &MIGRATION_113[..]),
     ]
 }
 
@@ -2322,3 +2323,19 @@ const MIGRATION_111: [&str; 3] = [
 
 // 112: no dollar figure remains in Tack, so the rate card an operator may have entered goes with it.
 const MIGRATION_112: [&str; 1] = ["DELETE FROM app_meta WHERE key = 'rate_card'"];
+
+// 113: a pending decision waits at most 24 hours and a runner's credential lives 90 days, but rows made
+// before those defaults have no expiry and would never lapse. A pending decision gets its creation time plus
+// 24 hours (the fraction and offset of its own timestamp kept, so a replay of its create still matches), which
+// the sweep settles as expired when that has passed. An active runner gets 90 days from now rather than from
+// its creation: a credential already past its end is refused, and the runner could not reach the board to
+// rotate it. A runner still waiting to enroll has no credential yet and keeps none.
+const MIGRATION_113: [&str; 2] = [
+    "UPDATE execution_decisions
+        SET expires_at = strftime('%Y-%m-%dT%H:%M:%S', created_at, '+24 hours')
+            || CASE WHEN created_at LIKE '%+00:00' THEN substr(created_at, 20) ELSE '+00:00' END
+      WHERE state = 'pending' AND expires_at IS NULL",
+    "UPDATE agent_runners
+        SET credential_expires_at = strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now', '+90 days')
+      WHERE state = 'active' AND revoked_at IS NULL AND credential_expires_at IS NULL",
+];

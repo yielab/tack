@@ -37,28 +37,34 @@ impl Repository {
         Ok(attempt_id)
     }
 
-    /// Records a person's verdict on an attempt known by its id, for a decision taken outside the
-    /// review screen (merging over a rejection). Same single verdict per attempt:
-    /// `Conflict("already_reviewed")` when one stands, which the caller leaves as it is.
-    pub async fn record_review_of_attempt(
+    /// Records the acceptance that is a merge over a rejection, for an attempt known by its id.
+    /// The merge is the person's last word, so a review the attempt already has gives way to it:
+    /// the verdict, the reason, who gave it and when are replaced, never left holding an older
+    /// verdict beside a reason for merging.
+    pub async fn record_merge_review(
         &self,
         attempt_id: &str,
-        verdict: &str,
         reason: Option<&str>,
         reviewed_by: &str,
         reviewed_at: &str,
     ) -> Result<(), StoreError> {
-        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        insert_review(
-            &mut tx,
-            attempt_id,
-            verdict,
-            reason,
-            reviewed_by,
-            reviewed_at,
+        sqlx::query(
+            "INSERT INTO attempt_reviews (attempt_id, verdict, reason, reviewed_by, reviewed_at, artifact_id) \
+             VALUES (?, 'accepted', ?, ?, ?, \
+               (SELECT artifact_id FROM execution_artifacts \
+                 WHERE attempt_id = ? AND media_type = 'application/vnd.tack.mrp+json' \
+                 ORDER BY created_at DESC, rowid DESC LIMIT 1)) \
+             ON CONFLICT (attempt_id) DO UPDATE SET verdict = excluded.verdict, reason = excluded.reason, \
+               reviewed_by = excluded.reviewed_by, reviewed_at = excluded.reviewed_at, \
+               artifact_id = excluded.artifact_id",
         )
+        .bind(attempt_id)
+        .bind(reason)
+        .bind(reviewed_by)
+        .bind(reviewed_at)
+        .bind(attempt_id)
+        .execute(self.pool())
         .await?;
-        tx.commit().await?;
         Ok(())
     }
 }

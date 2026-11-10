@@ -13,6 +13,8 @@ mod autonomy;
 mod bridge_tables_dropped;
 #[path = "migrations/change_sets.rs"]
 mod change_sets;
+#[path = "migrations/default_expiry.rs"]
+mod default_expiry;
 #[path = "migrations/drop_boards.rs"]
 mod drop_boards;
 #[path = "migrations/drop_rate_card.rs"]

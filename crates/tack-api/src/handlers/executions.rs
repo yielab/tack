@@ -1805,12 +1805,10 @@ pub async fn merge_attempt(
     {
         Ok(sha) => {
             if over_reject || !checks_changed.is_empty() {
-                // An attempt a person already reviewed keeps that verdict.
                 let recorded = state
                     .repo
-                    .record_review_of_attempt(
+                    .record_merge_review(
                         &attempt_id,
-                        "accepted",
                         reason,
                         &reviewed_by,
                         &state.clock.now().to_rfc3339(),

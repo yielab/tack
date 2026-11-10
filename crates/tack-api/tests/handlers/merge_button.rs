@@ -316,6 +316,44 @@ async fn merging_over_a_reject_needs_a_written_reason_and_a_merge_decision_does_
 }
 
 #[tokio::test]
+async fn merging_over_a_reject_keeps_its_reason_when_the_attempt_was_already_reviewed() {
+    let root = tempfile::tempdir().unwrap();
+    let gh = github("check-runs-all-success.json", 200, 1).await;
+    let (b, a) = finished(
+        root.path(),
+        &gh,
+        Setup {
+            pack_decision: "reject",
+            statement_decision: "block",
+            ..l3()
+        },
+    )
+    .await;
+    let (status, body) = common::send(
+        &b.app,
+        "POST",
+        &format!("/api/executions/{}/attempts/1/review", a.request_id),
+        json!({"verdict": "rejected", "reason": "touches the wrong table"}),
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = press_merge_because(&b, &a, "The table is the right one here").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let review = tack_db::queries::attempt_reviews::review_of_attempt(&b.state.repo, &a.attempt_id)
+        .await
+        .unwrap()
+        .expect("the attempt has one review");
+    assert_eq!(review.verdict, "accepted");
+    assert_eq!(
+        review.reason.as_deref(),
+        Some("The table is the right one here")
+    );
+    assert!(review.reviewed_by.is_some());
+}
+
+#[tokio::test]
 async fn merging_a_change_that_altered_how_the_work_is_checked_needs_a_written_reason() {
     let changed = || Setup {
         checks_changed: vec!["tests/x.rs"],
