@@ -1,6 +1,6 @@
 import { type Component, Show, createSignal } from 'solid-js';
 import { Button, Field } from '../ui';
-import { HELP } from '../help/texts';
+import { DECISION_TOKEN_HELP } from '../help/decisionToken';
 import { toast } from '../ui/toast';
 import { saveSessionDecisionToken, sessionDecisionToken } from '../state/decisionSession';
 
@@ -40,7 +40,7 @@ const DecisionTokenField: Component = () => {
           value={tokenInput()}
           onInput={(e) => setTokenInput(e.currentTarget.value)}
           hint="Ask your administrator for it. Kept only for this browser session."
-          help={HELP.decisionToken}
+          help={DECISION_TOKEN_HELP}
           class="min-w-0 flex-1"
         />
         <Button size="sm" variant="secondary" onClick={save}>

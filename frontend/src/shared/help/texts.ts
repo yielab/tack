@@ -1,4 +1,5 @@
 import { BOOK, BOOK_BASE } from './routes';
+import { DECISION_TOKEN_HELP } from './decisionToken';
 import type { FieldHelp } from '../ui/Field';
 
 const EGRESS_HELP = "How far the agent's traffic may go. Closed: only the model's own address. Listed: the model and the hosts you list for the profile. Open: any public site. In every mode, this computer's own address and private networks are refused. A site the mode allows can still receive what the agent sends it, because the page is not seen.";
@@ -34,7 +35,7 @@ export const HELP = {
   search: { text: "Lets a research team look things up on the web before it reads pages. It is set up on docket's computer with the command shown, and the key, if there is one, stays there: Tack never sees it.", href: BOOK.agentTeams },
   teamsPanel: { text: 'Each card shows only what the agent that runs the team reported. A line it left out says so, so you can tell "none" from "not said".', href: BOOK.agentTeams },
   builtInProfiles: { text: 'Implementer, Reviewer, Researcher and Planner come with Tack. You can edit them, not delete them. A profile that names no agent runs with the agent you pick for the task.', href: BOOK.agentTeams },
-  decisionToken: { text: 'A second secret, apart from signing in, that your administrator sets up. Needed to answer the agent; never sent when you only look.', href: BOOK.decisionToken },
+  decisionToken: DECISION_TOKEN_HELP,
   promptFingerprint: { text: "Identifies the fixed wording Tack put around the card's text in this prompt. Two runs with the same fingerprint were given the same wording; a different one means it changed between them.", href: BOOK.runDialog },
   qualitySuccess: { text: 'Runs that succeeded out of the runs that ended after starting. A run the computer or the team turned away is not counted: it did no work.', href: BOOK.workQuality },
   qualityFirstPass: { text: "Tasks whose first run you accepted out of the tasks whose first run you reviewed. It says how often an agent gets it right the first time.", href: BOOK.workQuality },
