@@ -31,7 +31,8 @@ pub struct WorkQuality {
     pub rework_per_item: Ratio,
     /// Pull requests reverted ÷ pull requests merged or reverted.
     pub revert_after_merge: Ratio,
-    pub verifier_agreement: VerifierAgreement,
+    /// One entry per verifier, in order: `prill`, then `reviewer`.
+    pub verifier_agreement: Vec<VerifierAgreement>,
     pub pass_pow_k: PassPowK,
     /// Questions put to a person, by agent and kind.
     pub questions: Vec<QuestionNoise>,
@@ -46,7 +47,7 @@ pub struct WorkQuality {
 /// not reverted; any other task has no label and is not counted.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct VerifierAgreement {
-    /// Always `prill`: the pack Tack reads is the verifier's.
+    /// Who said it: `prill` (the pack Tack reads) or `reviewer` (the Reviewer profile's verdict line).
     pub verifier: String,
     /// Said merge on good work, or reject on bad work.
     pub agreed: i64,
@@ -56,8 +57,8 @@ pub struct VerifierAgreement {
     pub false_rejections: i64,
     /// Labelled work the verifier handed to a person (`review`): neither right nor wrong.
     pub handed_to_a_person: i64,
-    /// Labelled work with no readable pack.
-    pub without_a_pack: i64,
+    /// Labelled work this verifier said nothing about: no readable pack, or no Reviewer run.
+    pub without_a_word: i64,
     /// False approvals ÷ bad work the verifier judged.
     pub false_approval_rate: Ratio,
     /// False rejections ÷ good work the verifier judged.
@@ -187,24 +188,25 @@ fn work_is_good(attempt: &QualityAttempt) -> Option<bool> {
 
 /// The hand table: the verifier's word against `work_is_good`.
 ///
-/// | pack says | good work | bad work |
+/// | it says   | good work | bad work |
 /// |-----------|-----------|----------|
 /// | merge     | agreed    | false approval |
 /// | reject    | false rejection | agreed |
 /// | review    | handed to a person | handed to a person |
 fn verifier_agreement(
+    verifier: &str,
     attempts: &[&QualityAttempt],
-    packs: &HashMap<String, MergeDecision>,
+    words: &HashMap<String, MergeDecision>,
 ) -> VerifierAgreement {
     let (mut agreed, mut false_approvals, mut false_rejections) = (0, 0, 0);
-    let (mut handed, mut without_a_pack) = (0, 0);
+    let (mut handed, mut without_a_word) = (0, 0);
     let (mut good_judged, mut bad_judged) = (0, 0);
     for attempt in attempts {
         let Some(good) = work_is_good(attempt) else {
             continue;
         };
-        let Some(word) = packs.get(&attempt.attempt_id) else {
-            without_a_pack += 1;
+        let Some(word) = words.get(&attempt.attempt_id) else {
+            without_a_word += 1;
             continue;
         };
         match (word, good) {
@@ -228,12 +230,12 @@ fn verifier_agreement(
         }
     }
     VerifierAgreement {
-        verifier: "prill".into(),
+        verifier: verifier.into(),
         agreed,
         false_approvals,
         false_rejections,
         handed_to_a_person: handed,
-        without_a_pack,
+        without_a_word,
         false_approval_rate: ratio(false_approvals, bad_judged, DENOMINATOR_ZERO),
         false_rejection_rate: ratio(false_rejections, good_judged, DENOMINATOR_ZERO),
     }
@@ -377,8 +379,24 @@ fn or_not_recorded(value: &Option<String>) -> String {
     value.clone().unwrap_or_else(|| NOT_RECORDED.into())
 }
 
-/// Every quality figure of the window from the attempts' rows, the verifier's word on each
-/// attempt that has a pack, and the questions asked.
+/// What the Reviewer profile said about each attempt it reviewed.
+fn reviewer_words(attempts: &[&QualityAttempt]) -> HashMap<String, MergeDecision> {
+    attempts
+        .iter()
+        .filter_map(|attempt| {
+            let word = match attempt.reviewer_decision.as_deref()? {
+                "merge" => MergeDecision::Merge,
+                "review" => MergeDecision::Review,
+                "reject" => MergeDecision::Reject,
+                _ => return None,
+            };
+            Some((attempt.attempt_id.clone(), word))
+        })
+        .collect()
+}
+
+/// Every quality figure of the window from the attempts' rows, prill's word on each attempt
+/// that has a pack, and the questions asked.
 pub(super) fn work_quality(
     attempts: &[QualityAttempt],
     packs: &HashMap<String, MergeDecision>,
@@ -391,7 +409,10 @@ pub(super) fn work_quality(
         first_pass_acceptance: first_pass(&all),
         rework_per_item: rework_per_item(&all),
         revert_after_merge: revert_rate(&all),
-        verifier_agreement: verifier_agreement(&all, packs),
+        verifier_agreement: vec![
+            verifier_agreement("prill", &all, packs),
+            verifier_agreement("reviewer", &all, &reviewer_words(&all)),
+        ],
         pass_pow_k: pass_pow_k(&all),
         questions: questions(question_rows, actions),
         stops: stops(&all),
@@ -428,6 +449,7 @@ mod tests {
             verdict: None,
             pull_request: None,
             pack_reference: None,
+            reviewer_decision: None,
         }
     }
 
@@ -466,14 +488,14 @@ mod tests {
             unlabelled,
         ];
         let refs: Vec<&QualityAttempt> = attempts.iter().collect();
-        let a = verifier_agreement(&refs, &packs);
+        let a = verifier_agreement("prill", &refs, &packs);
         assert_eq!(
             (
                 a.agreed,
                 a.false_approvals,
                 a.false_rejections,
                 a.handed_to_a_person,
-                a.without_a_pack
+                a.without_a_word
             ),
             (2, 1, 1, 1, 1)
         );
@@ -491,6 +513,41 @@ mod tests {
                 a.false_rejection_rate.denominator
             ),
             (1, 2)
+        );
+    }
+
+    /// The Reviewer's word is read from the attempts and counted beside prill's, never mixed into it.
+    #[test]
+    fn each_verifier_is_counted_on_its_own_word() {
+        let mut approved_bad = attempt("approved-bad");
+        approved_bad.verdict = Some("rejected".into());
+        approved_bad.reviewer_decision = Some("merge".into());
+        let mut rejected_bad = attempt("rejected-bad");
+        rejected_bad.verdict = Some("rejected".into());
+        rejected_bad.reviewer_decision = Some("reject".into());
+        let mut rejected_good = attempt("rejected-good");
+        rejected_good.verdict = Some("accepted".into());
+        rejected_good.reviewer_decision = Some("reject".into());
+        let mut only_prill = attempt("only-prill");
+        only_prill.verdict = Some("accepted".into());
+        let attempts = [approved_bad, rejected_bad, rejected_good, only_prill];
+        let packs = HashMap::from([("only-prill".to_owned(), MergeDecision::Merge)]);
+        let figures = work_quality(&attempts, &packs, &[], &[]).verifier_agreement;
+        let counts = |a: &VerifierAgreement| {
+            (
+                a.verifier.clone(),
+                a.agreed,
+                a.false_approvals,
+                a.false_rejections,
+                a.without_a_word,
+            )
+        };
+        assert_eq!(
+            figures.iter().map(counts).collect::<Vec<_>>(),
+            [
+                ("prill".to_owned(), 1, 0, 0, 3),
+                ("reviewer".to_owned(), 1, 1, 1, 1),
+            ]
         );
     }
 

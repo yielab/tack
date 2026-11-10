@@ -7959,13 +7959,13 @@ export interface components {
              * @description Labelled work the verifier handed to a person (`review`): neither right nor wrong.
              */
             handed_to_a_person: number;
-            /** @description Always `prill`: the pack Tack reads is the verifier's. */
+            /** @description Who said it: `prill` (the pack Tack reads) or `reviewer` (the Reviewer profile's verdict line). */
             verifier: string;
             /**
              * Format: int64
-             * @description Labelled work with no readable pack.
+             * @description Labelled work this verifier said nothing about: no readable pack, or no Reviewer run.
              */
-            without_a_pack: number;
+            without_a_word: number;
         };
         /**
          * @description What a person is waited for to do.
@@ -8047,7 +8047,8 @@ export interface components {
             stops: components["schemas"]["StopCount"][];
             /** @description Runs that succeeded ÷ runs that ended after starting (failed or succeeded). */
             success_rate: components["schemas"]["Ratio"];
-            verifier_agreement: components["schemas"]["VerifierAgreement"];
+            /** @description One entry per verifier, in order: `prill`, then `reviewer`. */
+            verifier_agreement: components["schemas"]["VerifierAgreement"][];
         };
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {

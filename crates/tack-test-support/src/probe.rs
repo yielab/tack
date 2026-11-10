@@ -218,6 +218,19 @@ pub async fn completion_id_of_attempt(
         .ok_or(StoreError::not_found("attempt"))
 }
 
+/// What a Reviewer run said about `attempt_id`, or `None` when none did.
+pub async fn reviewer_decision_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT decision FROM reviewer_verdicts WHERE attempt_id = ?")
+            .bind(attempt_id)
+            .fetch_optional(repo.pool())
+            .await?,
+    )
+}
+
 /// How many attempts were ended by this completion id and sit in `state`.
 pub async fn count_completed_with(
     repo: &Repository,

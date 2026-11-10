@@ -175,6 +175,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("111_profile_egress_mode", &MIGRATION_111[..]),
         ordinary("112_drop_rate_card", &MIGRATION_112[..]),
         ordinary("113_default_expiry", &MIGRATION_113[..]),
+        ordinary("114_reviewer_verdicts", &MIGRATION_114[..]),
     ]
 }
 
@@ -2338,4 +2339,20 @@ const MIGRATION_113: [&str; 2] = [
     "UPDATE agent_runners
         SET credential_expires_at = strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now', '+90 days')
       WHERE state = 'active' AND revoked_at IS NULL AND credential_expires_at IS NULL",
+];
+
+// 114: the built-in Reviewer ends its result with a verdict line, and what it said about a run is kept with
+// that run (`reviewer_verdicts`), beside the pack's word, so the verifier figure can judge both. The profile's
+// instructions are refreshed only where nobody edited them.
+const MIGRATION_114: [&str; 2] = [
+    "CREATE TABLE reviewer_verdicts (
+        attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES execution_attempts(id),
+        decision TEXT NOT NULL CHECK (decision IN ('merge', 'review', 'reject')),
+        reviewer_attempt_id TEXT NOT NULL REFERENCES execution_attempts(id),
+        recorded_at TEXT NOT NULL
+    )",
+    "UPDATE agent_profiles
+        SET instructions = 'Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first. End the result with one line, `Verdict: merge` when the work meets the criteria, `Verdict: reject` when it does not, or `Verdict: review` when a person has to decide.'
+      WHERE builtin = 1 AND kind = 'reviewer'
+        AND instructions = 'Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first.'",
 ];

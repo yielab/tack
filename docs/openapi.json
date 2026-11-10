@@ -20443,7 +20443,7 @@
           "false_approvals",
           "false_rejections",
           "handed_to_a_person",
-          "without_a_pack",
+          "without_a_word",
           "false_approval_rate",
           "false_rejection_rate"
         ],
@@ -20478,12 +20478,12 @@
           },
           "verifier": {
             "type": "string",
-            "description": "Always `prill`: the pack Tack reads is the verifier's."
+            "description": "Who said it: `prill` (the pack Tack reads) or `reviewer` (the Reviewer profile's verdict line)."
           },
-          "without_a_pack": {
+          "without_a_word": {
             "type": "integer",
             "format": "int64",
-            "description": "Labelled work with no readable pack."
+            "description": "Labelled work this verifier said nothing about: no readable pack, or no Reviewer run."
           }
         }
       },
@@ -20708,7 +20708,11 @@
             "description": "Runs that succeeded ÷ runs that ended after starting (failed or succeeded)."
           },
           "verifier_agreement": {
-            "$ref": "#/components/schemas/VerifierAgreement"
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerifierAgreement"
+            },
+            "description": "One entry per verifier, in order: `prill`, then `reviewer`."
           }
         }
       },

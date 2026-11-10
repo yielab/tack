@@ -50,7 +50,7 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
         "Reviewer",
         "Reads and reports; changes nothing",
         &["Read", "Grep", "Glob", "WebFetch"],
-        "Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first.",
+        "Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first. End the result with one line, `Verdict: merge` when the work meets the criteria, `Verdict: reject` when it does not, or `Verdict: review` when a person has to decide.",
     ),
     (
         "researcher",

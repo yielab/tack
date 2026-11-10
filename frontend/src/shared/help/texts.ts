@@ -41,7 +41,7 @@ export const HELP = {
   qualityFirstPass: { text: "Tasks whose first run you accepted out of the tasks whose first run you reviewed. It says how often an agent gets it right the first time.", href: BOOK.workQuality },
   qualityRework: { text: 'Runs after a task\'s first, per task that has run. 0.5 means one extra round for every two tasks.', href: BOOK.workQuality },
   qualityRevert: { text: 'Pull requests that were reverted out of the ones that were merged or reverted. It says how often merged work did harm.', href: BOOK.workQuality },
-  qualityAgreement: { text: "How often the verifier's word matched what became of the work. Bad work is work you rejected or whose pull request was reverted; good work is work you accepted and kept.", href: BOOK.workQuality },
+  qualityAgreement: { text: "How often each verifier's word matched what became of the work: the pack the verifier leaves, and the Reviewer profile's verdict line. Bad work is work you rejected or whose pull request was reverted; good work is work you accepted and kept. \"No word\" is judged work that verifier said nothing about.", href: BOOK.workQuality },
   qualityPassK: { text: 'For a task that repeats, the chance that any three of its runs all succeed. It says whether the agent does it every time, not just once.', href: BOOK.workQuality },
   qualityQuestions: { text: 'How many times an agent asked you something per hundred steps it took, and how often you let it go on. A kind of question you always allow is noise.', href: BOOK.workQuality },
   qualityStops: { text: 'Why runs ended without succeeding, by the code the run gave. "Not started" runs were turned away before the agent did anything.', href: BOOK.workQuality },

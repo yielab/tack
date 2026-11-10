@@ -36,6 +36,8 @@ pub struct QualityAttempt {
     pub pull_request: Option<String>,
     /// Where the bytes of the attempt's newest merge-readiness pack are kept.
     pub pack_reference: Option<String>,
+    /// What a Reviewer run said about the attempt: `merge`, `review` or `reject`.
+    pub reviewer_decision: Option<String>,
 }
 
 /// Every attempt of the project created in the window, oldest first.
@@ -67,13 +69,15 @@ pub async fn quality_attempts(
                 p.state AS pull_request,
                 (SELECT x.content_reference FROM execution_artifacts x
                   WHERE x.attempt_id = a.id AND x.media_type = ?2
-                  ORDER BY x.created_at DESC, x.id DESC LIMIT 1) AS pack_reference
+                  ORDER BY x.created_at DESC, x.id DESC LIMIT 1) AS pack_reference,
+                rv.decision AS reviewer_decision
            FROM execution_attempts a
            JOIN execution_requests r ON r.id = a.request_id
            JOIN items i ON i.id = r.item_id
            LEFT JOIN chain ON chain.id = i.id
            LEFT JOIN attempt_reviews v ON v.attempt_id = a.id
            LEFT JOIN pull_requests p ON p.attempt_id = a.id
+           LEFT JOIN reviewer_verdicts rv ON rv.attempt_id = a.id
           WHERE i.project_id = ?1 AND (?3 IS NULL OR julianday(a.created_at) >= julianday(?3))
           ORDER BY a.created_at, a.id"
     )))

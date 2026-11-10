@@ -1187,6 +1187,17 @@ async fn the_quality_figures_give_the_rates_the_rows_make() {
         )
         .await;
     }
+    // The Reviewer's words, kept with the runs it reviewed: reject on v1 (good), merge on v2 (bad),
+    // reject on v3 (bad); nothing on v4.
+    for (attempt, word) in [("v1", "reject"), ("v2", "merge"), ("v3", "reject")] {
+        seed::statement(
+            &repo,
+            "INSERT INTO reviewer_verdicts (attempt_id, decision, reviewer_attempt_id, recorded_at)
+             VALUES (?, ?, 'w1', '2026-09-10T12:00:00Z')",
+            &[attempt, word],
+        )
+        .await;
+    }
     // Two questions on v1, one allowed and one denied, over four steps.
     for (id, option) in [("q1", "allow_once"), ("q2", "deny")] {
         seed::statement(
@@ -1222,20 +1233,34 @@ async fn the_quality_figures_give_the_rates_the_rows_make() {
 
     // The hand table: v1 merge/good agrees, v2 merge/bad is a false approval,
     // v3 reject/bad agrees, v4 reject/good is a false rejection.
-    let a = &q["verifier_agreement"];
-    assert_eq!(a["verifier"], "prill");
-    assert_eq!(
+    let agreement = q["verifier_agreement"]
+        .as_array()
+        .expect("one entry per verifier");
+    let sources: Vec<&str> = agreement
+        .iter()
+        .map(|a| a["verifier"].as_str().unwrap())
+        .collect();
+    assert_eq!(sources, ["prill", "reviewer"]);
+    let words = |a: &Value| {
         (
             a["agreed"].as_i64(),
             a["false_approvals"].as_i64(),
             a["false_rejections"].as_i64(),
             a["handed_to_a_person"].as_i64(),
-            a["without_a_pack"].as_i64()
-        ),
-        (Some(2), Some(1), Some(1), Some(0), Some(0))
-    );
+            a["without_a_word"].as_i64(),
+        )
+    };
+    let a = &agreement[0];
+    assert_eq!(words(a), (Some(2), Some(1), Some(1), Some(0), Some(0)));
     assert_eq!(counts(&a["false_approval_rate"]), (Some(1), Some(2)));
     assert_eq!(counts(&a["false_rejection_rate"]), (Some(1), Some(2)));
+
+    // The Reviewer's own words over the same four: v1 reject/good is a false rejection, v2
+    // merge/bad a false approval, v3 reject/bad agrees, and v4 has no word.
+    let r = &agreement[1];
+    assert_eq!(words(r), (Some(1), Some(1), Some(1), Some(0), Some(1)));
+    assert_eq!(counts(&r["false_approval_rate"]), (Some(1), Some(2)));
+    assert_eq!(counts(&r["false_rejection_rate"]), (Some(1), Some(1)));
 
     // The recurring task ran 4 times and 3 succeeded: C(3,3) / C(4,3) = 1/4.
     let k = &q["pass_pow_k"];

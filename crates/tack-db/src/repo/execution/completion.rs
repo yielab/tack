@@ -23,6 +23,15 @@ use tack_protocol::execution::{
 pub struct FollowUps<'a> {
     /// The run that goes back to the agent with what the verifier asked it to fix.
     pub rework: Option<Rework<'a>>,
+    /// What a Reviewer run said about the run it reviewed.
+    pub reviewer_verdict: Option<ReviewerVerdict<'a>>,
+}
+
+/// A Reviewer run's word on another attempt: `decision` is `merge`, `review` or `reject`.
+#[derive(Debug)]
+pub struct ReviewerVerdict<'a> {
+    pub reviewed_attempt_id: &'a str,
+    pub decision: &'a str,
 }
 
 /// A follow-up run to enqueue. `created_at` is the instant the request's snapshot names.
@@ -408,6 +417,21 @@ impl Repository {
         if let Some((rework, snapshot)) = rework {
             let created_at = rework.created_at.to_rfc3339();
             done.rework = Some(enqueue_in(&mut tx, &rework.request, &snapshot, &created_at).await?);
+        }
+        // A second Reviewer run on the same attempt replaces the first one's word.
+        if let Some(verdict) = follow_ups.reviewer_verdict {
+            sqlx::query(
+                "INSERT INTO reviewer_verdicts (attempt_id, decision, reviewer_attempt_id, recorded_at) \
+                 VALUES (?, ?, ?, ?) \
+                 ON CONFLICT (attempt_id) DO UPDATE SET decision = excluded.decision, \
+                 reviewer_attempt_id = excluded.reviewer_attempt_id, recorded_at = excluded.recorded_at",
+            )
+            .bind(verdict.reviewed_attempt_id)
+            .bind(verdict.decision)
+            .bind(completion.attempt_id.as_str())
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
         }
         tx.commit().await?;
         Ok((CompletionResult::Committed(response), done))

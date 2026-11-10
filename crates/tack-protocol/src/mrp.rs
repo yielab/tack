@@ -176,6 +176,27 @@ impl MergeDecision {
             _ => Self::Reject,
         }
     }
+
+    /// The Reviewer profile's verdict: its result ends with one line `Verdict: merge`,
+    /// `Verdict: review` or `Verdict: reject`. The last line labelled `Verdict` decides; Markdown emphasis
+    /// around it is ignored, and a result with no such line (or any other word) has no verdict.
+    #[must_use]
+    pub fn from_reviewer(result: &str) -> Option<Self> {
+        let decoration = |c: char| c.is_whitespace() || matches!(c, '*' | '_' | '`');
+        let word = result.lines().rev().find_map(|line| {
+            let (label, word) = line.trim_matches(decoration).split_once(':')?;
+            label
+                .trim_matches(decoration)
+                .eq_ignore_ascii_case("verdict")
+                .then(|| word.trim_matches(decoration).to_ascii_lowercase())
+        })?;
+        match word.as_str() {
+            "merge" => Some(Self::Merge),
+            "review" => Some(Self::Review),
+            "reject" => Some(Self::Reject),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for MergeDecision {

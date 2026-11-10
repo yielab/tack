@@ -41,6 +41,8 @@ mod planner_writes_plan;
 mod profile_egress_mode;
 #[path = "migrations/provisional_limit.rs"]
 mod provisional_limit;
+#[path = "migrations/reviewer_verdicts.rs"]
+mod reviewer_verdicts;
 #[path = "migrations/role_profile_fleet.rs"]
 mod role_profile_fleet;
 #[path = "migrations/template_bundle.rs"]

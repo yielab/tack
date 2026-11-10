@@ -96,7 +96,18 @@ pub async fn world() -> World {
 
 /// Enqueues a request that only `RUNNER_ID` may take; returns its id.
 pub async fn enqueue(world: &World, key: &str) -> String {
+    enqueue_with(world, key, json!({}), json!({})).await
+}
+
+/// [`enqueue`], with `profile` keys added to the resolved profile (its `kind`, say) and the
+/// request's `metadata`.
+pub async fn enqueue_with(world: &World, key: &str, profile: Value, metadata: Value) -> String {
     let request_id = format!("exec_{}", Uuid::new_v4());
+    let mut resolved_profile = json!({"name":"Use case profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}});
+    resolved_profile
+        .as_object_mut()
+        .expect("object")
+        .extend(profile.as_object().cloned().unwrap_or_default());
     let snapshot = json!({
         "request_id": request_id,
         "item_id": world.item_id,
@@ -105,7 +116,7 @@ pub async fn enqueue(world: &World, key: &str) -> String {
         "created_at": world.clock.now().to_rfc3339(),
         "selector": {"kind": "exact_runner", "runner_id": RUNNER_ID},
         "agent_profile_id": PROFILE_ID,
-        "resolved_agent_profile": {"name":"Use case profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
+        "resolved_agent_profile": resolved_profile,
         "requested_harness_kind": "codex",
         "requested_model": MODEL_ID,
         "repository": {"kind":"git","remote":"https://example.test/uc.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory": Value::Null},
@@ -113,7 +124,7 @@ pub async fn enqueue(world: &World, key: &str) -> String {
         "timeout_seconds": 60,
         "budgets": {"tokens": 1000},
         "environment": {},
-        "metadata": {},
+        "metadata": metadata,
     });
     let snapshot_string = serde_json::to_string(&snapshot).unwrap();
     let field = |name: &str| serde_json::to_string(&snapshot[name]).unwrap();
@@ -157,6 +168,11 @@ pub struct Running {
 /// Enqueues a request, claims it and puts the attempt in `running`.
 pub async fn running_attempt(world: &World, key: &str) -> Running {
     let request_id = enqueue(world, key).await;
+    running(world, key, request_id).await
+}
+
+/// Claims `request_id`, enqueued under `key`, and puts its attempt in `running`.
+pub async fn running(world: &World, key: &str, request_id: String) -> Running {
     let claimed = tack_app::runs::claim::claim(
         &world.repo,
         world.clock.now(),

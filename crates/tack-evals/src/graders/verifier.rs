@@ -82,7 +82,7 @@ pub fn agrees(input: &GradeInput<'_>) -> CheckResult {
 
 /// What each verifier said about each case: `{"<case id>": {"prill": "merge", "reviewer": "reject"}}`.
 /// A word is `merge`, `review` or `reject`: the pack's `recommendation.decision`, and the same
-/// three for the Reviewer profile once it emits a verdict. A missing entry is a verifier that
+/// three for the Reviewer profile's `Verdict:` line. A missing entry is a verifier that
 /// was not asked.
 pub type Verdicts = BTreeMap<String, CaseVerdicts>;
 

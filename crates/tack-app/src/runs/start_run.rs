@@ -1343,10 +1343,17 @@ pub async fn start_run(
     if input.metadata.is_null() {
         input.metadata = json!({});
     }
+    // Only `from_run`, checked below, names the run a Reviewer judges; a key the caller put in
+    // the metadata is not trusted.
+    if let Some(metadata) = input.metadata.as_object_mut() {
+        metadata.remove("from_run");
+    }
     if let Some(from_run) = input.from_run.take() {
         let branch = rework_base_of_run(repo, &from_run, item.project_id).await?;
         if let Some(metadata) = input.metadata.as_object_mut() {
             metadata.insert("rework_base".into(), json!(branch));
+            // Kept so a Reviewer's verdict lands on the run it was started from.
+            metadata.insert("from_run".into(), json!(from_run));
         }
     }
     // Text a person did not write reaches the agent as instructions, so a request that says

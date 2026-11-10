@@ -122,6 +122,14 @@ async fn each_attempt_carries_its_facts_and_the_window_leaves_the_old_ones_out()
     )
     .await;
 
+    run(
+        &repo,
+        "INSERT INTO reviewer_verdicts (attempt_id, decision, reviewer_attempt_id, recorded_at) \
+         VALUES ('first', 'reject', 'w2', '2026-10-10T12:00:00Z')",
+        &[],
+    )
+    .await;
+
     let project = project.id.to_string();
     let all = quality_attempts(&repo, &project, MRP, None).await.unwrap();
     assert_eq!(all.len(), 6);
@@ -152,6 +160,8 @@ async fn each_attempt_carries_its_facts_and_the_window_leaves_the_old_ones_out()
     assert_eq!(first.verdict.as_deref(), Some("accepted"));
     assert_eq!(first.pull_request.as_deref(), Some("merged"));
     assert_eq!(first.pack_reference.as_deref(), Some("p1.json"));
+    assert_eq!(first.reviewer_decision.as_deref(), Some("reject"));
+    assert_eq!(by_id("w1").reviewer_decision, None);
     assert_eq!(first.recurring_root, None);
     // The chain shares the first task as its root; the plain task is no chain.
     for id in ["w1", "w2", "w3"] {

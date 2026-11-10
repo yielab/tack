@@ -8,7 +8,7 @@ use tack_protocol::execution::{AttemptId, CompletionId, FencingToken, RunnerId};
 
 use std::future::Future;
 
-use common::{RUNNER_ID, Running, running_attempt, world};
+use common::{RUNNER_ID, Running, enqueue_with, running, running_attempt, world};
 use serde_json::{Value, json};
 use tack_app::runs::complete::{Completed, CompletionReport, complete};
 use tack_db::queries::{execution_attempts, execution_requests};
@@ -308,4 +308,114 @@ async fn a_failed_attempt_is_never_sent_back() {
     )
     .await;
     assert!(follow_ups(&world).await.is_empty());
+}
+
+/// Ends a run of `world`'s item that the Reviewer profile made from `reviewed` (a request id), and
+/// returns what the store then says the Reviewer thought of `reviewed_attempt`.
+async fn reviewer_says(
+    world: &common::World,
+    reviewed: &Running,
+    kind: &str,
+    from_run: Option<&str>,
+    result: &str,
+    state: ExecutionState,
+) -> Option<String> {
+    let metadata = from_run.map_or(json!({}), |run| json!({"from_run": run}));
+    let key = format!("review-{kind}-{}", Uuid::new_v4());
+    let request_id = enqueue_with(world, &key, json!({"kind": kind}), metadata).await;
+    let run = running(world, &key, request_id).await;
+    finish(
+        world,
+        &run,
+        "done-1",
+        state,
+        json!({"result": result}),
+        no_pack,
+    )
+    .await;
+    tack_test_support::probe::reviewer_decision_of_attempt(&world.repo, &reviewed.attempt_id)
+        .await
+        .unwrap()
+}
+
+async fn reviewed_run(world: &common::World) -> Running {
+    let reviewed = running_attempt(world, "reviewed").await;
+    finish(
+        world,
+        &reviewed,
+        "reviewed-done",
+        ExecutionState::Succeeded,
+        json!({}),
+        no_pack,
+    )
+    .await;
+    reviewed
+}
+
+#[tokio::test]
+async fn a_reviewers_verdict_is_kept_with_the_run_it_was_started_from() {
+    let world = world().await;
+    let reviewed = reviewed_run(&world).await;
+    let said = reviewer_says(
+        &world,
+        &reviewed,
+        "reviewer",
+        Some(&reviewed.request_id),
+        "One finding.\n\nVerdict: reject",
+        ExecutionState::Succeeded,
+    )
+    .await;
+    assert_eq!(said.as_deref(), Some("reject"));
+
+    // A second Reviewer run replaces the first one's word.
+    let again = reviewer_says(
+        &world,
+        &reviewed,
+        "reviewer",
+        Some(&reviewed.request_id),
+        "Fixed.\n\nVerdict: merge",
+        ExecutionState::Succeeded,
+    )
+    .await;
+    assert_eq!(again.as_deref(), Some("merge"));
+}
+
+#[tokio::test]
+async fn nothing_is_kept_unless_a_reviewer_succeeded_with_a_verdict_on_a_run() {
+    let world = world().await;
+    let reviewed = reviewed_run(&world).await;
+    let from = Some(reviewed.request_id.as_str());
+    let cases = [
+        // Another profile that happens to end with the same line.
+        (
+            "implementer",
+            from,
+            "Verdict: merge",
+            ExecutionState::Succeeded,
+        ),
+        // A Reviewer started from no run has nothing it reviewed.
+        (
+            "reviewer",
+            None,
+            "Verdict: merge",
+            ExecutionState::Succeeded,
+        ),
+        (
+            "reviewer",
+            from,
+            "Looks fine to me.",
+            ExecutionState::Succeeded,
+        ),
+        (
+            "reviewer",
+            from,
+            "Verdict: approve",
+            ExecutionState::Succeeded,
+        ),
+        ("reviewer", from, "Verdict: merge", ExecutionState::Failed),
+    ];
+    for (kind, from_run, result, state) in cases {
+        let said = reviewer_says(&world, &reviewed, kind, from_run, result, state).await;
+        assert_eq!(said, None, "{kind} {from_run:?} {result:?} {state:?}");
+    }
 }

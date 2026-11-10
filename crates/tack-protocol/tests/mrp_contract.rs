@@ -2,7 +2,7 @@
 //! byte-for-byte, their bytes are pinned, and the pull-request rendering of
 //! `ready.json` is a fixed string.
 
-use tack_protocol::mrp::{MergeReadinessPack, render_markdown};
+use tack_protocol::mrp::{MergeDecision, MergeReadinessPack, render_markdown};
 
 /// (fixture, its bytes, FNV-1a 64 of those bytes)
 const FIXTURES: [(&str, &str, u64); 5] = [
@@ -197,4 +197,27 @@ fn what_to_fix_falls_back_to_the_failures() {
             "stage_failed:static_analysis",
         ]
     );
+}
+
+#[test]
+fn the_reviewers_verdict_is_the_last_line_labelled_verdict() {
+    let read = MergeDecision::from_reviewer;
+    assert_eq!(
+        read("Findings.\n\nVerdict: merge"),
+        Some(MergeDecision::Merge)
+    );
+    assert_eq!(read("Verdict: review\n"), Some(MergeDecision::Review));
+    assert_eq!(read("**Verdict:** Reject"), Some(MergeDecision::Reject));
+    assert_eq!(read("`verdict : reject`\n\n"), Some(MergeDecision::Reject));
+    // The last labelled line decides, even over an earlier one that named a word.
+    assert_eq!(
+        read("Verdict: merge\nVerdict: reject"),
+        Some(MergeDecision::Reject)
+    );
+    // A word that is not one of the three, a prose line and no line at all have no verdict.
+    assert_eq!(read("Verdict: approve"), None);
+    assert_eq!(read("Verdict: merge\nVerdict: maybe"), None);
+    assert_eq!(read("I would merge this."), None);
+    assert_eq!(read("The verdict: merge it, but with changes."), None);
+    assert_eq!(read(""), None);
 }

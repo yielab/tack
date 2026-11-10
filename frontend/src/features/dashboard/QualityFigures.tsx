@@ -6,6 +6,12 @@ import type { components } from '../../shared/api/schema.gen';
 type WorkQuality = components['schemas']['WorkQuality'];
 type Ratio = components['schemas']['Ratio'];
 
+/** Who gave a verifier's word, as the figures name it. */
+const VERIFIER_LABEL: Record<string, string> = {
+  prill: 'Verifier pack',
+  reviewer: 'Reviewer profile',
+};
+
 /** A rate as a percentage with its counts, or "Not measured" when there was nothing to count. */
 function rate(r: Ratio): string {
   if (r.value === null || r.value === undefined) return 'Not measured';
@@ -50,7 +56,6 @@ const CUT_LABEL: Record<string, string> = {
 /** The quality of the work in the window, in small tables and folded away until asked for. */
 export default function QualityFigures(props: { quality: WorkQuality }) {
   const q = () => props.quality;
-  const agreement = () => q().verifier_agreement;
   const passK = () => q().pass_pow_k;
 
   return (
@@ -93,16 +98,6 @@ export default function QualityFigures(props: { quality: WorkQuality }) {
           </tr>
           <tr>
             <td class="text-content">
-              Verifier false approvals <HelpHint label="Verifier agreement" help={HELP.qualityAgreement} />
-            </td>
-            <td>{rate(agreement().false_approval_rate)}</td>
-          </tr>
-          <tr>
-            <td class="text-content">Verifier false rejections</td>
-            <td>{rate(agreement().false_rejection_rate)}</td>
-          </tr>
-          <tr>
-            <td class="text-content">
               All {passK().k} runs of a recurring task <HelpHint label="Recurring tasks" help={HELP.qualityPassK} />
             </td>
             <td>
@@ -112,11 +107,22 @@ export default function QualityFigures(props: { quality: WorkQuality }) {
             </td>
           </tr>
         </Table>
-        <p class="text-xs text-content-muted">
-          The verifier agreed on {agreement().agreed}, approved {agreement().false_approvals} bad and rejected{' '}
-          {agreement().false_rejections} good; {agreement().handed_to_a_person} it left to you, and{' '}
-          {agreement().without_a_pack} had no readable pack.
-        </p>
+
+        <Heading label="Verifier agreement" help={HELP.qualityAgreement} />
+        <Table head={['Who said it', 'False approvals', 'False rejections', 'Agreed', 'Left to you', 'No word']}>
+          <For each={q().verifier_agreement}>
+            {(row) => (
+              <tr data-testid={`agreement-${row.verifier}`}>
+                <td class="text-content">{VERIFIER_LABEL[row.verifier] ?? row.verifier}</td>
+                <td>{rate(row.false_approval_rate)}</td>
+                <td>{rate(row.false_rejection_rate)}</td>
+                <td>{row.agreed}</td>
+                <td>{row.handed_to_a_person}</td>
+                <td>{row.without_a_word}</td>
+              </tr>
+            )}
+          </For>
+        </Table>
 
         <Heading label="Questions" help={HELP.qualityQuestions} />
         <Show when={q().questions.length > 0} fallback={<p class="text-xs text-content-muted">Nothing was asked in this window.</p>}>

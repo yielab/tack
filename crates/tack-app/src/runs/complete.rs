@@ -1,8 +1,10 @@
 //! Completing an attempt: the runner reports how it ended, the store settles the attempt, and
 //! what a success sets going follows: a change the verifier rejected goes back to the agent that
-//! made it. The task's status is never written here; it is a person's.
+//! made it, and a Reviewer's verdict is kept with the run it reviewed. The task's status is never
+//! written here; it is a person's.
 
 mod rework;
+mod verdict;
 
 use chrono::{DateTime, Utc};
 use std::future::Future;
@@ -87,6 +89,20 @@ where
     } else {
         None
     };
+    let reviewer_word = if report.terminal_state == ExecutionState::Succeeded {
+        verdict::plan(repo, report.attempt_id.as_str(), report.terminal_reason)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::warn!(
+                    attempt_id = %report.attempt_id,
+                    error = %err,
+                    "reviewer: could not read the verdict"
+                );
+                None
+            })
+    } else {
+        None
+    };
     let (result, _) = repo
         .complete_execution_with_follow_ups(
             Completion {
@@ -102,6 +118,7 @@ where
             },
             FollowUps {
                 rework: rework.as_ref().map(rework::Rework::follow_up),
+                reviewer_verdict: reviewer_word.as_ref().map(verdict::ReviewerWord::follow_up),
             },
             now,
         )

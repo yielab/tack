@@ -88,16 +88,28 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
     first_pass_acceptance: { numerator: 3, denominator: 4, value: 0.75 },
     rework_per_item: { numerator: 1, denominator: 10, value: 0.1 },
     revert_after_merge: { numerator: 1, denominator: 3, value: 1 / 3 },
-    verifier_agreement: {
-      verifier: 'prill',
-      agreed: 2,
-      false_approvals: 1,
-      false_rejections: 1,
-      handed_to_a_person: 0,
-      without_a_pack: 0,
-      false_approval_rate: { numerator: 1, denominator: 2, value: 0.5 },
-      false_rejection_rate: { numerator: 0, denominator: 0, value: null, null_reason: 'denominator_zero' },
-    },
+    verifier_agreement: [
+      {
+        verifier: 'prill',
+        agreed: 2,
+        false_approvals: 1,
+        false_rejections: 1,
+        handed_to_a_person: 0,
+        without_a_word: 0,
+        false_approval_rate: { numerator: 1, denominator: 2, value: 0.5 },
+        false_rejection_rate: { numerator: 0, denominator: 0, value: null, null_reason: 'denominator_zero' },
+      },
+      {
+        verifier: 'reviewer',
+        agreed: 1,
+        false_approvals: 0,
+        false_rejections: 1,
+        handed_to_a_person: 1,
+        without_a_word: 2,
+        false_approval_rate: { numerator: 0, denominator: 1, value: 0 },
+        false_rejection_rate: { numerator: 1, denominator: 2, value: 0.5 },
+      },
+    ],
     pass_pow_k: { k: 3, tasks_measured: 1, tasks_too_short: 0, value: 0.25 },
     questions: [
       { harness: 'claude-code', class: 'approval', asked: 2, actions: 4, per_100_actions: 50, granted: { numerator: 1, denominator: 2, value: 0.5 } },
@@ -444,7 +456,9 @@ describe('FactoryMetrics quality of the work', () => {
     expect(text).toContain('50.0% (1 of 2)');
     expect(text).toContain('Not measured');
     expect(text).toContain('25.0% (1 recurring task)');
-    expect(text).toContain('The verifier agreed on 2, approved 1 bad and rejected 1 good');
+    const row = (who: string) => container.querySelector(`[data-testid="agreement-${who}"]`)!.textContent ?? '';
+    expect(row('prill')).toBe('Verifier pack50.0% (1 of 2)Not measured200');
+    expect(row('reviewer')).toBe('Reviewer profile0.0% (0 of 1)50.0% (1 of 2)112');
   });
 
   it('lists the questions, why runs stopped and the cuts', async () => {

@@ -473,6 +473,7 @@ async fn a_completion_commits_its_follow_up_with_it() {
                     request: fx.request("request-rework", "key-rework", "same"),
                     created_at: fx.clock.now(),
                 }),
+                ..FollowUps::default()
             },
             fx.clock.now(),
         )
@@ -506,6 +507,7 @@ async fn a_follow_up_that_fails_leaves_the_attempt_open() {
                     request: fx.request("request-undone", "key-other", "same"),
                     created_at: fx.clock.now(),
                 }),
+                ..FollowUps::default()
             },
             fx.clock.now(),
         )
