@@ -27,7 +27,8 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  * per-harness checklist (`KNOWN_TOOLS`) plus a free-text line, and stored as
  * `{"tools": {"<harness>": [names] | ["*"]}}`; keys other than `tools` in an
  * existing policy are kept untouched on edit, except `network`: the "needs the network" box sets
- * `network: true`, and unticked it leaves the key out (absent is off). The limits form edits `limits.budgets.tokens`
+ * `network: true`, and unticked it leaves the key out (absent is off); and `allowed_hosts`, the list a
+ * `listed` profile may reach, which the host rows edit (an empty list leaves the key out). The limits form edits `limits.budgets.tokens`
  * and `limits.timeout_seconds`; any other key in an existing `limits` is kept. The team select sets
  * `tool_policy.docket.team` (the other `docket` keys stay); its options are the teams an agent reports
  * (`GET /api/teams`), then the names only profiles use. "Delivers" is one line the profile carries; what the profile can do is
@@ -55,6 +56,11 @@ type ToolForm = Record<string, ToolState>;
 
 const blankTools = (): ToolForm =>
   Object.fromEntries(HARNESSES.map((h) => [h, { all: true, checked: [], extra: '' }]));
+
+const hostsFrom = (policy: unknown): string[] => {
+  const list = (policy as { allowed_hosts?: unknown } | null | undefined)?.allowed_hosts;
+  return Array.isArray(list) ? list.filter((h): h is string => typeof h === 'string') : [];
+};
 
 const toolsFromPolicy = (policy: unknown): ToolForm => {
   const form = blankTools();
@@ -149,6 +155,10 @@ const AgentProfilesPanel: Component = () => {
   const teamId = createUniqueId();
   const kindId = createUniqueId();
   const egressId = createUniqueId();
+  /** The hosts a `listed` profile may reach (`tool_policy.allowed_hosts`), and the one being typed. The server judges each. */
+  const [hosts, setHosts] = createSignal<string[]>([]);
+  const [hostDraft, setHostDraft] = createSignal('');
+  const hostsId = createUniqueId();
   const [instructions, setInstructions] = createSignal('');
   const instructionsId = createUniqueId();
   const [tools, setTools] = createStore<ToolForm>(blankTools());
@@ -201,6 +211,12 @@ const AgentProfilesPanel: Component = () => {
     }
   };
 
+  const addHost = () => {
+    const host = hostDraft().trim();
+    if (host && !hosts().includes(host)) setHosts((hs) => [...hs, host]);
+    setHostDraft('');
+  };
+
   const openForm = (profile: AgentProfileSummary | null) => {
     setEditing(profile);
     setName(profile?.name ?? '');
@@ -210,6 +226,8 @@ const AgentProfilesPanel: Component = () => {
     setKind(profile?.kind ?? 'custom');
     setChosenEgress(profile?.egress_mode ?? null);
     setMethodRows(methodsByType(profile?.tool_policy));
+    setHosts(hostsFrom(profile?.tool_policy));
+    setHostDraft('');
     setRefusal(null);
     setWarnings([]);
     setInstructions(profile?.instructions ?? '');
@@ -243,7 +261,10 @@ const AgentProfilesPanel: Component = () => {
     if (!name().trim() || !instructions().trim() || limitsInvalid()) return;
     const existing = editing();
     const base = (existing?.tool_policy ?? {}) as Record<string, unknown>;
-    const { network: _network, docket, ...rest } = base;
+    const { network: _network, allowed_hosts: _hosts, docket, ...rest } = base;
+    // A host typed and not yet added still counts: Save is the person's last word.
+    const typed = hostDraft().trim();
+    const listedHosts = typed && !hosts().includes(typed) ? [...hosts(), typed] : hosts();
     const { team: _team, pipeline_by_type: _byType, ...docketRest } = (docket ?? {}) as Record<string, unknown>;
     const byType = Object.fromEntries(methodRows().filter((r) => r.type.trim() && r.method.trim()).map((r) => [r.type.trim(), r.method.trim()]));
     const nextDocket = {
@@ -255,6 +276,8 @@ const AgentProfilesPanel: Component = () => {
       ...rest,
       ...(Object.keys(nextDocket).length > 0 ? { docket: nextDocket } : {}),
       ...(network() ? { network: true } : {}),
+      // Kept whatever the mode, so switching to Closed and back does not lose the list.
+      ...(listedHosts.length > 0 ? { allowed_hosts: listedHosts } : {}),
       tools: Object.fromEntries(HARNESSES.map((h) => [h, namesFor(h, tools[h])])),
     };
     // The edited keys replace the profile's; every other key of its limits stays.
@@ -496,6 +519,67 @@ const AgentProfilesPanel: Component = () => {
                 )}
               </For>
             </select>
+          </FieldShell>
+          <FieldShell
+            label="Hosts it may reach"
+            for={egressMode() === 'listed' ? hostsId : undefined}
+            hint="One host per entry: example.com, or *.example.com for every host under it. The model's own address is always allowed."
+          >
+            <Show
+              when={egressMode() === 'listed'}
+              fallback={
+                <p data-testid="hosts-disabled" aria-disabled="true" class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {egressMode() === 'closed'
+                    ? 'This profile reaches only its model, so there is no list to keep.'
+                    : 'This profile may reach any public site, so there is no list to keep.'}{' '}
+                  Choose Listed above to name hosts.{hosts().length > 0 ? ` The ${hosts().length} saved ${hosts().length === 1 ? 'host is' : 'hosts are'} kept.` : ''}
+                </p>
+              }
+            >
+              <div class="space-y-2" data-testid="host-rows">
+                <Show
+                  when={hosts().length > 0}
+                  fallback={
+                    <p class="text-caption" style={{ color: 'var(--color-text-tertiary)' }}>
+                      No host listed: this profile reaches its model and nothing else.
+                    </p>
+                  }
+                >
+                  <ul class="space-y-1">
+                    <For each={hosts()}>
+                      {(host) => (
+                        <li class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                          <code>{host}</code>
+                          <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${host}`} onClick={() => setHosts((hs) => hs.filter((h) => h !== host))}>
+                            Remove
+                          </Button>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <div class="flex flex-wrap items-center gap-2">
+                  <input
+                    id={hostsId}
+                    type="text"
+                    data-testid="host-draft"
+                    placeholder="docs.rs"
+                    value={hostDraft()}
+                    onInput={(e) => setHostDraft(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      addHost();
+                    }}
+                    class="w-56 rounded-item border px-3 py-1.5 text-sm"
+                    style={FIELD_STYLE}
+                  />
+                  <Button type="button" variant="ghost" size="sm" disabled={!hostDraft().trim()} onClick={addHost}>
+                    Add host
+                  </Button>
+                </div>
+              </div>
+            </Show>
           </FieldShell>
           <FieldShell
             label="What this profile does"

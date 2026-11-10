@@ -308,6 +308,98 @@ describe('AgentProfilesPanel', () => {
     expect(JSON.parse((patches[patches.length - 1][1] as RequestInit).body as string).egress_mode).toBe('open');
   });
 
+  describe('hosts it may reach', () => {
+    const profile = (egress_mode: string, tool_policy: unknown) => ({
+      agent_profile_id: 'ap_h', name: 'scout', instructions: 'Look.', tool_policy, limits: {}, kind: 'custom', builtin: false, egress_mode,
+    });
+    const open = async (profiles: unknown[], answer: () => Response = () => new Response('{}', { status: 200 })) => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        const method = (init as RequestInit | undefined)?.method ?? 'GET';
+        if (method !== 'GET') return Promise.resolve(answer());
+        const body = String(input).endsWith('/api/teams') ? { teams: [] } : { protocol_version: 1, data: profiles };
+        return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+      });
+      const { container } = mount();
+      await flush();
+      await flush();
+      Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
+      await flush();
+      return { container, fetchMock };
+    };
+    const type = async (container: HTMLElement, text: string, key?: string) => {
+      const input = container.querySelector<HTMLInputElement>('[data-testid="host-draft"]')!;
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      if (key) input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      await flush();
+    };
+    const sentPolicy = (fetchMock: ReturnType<typeof vi.spyOn>) => {
+      const patch = fetchMock.mock.calls.filter((c) => (c[1] as RequestInit)?.method === 'PATCH').at(-1)!;
+      return JSON.parse((patch[1] as RequestInit).body as string).tool_policy;
+    };
+
+    it('lists, adds and removes the hosts of a Listed profile and saves them in the tool policy', async () => {
+      const { container, fetchMock } = await open([profile('listed', { allowed_hosts: ['docs.rs'], other: 1 })]);
+      const rows = container.querySelector('[data-testid="host-rows"]')!;
+      expect(rows.textContent).toContain('docs.rs');
+      await type(container, '*.crates.io', 'Enter');
+      expect(rows.textContent).toContain('*.crates.io');
+      expect(container.querySelector<HTMLInputElement>('[data-testid="host-draft"]')!.value).toBe('');
+      // The same host twice is one entry.
+      await type(container, 'docs.rs', 'Enter');
+      expect(rows.querySelectorAll('li').length).toBe(2);
+      container.querySelector<HTMLButtonElement>('button[aria-label="Remove docs.rs"]')!.click();
+      await flush();
+      // A host typed and not added is saved too.
+      await type(container, 'example.com');
+      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+      await flush();
+      const policy = sentPolicy(fetchMock);
+      expect(policy.allowed_hosts).toEqual(['*.crates.io', 'example.com']);
+      expect(policy.other).toBe(1);
+    });
+
+    it('leaves the key out when the list is emptied', async () => {
+      const { container, fetchMock } = await open([profile('listed', { allowed_hosts: ['docs.rs'] })]);
+      container.querySelector<HTMLButtonElement>('button[aria-label="Remove docs.rs"]')!.click();
+      await flush();
+      expect(container.querySelector('[data-testid="host-rows"]')!.textContent).toContain('reaches its model and nothing else');
+      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+      await flush();
+      expect(sentPolicy(fetchMock)).not.toHaveProperty('allowed_hosts');
+    });
+
+    it('is shown disabled, with its reason, for Closed and Open, and keeps the list', async () => {
+      const { container, fetchMock } = await open([profile('listed', { allowed_hosts: ['docs.rs'] })]);
+      const web = container.querySelector<HTMLSelectElement>('[data-testid="profile-web-access"]')!;
+      for (const [mode, reason] of [['closed', 'reaches only its model'], ['open', 'any public site']] as const) {
+        web.value = mode;
+        web.dispatchEvent(new Event('change', { bubbles: true }));
+        await flush();
+        const note = container.querySelector('[data-testid="hosts-disabled"]')!;
+        expect(note.getAttribute('aria-disabled')).toBe('true');
+        expect(note.textContent).toContain(reason);
+        expect(note.textContent).toContain('The 1 saved host is kept.');
+        expect(container.querySelector('[data-testid="host-rows"]')).toBeNull();
+      }
+      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+      await flush();
+      expect(sentPolicy(fetchMock).allowed_hosts).toEqual(['docs.rs']);
+    });
+
+    it("shows the server's refusal of a host and stays open", async () => {
+      const message = 'tool_policy.allowed_hosts: "https://docs.rs" is not a host name such as example.com or *.example.com';
+      const { container } = await open([profile('listed', {})], () =>
+        new Response(JSON.stringify({ error: { status: 400, message, details: { field: 'tool_policy.allowed_hosts' } } }), { status: 400 }),
+      );
+      await type(container, 'https://docs.rs', 'Enter');
+      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+      await flush();
+      expect(container.querySelector('[data-testid="profile-refusal"]')!.textContent).toBe(`Not saved: ${message}`);
+      expect(container.querySelector('[data-testid="host-rows"]')!.textContent).toContain('https://docs.rs');
+    });
+  });
+
   it('shows what a new profile of each kind starts with until the person chooses', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const body = String(input).endsWith('/api/teams') ? { teams: [] } : { protocol_version: 1, data: [] };

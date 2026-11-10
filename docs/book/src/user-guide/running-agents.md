@@ -260,8 +260,12 @@ Agent profiles) has three choices:
 A new profile starts with the choice that suits what it does: Implementer and custom profiles **Listed**, Reviewer and
 Planner **Closed**, Researcher **Open**, because a profile that browses cannot have every site listed. In all three,
 this computer's own address, private networks and the addresses of a cloud provider's metadata service are refused.
-The hosts a **Listed** profile may reach are the `allowed_hosts` of its tools in the project file, such as
-`docs.rs` or `*.crates.io`.
+The hosts a **Listed** profile may reach are set under **Hosts it may reach**, just below the setting: type a host
+and choose **Add host** (or press Enter), and use **Remove** beside one to drop it. Write each as a name, such as
+`docs.rs`, or as `*.crates.io` for every host under it, without `https://`, a port or a path; a name that is not one is
+refused when you save, and the message says which. A **Listed** profile with no host reaches its model and nothing
+else. With **Closed** or **Open** the list is greyed out, since neither uses it, and the hosts already saved are kept
+for when you choose **Listed** again. A project file carries the same list as `allowed_hosts` in the profile's tools.
 
 The setting is enforced only on a computer whose administrator turned enforcement on (see
 [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md#web-access)); the **Network** line of the Run
