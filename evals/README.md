@@ -53,7 +53,7 @@ class: `tack` and `agent` count against the score; `eval` (the harness or a chec
 says why and never counts as passed.
 
 A baseline is the `summary.json` of one run, kept in `evals/baselines/<sha>/` with the commit it
-was run from (`regression-<sha>` for Claude Code, `regression-opencode-<sha>` for opencode). `--base <sha>` finds it there. Tasks are paired by id and version, never across
+was run from (`regression-<sha>` for Claude Code, `regression-opencode-<sha>` and `regression-docket-<sha>` for opencode and docket). `--base <sha>` finds it there. Tasks are paired by id and version, never across
 versions: change a task's content and raise its `version`.
 
 ## Add a task

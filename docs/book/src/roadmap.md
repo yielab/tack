@@ -33,14 +33,10 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 Everything built is under Delivered. What is left:
 
 - **Tagging `v0.2.0-beta.1`** is the maintainer's own step and not a card.
-- **The verifier suite's labels.** A person confirms the thirty cases, about an hour
-  (`tack-evals verifier-labels`; see [`evals/README.md`](https://github.com/yielab/tack/blob/develop/evals/README.md)).
-  Until then the verifier figure is provisional.
-- **Baselines for Codex, opencode and docket.** Only Claude Code with Haiku 5.5 has them
-  (`evals/baselines/`), and both suites are saturated for that model. Codex waits on the maintainer's own
-  Codex model setting; opencode now starts inside the sandbox when it is installed by Homebrew.
-- **Two recordings to retake.** `agents-flow.gif` needs a Codex run (same wait) and
-  `recovery-demo.gif` needs a released build. Neither is shown in the README or the book.
+- **Codex, postponed.** Its baseline (`evals/baselines/` holds Claude Code, opencode and docket, all with
+  Haiku 5.5) and the `agents-flow.gif` recording wait on the maintainer's own Codex model setting.
+- **`recovery-demo.gif`** is recorded from a released build, so it follows the tag. It is not shown in the
+  README or the book.
 
 ## Future, not planned
 

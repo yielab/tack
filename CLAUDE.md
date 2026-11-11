@@ -142,8 +142,8 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   suites (`evals/`, baselines in `evals/baselines/`, Claude Code with Haiku 5.5: both suites saturated) with
   Anthropic at integration only, never in CI; production gets quality figures and a trend notice. The live suite (35 tests) passes
   against docket `f8dd565e`. Since 2026-11-10 the Reviewer's verdict is stored, `allowed_hosts` has an editor, old rows
-  get the default expiry and a merge over `reject` keeps its reason; left: the verifier-set labels (a person, about an
-  hour) and the Codex, opencode and docket baselines. Asks to prill are in
+  get the default expiry and a merge over `reject` keeps its reason; the verifier-set labels are confirmed and
+  opencode and docket have baselines (2026-11-11); left: Codex, postponed by the maintainer. Asks to prill are in
   `docs/plans/prill-ajustes-2026-11-06.es.md`.
 - **Built 2026-11-08, in `develop`:** Phase 95 (the roadmap's own section, no plan file, no ADR; a dated note on ADR 0024)
   — no dollar figure anywhere (rate card, priced metrics and `Usage.cost_usd` deleted, migration 112; the plan's
