@@ -603,10 +603,7 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
     assert_eq!(outline.items[1].parent.as_deref(), Some("1"));
     assert_eq!(outline.items[1].depends_on, ["1"]);
     assert_eq!(outline.items[1].roles, ["Contenido"]);
-    assert_eq!(
-        outline.items[1].fields["Plan"],
-        serde_json::json!("pro")
-    );
+    assert_eq!(outline.items[1].fields["Plan"], serde_json::json!("pro"));
 
     let text = serde_saphyr::to_string(&outline).expect("yaml");
     for line in text.lines() {
@@ -686,7 +683,8 @@ fn teams_are_described_and_an_import_creates_nothing_from_them() {
         "no section creates or updates anything for teams"
     );
     // The bundle still refuses a key it does not know, inside a team too.
-    let unknown: Result<Outline, _> = serde_saphyr::from_str("teams: [{ name: saas, colour: red }]");
+    let unknown: Result<Outline, _> =
+        serde_saphyr::from_str("teams: [{ name: saas, colour: red }]");
     assert!(unknown.is_err());
 }
 
