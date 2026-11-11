@@ -73,6 +73,7 @@ impl TrialRecord {
     pub fn without_run(
         task: &crate::task::LoadedTask,
         harness: &str,
+        model: Option<String>,
         epoch: u32,
         status: TrialStatus,
         reason: String,
@@ -84,7 +85,7 @@ impl TrialRecord {
             suite: task.task.suite.clone(),
             epoch,
             harness: harness.to_owned(),
-            model: task.task.profile.model.clone(),
+            model,
             tack_commit: None,
             status,
             reason: Some(reason),

@@ -67,6 +67,7 @@ pub fn run_trial(task: &LoadedTask, options: &TrialOptions) -> TrialRecord {
         Err(failure) => TrialRecord::without_run(
             task,
             options.harness_for(task),
+            options.model_for(task),
             options.epoch,
             TrialStatus::Error,
             format!("{failure:#}"),

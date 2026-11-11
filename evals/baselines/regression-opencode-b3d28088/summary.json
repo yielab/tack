@@ -1,0 +1,198 @@
+{
+  "schema": 1,
+  "tack_commit": "b3d2808821486a36b248a1a7be14fbafb68254ae",
+  "suites": [
+    "regression"
+  ],
+  "harnesses": [
+    "opencode"
+  ],
+  "models": [
+    "anthropic/claude-haiku-5-5",
+    "claude-haiku-5-5"
+  ],
+  "trials": 30,
+  "tasks": [
+    {
+      "task": "calc-add-multiply",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-changelog",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-divide-by-zero",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-evaluate",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 2,
+      "failures": {
+        "tack": 0,
+        "agent": 1,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-fix-add",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-fix-subtract-ask",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 0,
+      "passed": 0,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 3
+    },
+    {
+      "task": "calc-last-commit",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "calc-review-readonly",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "plan-checkout-epic",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    },
+    {
+      "task": "plan-notes-digest",
+      "version": 1,
+      "harness": "opencode",
+      "counted": 3,
+      "passed": 3,
+      "failures": {
+        "tack": 0,
+        "agent": 0,
+        "eval": 0,
+        "infra": 0
+      },
+      "not_applicable": 0
+    }
+  ],
+  "failures": {
+    "tack": 0,
+    "agent": 1,
+    "eval": 0,
+    "infra": 0
+  },
+  "not_applicable": 3,
+  "boundary_violations": 0,
+  "pass_at_1": 0.9629629629629629,
+  "wilson": [
+    0.8171614606584348,
+    0.9934320234669025
+  ],
+  "clustered_standard_error": 0.03563890550553244,
+  "pass_at_k": {
+    "k": 3,
+    "value": 1.0
+  },
+  "pass_pow_k": {
+    "k": 3,
+    "value": 0.8888888888888888
+  },
+  "verifier": {
+    "merge": 0,
+    "false_approvals": 0,
+    "reject": 0,
+    "false_rejections": 0
+  },
+  "tokens_per_accepted_run": {
+    "p50": 12882,
+    "p90": 15063
+  },
+  "question_noise": [
+    {
+      "harness": "opencode",
+      "asked": 0,
+      "granted": 0,
+      "events": 111
+    }
+  ],
+  "safety": []
+}

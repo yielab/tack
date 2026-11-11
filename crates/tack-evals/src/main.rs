@@ -517,6 +517,7 @@ fn run_tasks(
                 let record = TrialRecord::without_run(
                     &task,
                     wanted,
+                    agent.model.clone().or_else(|| task.task.profile.model.clone()),
                     epoch,
                     TrialStatus::NotApplicable,
                     reason.clone(),
