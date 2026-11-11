@@ -1,7 +1,7 @@
 # The answer key. Read diff.patch, then set `confirmed: true` if `expected` is right
 # (correct `expected` first when it is not). The verifier never sees this file.
 expected: reject
-confirmed: false
+confirmed: true
 kind: mutant
 family: logic
 operator: "drop_raise"
