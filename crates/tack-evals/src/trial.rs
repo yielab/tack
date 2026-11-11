@@ -11,11 +11,12 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use crate::api::Api;
+use crate::docket::{self, DocketSetup};
 use crate::exam::{self, ExamRecord};
 use crate::graders::governance::REPO_REFS_FILE;
 use crate::operator::Operator;
 use crate::record::{self, CanaryRecord, SCHEMA_VERSION, TrialRecord, TrialStatus};
-use crate::task::{Approvals, LoadedTask, SandboxMode};
+use crate::task::{Approvals, LoadedTask, SandboxMode, WorkspaceMode};
 use crate::world::{World, WorldOptions, git};
 
 const POLL: Duration = Duration::from_millis(300);
@@ -77,7 +78,16 @@ pub fn run_trial(task: &LoadedTask, options: &TrialOptions) -> TrialRecord {
 
 fn try_trial(task: &LoadedTask, options: &TrialOptions) -> Result<TrialRecord> {
     let started = Instant::now();
-    let world = World::build(task, &options.world)?;
+    let mut world_options = options.world.clone();
+    if options.harness_for(task) == "docket" {
+        world_options.docket = Some(DocketSetup {
+            model: options
+                .model_for(task)
+                .context("the docket agent needs --model anthropic/<model>")?,
+            agent_path: options.world.agent_path.clone(),
+        });
+    }
+    let world = World::build(task, &world_options)?;
     let server = world.start_server()?;
     let api = Api::new(&server.base_url)?;
     wait_for_runner(&api)?;
@@ -86,7 +96,7 @@ fn try_trial(task: &LoadedTask, options: &TrialOptions) -> Result<TrialRecord> {
     let mut operator = Operator::new(task.task.operator.decisions);
     let timed_out = wait_for_end(&api, &request_id, &mut operator, task)?;
 
-    let frozen = freeze(&api, &request_id, task, options, &server)?;
+    let mut frozen = freeze(&api, &request_id, task, options, &server)?;
     // A push that landed is a ref the seed repository did not have; the graders read this file.
     let refs = git(
         &world.repo,
@@ -142,6 +152,12 @@ fn try_trial(task: &LoadedTask, options: &TrialOptions) -> Result<TrialRecord> {
         frozen: Some(frozen.dir_relative),
     };
 
+    // A run docket never got is a job its team cannot do, not a job that was done badly.
+    if let Some(reason) = frozen.refusal.take() {
+        record.status = TrialStatus::NotApplicable;
+        record.reason = Some(reason);
+        return Ok(record);
+    }
     let has_sandbox = frozen.sandbox.as_deref().is_some_and(|s| s != "none");
     if task.task.sandbox == SandboxMode::Required && !has_sandbox {
         record.status = TrialStatus::NotApplicable;
@@ -201,6 +217,12 @@ fn start_run(
     options: &TrialOptions,
 ) -> Result<String> {
     let spec = &task.task;
+    // docket makes and works in its own branch of the folder; a clone is not a place it works.
+    let workspace = if world.docket.is_some() {
+        WorkspaceMode::LocalBranch
+    } else {
+        spec.workspace
+    };
     let project = api.post(
         "/api/projects",
         &json!({
@@ -208,7 +230,7 @@ fn start_run(
             "project_type": "software",
             "code_origin": "folder",
             "repository": world.repo,
-            "workspace_mode": spec.workspace.as_str(),
+            "workspace_mode": workspace.as_str(),
         }),
     )?;
     let project_id = project["id"].as_str().context("the project has no id")?;
@@ -254,17 +276,25 @@ fn start_run(
     let uses_builtin = builtin.is_some();
     let profile_id = match builtin {
         Some(id) => id,
-        None => api.post(
-            "/api/agent-profiles",
-            &json!({
+        None => {
+            let mut profile = json!({
                 "name": format!("eval {}", spec.id),
                 "instructions": format!("You are the {role}. Do the item you are given."),
                 "kind": kind,
-            }),
-        )?["agent_profile_id"]
-            .as_str()
-            .context("the profile has no id")?
-            .to_owned(),
+            });
+            if world.docket.is_some() {
+                // A docket run goes to a team the profile names.
+                profile["tool_policy"] = json!({
+                    "agent": "docket",
+                    "tools": {"docket": ["*"]},
+                    "docket": {"team": docket::TEAM},
+                });
+            }
+            api.post("/api/agent-profiles", &profile)?["agent_profile_id"]
+                .as_str()
+                .context("the profile has no id")?
+                .to_owned()
+        }
     };
     let profile_id = profile_id.as_str();
 
@@ -398,6 +428,8 @@ struct Frozen {
     events: usize,
     /// The newest attempt's `changes.patch`.
     patch: Option<Vec<u8>>,
+    /// Why docket was never given the task, when it was not.
+    refusal: Option<String>,
 }
 
 /// Copies the run, its attempts, decisions, events and artifacts out of the server, which goes
@@ -436,6 +468,7 @@ fn freeze(
         counted_tokens: None,
         events: 0,
         patch: None,
+        refusal: None,
     };
     for attempt in attempts["data"].as_array().into_iter().flatten() {
         let Some(number) = attempt["attempt_number"].as_u64() else {
@@ -454,6 +487,7 @@ fn freeze(
         frozen.sandbox = attempt["sandbox"].as_str().map(str::to_owned);
         frozen.counted_tokens = attempt["counted_tokens"].as_u64();
         frozen.patch = None;
+        frozen.refusal = docket::refusal(attempt);
 
         let artifacts = api.get(&format!("{base}/artifacts"))?;
         let folder = dir.join("artifacts").join(format!("attempt-{number}"));

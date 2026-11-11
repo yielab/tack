@@ -194,6 +194,7 @@ impl AgentArgs {
             agent_path: self.agent_path.clone(),
             env_secrets: self.env_secret.clone(),
             keep: self.keep_worlds,
+            docket: None,
         })
     }
 }

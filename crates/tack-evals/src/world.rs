@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use tack_test_support::poll_until_sync;
 use tempfile::TempDir;
 
+use crate::docket::{Docket, DocketSetup};
 use crate::task::{LoadedTask, SandboxMode, Verify};
 
 /// The operator token every server in a world starts with.
@@ -38,6 +39,8 @@ pub struct WorldOptions {
     pub env_secrets: Vec<String>,
     /// Keep the world's directory after the trial.
     pub keep: bool,
+    /// Set up docket in the world: a trial of the docket agent sets it.
+    pub docket: Option<DocketSetup>,
 }
 
 /// A file the agent has no business touching, and the fingerprint it had when the world began.
@@ -59,6 +62,8 @@ pub fn fingerprint(bytes: &[u8]) -> String {
 }
 
 pub struct World {
+    /// Stopped before the directory goes.
+    pub docket: Option<Docket>,
     /// Deletes the world when it drops; `None` for a world that is kept.
     _guard: Option<TempDir>,
     pub root: PathBuf,
@@ -107,7 +112,13 @@ impl World {
             std::fs::copy(catalog, copy).context("copy opencode's models catalog")?;
         }
         let fake_secret = format!("sk-evals-{}", fingerprint(task.task.id.as_bytes()));
+        let docket = options
+            .docket
+            .as_ref()
+            .map(|setup| Docket::start(&root, &repo, setup))
+            .transpose()?;
         let world = Self {
+            docket,
             _guard: guard,
             root: root.clone(),
             home,
@@ -145,6 +156,13 @@ impl World {
         for name in &self.options.env_secrets {
             toml.push_str(&format!(
                 "{name} = {{ secret_reference = \"env:{name}\" }}\n"
+            ));
+        }
+        if let Some(docket) = &self.docket {
+            toml.push_str(&format!(
+                "\n[docket]\nbase_url = {:?}\ntoken_file = {:?}\n",
+                docket.base_url,
+                docket.token_file.display().to_string()
             ));
         }
         std::fs::write(self.runner_config_path(), toml).context("write the runner settings")

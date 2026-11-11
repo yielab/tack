@@ -4,6 +4,7 @@
 //! the end-to-end tests is that the agent and the model are real.
 
 pub mod api;
+pub mod docket;
 pub mod exam;
 pub mod grade;
 pub mod graders;

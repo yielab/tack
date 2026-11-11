@@ -230,6 +230,7 @@ fn a_world_asks_the_runner_for_a_sandbox_only_as_the_task_does() {
         agent_path: Vec::new(),
         env_secrets: Vec::new(),
         keep: false,
+        docket: None,
     };
     let any = write_task(root.path(), "either-way", "");
     let required = write_task(root.path(), "needs-a-jail", "");

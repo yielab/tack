@@ -91,6 +91,7 @@ pub fn trial_options(root: &Path, agent_dir: PathBuf) -> TrialOptions {
             agent_path: vec![agent_dir],
             env_secrets: Vec::new(),
             keep: false,
+            docket: None,
         },
     }
 }

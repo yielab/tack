@@ -19,13 +19,30 @@ evals/
 cargo run -p tack-evals -- check-solutions evals/tasks
 
 # A real agent, a real model: spends tokens. One invocation per agent, into one directory.
-for agent in claude-code codex opencode docket; do
-  cargo run -p tack-evals -- run evals/tasks/regression --epochs 3 --harness $agent --out evals-out
-done
+# `--model` is the agent's own name for the model, and the key is handed over as a secret.
+export ANTHROPIC_API_KEY=...   # never in a file of this repository
+cargo run -p tack-evals -- run evals/tasks/regression --epochs 3 --harness claude-code \
+  --model claude-haiku-5-5 --env-secret ANTHROPIC_API_KEY --agent-path <dir of claude> --out evals-out
+cargo run -p tack-evals -- run evals/tasks/regression --epochs 3 --harness opencode \
+  --model anthropic/claude-haiku-5-5 --env-secret ANTHROPIC_API_KEY --agent-path <dir of opencode> --out evals-out
+cargo run -p tack-evals -- run evals/tasks/regression --epochs 3 --harness docket \
+  --model anthropic/claude-haiku-5-5 --env-secret ANTHROPIC_API_KEY --agent-path <dir of docket> --out evals-out
+# codex: --harness codex, with its own model name and login
 
 cargo run -p tack-evals -- compare --base <sha> --head evals-out --tasks evals/tasks/regression
 cargo run -p tack-evals -- nightly evals/tasks/regression --base <sha>
 ```
+
+Claude Code names the model `claude-haiku-5-5`; opencode and docket name the provider as well,
+`anthropic/claude-haiku-5-5`. A docket trial needs no docket running: its world makes the
+agent's own, which touches nothing of the operator's (`DOCKET_HOME` and `HOME` are directories of
+the world, the port is the kernel's). It adds the Anthropic provider from the key in
+`ANTHROPIC_API_KEY`, pins every role and the default to `--model`, turns docket's sandbox on, starts
+`docket start --dispatch` and makes one team (`repo`, docket's default `build` shape: a lead and
+an implementer) over the world's repository, which the profile names; the project works in a branch
+of the folder, as docket's runs do. The key rests only in docket's own owner-only store inside the
+world and is removed when the world stops. A job docket's team cannot do (a Planner, for a team
+that proposes nothing) is never sent: the trial ends `not_applicable` with docket's reason.
 
 ## Read a summary
 
