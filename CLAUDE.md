@@ -15,11 +15,10 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 `docs/book/src/roadmap.md` is the one place for what is delivered and what is open; read its
 "Open" section first. In short, as of 2026-10-18:
 
-- **Released:** `v0.1.0-beta.9` (2026-09-21). The next release is `v0.2.0-beta.1` (Phases 66–82):
-  the version is bumped and the changelog section written in the Phases 79–82 merge (PR #66), and it
-  is not tagged. `v0.1.0-beta.10` (tagged 2026-10-14) never had a release and is not re-cut, so the
-  README's install commands install `v0.1.0-beta.9` until the maintainer publishes
-  `v0.2.0-beta.1` (`docs/LAUNCH-CHECKLIST.md`).
+- **Released:** `v0.1.0-beta.9` (2026-09-21). The next release is `v0.2.0-beta.1` (Phases 66–95): the version is
+  bumped and `CHANGELOG.md`'s section is dated 2026-11-10 (`[Unreleased]` folded into it); it is not tagged.
+  `v0.1.0-beta.10` (tagged 2026-10-14) never had a release and is not re-cut, so the README's install commands
+  install `v0.1.0-beta.9` until the maintainer publishes `v0.2.0-beta.1` (`docs/LAUNCH-CHECKLIST.md`).
 - **In `develop`, unreleased:** Phase 73 (`docs/closed-cycles/plans/phase-73.md`, ADRs 0021 and 0022) — every
   docket run goes to a long-lived team over docket's HTTP API version 6, a role chooses the
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
@@ -133,8 +132,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   is a group or work: a project's types are a catalog (Settings → Types; `ItemType` and the `subtask` type are gone), one tree rule
   (`tack-core/src/hierarchy.rs`) for every parent, `node` and `progress` on every item, work runs and a group is planned (a role on an
   epic routes its tasks), the Board in lanes, the List as the tree with Move under…, the Timeline, Dashboard and Orchestration reading
-  the same helpers, and the saved boards deleted. Cards A to H, each through the pre-push gate. Left: the live suite against docket and
-  prill (`docket-prill.spec.ts` test 30 was rewritten and has not been run).
+  the same helpers, and the saved boards deleted. Cards A to H, each through the pre-push gate; the live suite passed after it (Phases 94 and 95).
 - **Built 2026-11-07, in `develop`:** Phase 94 (`docs/plans/evals-y-guardrails-2026-11-06.es.md`, from
   `docs/audits/evals-y-guardrails-2026-11-06.es.md`; no ADR, ADR 0018's notes of that date amend its decisions 11
   and 12) — the agent is contained the same way in the four harnesses (a parity matrix test with an empty
@@ -143,9 +141,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   changed checks, MCP is an agent, and the development crate `tack-evals` runs regression, safety and verifier
   suites (`evals/`, baselines in `evals/baselines/`, Claude Code with Haiku 5.5: both suites saturated) with
   Anthropic at integration only, never in CI; production gets quality figures and a trend notice. The live suite (35 tests) passes
-  against docket `f8dd565e`. Left: the
-  verifier-set labels (a person, about an hour), Codex/opencode/docket
-  baselines, the Reviewer verdict stored, an `allowed_hosts` editor. Asks to prill are in
+  against docket `f8dd565e`. Since 2026-11-10 the Reviewer's verdict is stored, `allowed_hosts` has an editor, old rows
+  get the default expiry and a merge over `reject` keeps its reason; left: the verifier-set labels (a person, about an
+  hour) and the Codex, opencode and docket baselines. Asks to prill are in
   `docs/plans/prill-ajustes-2026-11-06.es.md`.
 - **Built 2026-11-08, in `develop`:** Phase 95 (the roadmap's own section, no plan file, no ADR; a dated note on ADR 0024)
   — no dollar figure anywhere (rate card, priced metrics and `Usage.cost_usd` deleted, migration 112; the plan's
@@ -159,7 +157,8 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
 
 Rules that history taught: never add a `Co-Authored-By` trailer (the history was rewritten on
-2026-10-12 to remove 159 of them); `CHANGELOG.md`'s `[Unreleased]` is written by hand in the
+2026-10-12 to remove 159 of them); never name a real project in a versioned file or a commit message (the history
+was rewritten on 2026-11-10 to remove one, so the fictional project is My SaaS); `CHANGELOG.md`'s `[Unreleased]` is written by hand in the
 change that makes it true; the book is three guides (User, Administrator, Developer) and the
 first two carry no source paths, test names or phase numbers. Decisions go in an ADR, intent in
 the roadmap, history in commits. A change to what the agent reads or receives names its suite, its threshold and its baseline, and writes the task first when none captures it. A phase closes on `regression` with no new reds plus the live suite.
