@@ -95,7 +95,7 @@ export interface ExecutionSummary {
 }
 
 /** The latest hop event of a run's newest attempt, read by the server from its text. Match `role`
- *  to a team's steps without regard to case, as `teamSteps.ts` does for the Execution tab. */
+ *  to a team's steps without regard to case, as `stepMatch.ts` does for the Execution tab. */
 export interface LatestHop {
   /** The role as the event names it, its first letter upper case. */
   role: string;
