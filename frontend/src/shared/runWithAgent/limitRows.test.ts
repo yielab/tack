@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunLimit } from '../execution/api';
-import { limitRows, limitsSummary } from './runLimits';
+import { limitRows, limitsSummary } from './limitRows';
 
 const docketRun: RunLimit = {
   tokens: 1_600_000,

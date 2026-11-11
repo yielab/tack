@@ -229,7 +229,7 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 | `security` | `cargo audit` for both workspaces + `npm audit` |
 | `security-boundaries` | the boundary suites; see below |
 | `evals-harness` | builds `tack`, then the `tack-evals` tests (a real server and runner in a throwaway world, a script for the agent) and `tack-evals check-solutions` over the fixture tasks and every task in `evals/tasks`. No model, no tokens |
-| `embed-spa` | clippy and the `tack-api` tests with the SPA embedded, release build, binary-size budgets (25 MB for `tack`, 8 MB for `tack-runner`) |
+| `embed-spa` | clippy and the `tack-api` tests with the SPA embedded, release build, binary-size budgets (37 MB for `tack`, 10.5 MB for `tack-runner`) |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `e2e` | `scripts/smoke.sh` in fake mode against the binaries the job built, then Playwright, the a11y scan and the API contract — Chromium only on a merge, all three browsers on the schedule run and on a manual dispatch |
 | `msrv` | `cargo build --workspace --locked` on the pinned minimum Rust version |

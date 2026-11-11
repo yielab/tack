@@ -143,14 +143,14 @@ anti-overengineering list refuses.
 
 | Fact | Where |
 |---|---|
-| Four harnesses in `develop`; only docket reports teams; a profile with no team is drawn as a lane of one agent | ADRs 0008, 0009, 0019; `frontend/src/features/orchestration/flow.ts:56-64` (`agentLaneKey`) |
+| Four harnesses in `develop`; only docket reports teams; a profile with no team is drawn as a lane of one agent | ADRs 0008, 0009, 0019; `frontend/src/features/orchestration/flowModel.ts:56-64` (`agentLaneKey`) |
 | A harness's report already carries what a team of one needs: `sign_in`, `models`, `requires_model`, `autonomy_ceiling` | `crates/tack-protocol/src/execution/capabilities.rs:96-124` |
 | Tack's runner applies the run's token limit to a local agent itself; docket gets `maxTokens` | `crates/tack-runner/src/engine/outcome.rs:22-59`; `crates/tack-runner/src/harness/docket/task.rs:289-296` |
 | Tack has no team table; a team is the string `tool_policy.docket.team`, validated by a regex | `crates/tack-core/src/outline/bundle.rs:425-433`; `crates/tack-api/src/handlers/teams.rs:60-65`; `crates/tack-runner/src/harness/docket.rs:496-507` |
 | What Tack knows of a team is `TeamReport`, read live from `GET /pods` and `GET /pods/<p>` | `crates/tack-protocol/src/execution/capabilities.rs:162-221`; `crates/tack-runner/src/harness/docket/probe.rs:256-326` |
 | The fit check covers web and proposals only | `capabilities.rs:232-283` (`TeamNeeds`, `team_misfits`); refusal at `docket.rs:174-200, 1696-1707` |
 | The runner sends `pipeline_by_type[item.type]` unvalidated | `crates/tack-runner/src/harness/docket/task.rs:283-288` |
-| Two routers: the server falls back to the project default when roles disagree, the web takes the first role with a profile | `crates/tack-core/src/run_defaults.rs:30-68`; `frontend/src/features/orchestration/flow.ts:68-96` |
+| Two routers: the server falls back to the project default when roles disagree, the web takes the first role with a profile | `crates/tack-core/src/run_defaults.rs:30-68`; `frontend/src/features/orchestration/flowModel.ts:68-96` |
 | `teamOf` exists in four places | `teams.rs:60-65`, `docket.rs:496-507`, `crates/tack-app/src/change_sets.rs:88-91`, `frontend/src/shared/execution/api.ts:388-392`, `frontend/src/features/settings/panels/automation/parts.tsx` |
 | The item tree exists; the last-child-done move was removed on purpose | `crates/tack-api/src/handlers/items.rs:842` (`get_item_tree`); `docs/closed-cycles/plans/phase-86.md:153` |
 | A plan's `team` resolves only when exactly one profile names it | `crates/tack-core/src/change_set.rs:627-633, 666-673` |

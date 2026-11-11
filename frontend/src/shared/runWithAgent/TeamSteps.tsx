@@ -5,7 +5,7 @@ import { teamsApi, type TeamEntry } from '../execution/teams';
 import type { RunStep, TeamStepReport } from '../execution/types';
 import { formatTokenCount, hopDurationText, hopMilliseconds } from './attemptFormat';
 import { classWords, roleWords } from './AgentWork';
-import { matchSteps } from './teamSteps';
+import { matchSteps } from './stepMatch';
 
 type EventLike = { kind: string; payload: unknown };
 

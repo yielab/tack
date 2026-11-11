@@ -1,5 +1,5 @@
 import { type Component, For, Match, Show, Switch, createSignal, onCleanup, onMount } from 'solid-js';
-import type { CompareCell, CompareModel } from './map';
+import type { CompareCell, CompareModel } from './mapModel';
 
 const MUTED = { color: 'var(--color-text-secondary)' } as const;
 

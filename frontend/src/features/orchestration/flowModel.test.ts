@@ -34,7 +34,7 @@ import {
   type FlowScope,
   type LaneContext,
   type RoleProfile,
-} from './flow';
+} from './flowModel';
 
 const item = (p: Partial<Item> & { id: string }): Item =>
   ({

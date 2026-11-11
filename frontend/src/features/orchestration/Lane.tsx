@@ -3,12 +3,12 @@ import { A } from '@solidjs/router';
 import { Avatar, Badge, RunState } from '../../shared/ui';
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { memberReachText, networkText, queueText, supervisionText, type TeamMember } from '../../shared/execution';
-import { checkText } from '../../shared/runWithAgent/teamSteps';
+import { checkText } from '../../shared/runWithAgent/stepMatch';
 import { runTally, tallySentence } from '../../shared/runWithAgent/cardRun';
 import UsageMeter from '../../shared/runWithAgent/UsageMeter';
 import { spaced } from '../../shared/runWithAgent/runLimit';
 import { IconBranch, IconFolder, IconWho } from '../../shared/runWithAgent/runDialogIcons';
-import { endedTally, laneQueue, moveTarget, type FlowLane, type FlowStation, type FlowToken } from './flow';
+import { endedTally, laneQueue, moveTarget, type FlowLane, type FlowStation, type FlowToken } from './flowModel';
 import { useFlowUi } from './context';
 import Token from './Token';
 

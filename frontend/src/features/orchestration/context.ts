@@ -3,7 +3,7 @@ import type { AgentProfileSummary, ExecutionSummary } from '../../shared/executi
 import type { HarnessCapability } from '../../shared/execution';
 import type { TeamEntry } from '../../shared/execution/teams';
 import type { Item } from '../../shared/types';
-import type { FlowLane, StationKey } from './flow';
+import type { FlowLane, StationKey } from './flowModel';
 
 /** A task being sent from one lane to another: just what the rules for sending need. */
 export interface MoveSource {

@@ -344,6 +344,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: No two files differ only by case
+        # macOS and Windows read them as one file; the release builds there are the first to see it.
+        run: ../scripts/check-case-collisions.sh
       - name: OpenAPI TS types drift gate
         # Regenerate the typed API schema from the committed spec and fail if the
         # checked-in schema.gen.ts is stale. Together with the Rust "OpenAPI
@@ -473,6 +476,12 @@ jobs:
       # again for a constrained host, the lever is making the keychain backend a default
       # cargo feature that such a build turns off; that is a decision for a card, not a
       # thing to build speculatively.
+      #
+      # Re-baselined 2026-11-10: `tack` measured 29.0 MB (budget 25 MB) and the runner
+      # 8.1 MB (budget 8 MB). Not a dependency: Cargo.lock gained none since the last
+      # green measurement (24.4 MB and 7.3 MB on 2026-10-31); the growth is Tack's own
+      # code, about 49 000 lines of Rust across Phases 83 to 95. Budgets move to 37 MiB and
+      # 10.5 MiB, about 28% over the new measurements.
       - name: Binary-size budget
         run: |
           set -euo pipefail
@@ -480,15 +489,15 @@ jobs:
           RUNNER_SIZE=$(stat -c%s target/release/tack-runner)
           TACK_MB=$(echo "scale=1; $TACK_SIZE / 1048576" | bc)
           RUNNER_MB=$(echo "scale=1; $RUNNER_SIZE / 1048576" | bc)
-          echo "tack binary:        $TACK_SIZE bytes (${TACK_MB} MB), budget 26214400 (25 MB)"
-          echo "tack-runner binary: $RUNNER_SIZE bytes (${RUNNER_MB} MB), budget 8388608 (8 MB)"
+          echo "tack binary:        $TACK_SIZE bytes (${TACK_MB} MB), budget 38797312 (37 MB)"
+          echo "tack-runner binary: $RUNNER_SIZE bytes (${RUNNER_MB} MB), budget 11010048 (10.5 MB)"
           FAIL=0
-          if [ "$TACK_SIZE" -gt 26214400 ]; then
-            echo "ERROR: tack binary exceeds the 25 MB budget"
+          if [ "$TACK_SIZE" -gt 38797312 ]; then
+            echo "ERROR: tack binary exceeds the 37 MB budget"
             FAIL=1
           fi
-          if [ "$RUNNER_SIZE" -gt 8388608 ]; then
-            echo "ERROR: tack-runner binary exceeds the 8 MB budget"
+          if [ "$RUNNER_SIZE" -gt 11010048 ]; then
+            echo "ERROR: tack-runner binary exceeds the 10.5 MB budget"
             FAIL=1
           fi
           exit $FAIL

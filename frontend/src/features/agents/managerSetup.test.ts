@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { AddManagerError, MANAGER_INSTRUCTIONS, addManager, mcpConfig, presetTriggers } from './addManager';
+import { AddManagerError, MANAGER_INSTRUCTIONS, addManager, mcpConfig, presetTriggers } from './managerSetup';
 
 afterEach(() => vi.restoreAllMocks());
 

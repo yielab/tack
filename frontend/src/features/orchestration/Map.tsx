@@ -15,7 +15,7 @@ import {
   type MapFix,
   type MapModel,
   type MapNode,
-} from './map';
+} from './mapModel';
 
 const KEYS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 

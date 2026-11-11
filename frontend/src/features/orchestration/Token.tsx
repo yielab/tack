@@ -1,7 +1,7 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, TypeTile } from '../../shared/ui';
 import ItemPath from '../../shared/ui/ItemPath';
-import { ageText, moveTarget, sourceText, type FlowLane, type FlowToken } from './flow';
+import { ageText, moveTarget, sourceText, type FlowLane, type FlowToken } from './flowModel';
 import { useFlowUi, type MoveSource } from './context';
 import MoveMenu, { type MoveChoice } from './MoveMenu';
 

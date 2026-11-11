@@ -2,7 +2,7 @@ import { type Component, For, Show, createSignal } from 'solid-js';
 import { Button, Field } from '../ui';
 import type { DecisionAnswer, DecisionRecord } from '../execution';
 import RadioRow from './RadioRow';
-import { answerChoices, answerTextOf } from './answerBox';
+import { answerChoices, answerTextOf } from './answerParts';
 
 export interface AnswerBoxProps {
   decision: DecisionRecord;

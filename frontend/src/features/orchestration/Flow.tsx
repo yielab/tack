@@ -3,7 +3,7 @@ import { A } from '@solidjs/router';
 import { Button, TypeTile } from '../../shared/ui';
 import ItemPath from '../../shared/ui/ItemPath';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
-import { scopedNobody, showsNobody, visibleLanes, type Flow, type FlowFilter, type FlowScope, type NobodyEntry, type UnusedTeam } from './flow';
+import { scopedNobody, showsNobody, visibleLanes, type Flow, type FlowFilter, type FlowScope, type NobodyEntry, type UnusedTeam } from './flowModel';
 import { useFlowUi } from './context';
 import FlowLaneView from './Lane';
 import MoveMenu from './MoveMenu';

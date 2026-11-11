@@ -40,8 +40,8 @@ import {
   type Flow,
   type FlowFilter,
   type FlowScope,
-} from './flow';
-import { buildCompare, buildMap, scopeOfNode } from './map';
+} from './flowModel';
+import { buildCompare, buildMap, scopeOfNode } from './mapModel';
 import { FlowUiContext, type FlowUi, type MoveSource } from './context';
 import FlowView from './Flow';
 import MapView from './Map';

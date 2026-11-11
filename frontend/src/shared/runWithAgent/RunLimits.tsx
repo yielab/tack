@@ -3,7 +3,7 @@ import { Fold } from '../ui';
 import { agentProfilesApi, teamOf, type AgentProfileSummary } from '../execution';
 import type { RunLimit } from '../execution/api';
 import { teamsApi, type TeamEntry } from '../execution/teams';
-import { type RunTeam, limitRows, limitsSummary } from './runLimits';
+import { type RunTeam, limitRows, limitsSummary } from './limitRows';
 
 export interface RunLimitsProps {
   limit?: RunLimit | null;

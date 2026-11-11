@@ -51,7 +51,7 @@ until auto-start fails to start them.
 - The user guide (`views.md`) sends a person to the Table to sort and filter because the List cannot;
   that is the Table's only use the List lacks.
 - The data for Flow exists: `GET /api/teams` (members, steps, queue, works in, decides), the item's
-  latest execution, and the hop events `teamSteps.ts` already matches to steps. What is missing is one
+  latest execution, and the hop events `stepMatch.ts` already matches to steps. What is missing is one
   call that returns a project's open runs with the step each is in.
 
 ## Considered and not adopted

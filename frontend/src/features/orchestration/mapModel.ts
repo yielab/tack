@@ -21,7 +21,7 @@ import { spaced } from '../../shared/runWithAgent/runLimit';
 import { missingHarnessFix, missingTeamFix } from '../../shared/execution/missing';
 import { agentKindOf } from '../../shared/runWithAgent/ProfilePicker';
 import type { components } from '../../shared/api/schema.gen';
-import { agentLaneKey, mergeRung, teamLaneKey, type Flow, type FlowScope, type FlowToken, type RoleProfile, type Route } from './flow';
+import { agentLaneKey, mergeRung, teamLaneKey, type Flow, type FlowScope, type FlowToken, type RoleProfile, type Route } from './flowModel';
 
 type TeamLine = components['schemas']['TeamLine'];
 

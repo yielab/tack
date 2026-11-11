@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { AgentProfileSummary } from '../../shared/execution/api';
 import type { TeamEntry, TeamMember, TeamStep } from '../../shared/execution/teams';
 import type { Item } from '../../shared/types';
-import { buildFlow, type FlowInput, type RoleProfile } from './flow';
+import { buildFlow, type FlowInput, type RoleProfile } from './flowModel';
 import { routingFixture } from '../../test/routing';
 import {
   NODE_H,
@@ -23,7 +23,7 @@ import {
   scopeOfNode,
   type MapInput,
   type MapModel,
-} from './map';
+} from './mapModel';
 
 const item = (id: string, over: Partial<Item> = {}): Item =>
   ({

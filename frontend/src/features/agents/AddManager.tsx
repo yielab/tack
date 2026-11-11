@@ -7,7 +7,7 @@ import { toast } from '../../shared/ui/toast';
 import { Button, Field, Select } from '../../shared/ui';
 import { AGENT_LEVELS } from '../../shared/agents/levels';
 import { triggerSentence } from '../../shared/agents/triggerText';
-import { AddManagerError, type AddManagerResult, addManager } from './addManager';
+import { AddManagerError, type AddManagerResult, addManager } from './managerSetup';
 
 const NEW_PROFILE = '__new__';
 const MUTED = { color: 'var(--color-text-secondary)' };
