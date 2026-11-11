@@ -89,6 +89,71 @@ fn a_profiles_tools_set_the_permissions_of_a_run_that_names_none() {
     }
 }
 
+/// A run's `HOME` is fresh and it fetches no models catalog, so without the person's catalog
+/// opencode knows no model and every run fails with "Unexpected server error" (measured with
+/// opencode 1.18.30). The catalog the person's opencode keeps in its cache is read in, never
+/// written, and the run fetches none; with none there, the run fetches its own.
+#[cfg(unix)]
+#[test]
+fn the_persons_models_catalog_is_read_into_the_run_and_never_written() {
+    use std::os::unix::fs::PermissionsExt;
+    let state = scratch("opencode-models-catalog");
+    let cache = state.path().join("cache");
+    let program = state.path().join("opencode");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\nif [ \"$2\" = config ]; then echo '{{\"model\":\"p/m\"}}'; else echo 'data /nonexistent'; echo 'cache {}'; fi\n",
+            cache.display()
+        ),
+    )
+    .expect("shim");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let host = crate::config::ProcessEnv::from_pairs([
+        ("HOME", state.path().as_os_str()),
+        ("PATH", std::ffi::OsStr::new("/usr/bin:/bin")),
+    ]);
+    let request = networked(state.path());
+    let invocation = || {
+        OpencodeGrammar
+            .invocation(&RunContext {
+                spec: &request,
+                scratch: state.path(),
+                program: Some(&program),
+                host: &host,
+            })
+            .expect("invocation")
+    };
+
+    let fresh = invocation();
+    assert!(fresh.read_only_files.is_empty(), "no catalog yet");
+    assert!(
+        !fresh.env.contains_key("OPENCODE_DISABLE_MODELS_FETCH"),
+        "with no catalog to read, the run fetches its own"
+    );
+
+    std::fs::create_dir_all(&cache).expect("cache");
+    std::fs::write(cache.join("models.json"), "{}").expect("catalog");
+    let shared = invocation();
+    assert_eq!(
+        shared.read_only_files,
+        [(
+            cache.join("models.json"),
+            state
+                .path()
+                .join("opencode-home/.cache/opencode/models.json")
+        )]
+    );
+    assert!(
+        !shared
+            .shared_files
+            .iter()
+            .any(|(source, _)| source.ends_with("models.json")),
+        "the catalog is never writable"
+    );
+    assert_eq!(shared.env["OPENCODE_DISABLE_MODELS_FETCH"], "1");
+}
+
 #[test]
 fn opencode_declares_decisions_supported_over_acp() {
     let declared = OpencodeGrammar.capabilities();

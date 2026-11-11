@@ -436,7 +436,6 @@ impl HarnessGrammar for OpencodeGrammar {
         );
         env.insert("OPENCODE_DISABLE_PROJECT_CONFIG".to_owned(), "1".to_owned());
         env.insert("OPENCODE_DISABLE_AUTOUPDATE".to_owned(), "1".to_owned());
-        env.insert("OPENCODE_DISABLE_MODELS_FETCH".to_owned(), "1".to_owned());
         env.insert("OPENCODE_DISABLE_SHARE".to_owned(), "1".to_owned());
         env.insert(
             "OPENCODE_CONFIG_CONTENT".to_owned(),
@@ -460,6 +459,21 @@ impl HarnessGrammar for OpencodeGrammar {
         } else {
             Vec::new()
         };
+        // In a fresh `HOME` with the catalog fetch off, opencode knows no model at all and fails
+        // every run with "Unexpected server error". The catalog the person's opencode already
+        // fetched is read in, and the run then fetches none.
+        let read_only_files = login
+            .cache_dir
+            .as_ref()
+            .map(|cache| cache.join("models.json"))
+            .filter(|catalog| catalog.is_file())
+            .map(|catalog| vec![(catalog, opencode_home.join(".cache/opencode/models.json"))])
+            .unwrap_or_default();
+        // With no catalog to read (an opencode that never fetched one), the run is left to
+        // fetch its own; `opencode models --refresh` once outside Tack makes the catalog.
+        if !read_only_files.is_empty() {
+            env.insert("OPENCODE_DISABLE_MODELS_FETCH".to_owned(), "1".to_owned());
+        }
 
         Ok(Invocation {
             args,
@@ -467,7 +481,7 @@ impl HarnessGrammar for OpencodeGrammar {
             stdin_stays_open: ask,
             secrets: login.secrets(),
             shared_files,
-            ..Default::default()
+            read_only_files,
         })
     }
 

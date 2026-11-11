@@ -32,6 +32,10 @@ pub struct TrialOptions {
     /// Run the task with this agent instead of the one its profile names (the task still has
     /// to apply to it).
     pub harness: Option<String>,
+    /// Ask for this model instead of the one the task's profile names: each agent names a model
+    /// its own way (opencode wants `anthropic/claude-haiku-5-5` where Claude Code takes
+    /// `claude-haiku-5-5`).
+    pub model: Option<String>,
     pub world: WorldOptions,
 }
 
@@ -40,6 +44,12 @@ impl TrialOptions {
         self.harness
             .as_deref()
             .unwrap_or(&task.task.profile.harness)
+    }
+
+    fn model_for(&self, task: &LoadedTask) -> Option<String> {
+        self.model
+            .clone()
+            .or_else(|| task.task.profile.model.clone())
     }
 }
 
@@ -96,7 +106,7 @@ fn try_trial(task: &LoadedTask, options: &TrialOptions) -> Result<TrialRecord> {
         suite: task.task.suite.clone(),
         epoch: options.epoch,
         harness: options.harness_for(task).to_owned(),
-        model: task.task.profile.model.clone(),
+        model: options.model_for(task),
         tack_commit: git(Path::new("."), &["rev-parse", "HEAD"])
             .ok()
             .map(|sha| sha.trim().to_owned()),
@@ -280,10 +290,12 @@ fn start_run(
             ),
             "agent_profile_id": profile_id,
             "requested_harness_kind": options.harness_for(task),
-            "requested_model": spec.profile.model,
+            "requested_model": options.model_for(task),
             "permission_policy": {
                 "tools": tools,
-                "network": spec.profile.web_tools,
+                // As the board asks it: opencode reaches the network on every run, so the
+                // runner refuses one that says it will not.
+                "network": spec.profile.web_tools || options.harness_for(task) == "opencode",
                 "approvals": if spec.approvals == Approvals::Ask { "ask" } else { "auto" },
             },
             "budgets": budgets,

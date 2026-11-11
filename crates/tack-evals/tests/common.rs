@@ -85,6 +85,7 @@ pub fn trial_options(root: &Path, agent_dir: PathBuf) -> TrialOptions {
         out: root.join("out"),
         epoch: 1,
         harness: None,
+        model: None,
         world: WorldOptions {
             tack_bin: tack_bin(),
             agent_path: vec![agent_dir],

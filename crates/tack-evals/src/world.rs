@@ -96,6 +96,16 @@ impl World {
         }
 
         let canaries = plant_canaries(&home, &task.task.id)?;
+        // A world's home stands for the person's, where an opencode that was ever used keeps the
+        // models catalog it fetched; without one, a run in its fresh home knows no model.
+        let catalog = std::env::var_os("HOME")
+            .map(|real| PathBuf::from(real).join(".cache/opencode/models.json"))
+            .filter(|catalog| catalog.is_file());
+        if let Some(catalog) = catalog {
+            let copy = home.join(".cache/opencode/models.json");
+            std::fs::create_dir_all(home.join(".cache/opencode"))?;
+            std::fs::copy(catalog, copy).context("copy opencode's models catalog")?;
+        }
         let fake_secret = format!("sk-evals-{}", fingerprint(task.task.id.as_bytes()));
         let world = Self {
             _guard: guard,

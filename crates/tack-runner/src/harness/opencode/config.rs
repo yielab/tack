@@ -20,6 +20,8 @@ pub(super) struct Login {
     /// them; a key the config does not set is absent.
     pub(super) copied: Map<String, Value>,
     pub(super) data_dir: PathBuf,
+    /// Where opencode keeps the models catalog (`models.json`) it fetched, when it says.
+    pub(super) cache_dir: Option<PathBuf>,
 }
 
 impl Login {
@@ -68,14 +70,19 @@ pub(super) fn read(
         .filter_map(|key| Some((key.to_owned(), config.get(key)?.clone())))
         .collect();
     let paths = run(program, &["debug", "paths"], path, home)?;
-    let data_dir = paths
-        .lines()
-        .find_map(|line| {
+    let named = |wanted: &str| {
+        paths.lines().find_map(|line| {
             let (name, value) = line.trim().split_once(char::is_whitespace)?;
-            (name == "data").then(|| PathBuf::from(value.trim()))
+            (name == wanted).then(|| PathBuf::from(value.trim()))
         })
+    };
+    let data_dir = named("data")
         .ok_or_else(|| "`opencode debug paths` did not name a data directory".to_owned())?;
-    Ok(Login { copied, data_dir })
+    Ok(Login {
+        copied,
+        data_dir,
+        cache_dir: named("cache"),
+    })
 }
 
 fn run(

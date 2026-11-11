@@ -168,6 +168,10 @@ struct AgentArgs {
     /// Run every task with this agent, those that apply to it.
     #[arg(long)]
     harness: Option<String>,
+    /// Ask every task for this model instead of its own, in the agent's naming
+    /// (`anthropic/claude-haiku-5-5` for opencode).
+    #[arg(long)]
+    model: Option<String>,
     /// The `tack` binary to serve with.
     #[arg(long)]
     tack_bin: Option<PathBuf>,
@@ -532,6 +536,7 @@ fn run_tasks(
                 out: out.to_owned(),
                 epoch,
                 harness: harness.map(str::to_owned),
+                model: agent.model.clone(),
                 world: world.clone(),
             };
             let record = run_and_record(&task, &options)?;
