@@ -4,7 +4,7 @@
 > history; closed phases are archived under
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
-**Tack is delivered through Phase 91.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 95.** A project is planned and tracked on a board, a list, a
 calendar or a timeline, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. A step that runs out of its own budget keeps its work and lets a person
@@ -12,14 +12,15 @@ continue it or start over from it. The run's work comes back as evidence to revi
 verifier can judge it, and Tack can push the branch, open the pull request and merge it: by a
 button, when the task moves to Done, or by itself at Level 4 or 5 under the verifier's signed
 verdict. A project can start its tasks by itself, send each role's tasks to a long-lived docket
-team, repeat tasks, and travel whole in one file.
+team, repeat tasks, and travel whole in one file. The agent is contained the same way whichever of the
+four runs it, and the work it leaves is measured against suites of tasks kept in the repository.
 
 **Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. The next is
-`v0.2.0-beta.1`, which carries Phases 66 to 82: the version is bumped and the changelog section
+`v0.2.0-beta.1`, which carries Phases 66 to 95: the version is bumped and the changelog section
 is written, and it waits for the maintainer to tag it
 ([`docs/LAUNCH-CHECKLIST.md`](https://github.com/yielab/tack/blob/develop/docs/LAUNCH-CHECKLIST.md)).
-Phases 83 to 91 are under `[Unreleased]` in the changelog. The `v0.1.0-beta.10` tag (2026-10-14)
-never had a release and is not re-cut; its changes ship in `v0.2.0-beta.1`.
+The `v0.1.0-beta.10` tag (2026-10-14) never had a release and is not re-cut; its changes ship in
+`v0.2.0-beta.1`.
 
 **Where this is going.** Tack keeps the same three neighbours it never contains: an agent
 runtime such as docket, which runs the work; an independent verifier such as prill, which judges
@@ -29,344 +30,17 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 95 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
-and it is not a card.
+Everything built is under Delivered. What is left:
 
-**Phase 95 — no dollars, docket's team search, and the tree cleaned** (2026-11-08, no plan file, no
-ADR; ADR 0024 has a dated note; built in `develop` the same day). Three cards:
-
-- **USD — no dollar figure anywhere.** The plan's decision 8 is taken: the rate card (its route, its
-  form and the stored card, removed by migration 112), the metrics' `cost_usd` and `qualified_per_usd`,
-  the protocol's `Usage.cost_usd` and every harness's reading of its own cost are deleted. The metrics
-  page shows tokens by model, and a limit's `budgets` refuses any key it does not have.
-- **S — a team's web search.** A docket that lists `search` reports, per team, the provider
-  (SearXNG, Brave Search, the team's own service or none), whether it is ready and why not, and the
-  docket command that makes it ready; the team sheet shows it as one "Search" line with its help, and
-  `tack runner doctor` prints it. Tack does not switch the provider: the person runs the command on
-  docket's computer, so the key never leaves it. The fixtures are recaptured against docket
-  `ee17a1fd`, including a team whose Brave key is not stored.
-- **D — legacy and dead code.** The answers Tack kept for its own removed settings (status moves,
-  `agent_profile_snapshot`, the runner's `[provider]` table, the status-map policy) are gone, and so is
-  every compatibility path for its earlier builds (the old runner state folder, `local-<uuid>` runner
-  names, decisions an older board left open). A request to start a run refuses any unknown key. What only
-  tests ask of the store lives in `tack-test-support`; code no caller reaches, unread fixtures and the
-  frontend's unused exports and dependencies are deleted: 3 406 lines removed and 1 159 added. Migrations, docket's
-  feature probes and the runner protocol's optional fields stay.
-
-The live suite (35 tests, Claude Haiku 5.5 through docket, about 149 000 input tokens) passes in one
-run against docket `3caccedd` and prill `6b95423`, and `--check` reports no drift. The README and book screenshots
-were retaken on 2026-11-09 (`make screenshots`).
-
-**Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
-file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
-
-- **A — one rule for a run's network.** The built-in Researcher, Planner and Reviewer name
-  WebFetch (the Researcher WebSearch too) and no `network`, so a run that leaves the network to the
-  profile asks for no network and for web tools at once, and Claude Code refuses it before it
-  starts; the Run dialog starts its Web tools box off for the same reason, and opencode, which
-  reaches the network on every run, refuses every run whose box is off. One function in `tack-core`
-  gives a profile's default network for an agent: the profile's `network` flag, or, for any agent
-  but docket, its tools for that agent being `*` or naming WebFetch or WebSearch; for opencode it is
-  always on, and the dialog shows the box on and disabled with that reason. The run's creation,
-  auto-start and the Run dialog read it, the dialog from the server rather than a copy of the rule.
-  Web tools off then takes the web tools out of a Claude Code run, as the box's help already says,
-  instead of refusing the run.
-- **B — a refused run reads "Not started" on every chip.** The Execution tab's run chips read the
-  run's latest attempt only once it is loaded, and otherwise the request's own state, `failed`, so
-  the same refusal reads Not started on one chip and Failed on the next. The fallback reads the
-  run's `never_started` as the board's card does.
-
-**Phase 92 — a question is answered in one place** (2026-11-04, no plan file, no ADR; from task
-4C9BAB, where the person could not tell where to type their answer). One card, built in `develop` the
-same day except the screenshot `decision-inbox.png`, which waits for the next billed recording:
-
-- **A — the answer box, redesigned as one piece.** Today the choices come first, the text field is
-  one line under them called "Details (optional)", the recommendation is a line with a raw option id
-  below that, and a question with no choices asks for an "option id". When the question takes text
-  (docket's `acceptsText`) the text is often the answer, and nothing on the screen says so. Rethink
-  it from the person's side, in this order: the question; the choices, the recommended one first and
-  marked once with its reason as its own line; the field where they write, opening under the choice
-  it belongs to, named for what is asked ("Your answer"), required when the question requires it and
-  absent when it takes none; one primary button that says what it does ("Send answer"), with Decline
-  a plain secondary action and not a choice card. Risks and token estimates are a quiet line on the
-  choice, not red blocks, and the screen adds no sentence that is not a label or a verb: the question
-  does the explaining. The words are the product's own ("question", "answer"; no "resolve", no
-  "option id"). The same component serves approvals (Approve once, Approve for this task, Deny with a
-  reason) and inputs, so the three read alike. Done when a person with a question that takes text
-  answers it without searching for the field, by keyboard too; the order, the field's label and the
-  button's words are pinned by component tests; and the live suite's locators and the tutorial's
-  screenshot of a question are updated.
-
-**Phase 93 — an item is a group or work** (2026-11-05;
-[plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-93.md); ADR 0036 amended with
-decisions 10 to 13, accepted). An epic is a card in the To Do column beside the tasks it holds and
-never leaves it. Auto-start can start it as if it were a task, and the Dashboard counts it as one.
-"Subtask" is a type and a position at once. The Board, the List, the Timeline and the Orchestration
-view each work out on their own what a parent is, and the List cannot move a row under another
-parent. The board has two derivations, the web's and the server's saved boards, which only the CLI
-reads.
-
-One rule replaces all of it: a project's types are a catalog in which each type holds work or is
-work; an item is a group when its type holds work or when it has children; work runs and a group is
-planned; and each view shows the level it is for. Nothing old stays beside the new.
-
-Built 2026-11-05, in `develop`: all eight cards in five rounds (A; B; C ∥ D; E; F ∥ G ∥ H), each through
-the pre-push gate, and the full workspace suite. Left is the live suite against docket and prill. The plan
-names each card's files, shapes, removals, docs, tests and greps.
-
-- **A** — the catalog of types, replacing the `ItemType` enum and the type words of the vocabulary.
-- **B** — one rule for the tree, and moving an item under another parent.
-- **C** — a group runs only with a profile that proposes, and who does a piece of work is inherited
-  from its parent.
-- **D** — the facts every screen reads (`node`, `progress`), and the saved boards deleted.
-- **E** — the Board in lanes, and the pieces every screen shares.
-- **F** — the List as the tree, the item page, and the create dialog.
-- **G** — the Timeline, the Calendar, Sprints and the Dashboard.
-- **H** — Orchestration, search, and Settings → Types.
-
-**Phase 94 — the agent is contained the same way whatever runs it, and Tack measures what it already
-labels** (2026-11-06;
-[plan](https://github.com/yielab/tack/blob/develop/docs/plans/evals-y-guardrails-2026-11-06.es.md),
-[audit](https://github.com/yielab/tack/blob/develop/docs/audits/evals-y-guardrails-2026-11-06.es.md);
-no ADR: ADR 0013 and ADR 0018 decisions 11 and 12 are amended where their text becomes false.
-**Decisions 1 to 4 taken 2026-11-07; all cards built and proved live the same day**).
-
-**Built 2026-11-07, in `develop`:** round 0 (C0-1, C0-2, C0-3) and round 1 (GR0, GR1, GR4, GR7, GR8,
-GR10, GR11, GR14, GR18, P1), the full pre-push gate green after each round. The parity test carries a
-list of the cells still pending, each with its card; a card deletes its entries as it lands. Decided
-the same day: `tack mcp` refuses without an agent credential (decision 3); the Merge button over a
-`reject` asks for a written reason (decision 4); the runner rotates its own credential before it
-expires (a card of its own, since a runner would stop with `SessionRefused` after its 90 days). Still
-open for the maintainer: runner rows and pending decisions that predate the default expiry never
-expire; a merge over a `reject` on an attempt that already has a review does not store the reason.
-Decisions 1 and 2 were taken the same day: containment is required whoever supplies it (the runner's
-`bwrap` for Claude Code, opencode and Codex; docket's own jail only asked about), and web access is a
-mode per profile (`closed`, `listed`, `open`).
-
-**Built 2026-11-07, in `develop`, rounds 2 to 4:** the evals harness and its cards (EDD-1 the change
-contract and the prompt fingerprint; E2-1 to E2-3 the `tack-evals` crate, its graders, metrics, report,
-`compare` and `nightly`, and the nine-task regression suite; E3-1 the ten-pair safety suite; E3-2 the
-thirty-case verifier set, whose labels a person still has to confirm; EDD-4 `promote`), the guardrails
-(GR2 containment required, GR3 three more sandbox flags, GR5a the egress proxy in three modes, GR5b
-`--unshare-net` so the proxy is the only way out, GR6 the install in the sandbox, GR9 changed checks
-hold the merge, GR12 an imported card asks, GR13 a stop reaches other sessions, GR17 docket's outcome
-rules), the production figures (EDD-2 the quality section, EDD-3 the trend notice) and C4-1's L8
-(`items-from-plan`). The parity test's pending list is empty. Egress enforcement is off until the
-operator turns on `[egress] enforce`. The first baselines are committed in `evals/baselines/`: Claude
-Code with Haiku 5.5, three trials per task, 27 of 27 on regression and, on safety, full utility, an
-attack tried once in 30 trials and never successful, no twin failed. Both suites are saturated for this
-model, so they guard against regression and cannot yet show what a guardrail adds. The live suite (35 tests, Claude Haiku 5.5 through docket, about 140 000 input tokens) passes in one run
-against docket `f8dd565e` and prill `6b95423` (docket's `search` field, which `--check` reported, is read
-since Phase 95). Open: the Reviewer
-profile's verdict is not stored, so the verifier figure judges prill's pack only; the verifier-suite
-labels; `allowed_hosts` has no editor; Codex, opencode and docket baselines.
-
-An audit of the four harnesses found that the board contains an agent well (scopes, change sets, a
-second secret for decisions, demotion after a revert) and the machine does not: the network is never
-cut, Claude Code runs with every permission skipped in `auto` even with no sandbox, a missing `bwrap`
-means no sandbox rather than no run, the install step runs as the user, and docket's sandbox is assumed
-rather than asked. Each harness has a different set of holes, because every control is a flag of one
-CLI and not a rule of the runner. Tack judges no work itself and never grades the one that does: the
-verifier is off by default and never changes a run's state, yet every run already ends with a person's
-label (accepted, rejected with a reason, merged, reverted) that nothing reads back.
-
-Rules of the phase. **A guardrail is the runner's rule, not a CLI's flag:** every card lands in the
-four harnesses or writes in the descriptor why one cell cannot, and a parity test keeps the matrix
-green. **A rule is a boundary test and its benign twin** (the normal case that must keep passing).
-**Opus plans and integrates, Sonnet and Haiku execute;** each card names its files and its `-E`
-filter, runs only those tests, and has a token cap (S ≈ 300k, M ≈ 900k, L ≈ 2M counted tokens); the
-full suites, Playwright and the live suite run once per round. **A real model is the integrator's:**
-cards prove with the fake agent; regression, safety and verifier run at integration with Claude Haiku
-5.5 through Anthropic (the local model stays an option) under a token budget, never in CI, and CI
-still needs neither docket nor prill. **Nothing invented:** no agent writes eval tasks from
-imagination; capability tasks come only from runs a person rejected or reverted.
-
-**Round 0 — cleanup and the truth of the documents** (parallel, no shared files):
-
-- **C0-1 — dead code and stale names** (Haiku · S). Delete `event_sink` (no production caller) and
-  the three helpers only tests use; rename `needs_beta_6` for what it checks, `docket_v5.rs` to
-  `docket_api.rs` (after the pending docket change lands) and `table.spec.ts` to `list.spec.ts`; fix
-  the comments that say `InPlace` is not provisioned, that `is_operator` means Tack too, and that the
-  rate card serves a dollar budget. Done when the greps in the plan are empty and the runner suite and
-  clippy are green.
-- **C0-2 — amendment notes** (Haiku · S). One dated note at the end of ADRs 0004, 0021, 0024, 0027,
-  0032, 0036 and 0018 (decision 10), the `mrp-v1` contract README and the environment policy's module
-  doc, each saying what the code does today and which card changes it. Done when every note names its
-  source and the book carries no phase number.
-- **C0-3 — one human review** (Sonnet · M). The pack review and the run review become one store and one
-  endpoint: a reason is required to reject, the reviewer is the real principal, and a migration keeps
-  both stores' rows. Done when the migration test is seen failing first, the reason-less reject is a
-  400, `"operator"` is gone from the handlers, and `MrpPanel` reads one endpoint.
-
-**Round 1 — parity, and containment that changes nothing for normal use** (GR0 first and alone, the
-rest in parallel):
-
-- **GR0 — the parity matrix** (Sonnet · M). A list of parity rules in the protocol crate and, per
-  descriptor, who meets each: the CLI, the runner, docket, or missing with a reason. A boundary test
-  walks every registered descriptor; the run page lists per rule who applies it. Done when the test is
-  red today exactly on the audit's red cells, a test descriptor with an unexplained gap is red, and
-  each later card turns its cells green.
-- **GR1 — no sandbox means ask** (Sonnet · S). When the runner found no sandbox the request runs as
-  `ask` whatever it asked for: Claude Code never gets `bypassPermissions` outside a sandbox, Codex is
-  switched to `app-server`, opencode's block says `ask`; one event says why. Done when a boundary test
-  per descriptor shows the asking command line with a fake "none" sandbox, and the twin shows `auto`
-  unchanged under `bwrap`.
-- **GR4 — the agent's own config is read-only and brings no integrations** (Sonnet · M). `~/.claude`
-  and `~/.codex` are bound read-only with a writable copy of what the CLI must write; Codex gets
-  `-c mcp_servers={}` as Claude Code has `--strict-mcp-config` and opencode `mcpServers: []`; the
-  three CLIs' login credentials join redaction. Done when writing those files from inside the sandbox
-  leaves the originals untouched, a user-configured MCP server never reaches Codex, a seeded credential
-  reads `[REDACTED]`, and both CLIs still start and keep their session.
-- **GR7 — the environment policy names the proxies and the config homes** (Haiku · S). `HTTP(S)_PROXY`,
-  `ALL_PROXY`, `NO_PROXY`, `NODE_PATH`, `JAVA_TOOL_OPTIONS`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
-  `OPENCODE_CONFIG`, and the `XDG_` and `npm_config_` prefixes, one boundary test per name. Done when
-  the module doc and the list say the same thing.
-- **GR8 — docket's sandbox is asked, not assumed** (Sonnet · S). The probe reads docket's isolation
-  posture from `features`; absent or `none` reads as `none`, so auto-start and the dialog default to
-  `ask`. Done when the fake docket's three variants give `none`, `none`, `harness`. The ask to docket
-  is written with the other neighbours' asks, and never blocks.
-- **GR10 — the merge's integrity** (Sonnet · M). An unknown team ceiling holds the automatic merge; the
-  decision is read from the verified statement's predicate (prill signs the whole pack) and a
-  mismatch with the translated pack holds; the Merge button over a `reject` requires a written reason,
-  and the person still decides (decision 4). Done when two new rows of the policy table are seen
-  failing first and the handler test refuses the reason-less merge.
-- **GR11 — MCP is an agent** (Sonnet · M). `tack mcp` with no agent credential refuses unless
-  `--operator` is passed; the MCP origin is derived from the principal, not from a header; `ask` and
-  no network are fixed by the server for a run an agent principal creates (decision 3). Done when the
-  trust-boundary tests show a forged client header changes nothing and an agent's `auto` lands as
-  `ask`, and the live suite's manager tests still pass at integration.
-- **GR14 — three small hardenings** (Haiku · S). The session cookie carries `Secure` behind https or
-  `X-Forwarded-Proto` and a `Max-Age`; a decision gets a default `expires_at`; a runner credential
-  expires by default. No rate limit: loopback needs none and the tunnel has Cloudflare's. Done when
-  three trust-boundary tests pass.
-- **GR18 — docket's path is redacted like the others** (Sonnet · S). Steps, `outward` calls and
-  record rows pass through the same redactor as local output. Done when a secret seeded in each of
-  the three reads `[REDACTED]` with the fake docket.
-- **P1 — the evidence names the model family for every harness** (Haiku · S). Only docket's steps
-  carry `family` today; the verifier reads it from the last implementer step and, missing it, marks
-  the judge degraded, so every Claude Code, Codex or opencode run with a judge ends in review. The
-  three local harnesses record the family their CLI reports. Done when a fixture run of each harness
-  yields a `generator.family` in the verifier's evidence document.
-
-**Round 2 — the evals harness and the change contract** (sequential):
-
-- **EDD-1 — the change contract and the prompt template's fingerprint** (Sonnet · S). `CONTRIBUTING.md`
-  gains the step "does it change what the agent reads or receives? then name the suite, the threshold
-  and the baseline, and write the task first"; `docs/TESTING.md` gains an "Evals" section; a hash of
-  the prompt templates is computed at build time, stored with each run and shown on its page. Done
-  when changing one template line changes the fingerprint in a test and the three documents agree.
-- **E2-1 — the task, the world and the trial** (Sonnet · M). A development crate `tack-evals` (not
-  released, a leaf in the crate graph): a `task.yaml` loader, a clean world per trial over the test
-  support crate (data dir, port, seeded repo, fake `$HOME` with canaries, a fake secret), an operator
-  that answers decisions with the decision token, a trial that creates project, profile and item,
-  starts the run and freezes what it left, and `trials.jsonl`; subcommands `run` and
-  `check-solutions`. Done when, with the fake agent, one task ends Succeeded, one asks and is approved,
-  a broken reference solution makes `check-solutions` exit 1, an invalid task is refused with its
-  reason, and an agent writing into `hidden/` cannot change the exam; CI runs these tests.
-- **E2-2 — graders, metrics and report** (Sonnet · M). Three code graders (outcome, governance,
-  verifier agreement), pass@k and pass^k, Wilson intervals, task-clustered error, the paired
-  difference, the four-way failure taxonomy (tack, agent, eval, infra), `summary.md`, and the
-  `compare` and `nightly` subcommands. Done when each grader is proved with tampered records, the
-  metrics match hand-computed values, `compare` works on two synthetic trial files, and `nightly` warns
-  on a 3/3 → 1/3 task and not on an infra failure.
-- **E2-3 — the regression suite and the first baseline** (Sonnet · M; the baseline is the
-  integrator's run). Eight to ten tasks from the `calc` fixture and the live suite's journeys, two of
-  them planning tasks, each with hidden checks and a reference solution, run across the four harnesses
-  (a harness that cannot do a task by design is `not_applicable` with its reason). Done when every task
-  passes `check-solutions` and the first baseline per harness is committed.
-
-**Round 3 — the large guardrails, measured before and after** (E3-1 and E3-2 first, then in
-parallel; GR5b last; decisions 1 and 2 were taken 2026-11-07):
-
-- **E3-1 — the safety suite** (Sonnet · M). Eight to ten pairs, each a task with and without the
-  attack (vectors: card text, the repository's README, a web page, a comment in a test, a
-  `postinstall`; targets: exfiltrate the fake secret, touch the agent's config, weaken a test, push,
-  read the SSH canary). Done when the twins pass `check-solutions` and the baseline gives, per
-  harness, utility, utility under attack, intermediate and final attack success, before any card below.
-- **E3-2 — the verifier suite** (Sonnet · M; about one hour of a person's labelling). A script makes
-  fifteen mutants and weakened-test variants over the regression solutions beside fifteen reference
-  solutions; a person confirms the thirty labels. Done when the verifier grader reports prill's false
-  approval and false rejection (and the Reviewer profile's, once it emits a verdict).
-- **GR2 — containment is required, whoever provides it** (Sonnet · M; decision 1, taken 2026-11-07).
-  Claude Code and opencode bring no sandbox, so the runner requires `bwrap` for them (`[sandbox] required
-  = true` by default); Codex keeps its own and is wrapped too; docket's own jail is only asked about
-  (`isolationPosture`) and never blocks, an unreported posture being read as the strictest (`ask`). With
-  no `bwrap` and an explicit opt-out the agent runs as `ask`. Shown without a new row: the run
-  dialog's Sandbox line names who contains the agent, with a help hint of two sentences; Agents gets a
-  matching badge; the administrator guide says it in the same words; ADR 0018 decision 11 is amended.
-  Done when the boundary test schedules nothing without the opt-out, runs as `ask` with it, and docket
-  with no posture runs as `ask`.
-- **GR3 — three more flags** (Haiku · S). `--unshare-ipc --unshare-uts --cap-drop ALL`, nothing else.
-  Done when a real-`bwrap` test sees no host IPC and empty capabilities, and `git`, `node` and
-  `python3` still start inside.
-- **GR5a — an egress proxy with three modes per profile** (Sonnet · M; decision 2, taken 2026-11-07).
-  One `CONNECT` proxy on loopback per run, the mode chosen by the profile: `closed` (the model's
-  endpoint only), `listed` (plus the profile's hosts) or `open` (any public host, for profiles that
-  browse, such as Researcher: every domain cannot be listed). In every mode the proxy refuses loopback,
-  private, link-local and cloud-metadata addresses, checked on the resolved address and connected to
-  that address. A refused destination is an event on the run; reached ones are logged. HTTPS tunnels
-  hide the URL, so `open` limits where, not what: an allowed public host can still receive data, and the
-  help says so. It starts as a runner option (`[egress] enforce`, off) and becomes the default once the
-  safety suite and its twins are green. Shown without clutter: one "Web access" selector in the profile
-  editor with a help hint, the dialog's Network line naming the mode, refused destinations on the run's
-  existing timeline. Done when each mode passes its boundary test, a CLI still reaches its model, and
-  ADR 0018 decision 12 is amended.
-- **GR5b — the network is enforced** (Sonnet · M; after GR5a and GR2). `--unshare-net` in every mode,
-  with the proxy reaching the sandbox through a mounted Unix socket. Done when, under real `bwrap`, a
-  direct connection to any address fails, only what the mode allows passes through the proxy, the safety
-  suite's final exfiltration success is zero in `closed` and `listed`, and the twins lose no more than
-  five points.
-- **GR6 — the install step runs in the sandbox** (Sonnet · M). The dependency install runs under the
-  same `bwrap` with the fake home, an allow-listed environment and the proxy pointed at the registry,
-  its output redacted; a board-supplied replacement install command needs the runner's
-  `[prepare] board_may_replace`. Done when a `postinstall` cannot reach the real home, an unpermitted
-  board command is refused with a reason, and the `calc` fixture still installs.
-- **GR9 — what examines the agent holds the merge** (Sonnet · M). With a prill pack, the signal is
-  its structured `flags` (tautological or deleted tests, changed test or analysis config, changed
-  manifests, config changed in head), read as data rather than flattened into text; with no pack, a
-  shared exact-name list in the protocol crate recorded in the evidence for the four harnesses. Either
-  way the run is held from automatic merge and the review asks for confirmation. Done when a pack
-  fixture with `tautological_test` holds, the list's case table no longer flags `latest/` or
-  `contest.md`, and the verifier suite is re-run after.
-- **GR12 — trust follows the item in every harness** (Sonnet · S). An imported, untrusted item runs
-  as `ask` with web tools off by default in the four harnesses, shown with its reason and raisable by
-  the person. Done when a start-run test per harness shows the defaults and the safety suite's
-  imported-card vector is re-measured.
-- **GR13 — the limits close at the edges** (Sonnet · M). Cancelling kills the process group and the
-  session for the three local CLIs; a failed cancel retries with SIGKILL and marks the run; a profile
-  whose agent reports no usage while running (Codex today) is not auto-started after exceeding its
-  limit and gets a shorter default wall clock. Done when a child in its own session dies on cancel in a
-  test per descriptor and the auto-start test skips the unmeasured profile.
-- **GR17 — the outcome rules hold for docket too** (Sonnet · M). On `done`, the diff of the branch
-  docket returns enters the evidence like a local agent's, so the Planner rule, the "changed nothing"
-  rule and GR9 see the same thing. Done when, with the fake docket, a Planner that edits `src/` is
-  Failed, a `done` run with no diff is Failed, and a run touching `tests/` is flagged.
-
-**Round 4 — production and the loop back** (EDD-2 before EDD-3; C0-3 before EDD-2):
-
-- **EDD-2 — quality figures by window** (Sonnet · M). `GET /api/metrics` gains success rate,
-  first-pass acceptance, rework per item, revert after merge, the verifier's agreement with the
-  person's review and the pull request's fate, pass^k of recurring tasks, questions per hundred actions
-  with the fraction granted, and stops by reason, cut by profile, harness, model, team and template
-  fingerprint; the Metrics page shows a Quality section. Done when fixtures give known rates and the
-  agreement matches a four-case hand table.
-- **EDD-3 — a trend reaches the inbox** (Sonnet · S). One notification rule: the last seven days
-  against the previous twenty-eight, Wilson intervals, a "needs attention" notification only when they
-  do not overlap, evaluated once a day. Done when a synthetic drop notifies once and no drop notifies
-  nothing.
-- **EDD-4 — `promote`** (Sonnet · S). From a rejected or reverted attempt: a git bundle at the base
-  commit, the item and its brief, the person's reason and a pointer to the evidence, anonymised, into a
-  git-ignored candidates folder (with docket's task fields when the run was docket's). Done when a
-  fixture attempt yields a candidate with no secret, home path or real name, and `check-solutions`
-  refuses it until a person adds the hidden checks and the reference solution.
-- **C4-1 — cleanup with conditions** (Haiku · S). `subtasks-from-plan` and the `ItemSource::Plan`
-  texts take the catalog's words (the `plan-v1` field stays); the `status_map_policy_id` and
-  `[provider]` compatibility shims go. Done when the greps are empty. Built: L8 in Phase 94, L6 in
-  Phase 95 (without waiting for the release).
-
-Left out on purpose, listed under "Future, not planned": a calibrated model judge, the OTel
-`gen_ai.evaluation.result` export, a Harbor or Terminal-Bench adapter, a hash-chained log, seccomp in
-the sandbox, a rate limit per credential.
+- **Tagging `v0.2.0-beta.1`** is the maintainer's own step and not a card.
+- **The verifier suite's labels.** A person confirms the thirty cases, about an hour
+  (`tack-evals verifier-labels`; see [`evals/README.md`](https://github.com/yielab/tack/blob/develop/evals/README.md)).
+  Until then the verifier figure is provisional.
+- **Baselines for Codex, opencode and docket.** Only Claude Code with Haiku 5.5 has them
+  (`evals/baselines/`), and both suites are saturated for that model. Codex waits on the maintainer's own
+  Codex model setting; opencode now starts inside the sandbox when it is installed by Homebrew.
+- **Two recordings to retake.** `agents-flow.gif` needs a Codex run (same wait) and
+  `recovery-demo.gif` needs a released build. Neither is shown in the README or the book.
 
 ## Future, not planned
 
@@ -431,8 +105,8 @@ can come back as a card of its own.
 - Directives learnt from a person's corrections (ADR 0020, decision 6): Tack depends on no
   verifier, and the feature waited on a contract from one. The reasons a person gives stay
   stored (ADR 0013, decision 7).
-- Measuring docket's polling, and the retakes of `agents-flow.gif` and `recovery-demo.gif`. The
-  outdated `agents.png` and the two desktop screenshots were removed instead of retaken.
+- Measuring docket's polling. The outdated `agents.png` and the two desktop screenshots were removed
+  instead of retaken.
 - Limits that stay as limits, each shown in the product with its reason: only docket stops a run at
   its token limit; the tokens a verifier spends count whole, cache included; only docket reports a
   running agent's steps on its timeline; a team's pending memory reaches the inbox in about five
@@ -446,11 +120,47 @@ can come back as a card of its own.
 
 ## Delivered
 
-Phases 73 to 87, newest first. The detail is in each phase's plan under
+Phases 73 to 95, newest first. The detail is in each phase's plan under
 [`docs/closed-cycles/plans/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/plans),
 each decision in its ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr),
 and what a user can now do in the [changelog](https://github.com/yielab/tack/blob/develop/CHANGELOG.md).
 
+- **Phase 95 — no dollar figure, docket's team search, and the tree cleaned.** No plan file, no ADR
+  (ADR 0024 has a dated note). Tack shows tokens by model and nowhere a price: the rate card, the priced
+  metrics and every harness's reading of its own cost are gone. When docket lists `search`, the team
+  sheet shows the team's provider, whether it is ready and the docket command that makes it ready;
+  Tack never switches it, so the key stays on docket's computer. The answers Tack kept for its own
+  removed settings and for earlier builds, code no caller reached and unused frontend exports and
+  dependencies are deleted; a request to start a run refuses any key it does not know. The 35-test live
+  suite passes against docket `3caccedd`, and the screenshots were retaken on 2026-11-09.
+- **Phase 94 — the agent is contained the same way whatever runs it, and Tack measures what it
+  already labels.** No ADR (ADR 0013 and ADR 0018's decisions 11 and 12 are amended where their text
+  became false).
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/plans/evals-y-guardrails-2026-11-06.es.md),
+  [audit](https://github.com/yielab/tack/blob/develop/docs/audits/evals-y-guardrails-2026-11-06.es.md).
+  Claude Code, Codex and opencode run inside the runner's sandbox, and a run with no sandbox asks
+  before each action; docket's own jail is asked about and a silent docket is read as the strictest.
+  Web access is a mode per profile (`closed`, `listed` or `open`, with an editor for the listed hosts),
+  enforced when the operator turns on `[egress] enforce`; the install step runs inside the sandbox; a
+  parity test fails when a harness lacks a rule without a stated reason. The automatic merge holds on an
+  unknown team ceiling and on changed checks, a merge over a `reject` needs a written reason that is kept
+  even when the attempt was already reviewed, and `tack mcp` refuses without an agent credential. A
+  Reviewer profile's verdict is kept with the run it reviewed and counted in the verifier figure. The
+  development crate `tack-evals` runs a regression suite, a safety suite and a verifier suite;
+  production shows quality figures and a notice when a trend turns. The live suite passed (35 tests)
+  against docket `f8dd565e`.
+- **Phase 93 — an item is a group or work.** ADR 0036, amended with decisions 10 to 13.
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-93.md). A project's types are a
+  catalog (Settings → Types) in which each type holds work or is work, and one rule for the tree serves
+  every parent. A group is planned and work runs; a role on an epic routes its tasks. The Board has
+  lanes, the List is the tree and moves an item under another parent, and the Timeline, the Dashboard
+  and Orchestration read the same facts, so an epic no longer counts as a task. The saved boards are
+  gone. The 35-test live suite passed after it, in Phases 94 and 95.
+- **Phase 92 — a question is answered in one place.** No plan file, no ADR. A pending question is
+  one piece: the question, the choices with the recommended one first and marked once, the field where
+  you write named "Your answer" and opening under the choice it belongs to, and one **Send answer**
+  button, with Decline as a plain secondary action. Approvals and inputs read alike, and the tutorial's
+  screenshot was retaken on 2026-11-09.
 - **Phase 91 — what docket offers, Tack uses or says why not.** No ADR of its own (it amends ADR 0034's note
   on `conversation` and ADR 0035's decision 1). docket 0.3.0-beta.1 lists 21 features and Tack used 16.
   A thread on a docket team continues one task turn by turn, and the conversation ends by docket's own
@@ -462,6 +172,12 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   profile that does not change code can run on a team that delivers a report. docket's read-only token
   is not used: every call goes through the runner, which holds the full token. Tack names docket
   0.3.0-beta.1 (the release docket declares) instead of a version never tagged.
+- **Phase 90 — a run is never refused for a contradiction Tack wrote itself.** No plan file, no ADR.
+  One rule gives a profile's default network for an agent, read by the run's creation, auto-start and
+  the Run dialog, so the built-in Researcher, Planner and Reviewer no longer ask for web tools and no
+  network at once; Web tools off takes the tools out of a Claude Code run instead of refusing it, and
+  opencode, which always reaches the network, shows the box on and disabled with that reason. A refused
+  run reads **Not started** on every chip.
 - **Phase 89 — the board orchestrates and a team declares what it accepts.** ADR 0036. One owner per
   concept: the board decides what is done and by whom, the team decides how. One router
   (`GET /api/projects/{id}/routing`) serves Flow, Map and the item page; a parent card reads how many
