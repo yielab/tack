@@ -2300,7 +2300,7 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\nenv > '{}/env.txt'\nexec sleep 30\n",
+            "#!/bin/sh\nenv > '{}/env.txt'\n[ \"$2\" = --help ] && exit 0\nexec sleep 30\n",
             dir.path().display()
         ),
     )
@@ -2317,7 +2317,7 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
         ]),
         ..DocketConfig::default()
     };
-    let explicit: std::collections::BTreeSet<String> = daemon::command(&config)
+    let explicit: std::collections::BTreeSet<String> = daemon::command(&config, true)
         .get_envs()
         .map(|(name, _)| name.to_string_lossy().into_owned())
         .collect();

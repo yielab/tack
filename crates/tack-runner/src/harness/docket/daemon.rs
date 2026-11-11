@@ -4,6 +4,10 @@
 //! someone else runs. A daemon this runner started is restarted with a
 //! backoff when it exits, and gets one `SIGTERM` when the runner shuts down:
 //! docket finishes the task it is running and claims no other.
+//!
+//! A docket whose `start --help` lists `--foreground` gets that flag: without
+//! it, that docket installs an OS service and returns at once, and the runner
+//! must stay the one supervising the process. An older docket blocks without it.
 
 use std::{
     path::{Path, PathBuf},
@@ -94,13 +98,14 @@ pub async fn describe(config: &DocketConfig) -> Result<String, String> {
     })
 }
 
-/// `docket start --dispatch ...` with an environment of `PATH`, `HOME` and,
-/// when `[docket].home` is set, `DOCKET_HOME`: nothing else the runner holds
-/// reaches the daemon.
-pub fn command(config: &DocketConfig) -> std::process::Command {
-    // A configured path wins as written; a bare name (or none) is looked for
-    // in the same places as every other agent.
-    let program = match config.binary.clone() {
+/// How long `docket start --help` may take before the runner starts docket
+/// without `--foreground`.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The docket program: a configured path wins as written; a bare name (or
+/// none) is looked for in the same places as every other agent.
+fn program(config: &DocketConfig) -> PathBuf {
+    match config.binary.clone() {
         Some(binary) if binary.components().count() > 1 => binary,
         named => {
             let name = named.unwrap_or_else(|| PathBuf::from("docket"));
@@ -108,14 +113,11 @@ pub fn command(config: &DocketConfig) -> std::process::Command {
                 .and_then(|name| super::super::locate::locate(name, &config.process).ok())
                 .unwrap_or(name)
         }
-    };
-    let mut command = std::process::Command::new(program);
-    command
-        .args(["start", "--dispatch", "--bind", "127.0.0.1", "--port"])
-        .arg(config.port.to_string());
-    if let Some(file) = &config.token_file {
-        command.arg("--token-file").arg(file);
     }
+}
+
+/// Only `PATH`, `HOME` and, when `[docket].home` is set, `DOCKET_HOME`.
+fn environment(config: &DocketConfig, command: &mut std::process::Command) {
     command.env_clear();
     for name in ["PATH", "HOME"] {
         if let Some(value) = config.process.var_os(name) {
@@ -125,16 +127,57 @@ pub fn command(config: &DocketConfig) -> std::process::Command {
     if let Some(home) = &config.home {
         command.env("DOCKET_HOME", home);
     }
+}
+
+/// Whether this docket's `start --help` lists `--foreground`. Asked before
+/// every start, so a docket reinstalled while the runner runs is started the
+/// way it expects.
+pub async fn knows_foreground(config: &DocketConfig) -> bool {
+    let mut probe = std::process::Command::new(program(config));
+    probe
+        .args(["start", "--help"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    environment(config, &mut probe);
+    let mut probe = tokio::process::Command::from(probe);
+    probe.kill_on_drop(true);
+    match tokio::time::timeout(PROBE_TIMEOUT, probe.output()).await {
+        Ok(Ok(output)) => String::from_utf8_lossy(&output.stdout).contains("--foreground"),
+        _ => false,
+    }
+}
+
+/// `docket start [--foreground] --dispatch ...` with an environment of `PATH`,
+/// `HOME` and, when `[docket].home` is set, `DOCKET_HOME`: nothing else the
+/// runner holds reaches the daemon.
+pub fn command(config: &DocketConfig, foreground: bool) -> std::process::Command {
+    let mut command = std::process::Command::new(program(config));
+    command.arg("start");
+    if foreground {
+        command.arg("--foreground");
+    }
+    command
+        .args(["--dispatch", "--bind", "127.0.0.1", "--port"])
+        .arg(config.port.to_string());
+    if let Some(file) = &config.token_file {
+        command.arg("--token-file").arg(file);
+    }
+    environment(config, &mut command);
     command
 }
 
-fn spawn(config: &DocketConfig, log_dir: &Path) -> std::io::Result<tokio::process::Child> {
+fn spawn(
+    config: &DocketConfig,
+    foreground: bool,
+    log_dir: &Path,
+) -> std::io::Result<tokio::process::Child> {
     std::fs::create_dir_all(log_dir)?;
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(log_dir.join(LOG_FILE))?;
-    let mut command = command(config);
+    let mut command = command(config, foreground);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone()?))
@@ -178,7 +221,8 @@ async fn supervise(
     let mut first = Some(first);
     let mut delay = options.backoff;
     while !shared.stopping.load(Ordering::SeqCst) {
-        let mut child = match spawn(&config, &log_dir) {
+        let foreground = knows_foreground(&config).await;
+        let mut child = match spawn(&config, foreground, &log_dir) {
             Ok(child) => child,
             Err(error) => {
                 tracing::warn!(%error, "the docket daemon could not be started");

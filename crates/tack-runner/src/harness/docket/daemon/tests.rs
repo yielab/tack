@@ -15,12 +15,20 @@ h.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()"#;
 
 /// A `docket` that records each start, answers `/health` 0.3 s later, exits
 /// when `die.<n>` appears (n = which start it is) and records a `SIGTERM`.
-fn fake_docket(dir: &Path) -> std::path::PathBuf {
+/// Its `start --help` lists `--foreground` only when `foreground` is set,
+/// like the docket that installs an OS service unless told not to.
+fn fake_docket_with(dir: &Path, foreground: bool) -> std::path::PathBuf {
     let script = dir.join("docket");
+    let help = if foreground {
+        "--foreground  Run in this process"
+    } else {
+        "--dispatch  Also run each pod's queue"
+    };
     std::fs::write(
         &script,
         format!(
             r#"#!/bin/sh
+if [ "$2" = --help ]; then echo "{help}"; exit 0; fi
 echo "$@" >> "{dir}/starts"
 port=0
 while [ $# -gt 0 ]; do
@@ -44,6 +52,10 @@ done
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     script
+}
+
+fn fake_docket(dir: &Path) -> std::path::PathBuf {
+    fake_docket_with(dir, false)
 }
 
 fn free_port() -> u16 {
@@ -110,6 +122,29 @@ async fn spawned_once_restarted_once_and_sent_sigterm_on_shutdown() {
     assert_eq!(lines(dir.path().join("starts")), 2, "no third start");
     assert_eq!(lines(dir.path().join("signals")), 1, "one SIGTERM");
     assert!(!answers(port).await);
+}
+
+#[tokio::test]
+async fn a_docket_that_knows_foreground_is_started_in_the_foreground() {
+    let dir = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let config = DocketConfig {
+        binary: Some(fake_docket_with(dir.path(), true)),
+        port,
+        home: Some(dir.path().join("home")),
+        ..DocketConfig::default()
+    };
+    let handle = ensure_running_with(&config, &dir.path().join("logs"), quick()).await;
+    assert!(answers(port).await);
+    let first_line = std::fs::read_to_string(dir.path().join("starts")).unwrap();
+    assert!(
+        first_line.starts_with(&format!(
+            "start --foreground --dispatch --bind 127.0.0.1 --port {port}"
+        )),
+        "{first_line}"
+    );
+    handle.shutdown().await;
+    assert_eq!(lines(dir.path().join("signals")), 1, "one SIGTERM");
 }
 
 #[tokio::test]
