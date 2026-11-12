@@ -318,7 +318,7 @@ docket on this runner. A `docket` program on the `PATH` does not count.
 home = "/home/me/.docket"      # the daemon's DOCKET_HOME; docket's own default when unset
 port = 7399                    # where the daemon listens, on 127.0.0.1
 token_file = "/home/me/.docket/token"   # the daemon's bearer token
-binary = "docket"              # starts `docket start --dispatch` with the runner
+binary = "docket"              # the runner starts `docket start --foreground` with it
 # base_url = "http://127.0.0.1:7399"   # a daemon someone else runs; the runner starts nothing
 ```
 

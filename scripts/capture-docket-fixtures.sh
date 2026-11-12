@@ -9,8 +9,9 @@
 # no provider key and an unreachable proxy, so nothing is spent. It declares one read-only
 # sandbox grant on a folder it makes under its scratch folder (`docket setup sandbox read add`)
 # and sets the lights-out team's `readOnly` to none, so one capture shows a team that keeps the
-# machine's grant and one that narrowed it away. It starts with `--dispatch`
-# the way Tack starts it. The tasks it queues are refused at claim by an unknown pipeline, before
+# machine's grant and one that narrowed it away. It starts docket the way Tack's runner does:
+# `--foreground` (a recent docket installs a service without it) and `--dispatch` only while
+# `docket start --help` lists it. The tasks it queues are refused at claim by an unknown pipeline, before
 # any agent turn, with two exceptions that still run no model: one enqueue a team policy of the
 # throwaway home holds for approval (a pending escalation, then answered), and one task at L5 on
 # the lights-out team whose pipeline has an approval step, which docket fails at once with
@@ -97,9 +98,26 @@ BASE=http://127.0.0.1:$PORT
 TOKEN_FILE=$SCRATCH/token
 CURL_AUTH=$SCRATCH/curl-auth
 
-say "starting docket start --dispatch on :$PORT (scratch $SCRATCH)"
+# The flags the runner gives this docket: the options `start --help` lists under "Options", not
+# its prose, which names flags too. A help that lists no --port is not one this can read.
+OPTIONS=$("${DOCKET_ENV[@]}" "$DOCKET_BIN" start --help 2>/dev/null </dev/null | awk '
+  /Options/ { on = 1; next }
+  on {
+    sub(/^[[:space:]│]+/, "")
+    for (i = 1; i <= NF; i++) {
+      if ($i !~ /^-/) break
+      sub(/,$/, "", $i); n = split($i, part, "/")
+      for (j = 1; j <= n; j++) print part[j]
+    }
+  }' || true)
+grep -qx -- --port <<<"$OPTIONS" || die "cannot read the options of \`$DOCKET_BIN start --help\`"
+grep -qx -- --foreground <<<"$OPTIONS" || die "this docket has no --foreground: without it a recent docket installs a service, so this script will not start it"
+START_FLAGS=(--foreground)
+grep -qx -- --dispatch <<<"$OPTIONS" && START_FLAGS+=(--dispatch)
+
+say "starting docket start ${START_FLAGS[*]} on :$PORT (scratch $SCRATCH)"
 guard
-"${DOCKET_ENV[@]}" "$DOCKET_BIN" start --dispatch --bind 127.0.0.1 --port "$PORT" --token-file "$TOKEN_FILE" \
+"${DOCKET_ENV[@]}" "$DOCKET_BIN" start "${START_FLAGS[@]}" --bind 127.0.0.1 --port "$PORT" --token-file "$TOKEN_FILE" \
   </dev/null >"$SCRATCH/daemon.log" 2>&1 &
 DAEMON_PID=$!
 

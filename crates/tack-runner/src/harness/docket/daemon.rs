@@ -1,4 +1,4 @@
-//! The docket daemon the runner keeps beside it: `docket start --dispatch`
+//! The docket daemon the runner keeps beside it: `docket start --foreground`
 //! listening on loopback. The runner looks at `GET /health` first and spawns
 //! nothing when something already answers, or when `base_url` names a daemon
 //! someone else runs. A daemon this runner started is restarted with a

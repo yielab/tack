@@ -38,7 +38,7 @@ Claude Code names the model `claude-haiku-5-5`; opencode and docket name the pro
 agent's own, which touches nothing of the operator's (`DOCKET_HOME` and `HOME` are directories of
 the world, the port is the kernel's). It adds the Anthropic provider from the key in
 `ANTHROPIC_API_KEY`, pins every role and the default to `--model`, turns docket's sandbox on, starts
-`docket start --dispatch` and makes one team (`repo`, docket's default `build` shape: a lead and
+docket in the world's process (with the flags the runner would give it) and makes one team (`repo`, docket's default `build` shape: a lead and
 an implementer) over the world's repository, which the profile names; the project works in a branch
 of the folder, as docket's runs do. The key rests only in docket's own owner-only store inside the
 world and is removed when the world stops. A job docket's team cannot do (a Planner, for a team

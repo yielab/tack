@@ -7,7 +7,7 @@ blueprints, `workspaceKind`, `blueprint`, `pipeline.steps`, and the team's contr
 and shape), source checkout `2ce62d69`, on 2026-11-04. The directory keeps the name `v5` from the
 first capture; the answers say `apiVersion: "6"`.
 
-`scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a
+`scripts/capture-docket-fixtures.sh` makes them. It starts docket the way the runner does in a
 throwaway `HOME` and `DOCKET_HOME` under `/var/tmp`, with no model, no provider key and an
 unreachable proxy, and sends every request Tack's docket client sends. It refuses to run when
 `DOCKET_HOME` is unset or is `~/.docket`, and stops when `GET /status.json` does not answer

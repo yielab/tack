@@ -113,7 +113,7 @@ run for docket to send it) and answers `400` to a request key no captured reques
 `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway
 home with no model (rerun it when docket changes, and commit the diff).
 `scripts/compare-constructed-docket-fixtures.py` checks the `constructed` ones: it runs docket's own
-end-to-end world (a real `docket start --dispatch` and git repository, a scripted model on loopback,
+end-to-end world (a real `docket start --foreground` and git repository, a scripted model on loopback,
 nothing spent) and compares the keys of a finished task, a running one, the task list and its
 cursor, a consult of several questions and the hop events with what the fixtures hold. `tests/docket_api.rs`
 fails when a route the client sends has no capture, and the daemon's supervision is proved

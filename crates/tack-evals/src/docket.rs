@@ -125,9 +125,20 @@ impl Docket {
 
         let port = free_port()?;
         let log = dir.join("daemon.log");
-        let mut start = docket(&[
-            "start",
-            "--dispatch",
+        // The flags the runner gives this docket: `--foreground` keeps it in this process
+        // instead of an OS service, and `--dispatch` goes only to a docket that still lists it.
+        let help = run(docket(&["start", "--help"]), "docket start --help")?;
+        let options = start_options(&help);
+        if !options.contains(&"--port") {
+            bail!("cannot read the options of `docket start --help`");
+        }
+        let mut start = docket(&["start"]);
+        for flag in ["--foreground", "--dispatch"] {
+            if options.contains(&flag) {
+                start.arg(flag);
+            }
+        }
+        start.args([
             "--bind",
             "127.0.0.1",
             "--port",
@@ -215,6 +226,22 @@ pub fn refusal(attempt: &Value) -> Option<String> {
 
 /// Runs a docket command; its output comes back, and its failure names it (never the
 /// environment, which holds the key).
+/// The options `docket start --help` lists under its "Options" heading, the way the runner
+/// reads them (its `StartFlags`, which this crate may not depend on): the prose above names
+/// flags too and does not count.
+fn start_options(help: &str) -> Vec<&str> {
+    help.lines()
+        .skip_while(|line| !line.contains("Options"))
+        .skip(1)
+        .flat_map(|line| {
+            line.trim_start_matches(|c: char| c.is_whitespace() || c == '│')
+                .split_whitespace()
+                .map_while(|word| word.starts_with('-').then(|| word.trim_end_matches(',')))
+                .flat_map(|word| word.split('/'))
+        })
+        .collect()
+}
+
 fn run(mut command: Command, what: &str) -> Result<String> {
     let output = command.output().with_context(|| format!("run {what}"))?;
     if !output.status.success() {
@@ -239,6 +266,13 @@ fn free_port() -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_start_options_are_the_listed_ones_not_the_prose() {
+        let help = " --dispatch also runs every pod's queue\n Example: docket start --dispatch\n\
+                    ╭─ Options ─╮\n│ --port  -p  <int>  Port │\n│ --foreground  <bool>  Here │\n";
+        assert_eq!(start_options(help), ["--port", "-p", "--foreground"]);
+    }
 
     #[test]
     fn a_run_docket_never_got_is_a_refusal_with_its_reason() {

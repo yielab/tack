@@ -276,7 +276,7 @@ Add a `[docket]` table to the runner's settings file. Naming the program is enou
 
 ```toml
 [docket]
-binary = "docket"              # starts `docket start --dispatch` with the runner
+binary = "docket"              # the runner starts `docket start --foreground` with it
 # base_url = "http://127.0.0.1:7399"   # or: a daemon someone else runs; the runner starts nothing
 ```
 
@@ -293,16 +293,21 @@ runner from starting a second daemon next to one you run yourself.
 
 When the runner does start it:
 
-- The command is `docket start --dispatch --bind 127.0.0.1 --port <port>`, with `--token-file` when
-  you set one.
+- The command is `docket start --foreground --bind 127.0.0.1 --port <port>`, with `--token-file` when
+  you set one. The runner asks `docket start --help` before each start and passes only what this
+  docket lists: an older docket that has no `--foreground` gets none, and one that still has
+  `--dispatch` gets it too. `--foreground` keeps docket in the runner's care; without it a recent
+  docket installs its own service instead.
 - The daemon's environment is `PATH`, `HOME` and, if you set `home`, `DOCKET_HOME`. Nothing else the
   runner holds reaches it.
 - Its output goes to `<state dir>/logs/docket-daemon.log`.
 - If it exits, the runner restarts it after 2 seconds, then 4, 8 and so on up to a minute. A daemon
   that stays up for more than 30 seconds starts the wait over.
+- When docket starts, its log names the pending tasks and due routines it is about to run.
+- The token in the token file survives docket's restarts; delete the file to get a new one.
 - When the runner stops, it sends the daemon one `SIGTERM` and waits five seconds. docket finishes
-  the task it is running and takes no new one, on its own time. A daemon the runner did not start is
-  left alone.
+  the task it is running and takes no new one, on its own time, and is gone within about 20 seconds.
+  A daemon the runner did not start is left alone.
 - The daemon runs in its own process group, so a Ctrl-C meant for the runner does not stop it. After
   a hard crash of the runner a daemon may still be running; the next start finds it healthy and
   uses it.

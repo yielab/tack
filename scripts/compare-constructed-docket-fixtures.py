@@ -4,7 +4,7 @@
 `scripts/capture-docket-fixtures.sh` records what docket answers with no model, so the answers
 docket sends only while a model runs (a finished task, a task running, a question of a consult
 with several parts, a hop's trace events) stay hand-built from its spec. This script runs the
-docket checkout's own end-to-end world (`tests/support/e2e.py`: a real `docket start --dispatch`
+docket checkout's own end-to-end world (`tests/support/e2e.py`: a real `docket start --foreground`
 in a scratch home, a real git repository, and a scripted model on loopback, so nothing is spent),
 reads those answers over HTTP and compares the keys of each with the fixture that stands for it:
 
