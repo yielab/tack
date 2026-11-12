@@ -3,7 +3,7 @@
 
 use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
-use super::{Options, ensure_running_with};
+use super::{Options, StartFlags, ensure_running_with};
 use crate::config::DocketConfig;
 
 const PYTHON_HEALTH: &str = r#"import sys, http.server as h
@@ -15,20 +15,20 @@ h.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()"#;
 
 /// A `docket` that records each start, answers `/health` 0.3 s later, exits
 /// when `die.<n>` appears (n = which start it is) and records a `SIGTERM`.
-/// Its `start --help` lists `--foreground` only when `foreground` is set,
-/// like the docket that installs an OS service unless told not to.
-fn fake_docket_with(dir: &Path, foreground: bool) -> std::path::PathBuf {
+/// Its `start --help` lists `--port` and `options`.
+fn fake_docket_with(dir: &Path, options: &[&str]) -> std::path::PathBuf {
     let script = dir.join("docket");
-    let help = if foreground {
-        "--foreground  Run in this process"
-    } else {
-        "--dispatch  Also run each pod's queue"
-    };
+    let help = ["Options:", "--port"]
+        .into_iter()
+        .chain(options.iter().copied())
+        .map(|option| format!("  {option}  what it does"))
+        .collect::<Vec<_>>()
+        .join("\n");
     std::fs::write(
         &script,
         format!(
             r#"#!/bin/sh
-if [ "$2" = --help ]; then echo "{help}"; exit 0; fi
+if [ "$2" = --help ]; then printf '%s\n' "{help}"; exit 0; fi
 echo "$@" >> "{dir}/starts"
 port=0
 while [ $# -gt 0 ]; do
@@ -55,7 +55,7 @@ done
 }
 
 fn fake_docket(dir: &Path) -> std::path::PathBuf {
-    fake_docket_with(dir, false)
+    fake_docket_with(dir, &["--dispatch"])
 }
 
 fn free_port() -> u16 {
@@ -125,11 +125,11 @@ async fn spawned_once_restarted_once_and_sent_sigterm_on_shutdown() {
 }
 
 #[tokio::test]
-async fn a_docket_that_knows_foreground_is_started_in_the_foreground() {
+async fn a_docket_that_runs_its_queues_by_itself_is_started_in_the_foreground_without_dispatch() {
     let dir = tempfile::tempdir().unwrap();
     let port = free_port();
     let config = DocketConfig {
-        binary: Some(fake_docket_with(dir.path(), true)),
+        binary: Some(fake_docket_with(dir.path(), &["--foreground"])),
         port,
         home: Some(dir.path().join("home")),
         ..DocketConfig::default()
@@ -139,7 +139,7 @@ async fn a_docket_that_knows_foreground_is_started_in_the_foreground() {
     let first_line = std::fs::read_to_string(dir.path().join("starts")).unwrap();
     assert!(
         first_line.starts_with(&format!(
-            "start --foreground --dispatch --bind 127.0.0.1 --port {port}"
+            "start --foreground --bind 127.0.0.1 --port {port}"
         )),
         "{first_line}"
     );
@@ -175,4 +175,60 @@ async fn never_spawned_when_base_url_is_set_or_something_already_answers() {
     assert_eq!(lines(dir.path().join("starts")), 1);
     assert!(answers(port).await, "adopting then leaving stops nothing");
     running.shutdown().await;
+}
+
+/// The options part of `docket start --help` as docket prints it: the prose
+/// above names flags too, and only the list counts.
+const PROSE: &str = "
+ Usage: python -m docket start [OPTIONS]
+
+ --dispatch also runs every pod's queue (spends budget), --telegram polls the
+ Telegram bot, --foreground runs it here and blocks (no manager, no unit),
+
+ Example: docket start --dispatch
+";
+
+fn help(options: &[&str]) -> String {
+    let rows: String = options
+        .iter()
+        .map(|option| format!("│ {option:<22} <bool>  What it does.   │\n"))
+        .collect();
+    format!("{PROSE}╭─ Options ─╮\n│ --port        -p      <int>  Port to bind │\n{rows}╰───╯\n")
+}
+
+#[test]
+fn the_start_flags_follow_the_options_docket_lists_not_its_prose() {
+    let both = StartFlags {
+        foreground: true,
+        dispatch: true,
+    };
+    assert_eq!(
+        StartFlags::from_help(&help(&["--dispatch"])),
+        StartFlags::UNASKED
+    );
+    assert_eq!(
+        StartFlags::from_help(&help(&["--dispatch", "--foreground"])),
+        both
+    );
+    assert_eq!(
+        StartFlags::from_help(&help(&["--foreground"])),
+        StartFlags {
+            foreground: true,
+            dispatch: false,
+        },
+        "the prose still names --dispatch"
+    );
+    assert_eq!(
+        StartFlags::from_help(
+            "Options:\n  --port INTEGER\n  --dispatch / --no-dispatch\n  -f, --foreground\n"
+        ),
+        both,
+        "click's plain list"
+    );
+    assert_eq!(StartFlags::from_help(""), StartFlags::UNASKED);
+    assert_eq!(
+        StartFlags::from_help(PROSE),
+        StartFlags::UNASKED,
+        "a help with no --port is not read"
+    );
 }

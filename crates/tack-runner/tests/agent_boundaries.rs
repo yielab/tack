@@ -2317,10 +2317,11 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
         ]),
         ..DocketConfig::default()
     };
-    let explicit: std::collections::BTreeSet<String> = daemon::command(&config, true)
-        .get_envs()
-        .map(|(name, _)| name.to_string_lossy().into_owned())
-        .collect();
+    let explicit: std::collections::BTreeSet<String> =
+        daemon::command(&config, daemon::StartFlags::UNASKED)
+            .get_envs()
+            .map(|(name, _)| name.to_string_lossy().into_owned())
+            .collect();
     assert!(
         explicit.is_subset(&["PATH", "HOME", "DOCKET_HOME"].map(String::from).into()),
         "{explicit:?}"

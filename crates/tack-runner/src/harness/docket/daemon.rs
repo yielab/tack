@@ -5,9 +5,11 @@
 //! backoff when it exits, and gets one `SIGTERM` when the runner shuts down:
 //! docket finishes the task it is running and claims no other.
 //!
-//! A docket whose `start --help` lists `--foreground` gets that flag: without
-//! it, that docket installs an OS service and returns at once, and the runner
-//! must stay the one supervising the process. An older docket blocks without it.
+//! The flags follow what `docket start --help` lists in its options: a docket
+//! that lists `--foreground` gets it (without it, that docket installs an OS
+//! service and returns at once, and the runner must stay the one supervising
+//! the process), and `--dispatch` is passed only while docket lists it (a
+//! later docket always runs the queues and refuses the flag).
 
 use std::{
     path::{Path, PathBuf},
@@ -99,11 +101,11 @@ pub async fn describe(config: &DocketConfig) -> Result<String, String> {
 }
 
 /// How long `docket start --help` may take before the runner starts docket
-/// without `--foreground`.
+/// as it did before it asked.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The docket program: a configured path wins as written; a bare name (or
-/// none) is looked for in the same places as every other agent.
+/// The program: a configured path wins as written; a bare name (or none) is
+/// looked for in the same places as every other agent.
 fn program(config: &DocketConfig) -> PathBuf {
     match config.binary.clone() {
         Some(binary) if binary.components().count() > 1 => binary,
@@ -129,10 +131,52 @@ fn environment(config: &DocketConfig, command: &mut std::process::Command) {
     }
 }
 
-/// Whether this docket's `start --help` lists `--foreground`. Asked before
-/// every start, so a docket reinstalled while the runner runs is started the
-/// way it expects.
-pub async fn knows_foreground(config: &DocketConfig) -> bool {
+/// The `docket start` flags that depend on which docket is installed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StartFlags {
+    /// Run in the runner's process instead of installing an OS service.
+    pub foreground: bool,
+    /// Ask for the pods' queues to run; a later docket always runs them.
+    pub dispatch: bool,
+}
+
+impl StartFlags {
+    /// The line the runner used before it asked docket: right for a docket
+    /// whose help could not be read.
+    pub const UNASKED: Self = Self {
+        foreground: false,
+        dispatch: true,
+    };
+
+    /// The flags from `docket start --help`. Only the rows under its
+    /// "Options" heading count, not prose or examples that name a flag; a help that lists no `--port`
+    /// is not one the runner can read, and gets [`Self::UNASKED`].
+    pub fn from_help(help: &str) -> Self {
+        let options: Vec<&str> = help
+            .lines()
+            .skip_while(|line| !line.contains("Options"))
+            .skip(1)
+            .flat_map(|line| {
+                line.trim_start_matches(|c: char| c.is_whitespace() || c == '│')
+                    .split_whitespace()
+                    .map_while(|word| word.starts_with('-').then(|| word.trim_end_matches(',')))
+                    .flat_map(|word| word.split('/'))
+            })
+            .collect();
+        let lists = |flag: &str| options.contains(&flag);
+        if !lists("--port") {
+            return Self::UNASKED;
+        }
+        Self {
+            foreground: lists("--foreground"),
+            dispatch: lists("--dispatch"),
+        }
+    }
+}
+
+/// What this docket's `start --help` lists. Asked before every start, so a
+/// docket reinstalled while the runner runs is started the way it expects.
+pub async fn start_flags(config: &DocketConfig) -> StartFlags {
     let mut probe = std::process::Command::new(program(config));
     probe
         .args(["start", "--help"])
@@ -143,22 +187,25 @@ pub async fn knows_foreground(config: &DocketConfig) -> bool {
     let mut probe = tokio::process::Command::from(probe);
     probe.kill_on_drop(true);
     match tokio::time::timeout(PROBE_TIMEOUT, probe.output()).await {
-        Ok(Ok(output)) => String::from_utf8_lossy(&output.stdout).contains("--foreground"),
-        _ => false,
+        Ok(Ok(output)) => StartFlags::from_help(&String::from_utf8_lossy(&output.stdout)),
+        _ => StartFlags::UNASKED,
     }
 }
 
-/// `docket start [--foreground] --dispatch ...` with an environment of `PATH`,
-/// `HOME` and, when `[docket].home` is set, `DOCKET_HOME`: nothing else the
-/// runner holds reaches the daemon.
-pub fn command(config: &DocketConfig, foreground: bool) -> std::process::Command {
+/// `docket start [--foreground] [--dispatch] --bind 127.0.0.1 ...` with an
+/// environment of `PATH`, `HOME` and, when `[docket].home` is set,
+/// `DOCKET_HOME`: nothing else the runner holds reaches the daemon.
+pub fn command(config: &DocketConfig, flags: StartFlags) -> std::process::Command {
     let mut command = std::process::Command::new(program(config));
     command.arg("start");
-    if foreground {
+    if flags.foreground {
         command.arg("--foreground");
     }
+    if flags.dispatch {
+        command.arg("--dispatch");
+    }
     command
-        .args(["--dispatch", "--bind", "127.0.0.1", "--port"])
+        .args(["--bind", "127.0.0.1", "--port"])
         .arg(config.port.to_string());
     if let Some(file) = &config.token_file {
         command.arg("--token-file").arg(file);
@@ -169,7 +216,7 @@ pub fn command(config: &DocketConfig, foreground: bool) -> std::process::Command
 
 fn spawn(
     config: &DocketConfig,
-    foreground: bool,
+    flags: StartFlags,
     log_dir: &Path,
 ) -> std::io::Result<tokio::process::Child> {
     std::fs::create_dir_all(log_dir)?;
@@ -177,7 +224,7 @@ fn spawn(
         .create(true)
         .append(true)
         .open(log_dir.join(LOG_FILE))?;
-    let mut command = command(config, foreground);
+    let mut command = command(config, flags);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone()?))
@@ -221,8 +268,8 @@ async fn supervise(
     let mut first = Some(first);
     let mut delay = options.backoff;
     while !shared.stopping.load(Ordering::SeqCst) {
-        let foreground = knows_foreground(&config).await;
-        let mut child = match spawn(&config, foreground, &log_dir) {
+        let flags = start_flags(&config).await;
+        let mut child = match spawn(&config, flags, &log_dir) {
             Ok(child) => child,
             Err(error) => {
                 tracing::warn!(%error, "the docket daemon could not be started");
