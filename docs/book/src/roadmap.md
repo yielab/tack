@@ -38,6 +38,64 @@ Everything built is under Delivered. What is left:
 - **`recovery-demo.gif`** is recorded from a released build, so it follows the tag. It is not shown in the
   README or the book.
 
+### Cards from the recorded demo (2026-11-14)
+
+A recorded run of the whole flow, from an empty board to a small web service running on the machine,
+with docket on Claude Sonnet and Haiku, prill as the verifier and docket's traces in Langfuse, found
+three defects. Each card stands alone, and none waits on docket: where docket owns the fact, the card
+says what Tack does without it and what is asked of docket.
+
+**D1 — A commit names its item.** Every change a run leaves is a commit whose subject says nothing
+about the work. With a local agent the runner writes `Tack attempt <attempt id> on item <item id>`. With
+docket the subject is the first line of the task's `description`, which is the profile's instructions,
+so four different items left four commits called "Eres un ingeniero de software cuidadoso. Haz lo que
+pide el ítem en el…" and `git log` could not tell them apart. Tack already sends docket the item's
+title as `task.objective`, and docket does not use it for the commit.
+
+- The rule, for every agent: the subject is the item's title, cut at a word before 72 characters; the
+  body says `Tack attempt <attempt id> on item <item id>`, so the ids stay where a tool can read them.
+- Tack: the runner's own commit (the evidence commit of a local agent) follows the rule.
+- Asked of docket: take the subject from `task.objective` when the task has one, and from the first line
+  of the description otherwise. Until docket does, Tack changes nothing in what it sends: the profile's
+  instructions stay first, and moving the title into the prose would send it twice.
+- Done when: a run of Claude Code, Codex and opencode leaves a commit whose subject is the item's title
+  (a runner test per harness), and the live suite's code card shows it in the branch's log; with a docket
+  that follows the ask, the docket run does too.
+
+**D2 — A failed docket gate says why.** When an item's command check fails inside docket, the card
+says only `docket said: external gate fail: 'python3 -m pytest -q'`. The reason was in docket's own
+record: each step's `verify.outputTail` holds the last lines the command printed, already redacted. In the
+demo it said that three tests could not open a socket, and a person on the board could not see it; only
+the agent's summary, read from the database, did.
+
+- Tack reads `verify.outputTail` of the step whose gate failed and shows it on the Execution tab, under
+  the run's reason, in the same block prill's output tail uses in Checks, with its command and exit code.
+- The run's terminal reason carries the tail too, so the inbox, the CLI and the API say the same thing.
+- A tail is shown as docket sent it: Tack does not cut it again or try to read meaning into it.
+- Done when: the fake docket has a capture of a failed gate with its `outputTail`, a test asserts the tail
+  reaches the attempt's terminal reason, a screen test finds it on the Execution tab, and the live suite
+  has a card whose gate fails on purpose and shows the reason.
+
+**D3 — The jail and the verifier agree about localhost.** At network `none`, docket's jail forbids every
+`AF_INET` and `AF_INET6` socket with a seccomp filter, without a network namespace of its own, so
+`127.0.0.1` is forbidden too. prill runs the same commands in a container with network none, where
+loopback works. A test suite that starts a server on a local port, common in web projects, passes
+prill and fails docket's gate, and the run ends failed with no change kept. In the demo the fix the
+agent made was right and was lost twice for this reason.
+
+- Tack says it before the run: the run dialog's "What will happen" says, for a docket team without
+  network, "no network, not even localhost: tests that open a local port fail inside docket". It says so
+  from what docket reports, and drops the sentence once docket reports loopback.
+- Asked of docket: at network `none`, give the jail a network namespace with only a loopback
+  interface where the kernel allows it, keeping the seccomp filter where it does not, and report which one
+  applies in `features` (for example `jailLoopback`).
+- The onboarding skill measures it: when a repository's tests open sockets (an HTTP server, a test
+  client bound to a port), it says so in its findings, and the team's checks are written so that they
+  can pass inside docket.
+- Done when: the run preview's sentence is under a screen test for a docket profile without network, the
+  fake docket has a `features` capture with and without the loopback report, and the live suite has one
+  test that opens a local port inside a docket run and is expected to fail until docket reports loopback.
+
 ## Future, not planned
 
 Phase 76, status rules and the evals leftovers are the only ones. They have no date, no owner and
