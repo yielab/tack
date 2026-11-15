@@ -92,7 +92,10 @@ driver takes your side without a conflict and `.githooks/post-merge` regenerates
    `npm run lint:tokens` (no raw color literals; colors come from `--color-*` tokens) and
    `npm run build` (the entry bundle stays under 30 KB gzipped).
 6. **Update the docs and the changelog.** If you changed behaviour, configuration or the API, change
-   the matching docs in the same pull request and add a line under `[Unreleased]` in
+   the matching docs in the same pull request. The docs describe `develop` as it is, with no version
+   attached: write what Tack does, not since when or what it did before. Name a version only where a
+   reader needs it to act, such as the oldest docket Tack works with; release history belongs in
+   `CHANGELOG.md`, and what is next in the roadmap. Add a line under `[Unreleased]` in
    [CHANGELOG.md](CHANGELOG.md) (Added, Changed, Removed, Fixed or Security). The changelog is
    written by hand for someone upgrading: say what they can now do or what behaves differently, not
    which file moved. When you change an API response shape, update the frontend types and test mocks

@@ -123,7 +123,7 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 | Whether a team is paused | `paused` (always a bool) on every row of `GET /pods` and on `GET /pods/<pod>`, with `pausedReason` (`budget` today) while it is; only read when `podPause` is listed; no route clears it | `probe::paused`, `paused_team_line` |
 | What a team is doing | `GET /tasks/<pod>`, with `?updatedSince=<cursor>` when `taskCursor` is listed; the trace, as above, when `taskCurrent` is not | `activity::read` |
 
-docket 0.3.0-beta.1 lists 21 features, and the tree after it a 22nd (`memoryDecide`). Each name is a fact docket adds without moving the API version, and the adapter reads the key behind a name only from a docket that lists it, except where the key is absent from an older docket's answer anyway (marked "reads the key").
+docket lists its features in its health answer (`features`). Each name is a fact docket adds without moving the API version, and the adapter reads the key behind a name only from a docket that lists it, except where the key is absent from an older docket's answer anyway (marked "reads the key").
 
 | Feature | What it adds | Tack |
 |---|---|---|

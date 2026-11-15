@@ -294,7 +294,7 @@ not time the connection out.
 ## Docker
 
 Each release also publishes an image for `linux/amd64` at `ghcr.io/yielab/tack`, tagged with the release
-tag; a pre-release such as `v0.2.0-beta.1` has no `latest` tag. To build your own, a `Dockerfile` and
+tag; a pre-release (a tag with `-beta` or `-rc`) has no `latest` tag. To build your own, a `Dockerfile` and
 `docker-compose.yml` ship at the repo root. The image is a three-stage build (build the web UI, compile a
 static musl binary that embeds it, copy it onto a distroless base), producing a shell-less image barely
 larger than the binary. There is a single service and a single volume for the database and attachments.

@@ -42,7 +42,9 @@ Rules that history taught: never add a `Co-Authored-By` trailer (the history was
 2026-10-12 to remove 159 of them); never name a real project in a versioned file or a commit message (the history
 was rewritten on 2026-11-10 to remove one, so the fictional project is My SaaS); `CHANGELOG.md`'s `[Unreleased]` is written by hand in the
 change that makes it true; the book is three guides (User, Administrator, Developer) and the
-first two carry no source paths, test names or phase numbers. Decisions go in an ADR, intent in
+first two carry no source paths, test names or phase numbers. The docs describe `develop` with no version attached:
+never "since vX", "new in", "used to"; a version is named only where a reader needs it to act (the oldest
+docket Tack works with, upgrading), the next release only in the roadmap, history only in `CHANGELOG.md`. Decisions go in an ADR, intent in
 the roadmap, history in commits. A change to what the agent reads or receives names its suite, its threshold and its baseline, and writes the task first when none captures it. A phase closes on `regression` with no new reds plus the live suite.
 
 ## Commands

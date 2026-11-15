@@ -99,8 +99,8 @@ offers; see [CLI](cli.md#runner).
   setting, your token limit, its type and priority, and the acceptance criteria that name a command or a
   test, which become the team's gate. A team that needs a person during a run limits how far Tack may merge
   its work by itself: see [The ceiling](automation.md#ceiling). The administrator sets up docket on
-  the runner and needs docket 0.3.0-beta.1 or later; see
-  [Installing and Operating Runners](../admin-guide/runners.md).
+  the runner, with the docket version that guide names; see
+  [Installing and Operating Runners](../admin-guide/runners.md#docket-teams).
 
 ---
 

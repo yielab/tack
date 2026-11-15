@@ -29,13 +29,10 @@ automatically; every step under "Publish list" is a human action.
    ```bash
    git push origin develop:main && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-   **The next tag is `v0.2.0-beta.1`.** The version is bumped in `Cargo.toml`, the desktop crate,
-   `tauri.conf.json`, `frontend/package.json` and their lockfiles, and `CHANGELOG.md` has its
-   section. The last published release is `v0.1.0-beta.9`. The `v0.1.0-beta.10` tag points at
-   `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the repository does not
-   allow, so its run failed before it started and no release exists. It is not re-cut: its changes ship
-   in `v0.2.0-beta.1`. Until that release is published the install commands in `README.md` install
-   `v0.1.0-beta.9`.
+   Before the tag, the version is bumped in `Cargo.toml`, the desktop crate, `tauri.conf.json`,
+   `frontend/package.json` and their lockfiles, and `CHANGELOG.md`'s `[Unreleased]` section is renamed
+   to that version with its date. Which release is next is in the roadmap's "Open" section. Until a
+   release is published, the install commands in `README.md` install the last published one.
 
    `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs, signs
    `SHA256SUMS` with cosign, attests build provenance, opens the Homebrew pull request (step 3) and
@@ -52,7 +49,7 @@ automatically; every step under "Publish list" is a human action.
    `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing else
    updates them:
    ```bash
-   scripts/sync-packaging.sh v0.2.0-beta.1   # then commit the diff
+   scripts/sync-packaging.sh vX.Y.Z   # then commit the diff
    ```
    Until this runs they point at the previous release. A wrong digest is not a soft failure:
    Homebrew and `makepkg` abort with a hash mismatch, which reads to a stranger as a tampered

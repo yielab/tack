@@ -15,13 +15,6 @@ verdict. A project can start its tasks by itself, send each role's tasks to a lo
 team, repeat tasks, and travel whole in one file. The agent is contained the same way whichever of the
 four runs it, and the work it leaves is measured against suites of tasks kept in the repository.
 
-**Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. The next is
-`v0.2.0-beta.1`, which carries Phases 66 to 95: the version is bumped and the changelog section
-is written, and it waits for the maintainer to tag it
-([`docs/LAUNCH-CHECKLIST.md`](https://github.com/yielab/tack/blob/develop/docs/LAUNCH-CHECKLIST.md)).
-The `v0.1.0-beta.10` tag (2026-10-14) never had a release and is not re-cut; its changes ship in
-`v0.2.0-beta.1`.
-
 **Where this is going.** Tack keeps the same three neighbours it never contains: an agent
 runtime such as docket, which runs the work; an independent verifier such as prill, which judges
 it; and GitHub. Each still works alone, and without a verifier a project stays at Level 3.
@@ -32,7 +25,10 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 Everything built is under Delivered. What is left:
 
-- **Tagging `v0.2.0-beta.1`** is the maintainer's own step and not a card.
+- **The next release, `v0.2.0-beta.1`,** carries Phases 66 to 95: the version is bumped and the changelog
+  section is written. Tagging it is the maintainer's own step
+  ([`docs/LAUNCH-CHECKLIST.md`](https://github.com/yielab/tack/blob/develop/docs/LAUNCH-CHECKLIST.md)), not a
+  card. The `v0.1.0-beta.10` tag never had a release and is not re-cut; its changes ship in this one.
 - **Codex, postponed.** Its baseline (`evals/baselines/` holds Claude Code, opencode and docket, all with
   Haiku 5.5) and the `agents-flow.gif` recording wait on the maintainer's own Codex model setting.
 - **`recovery-demo.gif`** is recorded from a released build, so it follows the tag. It is not shown in the
