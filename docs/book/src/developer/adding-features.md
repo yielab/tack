@@ -1,14 +1,16 @@
 # Adding Features
 
-This chapter is for contributors who add to Tack. It gives four recipes: a new entity, a new workflow preset, an extension of the workflow engine, and a new key in the project file. Each section includes a concrete example and explains the reasoning behind the step order. After the recipes come the rules for a migration and the conventions every change follows (errors, logging, secrets in backups). Before you start, read the layering rule in the [Architecture Overview](index.md) and the anti-patterns at the end of this page. The Milestone and `education_workflow` examples are illustrations; neither exists in the codebase.
+This chapter is for contributors who add to Tack. After reading it you can add an entity, a workflow preset, a rule to the workflow engine or a key to the project file, and you know the migration rules and the conventions every change follows (errors, logging, secrets in backups).
+
+Each recipe works through one example and explains the order of its steps. The Milestone, `education_workflow` and `check_dependencies_resolved` examples are made up to show the steps: none of them exists in the codebase, and the code is written against today's types so you can copy its shape. The `review_required` project-file key is made up too. Before you start, read the layering rule in the [Architecture Overview](index.md#1-the-layering-rule) and the anti-patterns at the end of this page.
 
 ---
 
 ## Adding a New Entity
 
-**Example: Milestone** (illustrative; there is no milestone in the codebase)
+> **Example only.** There is no Milestone entity in Tack (the project vocabulary has a `milestone` word, which is only a label). The Milestone below stands for any new entity you add.
 
-A Milestone is a date-anchored checkpoint associated with a project. It has a name, an optional description, a target date, and a status.
+A Milestone is a date-anchored checkpoint associated with a project. It has a name, an optional description, a target date and a completion time.
 
 ### Step 1: Define the model in `tack-core`
 
@@ -198,7 +200,9 @@ At this point the feature is complete. Add repository tests under `crates/tack-d
 
 ## Adding a New Workflow Preset
 
-**Example: education_workflow for an online-course project type**
+> **Example only.** There is no `Education` project type. This recipe shows the files a new one touches.
+
+The example adds `education_workflow` for an online-course project type.
 
 ### Step 1: Add the preset function in `tack-core`
 
@@ -321,7 +325,7 @@ ProjectType::Education => HashMap::from([
 ]),
 ```
 
-The item types are not words: add the project type's catalog to `preset` in `crates/tack-core/src/item_types.rs` (Course and Module as groups, Lesson as the default work type, and so on). A new project type changes the list that migration `107_item_types` froze, so it is a new migration for the projects and templates that already exist, never an edit of that one.
+The item types are not words: add the project type's catalog to `preset` in `crates/tack-core/src/item_types.rs` (Course and Module as groups, Lesson as the default work type, and so on). `preset` is compared by a test (`crates/tack-db/tests/migrations/item_types.rs`) with the list that migration `107_item_types` froze, so a new project type is a decision there. Never edit that shipped migration; if existing projects need the new catalog, add a new migration.
 
 At this point `POST /api/projects` with `"project_type": "education"` will auto-select the new workflow, vocabulary and types.
 
@@ -329,7 +333,7 @@ At this point `POST /api/projects` with `"project_type": "education"` will auto-
 
 ## Extending the Workflow Engine
 
-Sometimes you need new logic in the workflow engine itself — for example, a rule that prevents moving an item to `Done` if any of its dependencies are still incomplete.
+Sometimes you need new logic in the workflow engine itself. The example is a rule that prevents moving an item to `Done` while any of its dependencies are still incomplete. (`check_dependencies_resolved` below is made up; it does not exist.)
 
 ### Step 1: Add the function to `tack-core`
 
@@ -374,7 +378,7 @@ If the new logic needs new *configuration* (for example, a per-project flag to e
 
 ## Add a key to the project file
 
-**Example: a `review_required` flag on `automation`.** The project file is one type read by every door (the import routes, `tack import`, the MCP tool, Settings → Data → Import), so a key added in the right six places reaches all of them. The reference for every existing key is [The Project File Format](project-file.md).
+**Example (made up): a `review_required` flag on `automation`.** The project file is one type read by every door (the import routes, `tack import`, the MCP tool, Settings → Data → Import), so a key added in the right six places reaches all of them. The reference for every existing key is [The Project File Format](project-file.md).
 
 ### Step 1: Add the field to the type
 
@@ -431,7 +435,7 @@ The operator's view of what runs at startup is `docs/MIGRATION-GUIDE.md`.
 
 ### Errors
 
-A failure has one of three owners. `tack-core` raises a `CoreError`, `tack-db` a `StoreError` and a `tack-app` use case an `AppError`; each carries a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. `tack-api` wraps them in `ApiError`, which keeps the code and answers every failure with the same JSON body. The full table, with the status of each variant, is under `error.rs` in the [Crate Tour](crate-tour.md#errorrs-1). An internal error logs its cause and tells the client only "Internal server error". To add a code, add it to `StableErrorCode` and its `status()` arm in `tack-protocol`; the OpenAPI schema lists the enum, so regenerate the API files.
+A failure has one of three owners. `tack-core` raises a `CoreError`, `tack-db` a `StoreError` and a `tack-app` use case an `AppError`; each carries a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. `tack-api` wraps them in `ApiError`, which keeps the code and answers every failure with the same JSON body. The full table, with the status of each variant, is under `error.rs` in the [Crate Tour](crate-tour.md#errorrs-in-tack-api). An internal error logs its cause and tells the client only "Internal server error". To add a code, add it to `StableErrorCode` and its `status()` arm in `tack-protocol`; the OpenAPI schema lists the enum, so regenerate the API files.
 
 ### Logging
 

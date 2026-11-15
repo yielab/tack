@@ -19,7 +19,7 @@ At the top of the drawer, the **header** shows:
 
 - A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order") and the item's **short id** — the first six characters of the id, uppercased.
 - The editable **title**. Edit it in place; the change is saved when you leave the field or press `Enter`.
-- The item's **Status**: its current status, with the colour dot its board column has and its name beside it. The **Change status** button next to it opens a short menu of the project's statuses in the workflow's order, the current one marked **Current**; any status can be picked from any other, with the arrow keys or the mouse, and `Esc` closes the menu and returns to the button. The status is yours to set: a run never changes it. The transition is validated by the project workflow (allowed transitions and WIP limits are enforced server-side); if it is rejected the item reverts and an error toast appears.
+- The item's **Status**: its current status, with the colour dot its board column has and its name beside it. The **Change status** button next to it opens a short menu of the project's statuses in the workflow's order, the current one marked **Current**; any status can be picked from any other, with the arrow keys or the mouse, and `Esc` closes the menu and returns to the button. The status is yours to set: a run never changes it. The workflow checks the move (allowed moves and WIP limits); if it is refused, the item stays where it was and an error appears.
 - The date the item was created.
 - Above the type, the **path**: the items this one sits under as links, outermost first (**Checkout › Payments**). An item at the top has none. It only locates the item: press a name to open it.
 
@@ -192,27 +192,24 @@ The record of every time an agent was handed this item. Its tab carries the late
 **Merge** shows whenever a run could be merged. When it cannot run it stays disabled and says why
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
-Everything that waits on you is in one place. **Waiting for you** is always in the sidebar, and the top
-bar shows the same count; with nothing to do it reads 0, and hovering it says so. The count covers every project, and under its name the sidebar spells it out in the same words as the board's **Work** row ("All projects: 1 needs you, 1 ready for review"), so a project's row can read 0 **Needs you** while the sidebar counts a run ready for review. Press either to open the
-list, in three groups: **Questions to answer**, **Ready for review**, and **Failed since you last looked**
-(runs that ended in failure after the last time you opened the list in this browser). Each row has the
-run's state, the item's title, its project and how long ago it happened, and one button for what to do
-next: **Answer the question**, **Review and merge** or **See why it failed**. The button opens that run on
-its Execution tab, over the page you are on. The decision token is asked for in the list, once for the
-browser session, and the run's own field does not ask again. A card on the board whose run is asking opens
-that run the same way.
+### What waits for you
 
-The bell at the top of the sidebar opens the **Inbox**, which Tack keeps for you whether or not a page is open: what
-still needs you (a question an agent asked, a run that failed, a change set to apply) and, below it, what
-happened lately (a run that finished, an item about to fall due). The bell shows how many are open, and so does the
-browser tab's title ("(2) Board · Tack"). Each row opens what it is about; **Read** takes a row off the list and **Read all**
-clears everything unread. A question or a failure stays open until it is answered or run again, however you
-answered it. While Tack is open, a new one that needs you also appears as a notice on the page. To hear about it
-when you are in another tab, turn on **Notify me when this tab is hidden** in a project's **Settings → General**; the
-browser asks once, and the choice stays in that browser. In the desktop app the same switch sends the system's own
-notification, and the tray icon's tooltip says how many need you.
+Everything that waits on you is in one place. **Waiting for you** is always in the sidebar, and the top bar shows the same count; with nothing to do it reads 0. The count covers every project, and under its name the sidebar spells it out in the same words as the board's **Work** row ("All projects: 1 needs you, 1 ready for review"). So a project's row can read 0 **Needs you** while the sidebar counts a run ready for review.
 
-Once a day Tack also compares how often each profile's and each agent's runs succeeded in the last seven days with the 28 days before, and when a drop is clear it opens a notification that needs you and links to the project's **Factory metrics**; it stays one notification until the rate recovers.
+Press either to open the list, in three groups: **Questions to answer**, **Ready for review**, and **Failed since you last looked** (runs that ended in failure after the last time you opened the list in this browser). Each row has the run's state, the item's title, its project and how long ago it happened, and one button for what to do next: **Answer the question**, **Review and merge** or **See why it failed**. The button opens that run on its Execution tab, over the page you are on. A card on the board whose run is asking opens that run the same way.
+
+The first time you answer a question in a browser session, Tack asks for the **decision token**, a secret your administrator sets; see [Asking before acting](running-agents.md#asking-before-acting).
+
+The bell at the top of the sidebar opens the **Inbox**, which Tack keeps for you whether or not a page is open:
+
+- what still needs you: a question an agent asked, a run that failed, a change set to apply;
+- below it, what happened lately: a run that finished, an item about to fall due.
+
+The bell shows how many are open, and so does the browser tab's title ("(2) Board · Tack"). Each row opens what it is about; **Read** takes a row off the list and **Read all** clears everything unread. A question or a failure stays open until it is answered or run again, however you answered it.
+
+While Tack is open, a new item that needs you also appears as a notice on the page. To hear about it when you are in another tab, turn on **Notify me when this tab is hidden** in a project's **Settings → General**; the browser asks once, and the choice stays in that browser. In the desktop app the same switch sends the system's own notification, and the tray icon's tooltip says how many need you.
+
+Once a day Tack also compares how often each profile's and each agent's runs succeeded in the last seven days with the 28 days before. When a drop is clear it opens a notification that needs you and links to the project's **Factory metrics**; it stays one notification until the rate recovers.
 
 While a run is going, the item reads itself again each time the run changes state, so whatever changed on it
 shows without a reload. It stops once every run has ended.
@@ -243,9 +240,9 @@ The tab lists current **Blocks** and **Blocked by** links. Click a linked item's
 
 To add a dependency, pick a **direction**, choose the other **item** from the picker, and select **Add**.
 
-Tack's dependency graph is a **DAG (directed acyclic graph)**, so:
+Dependencies cannot form a loop, so:
 
-- **Cycles are rejected.** If adding a link would create a loop (A blocks B, B blocks A), the server refuses it and the error is shown inline beneath the form.
+- **Loops are rejected.** If adding a link would create a loop (A blocks B, B blocks A), Tack refuses it and shows the error beneath the form.
 - **Self-references are rejected** — an item cannot depend on itself. The picker only offers other items in the project.
 
 ---

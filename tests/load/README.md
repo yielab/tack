@@ -29,13 +29,13 @@ Start the API first (a throwaway DB is recommended):
 TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-cli --release -- serve
 ```
 
-Then, from the repo root:
+The server's token is in the `api-token` file beside the database. Then, from the repo root:
 
 ```bash
-make load                 # default: read-heavy profile against localhost:3210
+TOKEN=$(cat api-token) make load      # default: read-heavy profile against localhost:3210
 # or directly:
-k6 run tests/load/smoke.js
-BASE_URL=http://localhost:3210 k6 run tests/load/smoke.js
+TOKEN=$(cat api-token) k6 run tests/load/smoke.js
+BASE_URL=http://localhost:3210 TOKEN=$(cat api-token) k6 run tests/load/smoke.js
 ```
 
 ## What it checks

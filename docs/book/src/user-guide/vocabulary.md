@@ -1,6 +1,8 @@
 # Types and words
 
-A project names its work in two ways. Its **types** are the kinds of item it has (an Epic, a Bug, a Work Order), each with a name, a colour and a level. Its **vocabulary** renames ten more words that the screens and the command line use (a Sprint can be a Phase, a Backlog can be Pending Work). Two projects can use completely different language while running on the same underlying system.
+This page is for the person who sets up a project. After reading it you can give a project its own kinds of item and its own words, so that a kitchen renovation talks about Work Orders and Phases rather than Tasks and Sprints.
+
+A project names its work in two ways. Its **types** are the kinds of item it has (an Epic, a Bug, a Work Order), each with a name, a colour and a level. Its **vocabulary** renames ten more words that the screens and the command line use (a Sprint can be a Phase, a Backlog can be Pending Work). A "Sprint" in a software project and a "Phase" in a construction project are the same thing; only the label differs. Types and words belong to one project and do not affect others.
 
 ---
 
@@ -86,12 +88,6 @@ curl -X PATCH http://localhost:3210/api/projects/{id} \
 The request replaces the whole vocabulary: a word you leave out goes back to its default label, so send every word you want to keep. A key that is not one of the ten is refused; item types are not words, they are the project's types above.
 
 **In a project file.** The `project.vocabulary` key takes any subset of the ten words, and the rest keep the project type's words. A file applies it only when it creates a project. A word that is not one of the ten makes the file be refused. See [Import, Export & Project Files](import-export.md#the-project-file).
-
----
-
-## Per project
-
-A "Sprint" in a software project and a "Phase" in a construction project are the same thing — only the label differs. Types and words belong to one project and do not affect others.
 
 ---
 

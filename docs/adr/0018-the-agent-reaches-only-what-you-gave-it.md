@@ -70,7 +70,7 @@ process group only. `ProcessSpec::spawn` gives the harness its own group (`proce
 `crates/tack-runner/src/harness/process.rs`), and each stop signals that group and the groups the
 harness announces. Outside the sandbox nothing calls `setsid` or signals a session, so a descendant
 that leaves the group by starting its own session or group survives the stop. The audit
-(`docs/audits/evals-y-guardrails-2026-11-06.es.md`, section 7.3) found that Claude Code's Bash
+(`docs/closed-cycles/audits/evals-y-guardrails-2026-11-06.es.md`, section 7.3) found that Claude Code's Bash
 subprocesses survive a stop when there is no sandbox; this note takes that from the audit and does
 not re-run it. Inside bwrap the harness also runs with `--unshare-pid` and `--die-with-parent`
 (`crates/tack-runner/src/harness/sandbox.rs`): its processes live in their own PID namespace, and the

@@ -18,7 +18,7 @@ filled in and says **Set here**, the most it can reach is marked **Ceiling**, an
 each thing that holds the higher ones back says what to change, with a link to the fix. A level the board
 cannot allow yet is shown disabled, with the reasons.
 
-Below the ladder are five sections, in the order you set them up, with an index beside them that stays in
+Below the ladder are six sections, in the order you set them up, with an index beside them that stays in
 view on a wide screen:
 
 1. **Who.** The default agent and its model and profile, the profile each role works with ([Teams](#teams)),
@@ -32,6 +32,10 @@ view on a wide screen:
 5. **Agents.** How far an agent may go on this board, and the triggers that wake a manager; see
    [Managers and Threads](talking-with-a-manager.md) and [How far an agent may
    go](reviewing-runs.md#how-far-an-agent-may-go).
+6. **Notifications.** Where what needs you is sent besides the screen. It reads the same for every project
+   and shows, for the webhook, how many deliveries wait, how many were given up on and the last error. The
+   webhook's address is set where the server starts; see
+   [Administration & Security](../admin-guide/administration.md#webhooks).
 
 A run never changes a task's status: the column is yours, and what the agents report is the task's **Work**.
 See [Status and Work](views.md#status-and-work).
@@ -81,14 +85,15 @@ this with `tack runner doctor`; see [Installing and Operating Runners](../admin-
 
 A team can also work in a **folder** instead of a repository: a team that writes a report, researches or
 keeps a list has no branch to give back. Its line says "Works in a folder, not in this repository." A task
-given to such a team ends **Succeeded** with what the team's last step said it did, and there is nothing to
+given to such a team ends **Succeeded** with what the team's last step said it did. There is nothing to
 review, merge or open as a pull request, so the run never asks for a change. The run starts from the
-folder as it is: Tack names no base commit and no install step, because there is no repository to cut a branch
-from. A team that does have a
-repository and ends with no work to read still fails, with "branch not applied". If the team keeps records
-(tables it fills as it works, such as leads or listings), its line also says what it keeps, as in "Keeps
-leads · 2 rows, listings · 1 row." The number is every row the set holds, whichever run wrote it; a run's own
-rows are the ones its result keeps.
+folder as it is: Tack names no base commit and no install step, because there is no repository to cut a
+branch from. A team that does have a repository and ends with no work to read still fails, with "branch not
+applied".
+
+If the team keeps records (tables it fills as it works, such as leads or listings), its line also says what it
+keeps, as in "Keeps leads · 2 rows, listings · 1 row." The number is every row the set holds, whichever run
+wrote it.
 
 ### What the Agents page shows about a team
 
@@ -138,30 +143,18 @@ you choose a profile for a role.
 
 ### The Apply button
 
-**Apply the repository's teams** makes the teams the project's roles work with that no computer reports yet,
-from the folders the project's repository holds in `.docket/teams/`, on the computer that holds the project's
-folder. Under the button each missing team has the shape it is made from (`build` unless you choose another).
-A `build` team works in the project's folder. A team of any other shape (`respond`, `operate`, `routine`)
-works in a folder docket makes for it, never in your project's folder, and reads its configuration from
-`.docket/teams/` in the project.
-The Orchestration Map and the preview of an imported project file list the same missing teams, each with a
-**Create** button beside its command that makes just that one. The board does not reach that computer itself: it asks a
-computer that runs docket, which makes each team from its shape and applies the team's folder. The button
-is enabled when a computer reports a docket that can do that. Otherwise it stays on the screen, disabled,
-and says why (no computer reports docket, the docket on your computers is too old and needs updating, or
-every team the roles use is already reported);
-the link beside it, **How to set up a team there**, opens the
-[Administrator Guide](../admin-guide/runners.md#docket-teams) for making a team by hand. The project's code
-must be a folder on that computer.
+**Apply the repository's teams** makes the teams the project's roles work with that no computer reports yet. It builds them from the folders the project's repository holds in `.docket/teams/`, on the computer that holds the project's folder. Under the button each missing team has the shape it is made from (`build` unless you choose another). A `build` team works in the project's folder. A team of any other shape (`respond`, `operate`, `routine`) works in a folder docket makes for it, never in your project's folder, and reads its configuration from `.docket/teams/` in the project.
 
-When a team's folder would run commands on the computer (an install command, a command it is allowed to
-run, open network access), docket stops and lists them. The board shows the list with a code: read the
-commands, and confirm if you agree, and the computer then applies the team. If you cancel, the team is not
-made. A team docket refuses shows docket's reason beside the button, for example a team folder whose shape
-differs from the one the team was first made from; a team that already exists is never made again with another
-shape, so change the shape in the folder or remove the team in docket. If no computer answers within half a
-minute, the team is not applied and the board says so. **Manage profiles** links to
-the profiles on the Agents page.
+The Orchestration Map and the preview of an imported project file list the same missing teams, each with a **Create** button beside its command that makes just that one.
+
+The board does not reach that computer itself: it asks a computer that runs docket, which makes each team from its shape and applies the team's folder. The button is enabled when a computer reports a docket that can do that. Otherwise it stays on the screen, disabled, and says why: no computer reports docket, the docket on your computers is too old and needs updating, or every team the roles use is already reported. The link beside it, **How to set up a team there**, opens the [Administrator Guide](../admin-guide/runners.md#docket-teams) for making a team by hand. The project's code must be a folder on that computer.
+
+When a team's folder would run commands on the computer (an install command, a command it is allowed to run, open network access), docket stops and lists them. The board shows the list with a code: read the commands, and confirm if you agree, and the computer then applies the team. If you cancel, the team is not made.
+
+- A team docket refuses shows docket's reason beside the button, for example a team folder whose shape differs from the one the team was first made from. A team that already exists is never made again with another shape, so change the shape in the folder or remove the team in docket.
+- If no computer answers within half a minute, the team is not applied and the board says so.
+
+**Manage profiles** links to the profiles on the Agents page.
 
 A project with no roles says: "This project has no roles yet. Add them under Roles."
 
@@ -328,7 +321,7 @@ without you:
 
 ## The project's other settings
 
-These are the folded sections above the ladder. Each saves as soon as you change it.
+These are the folded sections inside **Who** and **When**. Each saves as soon as you change it.
 
 <img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: the Autonomy ladder with L3 set and L4 and L5 blocked, what stops this project reaching a higher rung, the jump links Who, When, Merge, Limits and Agents, and the Who section with the agent, the teams, where the code is and how the agent works on it, above the When section.">
 
@@ -355,7 +348,7 @@ your folder. You never type a repository address for code on this computer.
 |---|---|---|
 | **On a new branch of your repo** | Makes a worktree of your repository on a branch named `tack/<task>-a<n>`. The branch stays in your repository after the run. Your own checkout, your files and your index are untouched | A folder that is a git repository |
 | **In the folder, directly** | The agent edits your folder itself, as if you had run it in a terminal. Nothing is ever deleted or moved, and your git index is untouched | A folder without git |
-| **In a fresh clone per run** | Clones the repository into a new workspace for each run | Never the default. It is under **Advanced**, for a URL or for a runner on another computer |
+| **A fresh clone per run** | Clones the repository into a new workspace for each run | Never the default. It is under **Advanced**, for a URL or for a runner on another computer |
 
 For a git folder, the first mode is the default because it costs nothing (no network, shared objects), keeps
 the result in your repository, and does not build on top of whatever is half-done in your checkout.
@@ -396,7 +389,7 @@ A profile is what the agent is told to be and which tools it may use. Four are b
 | **Implementer** (default) | Reads, edits and runs commands |
 | **Reviewer** | Reads and reports. Changes nothing |
 | **Researcher** | Reads and searches, and writes a report. The only file it writes is the plan file `tack-plan.json`, when its findings lead to work |
-| **Planner** | Plans and designs, and proposes subtasks you can accept. The only file it writes is the plan file `tack-plan.json` |
+| **Planner** | Plans and designs, and proposes items you can accept. The only file it writes is the plan file `tack-plan.json` |
 
 You pick one under **Who does it** in the run dialog. You edit a profile in a form on the Agents page, never as JSON. A profile you change is copied into each request when
 the request is created, so editing it later never changes the history of an earlier run. The profile's list of

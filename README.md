@@ -36,9 +36,10 @@ file. It requires no account.
 
 - **To use Tack:** Linux, macOS or Windows.
 - **To assign tasks to an agent:** one of Claude Code, Codex, opencode or docket installed
-  on the same computer and signed in with its own tools. Tack has no agent of its own: it hands the task to that program, which
-  reads and edits files, runs commands and uses whatever model you set it up with. Tack
-  holds no model key. docket needs version 0.3.0-beta.1 or later.
+  on the same computer and signed in with its own tools. Tack has no agent of its own: it
+  hands the task to that program, which reads and edits files, runs commands and uses
+  whatever model you set it up with. Tack holds no model key. docket needs version
+  0.3.0-beta.1 or later.
 
   [Choosing an agent](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-an-agent) says
   what each one supports.
@@ -96,11 +97,13 @@ Scoop, Docker and building from source are in the [Quick Start](https://yielab.g
 
 <img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Work panel with a Run with agent button, the description, a Done when list of three checks and an Add check button." />
 
-**3. Run it with an agent** and review the result on the task.
+**3. Run it with an agent** and review the result on the task. Agents are off until you
+open **Agents** in the sidebar and press **Turn on** (or start the server with
+`--with-runner`).
 
 <img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: who does it (the agent and the profile), what will happen, Ask before each action, Web tools, and Start run." />
 
-**Agents** in the sidebar shows which agents Tack found on this computer, whether each
+The **Agents** page also shows which agents Tack found on this computer, whether each
 one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.
 
 ## Features

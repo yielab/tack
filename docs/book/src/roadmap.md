@@ -1,7 +1,7 @@
 # Roadmap
 
-> **This file records intent, not status.** What shipped is in `CHANGELOG.md` and the commit
-> history; closed phases are archived under
+> **What is open, what is next, and a short line on each recent phase.** What shipped, in a
+> user's words, is in `CHANGELOG.md`; older phases and every closed plan are archived under
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
 **Tack is delivered through Phase 95.** A project is planned and tracked on a board, a list, a
@@ -209,8 +209,8 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
 - **Phase 94 — the agent is contained the same way whatever runs it, and Tack measures what it
   already labels.** No ADR (ADR 0013 and ADR 0018's decisions 11 and 12 are amended where their text
   became false).
-  [Plan](https://github.com/yielab/tack/blob/develop/docs/plans/evals-y-guardrails-2026-11-06.es.md),
-  [audit](https://github.com/yielab/tack/blob/develop/docs/audits/evals-y-guardrails-2026-11-06.es.md).
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/evals-y-guardrails-2026-11-06.es.md),
+  [audit](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/audits/evals-y-guardrails-2026-11-06.es.md).
   Claude Code, Codex and opencode run inside the runner's sandbox, and a run with no sandbox asks
   before each action; docket's own jail is asked about and a silent docket is read as the strictest.
   Web access is a mode per profile (`closed`, `listed` or `open`, with an editor for the listed hosts),
@@ -223,7 +223,7 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   production shows quality figures and a notice when a trend turns. The live suite passed (35 tests)
   against docket `f8dd565e`.
 - **Phase 93 — an item is a group or work.** ADR 0036, amended with decisions 10 to 13.
-  [Plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-93.md). A project's types are a
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-93.md). A project's types are a
   catalog (Settings → Types) in which each type holds work or is work, and one rule for the tree serves
   every parent. A group is planned and work runs; a role on an epic routes its tasks. The Board has
   lanes, the List is the tree and moves an item under another parent, and the Timeline, the Dashboard
@@ -269,7 +269,7 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   fixtures: docket sends `delivers` as a list, a method that does not load carries an `error`, a
   budget's window is `none`, `day` or `week`, **Resume team** clears the pause but not the spent budget (the
   team is paused again within seconds until the budget is raised), and a team made from a shape takes
-  the folder it works in as `location`, so Tack sends it only for `build`. The board now has a channel to ask a runner for something
+  the folder it works in as `location`, so Tack sends it only for `build`. The board has a channel to ask a runner for something
   (`POST /operations/poll`, `/operations/{id}/result`), additive in runner v1.
 - **Phase 88 — a person is told what needs them.** ADR 0035. One inbox fed by the board's own events:
   a question a run asks, a run that fails and a change set an agent proposes each need you; a run that
@@ -314,7 +314,7 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
 - **Phase 81 — what the audit found.** No ADR. Background work with one owner that stops on shutdown,
   typed answers from the docket and prill adapters, tests for routes and upgrade paths nobody covered,
   one wire format and one error model, one UI kit. The rule it keeps: CI never needs docket or prill;
-  everything that talks to the real programs is the local `onboarding-lab/e2e/docket-prill-e2e.sh`.
+  everything that talks to the real programs is a local suite the maintainer runs by hand.
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-81.md).
 - **Phase 80 — a run that waits on a person.** A docket run parked on a question is no longer
   cancelled by the attempt's own time limit; every wait for a person is one escalation record, answered

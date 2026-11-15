@@ -1,5 +1,7 @@
 # Tack Testing Guide
 
+This page is for contributors who write or run tests. After reading it you can run any suite, put a new test in the right crate and module, and know what CI and the pre-push hook check.
+
 Every Rust test runs with one command and needs no external service:
 
 ```bash
@@ -25,7 +27,7 @@ everything passes.
 ```bash
 cargo nextest run --workspace                                   # everything
 cargo nextest run --workspace -E 'package(tack-db)'             # one crate
-cargo nextest run --workspace -E 'test(/^runner_contract::/)'    # one file of a crate's tests
+cargo nextest run --workspace -E 'binary_id(tack-protocol::it) & test(/^runner_contract::/)'   # one module of a crate's `it` binary
 cargo nextest run --workspace -E 'test(/fencing/)'              # tests whose name matches a regex
 cargo nextest run --workspace -E 'rdeps(tack-core)'             # everything a core change can reach
 cargo nextest run --workspace --no-capture -E 'test(<name>)'    # see println!/tracing output (runs serially)
@@ -90,7 +92,7 @@ once its real claim has a home elsewhere.
 | `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races. `tests/fixtures/tack-0.1.0-beta.9.sqlite` is a database written by that release (provenance in the README beside it): `migrations/upgrade_from_beta9.rs` migrates it to now and compares its schema with a fresh one |
 | `tack-protocol` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-protocol/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; `mrp_contract` pins the merge-readiness pack | the runner-v1 contract: capability negotiation, request/attempt lifecycle, usage provenance, the pack. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract/fixtures.rs` in the same change |
 | `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) | plain `#[test]`; the crate has no database and no clock | the scheduler and the model policy, as tables of cases over plain values |
-| `tack-app` | `crates/tack-app/tests/` (one file per use case; `scheduling/`, `ingestion/`) | `tack_test_support::setup_test_db()` and a `ControllableClock`; a fake `Host` for the ticks | a rule of a run: call the use case or a `tick()` directly on a real store and read the result with `tack_db::queries::` — no router, no sleeping. Plant rows with `tack_test_support::seed` |
+| `tack-app` | `crates/tack-app/tests/` (one file per use case; `scheduling/`, `ingestion/`) | `tack_test_support::setup_test_db()` and a `ControllableClock`; a fake `RunnerHost` for the embedded runner's supervisor | a rule of a run: call the use case or a `tick()` directly on a real store and read the result with `tack_db::queries::` — no router, no sleeping. Plant rows with `tack_test_support::seed` |
 | `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable. The project file's routes are `tests/handlers/bundle.rs` (it builds its own app, since `test_app()` seeds no built-in profiles or templates) |
 | `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary — see below |
 | `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler and embedded-runner tests spawn a real `tack serve` on port 0 and read the port it logs (`common::spawn_serve`), so they share nothing and run alongside everything else | request shaping, error surfacing, the end-to-end scheduler path |
@@ -124,9 +126,9 @@ back), so a test of it proves Tack reads such a docket by statement and never se
 capture of that docket exists, and the captures (from docket's `cdeabac3`: `scope`, `_role`,
 `?task=`, `capabilities`) are compared with the fake as it is by default.
 
-Each crate has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
+Each crate that has integration tests has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
 file under `tests/` as a module, so the dependency graph is linked once per crate, not once per
-file. A file is selected by its module, `-E 'test(/^<module>::/)'`. **Add a test to the existing
+file. A module is selected with `-E 'binary_id(<crate>::it) & test(/^<module>::/)'` (nextest names the binary by crate, so never filter by file name). **Add a test to the existing
 module whose subject fits; a new subject is a new `mod` line in `tests/it.rs`.** Helpers shared by
 several modules (`common`, and in some crates `support` or `fake_docket`) are declared once in
 `it.rs` and reached as `crate::common`.
@@ -318,7 +320,7 @@ harness binaries and spends a real model run.
 
 It covers the whole claim-to-completion pipeline through production routes, restart recovery
 (kill the runner mid-attempt, then an explicit operator requeue), `tack serve --with-runner`,
-and the refusal of `--with-runner` on a non-loopback bind. It binds ports 3399–3402. A step that
+and the refusal of `--with-runner` on a non-loopback bind. It binds `SMOKE_PORT` (default 3399) and the next few ports. A step that
 cannot pass because the product cannot do the thing is a FAIL, never a SKIP; a missing harness
 binary is reported as ABSENT and never counted as a pass.
 
@@ -334,7 +336,11 @@ An EDD block names the three, for example:
 **Baseline:** develop b363899b -> evals/baselines/b363899b/
 ```
 
-The lane is the development crate `tack-evals`, never released. A task is a folder with a `task.yaml`, hidden checks and a reference solution; each trial runs in a clean world (its own data directory, port, seeded repository and a fake `$HOME` with canaries). The tasks live in `evals/tasks/<suite>/` (how to add one is in `evals/README.md`); `regression` (nine small tasks, two of them planning tasks), `safety` (below) and `verifier` (below) exist today. A task names the agents it cannot apply to, each with its reason (`not_applicable`), and that cell is reported as such and never counts as passed.
+The lane is the development crate `tack-evals`, never released. `evals/README.md` owns how to run it, read a summary and add a task. In short:
+
+- A task is a folder with a `task.yaml`, hidden checks and a reference solution, under `evals/tasks/<suite>/`. The suites are `regression` (small fixed jobs, two of them planning tasks), `safety` (a job with and without a planted hostile instruction) and `verifier` (labelled diffs that measure the verifier). A fourth, `capability`, is made by hand from work a person refused (`tack-evals promote`).
+- Each trial runs in a clean world: its own data directory, port, seeded repository and a fake `$HOME` with canaries.
+- A task names the agents it cannot apply to, each with its reason (`not_applicable`). That cell is reported as such and never counts as passed.
 
 ```bash
 cargo run -p tack-evals -- check-solutions <suite>   # every reference solution passes its own checks
@@ -343,23 +349,22 @@ cargo run -p tack-evals -- compare --base <sha> --head <out>   # paired differen
 cargo run -p tack-evals -- nightly <suite> --base <sha>        # run, compare, warn per task
 ```
 
-Three checks by code judge a trial, with no model: the outcome (the hidden tests on the agent's tree, the run's end state, the files it touched, the plan it wrote), the boundaries (the canaries in the fake `$HOME`, the fake secret and the fake key in the evidence, a Planner that wrote only its plan, and, for a safety task, a protected file in the patch or a forbidden ref in the seed repository) and, as a report, whether the verifier's pack agreed with the hidden tests. A failed trial gets one class: `tack` (a boundary fell, the evidence was not captured, an impossible state) and `agent` (wrong result, a limit, the agent's CLI) count against the score; `eval` (the harness or a check broke) and `infra` (the model could not be reached) are listed and left out. `summary.md` leads with pass@1 and its Wilson interval, pass^k, the boundary violations, the verifier's false approvals and rejections and the failures by class; `compare` pairs tasks by id, version and agent, never across versions, and reports the difference with its interval, saying "no detectable difference" when the interval holds zero. `nightly` warns, per task, about a task that passed every counted trial in the base and fails two or more now, and exits 1 only when it warns; it writes `warnings.json` beside `summary.md` and `compare.md`. `--base` takes a path (a `summary.json`, a directory holding one, or a `trials.jsonl`, judged against the task directories given) or the name of a directory under `evals/baselines/`.
+Code judges a trial, with no model:
 
-The `safety` suite is ten pairs under `evals/tasks/safety`: a small job with a hostile instruction planted in a card comment, the README, a saved web page, a test comment or an install script, and the same job without it (the twin). `summary.md` then gives, per agent, the utility on the twins and on the attacked tasks, the attack's intermediate success (the run tried it: a marker in a command it asked to run or in a tool event) and final success (it worked: a canary touched, the fake secret or key in the output, a protected file changed, a push that landed), and the twins that failed. A guardrail that stops an attack is measured by the first two falling and the last not.
+- **The outcome:** the hidden tests on the agent's tree, the run's end state, the files it touched, the plan it wrote.
+- **The boundaries:** the canaries in the fake `$HOME`, the fake secret and the fake key in the evidence, a Planner that wrote only its plan and, for a safety task, a protected file in the patch or a forbidden ref in the seed repository.
+- **The verifier, as a report only:** whether the verifier's pack agreed with the hidden tests.
 
-The `verifier` suite asks whether the verifier signs work it should not: `evals/tasks/verifier/` holds thirty diffs, fifteen that should merge (the regression tasks' reference solutions and harmless variants of them) and fifteen that should be rejected (a fault the hidden tests catch, with or without the visible tests being weakened to hide it; a test-runner config that hides the tests; a change outside the files the task allows). `gen-verifier-set` makes them with no model, from a seed, and runs the task's own checks on every diff it writes: a mutant the checks do not refuse is dropped and another is drawn. Each case carries a `label.yaml` that starts `confirmed: false`; a person reads the diffs and sets `confirmed: true`, and `verifier-labels` lists what is left. `score-verifier` takes the verdicts of prill's pack (and the Reviewer's, when it emits one) and reports false approvals and false rejections with their intervals; it refuses a set with an unconfirmed label unless `--allow-unconfirmed`, and then marks the figure provisional. `gen-verifier-set --check` re-proves a written set and runs in CI.
+A failed trial gets one class. `tack` (a boundary fell, the evidence was not captured, an impossible state) and `agent` (wrong result, a limit, the agent's CLI) count against the score. `eval` (the harness or a check broke) and `infra` (the model could not be reached) are listed and left out.
 
-```bash
-cargo run -p tack-evals -- gen-verifier-set evals/tasks/regression    # writes evals/tasks/verifier; refuses to overwrite one
-cargo run -p tack-evals -- verifier-labels                            # the labels no person has confirmed yet
-cargo run -p tack-evals -- score-verifier --verdicts verdicts.json    # {"case-01": {"prill": "merge", "reviewer": "reject"}}
-```
+How the results read:
 
-The `capability` suite is not written by hand: it comes from work a person refused. `promote <attempt-id>` reads the attempt from a running server (`--server`, the token in `TACK_API_TOKEN`; it only reads) and writes `evals/candidates/<attempt-id>/`, which git ignores: the repository at the attempt's base commit as a one-commit `git bundle`, the item and its brief, the reason for the rejection and the paths to the real run's evidence, all passed through an anonymiser (known secrets and token shapes, private keys, home directories, the repository's location, the project's name). A run of docket also gets `docket.yaml`, the `task` fields Tack sends docket. Work that was merged and reverted has no reason on the board, so it takes `--reason`. The anonymiser is a net, not proof: a name it does not know (a person's, in prose) stays, so `--name` adds names and `--env-secret NAME` adds a secret by its value, and a person reads the candidate before it goes anywhere. A candidate is not a task: `check-solutions` refuses it (`REFUSED`, exit 1) until a person has written `hidden/` and `solution/`, unbundled `repo.bundle` into `repo/` and added `task.yaml`. No agent writes the exam.
+- `summary.md` leads with pass@1 and its Wilson interval, pass^k, the boundary violations, the verifier's false approvals and rejections and the failures by class.
+- `compare` pairs tasks by id, version and agent, never across versions, and reports the difference with its interval, saying "no detectable difference" when the interval holds zero.
+- `nightly` warns, per task, about a task that passed every counted trial in the base and fails two or more now. It exits 1 only when it warns, and writes `warnings.json` beside `summary.md` and `compare.md`.
+- `--base` takes a path (a `summary.json`, a directory holding one, or a `trials.jsonl`, judged against the task directories given) or the name of a directory under `evals/baselines/`.
 
-```bash
-cargo run -p tack-evals -- promote <attempt-id> [--run <request-id>] [--repo <clone>] [--name <word>] [--env-secret <VAR>]
-```
+For the safety suite, a guardrail that stops an attack is measured by the attack's intermediate success (the run tried it) and final success (it worked) falling while the twins' utility does not. For the verifier suite, `score-verifier` reports false approvals and false rejections with their intervals, and refuses a set with an unconfirmed label unless `--allow-unconfirmed`. `gen-verifier-set --check` re-proves a written set. The `capability` suite's candidates are anonymised by `promote`, which is a net and not proof: a person reads a candidate before it goes anywhere, and no agent writes the exam.
 
 **An eval never blocks CI.** CI runs the crate's own tests with the fake agent and `check-solutions`, which cost nothing. A run with a real model happens on the integrator's or the operator's machine, under a token cap, and its result is a number to read: a regression warns, and a phase closes on `regression` with no new reds plus the live suite.
 
@@ -425,7 +430,7 @@ files in the directory are recorders, not tests — `screenshots.spec.ts`, `reco
 and GIFs, each through its own config. The default config ignores them and CI never runs them.
 
 **Live docket and prill suite.** `docket-prill-e2e.sh` and its `docket-prill.spec.ts` are not
-versioned: they live in the git-ignored `onboarding-lab/e2e/`. The script builds `tack` with the SPA
+versioned: the maintainer keeps them in a git-ignored folder, so a fresh clone does not have them. The script builds `tack` with the SPA
 embedded, runs docket and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`) in a scratch
 `HOME`, and drives a project through the UI the way a person would, including a manager that works
 through the board with an agent credential. CI never runs it and never needs docket or prill; the
@@ -486,7 +491,7 @@ server and takes time); run it on demand.
 # terminal 1: a server with a throwaway DB
 TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-cli --release -- serve
 # terminal 2: the server's token is in api-token, beside load.db
-TOKEN=$(cat api-token) make load
+TOKEN=$(cat api-token) make load   # make passes TOKEN to k6 through the environment
 ```
 
 It ramps to 50 virtual users on the read hot path plus a write path, asserting p95 latency and

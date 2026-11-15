@@ -65,32 +65,32 @@ swap happens on the next startup.
 
 **Steps:**
 
-1. Upload the backup:
+1. Stage the backup file:
 
-```sh
-tack restore /backups/tack.db
-```
+   ```sh
+   tack restore /backups/tack.db
+   ```
 
-or via API:
+   or through the API:
 
-```sh
-curl -X POST http://127.0.0.1:3210/api/restore \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @/backups/tack.db
-# → {"status":"staged","restore_path":"…","message":"Restore staged. Stop the server and restart to apply."}
-```
+   ```sh
+   curl -X POST http://127.0.0.1:3210/api/restore \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/octet-stream" \
+     --data-binary @/backups/tack.db
+   # → {"status":"staged","restore_path":"…","message":"Restore staged. Stop the server and restart to apply."}
+   ```
 
-The server checks that the file is a SQLite database and that its schema is not newer than the running
-Tack. A newer one is refused with `409`, because it would stop the server from starting; upgrade Tack
-first. If cloud backup is configured, the server also uploads a snapshot of the current state before it
-stages the restore, and carries on with the restore if that upload fails.
+   The server checks that the file is a SQLite database and that its schema is not newer than the running
+   Tack. A newer one is refused with `409`, because it would stop the server from starting; upgrade Tack
+   first. A file over 50 MB is refused. If cloud backup is configured, the server also uploads a snapshot
+   of the current state before it stages the restore, and carries on with the restore if that upload fails.
 
 2. Restart the server. On startup, Tack:
-   - Removes the old database's write-ahead files
-   - Moves `tack.db` → `tack.db.bak-<timestamp>`
-   - Moves the staged file → `tack.db`
-   - Runs any pending migrations
+   - removes the old database's write-ahead files;
+   - moves `tack.db` to `tack.db.bak-<timestamp>`;
+   - moves the staged file to `tack.db`;
+   - runs any pending migrations.
 
 If a step fails, Tack puts the original files back and starts with the database you had. The previous
 database is kept as `tack.db.bak-<timestamp>`. Only the newest such copy is kept, so copy it elsewhere
@@ -196,8 +196,8 @@ For a complete restore you need both the database backup and the storage directo
 
 | Situation | Action |
 |---|---|
-| Before a server upgrade | Full backup first |
-| Before bulk import or schema changes | Full backup first |
+| Before a server upgrade | A backup of the database and the storage directory first |
+| Before a bulk import | The same |
 | Routine protection | Daily cron (see below) |
 | Finishing a project | A project snapshot for archival |
 

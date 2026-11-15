@@ -40,6 +40,9 @@ change Tack's code or integrate with it, read the [Developer Guide](../developer
 | Know what an agent can read, write and reach | [What the Agent Can Reach](what-the-agent-can-reach.md) |
 | Back up, send backups to cloud storage, or restore after a loss | [Backup & Restore](backup-restore.md) |
 | Fix a run that is stuck in `needs_operator` | [Recovery Runbook](recovery-runbook.md) |
+| Upgrade Tack, or go back to an older version | [Deployment](deployment.md#maintenance) and the [Migration Guide](https://github.com/yielab/tack/blob/develop/docs/MIGRATION-GUIDE.md) |
+| Keep items in step with GitHub issues | [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md) |
+| Fix a server or runner problem from its symptom | [Troubleshooting](troubleshooting.md) |
 
 ## What runs where
 

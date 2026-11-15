@@ -1,3 +1,5 @@
+> **Archivado 2026-11-15.** Construido como Phase 94 (2026-11-07); movido aquí sin cambios desde `docs/plans/` o `docs/audits/`. Lo vigente está en el roadmap.
+
 # Plan: contención medida, calidad medida y evaluación continua en Tack
 
 **Fecha:** 2026-11-06, revisado el mismo día para quitar lo que sobraba y poner tope a cada tarjeta.

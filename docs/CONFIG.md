@@ -37,9 +37,11 @@ type, is ignored as a whole without an error, and the defaults apply. A key Tack
 too. After editing, confirm the change took effect, for example with `GET /api/debug/info`, which reports
 the host, port and log level.
 
-The variable form works for every setting in the tables below. The webhook, GitHub, auto-start and backup
-settings can also go in `tack.toml`, under the variable's name in lower case without `TACK_`, such as
-`github_poll_seconds`.
+Every setting in [The API server](#the-api-server) can also go in `tack.toml`, under the variable's name in
+lower case without `TACK_`, such as `github_poll_seconds`. Three differ: `TACK_MAX_BODY_SIZE` is
+`max_body_size_bytes`, `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` is `allow_unauthenticated_nonloopback`, and
+`TACK_LOCAL_RUNNER_CONFIG` has no key. The `tack.toml` file is plain text, so keep a token or a backup key in an
+environment variable rather than in it.
 
 ## The API server
 
@@ -54,10 +56,10 @@ settings can also go in `tack.toml`, under the variable's name in lower case wit
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
 | `TACK_API_TOKEN` | _(generated)_ | Bearer token — requires `Authorization: Bearer <token>` (or the `tack_session` cookie) on all API requests. Left unset on a loopback bind, the server reads or creates `api-token` beside the database file (see below the table) |
 | `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the startup refusal to bind a non-loopback address with no `TACK_API_TOKEN` set. Loopback binds are unaffected either way. Off by default: this widens who can reach an unauthenticated API, so it must be a deliberate choice |
-| `TACK_ALLOWED_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080,http://localhost:3210,http://127.0.0.1:3210` | Comma-separated allow-list of browser origins. Setting it replaces the default list. It gates CORS, and it gates the board's live WebSocket upgrade for any request whose `Origin` is not a loopback host — a bind to a loopback address (the default) additionally authorizes any loopback-hosted `Origin` on its own, so a local UI on any port (Vite's `5173` dev server included) receives live events with no configuration; a non-loopback bind, or a UI served from a non-loopback origin, still needs its origin listed here or the handshake is refused before it completes |
+| `TACK_ALLOWED_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080,http://localhost:3210,http://127.0.0.1:3210` | Comma-separated allow-list of browser origins, each a bare `http(s)://host[:port]`; one that is not makes the server refuse to start. Setting it replaces the default list. It gates CORS, the `Host` check and the board's live WebSocket. See [CORS](https://yielab.github.io/tack/admin-guide/administration.html#cors) |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
-| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL — when set, every notification that opens (a question, a failed run, a change set waiting, a finished run, an item due soon) is POSTed as signed JSON and retried up to 8 times |
-| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>` to each delivery; `X-Tack-Event` names the event |
+| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL. When set, every notification Tack opens is POSTed to it as JSON and tried up to eight times. A `http(s)` URL with no credentials, query or fragment, and not a link-local address. Events, payload and retries: [Webhooks](https://yielab.github.io/tack/admin-guide/administration.html#webhooks) |
+| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret. Adds `X-Tack-Signature: sha256=<hex>` to each delivery; `X-Tack-Event` names the event. Never logged |
 | `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope). When set, item status changes are pushed back to linked GitHub issues (item done ⇄ issue closed), and the inbound poll below can start. Never logged. See [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md) |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | GitHub API root — override for GitHub Enterprise or to point tests at a mock. Used by import, push-back, and the inbound poll |
 | `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds; `0` is off. Also requires `TACK_GITHUB_TOKEN`. Moves a linked item through its project's ordinary workflow on a GitHub issue close/reopen — see [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md). A project's automatic merge (Settings → Automation → Merge) runs on the same tick, so it needs both the token and the poll on |
@@ -71,16 +73,16 @@ settings can also go in `tack.toml`, under the variable's name in lower case wit
 | `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only. Values below 60 are raised to 60 with a warning — a tighter loop copies the database more often than it can change |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
-| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Startup default for whether the embedded runner runs — the same gate `tack serve --with-runner` sets; either satisfies it. `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. The **Turn on** and **Turn off** button on the Agents page overrides it while the board runs and remembers the choice — see [Embedded runner](#embedded-runner-tack-serve---with-runner) below. Off by default and refused outright (never silently downgraded) on a non-loopback bind |
+| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Startup default for whether the embedded runner runs, the same gate `tack serve --with-runner` sets; either turns it on. `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. The **Turn on** and **Turn off** button on the Agents page overrides it while the board runs and remembers the choice; see [Embedded runner](#embedded-runner-tack-serve---with-runner). Refused outright on a non-loopback bind |
 | `TACK_LOCAL_RUNNER_CONFIG` | _(none: `~/.config/tack/runner.toml` when it exists)_ | The TOML file the embedded runner loads; `tack serve --runner-config <path>` sets it. Set but empty, the runner reads no file at all. See [Embedded runner](#embedded-runner-tack-serve---with-runner) |
-| `TACK_EXECUTION_RETENTION_ENABLE` | `false` | Enables the execution-domain retention sweep. **Off by default**: this sweep deletes rows **and on-disk blobs**, so data deletion must be an explicit operator opt-in. Covers four things: (a) replay and idempotency bookkeeping, (b) the purge of finished `execution_events`, (c) `execution_artifacts` rows **and their `TACK_STORAGE_DIR/execution-artifacts` blobs** and (d) expiry of overdue decisions (`pending` → `expired`). Artifact blobs are typically the largest consumer in this domain. Decision expiry shares this one gate rather than running always-on. A question whose run has ended is closed when the run ends, whatever this says |
-| `TACK_EXECUTION_RETENTION_DAYS` | `90` | Days of history kept before the sweep purges it — applies to all four categories above (replay/idempotency bookkeeping, terminal `execution_events`, `execution_artifacts` rows and blobs, and decision expiry deadlines) |
-| `TACK_EXECUTION_RETENTION_INTERVAL_SECS` | `3600` | Interval, in seconds, between execution-retention sweeps |
-| `TACK_EXECUTION_HEALTH_ENABLE` | `true` | Enables the execution-domain health watch (counts of runners, queued runs, claims and events; logs a warning when a claim goes stale or an attempt reaches `needs_operator`). On by default, unlike retention above: it reads and logs only and deletes nothing |
-| `TACK_EXECUTION_HEALTH_INTERVAL_SECS` | `60` | Interval, in seconds, between execution health-watch checks |
-| `TACK_EXECUTION_DECISION_TOKEN` | _(none)_ | Separate shared secret required to resolve a scoped execution decision via `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`. Distinct from `TACK_API_TOKEN`, and the route rejects rather than falling back to the operator token. Left unset on a loopback bind, the server reads `decision-token` beside the database file (next to `api-token`), or creates it there on the first start (mode `0600`, 32 random bytes); the variable still wins. The desktop app reads the file and gives it to its window; in a browser the page asks for it once per session. Never logged |
+| `TACK_EXECUTION_RETENTION_ENABLE` | `false` | Turns on the retention sweep for run history. **Off by default**: the sweep deletes rows **and files**, so deleting data is an explicit choice. It covers four things: (a) replay and duplicate-request bookkeeping, (b) the events of finished runs, (c) the artifacts of runs (their rows **and the files under `TACK_STORAGE_DIR/execution-artifacts`**, usually the largest part) and (d) the expiry of overdue questions (`pending` → `expired`). A question whose run has ended is closed when the run ends, whatever this says |
+| `TACK_EXECUTION_RETENTION_DAYS` | `90` | Days of history kept before the sweep purges it; applies to all four things above |
+| `TACK_EXECUTION_RETENTION_INTERVAL_SECS` | `3600` | Seconds between retention sweeps |
+| `TACK_EXECUTION_HEALTH_ENABLE` | `true` | Turns on the health watch (counts of runners, queued runs, claims and events; logs a warning when a claim goes stale or an attempt reaches `needs_operator`). On by default, unlike retention: it reads and logs only and deletes nothing |
+| `TACK_EXECUTION_HEALTH_INTERVAL_SECS` | `60` | Seconds between health-watch checks |
+| `TACK_EXECUTION_DECISION_TOKEN` | _(none)_ | A second secret, separate from `TACK_API_TOKEN`, that answering a run's question requires (`POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`). The route refuses the operator token in its place. Left unset on a loopback bind, the server reads `decision-token` beside the database file (next to `api-token`), or creates it there on the first start (mode `0600`, 32 random bytes); the variable still wins. The desktop app reads the file and gives it to its window; in a browser the page asks for it once per session. Never logged |
 
-With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from the directory of its database file, or creates it there (`0600`, one line), and requires it on every API request; the page at `/` hands it to the browser as the `tack_session` cookie. The CLI looks for the file in `<data root>/api-token` after `--token`, `TACK_API_TOKEN` and `~/.tackrc`; a server whose database lives elsewhere needs `TACK_API_TOKEN` set on both ends. An in-memory database keeps its token only in the process. See [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html#authentication).
+With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from the directory of its database file, or creates it there (`0600`, one line), and requires it on every API request; the page at `/` hands it to the browser as the `tack_session` cookie. The CLI looks for the file in `<data root>/api-token` (the `tack` folder of the system's per-user data directory) after `--token`, `TACK_API_TOKEN` and `~/.tackrc`; a server whose database lives elsewhere needs `TACK_API_TOKEN` set on both ends. An in-memory database keeps its token only in the process. See [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html#authentication).
 
 The `TACK_BACKUP_*` values are **defaults**. The cloud-backup settings except the interval can also be edited from **Settings → Cloud Backup** and are stored in the board's database; those values win. See [Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html#remotecloud-backup).
 
@@ -105,7 +107,7 @@ runner does not know makes it refuse to start.
 | Variable | TOML key | Flag | Default | Description |
 |----------|----------|------|---------|-------------|
 | `TACK_RUNNER_API_URL` | `api_base_url` | `--api-url` | `http://127.0.0.1:3210/api/runner/v1` | Tack API base URL the runner polls |
-| `TACK_RUNNER_ENROLLMENT_TOKEN` | `enrollment_credential` | `--enrollment-token` | _(none)_ | One-time operator-issued token; exchanged for a durable credential and never persisted. Required at every start, even when a stored credential exists, which is tried first. Prefer the variable: the flag shows in the process list |
+| `TACK_RUNNER_ENROLLMENT_TOKEN` | `enrollment_credential` | `--enrollment-token` | _(none)_ | One-time token from `tack runner enroll`, exchanged for a durable credential and never persisted. The runner tries a credential it already stored first, so the token is needed on the first start and again only if the board refuses the stored credential. Prefer the variable: the flag shows in the process list |
 | `TACK_RUNNER_ID` | `runner_id` | `--runner-id` | `local-runner` | The name the runner sends to the board |
 | `TACK_RUNNER_STATE_DIR` | `state_dir` | `--state-dir` | `.tack-runner` (embedded: `<TACK_STORAGE_DIR>/runner`) | Owner-only directory for the journal, credential, workspaces, staging, locks, logs and the file secret store |
 | `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` | `max_concurrent_attempts` | `--max-concurrent-attempts` (the `tack-runner` executable only) | `1` | How many attempts the runner works at once. Below `1`, or a value that is not a whole number, is refused at start. A folder worked in place runs one attempt at a time whatever this says; parallel attempts need a branch or a clone |
@@ -147,17 +149,15 @@ The settings:
   model](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-model). No `TACK_*`
   variable names a model, provider or endpoint. A runner whose settings file has a key or a table it
   does not read (a `[provider.*]` table among them) refuses to start and names it.
-- **Log visibility.** The default filter is `tack={level},tower_http={level}`: a target directive
-  matches by prefix, so `tack` covers every Tack crate, the embedded runner's enrollment, claim and
-  completion lines among them, and `TACK_LOG_LEVEL` sets their level. The per-request trace is `debug`,
-  so it appears only at that level; a failed request is `error`. `RUST_LOG` still wins when set.
+- **Logs.** The embedded runner's enrollment, claim and completion lines are in the board's own log, at
+  the level `TACK_LOG_LEVEL` sets. The per-request trace appears only at `debug`; a failed request is
+  `error`. `RUST_LOG`, when set, replaces that filter.
 
 ## Runner verifier (`[verify]`)
 
 A runner can run a verifier over each attempt that succeeded, after the attempt's changes
 are captured and before its workspace is deleted. The verifier reads the captured evidence
-and produces a merge-readiness pack (`docs/contracts/mrp-v1/`); the runner uploads that pack
-as one more artifact on the attempt. The runner runs it, on your machine: the board never
+and produces a merge-readiness pack; the runner uploads that pack as one more artifact on the attempt. The runner runs it, on your machine: the board never
 runs it. Whatever the kind, the program starts with an environment of `PATH` only, in the
 attempt's workspace, under the runner's process limits and `timeout_seconds`.
 
@@ -221,12 +221,12 @@ args = ["--strict"]      # placed before the flags the runner adds
 ```
 
 A verifier that fails, times out, is not on `PATH`, or produces no pack never changes the
-attempt's outcome: the attempt still completes `succeeded` and records an
-`attempt.verify_failed` event carrying the exit code and the reason. With `enabled = false`,
+attempt's outcome: the attempt still completes `succeeded`, and its timeline shows "Verification failed"
+(`attempt.verify_failed`) with the exit code and the reason. With `enabled = false`,
 nothing is started. A run request can decline the verifier for one run (the run dialog's
 "Verify the result" box); it can never turn on a verifier the runner has off. A request that
-asks for one from a runner without it changes nothing, and the attempt records an
-`attempt.verify_skipped` event saying why. A program that is not on `PATH` is logged as a
+asks for one from a runner without it changes nothing, and the timeline shows "Verification skipped"
+(`attempt.verify_skipped`) with the reason. A program that is not on `PATH` is logged as a
 warning when the runner starts, and `tack runner doctor` prints the kind, program and
 arguments the runner would use.
 
@@ -251,7 +251,7 @@ never the item's description) and runs `git push origin <branch>`. Git hooks in 
 do not run. The branch, its head commit and whether it was pushed are recorded in the attempt's
 evidence and its completion report. A push that fails (no credentials, a rejected branch, an
 unreachable remote) never changes the attempt's outcome: the attempt still completes
-`succeeded` and records an `attempt.push_failed` event. With `push_branches = false`, nothing
+`succeeded`, and its timeline shows "Pushing the branch failed" (`attempt.push_failed`). With `push_branches = false`, nothing
 is committed or pushed.
 
 Turn it on only for agents you would trust with your git credentials. The push runs git in the
@@ -261,8 +261,8 @@ workspace was made and sends exactly the commit that was verified, and it is ref
 repository's git configuration changed during the run.
 
 As with the verifier, a run request can decline the push for one run but never enable it; asking
-for a push from a runner with `push_branches = false` changes nothing and the attempt records an
-`attempt.push_skipped` event.
+for a push from a runner with `push_branches = false` changes nothing, and the timeline shows
+"Branch not pushed" (`attempt.push_skipped`).
 
 ## Web access (`[egress]`)
 
@@ -336,12 +336,11 @@ How the runner starts and watches the daemon, and how teams are checked, is in
 A profile, not the runner's file, names a team: `tool_policy.docket.team`. With none, the team is
 named for the project's folder.
 
-A team's steps can also run out of their own budget — rounds, tool calls or time, as against the
-tokens limit above, which stays Tack's own. Where that limit is raised depends on who set it: one
-on a single step is a key on that step, in the team's own pipeline; one on a role applies to every
-step that role runs; a time limit with neither falls back to the team's own turn timeout; and
-anything still unset is this installation's own machine default. The run that stopped always names
-which of these applies, so there is no table to keep in sync here.
+A team's step can also stop because it ran out of rounds, tool calls or time. These limits belong to
+docket, not to Tack's token limit. A limit can be set on one step (in the team's own pipeline) or on a
+role (it applies to every step that role runs); a time limit set on neither falls back to the team's own
+turn timeout, and anything still unset is docket's default for the machine. The run that stopped names
+which limit it hit and where to raise it.
 
 ## Debugging
 
@@ -349,13 +348,14 @@ which of these applies, so there is no table to keep in sync here.
 # Debug logging
 TACK_LOG_LEVEL=debug tack serve
 
-# Trace SQL queries
-RUST_LOG=tack_db=trace,tack_api=debug tack serve
+# More detail for chosen parts. RUST_LOG replaces the default filter, so name every part you want;
+# `tack` is every Tack crate, and `sqlx=debug` adds each SQL statement
+RUST_LOG=tack=info,tack_api=debug,sqlx=debug tack serve
 
 # JSON logs (for log aggregators)
 TACK_LOG_JSON=true tack serve
 
-# The embedded runner's own log lines are in the default output under `--with-runner`
+# The embedded runner's log lines are in the board's own output
 tack serve --with-runner
 ```
 
@@ -373,22 +373,16 @@ settings.
 
 ## Agent sandbox
 
-Every agent runs contained: by this computer (bubblewrap), by its own sandbox, or by docket;
+Every agent runs contained: by this computer (bubblewrap, `bwrap`), by its own sandbox, or by docket;
 Claude Code and opencode only by bubblewrap. Where nothing contains an agent it does not run,
-unless the administrator turned the requirement off, and then it asks before each action.
+unless the administrator turned the requirement off, and then it asks before each action. What the
+sandbox shows and hides is in [What the Agent Can Reach](https://yielab.github.io/tack/admin-guide/what-the-agent-can-reach.html).
 
-When `bwrap` is on the runner's `PATH`, each agent that can
-start inside it runs inside it, seeing the workspace and a scratch home read-write, the
-directories it needs from your home (`~/.claude`, `~/.codex`) and the system
-directories read-only. The sandbox closes the network only when `[egress]` enforces web access. An agent that cannot start inside
-`bwrap` (a program in a virtualenv or under Homebrew, whose loader or runtime lives where the
-sandbox does not reach) counts as not contained. docket is not wrapped: it confines its own agents, and the
-probe asks it (`isolationPosture` in its `/health`): `sandbox: harness` only when docket says it
-jails them, `sandbox: none` when it says not, or says nothing, and then the run asks; docket is never
-refused. `tack runner doctor` prints `sandbox: bwrap`, `sandbox: harness (…)` or
-`sandbox: none (<why>)` for each agent, and the attempt's start report carries the same word.
+`tack runner doctor` prints `sandbox: bwrap`, `sandbox: harness (…)` or `sandbox: none (<why>)` for each
+agent, and the run's start report carries the same word. `harness` means docket says it jails its own
+agents; Tack never wraps docket and never refuses it over this.
 
 | Setting | Effect |
 |---|---|
-| `[sandbox] required = true` | The default. An agent that finds no containment on this computer does not run: the probe says "install bubblewrap" and nothing schedules it. |
+| `[sandbox] required = true` | The default. An agent that finds no containment on this computer does not run: the doctor says "install bubblewrap" and no run is sent to it. |
 | `[sandbox] required = false` | The opt-out for a computer that cannot have `bwrap`. The agent runs without it, asking before each action, and the run's timeline, the run dialog, the Agents page and `tack runner doctor` say so. An agent that cannot ask does not run even then. |

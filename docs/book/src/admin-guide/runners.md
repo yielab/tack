@@ -34,6 +34,7 @@ makes the runner refuse to start.
 | `[secrets]`, `[environment]` | What a run may reference and the variables every run gets. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
 | `[sandbox]` | `required = false` lets an agent run without `bubblewrap`, asking before each action. The default requires it. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
 | `[prepare]` | `board_may_replace = true` lets a project replace the install command from the board. The default does not. See [Installing the project's dependencies](#installing-the-projects-dependencies). |
+| `[egress]` | Holds each agent's web access to its profile's choice. Off by default. See [What the Agent Can Reach](what-the-agent-can-reach.md#web-access). |
 | `[docket]` | Where docket's API is. See [docket teams](#docket-teams). |
 
 Every variable and key is in the [Configuration](configuration-reference.md). Run
@@ -90,10 +91,9 @@ Prefer the environment variable to `--enrollment-token`: the flag leaves the sec
 history and in the process list.
 
 On a later start the runner first tries the credential it stored in its state directory, and uses the
-token only if the board refuses that credential. It still refuses to start when no token is
-configured at all, before it touches the disk or the network. So keep the variable set in the
-runner's service environment. A token that has expired or been revoked cannot enroll a replacement; if
-the stored credential is ever refused, enroll the runner again.
+token only if the board refuses that credential. A runner with neither a stored credential nor a token
+refuses to start, before it touches the network. A token that has expired or been revoked cannot enroll
+a replacement; if the stored credential is ever refused, enroll the runner again with a new token.
 
 ### Running a runner as a service
 
@@ -113,8 +113,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tack-runner
 ```
 
-Keep `TACK_RUNNER_ENROLLMENT_TOKEN` in the environment file, as the previous section explains. The
-unit stops the runner with `SIGTERM` and gives it 30 seconds to finish. The agents run as the
+Put `TACK_RUNNER_ENROLLMENT_TOKEN` in the environment file for the first start; the runner then keeps
+its own credential in its state directory. The unit stops the runner with `SIGTERM` and gives it 30 seconds to finish. The agents run as the
 `tack-runner` user, so sign each one in as that user. The unit also hides `/home` from the runner, so
 a project folder the runner works on must live elsewhere.
 
@@ -150,18 +150,17 @@ running.
   embedded runner runs agents on the machine that serves the web page, so it is limited to the
   machine you sit at.
 - **Off unless asked.** A plain `tack serve` starts no runner.
-- **Its state directory** is `<TACK_STORAGE_DIR>/runner` unless `TACK_RUNNER_STATE_DIR` says
-  otherwise. Tying it to the storage directory keeps two boards from sharing one runner's state.
+- **Its state directory** is `<TACK_STORAGE_DIR>/runner`, so two boards never share one runner's state.
 - **Its settings file.** Put it at `~/.config/tack/runner.toml` and the embedded runner reads it on
   every start, including a service installed by `tack service install`. Wiping the board's data
-  folder leaves it in place. To use another file, pass `tack serve --runner-config <path>` (or set
-  `TACK_LOCAL_RUNNER_CONFIG`). It is the same file `tack runner start --config` reads. It is the only
-  way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[environment]`, `[sandbox]` or `[docket]`
-  table, because those have no environment variable. With no file the embedded runner runs on
-  defaults: no verifier, no branch push and no docket. The Agents page says which file it read, or
-  that it read none, and so does `tack runner doctor`.
-- **Its log lines** are in the board's log by default: enrollment, claims, refusals and
-  completions. For every step, start the board with `RUST_LOG=tack=debug`.
+  folder leaves it in place. With no file it runs on defaults: no verifier, no branch push and no
+  docket. The Agents page says which file it read, or that it read none, and so does
+  `tack runner doctor`. The other ways to name the file, the state directory and the log filter are in
+  [Configuration](configuration-reference.md#embedded-runner-tack-serve---with-runner).
+- **Its log lines** (enrollment, claims, refusals and completions) are in the board's log.
+- **The desktop app.** When the desktop app starts the board, it also stops it: quitting from the tray,
+  or sending the app `SIGTERM`, `SIGINT` or `SIGHUP`, stops the board and its embedded runner. A board the
+  app found already running is left running.
 
 Everything else on this page (agent lookup, credentials, workspace storage, what happens after a
 run) applies to an embedded runner exactly as to a separate one.
@@ -170,7 +169,7 @@ run) applies to an embedded runner exactly as to a separate one.
 
 <a id="where-tack-looks-for-a-harness-binary"></a>
 
-The Agents page's "installed" check and the runner's own start-up probe find `codex`, `claude`,
+The Agents page's "installed" check and the runner's own start-up check find `codex`, `claude`,
 `opencode` and `docket` the same way. They look on the runner process's own `PATH` first, as a shell would. If
 that finds nothing, the runner checks a fixed list of per-user install folders. A terminal usually
 has them on its `PATH`, but a desktop launcher or a systemd user service usually does not:
@@ -194,10 +193,6 @@ docket is still turned on only by the `[docket]` table, because it is a daemon t
 Without one, the doctor reports "docket is not configured: add a [docket] table with its binary or
 base_url". When the table's `binary` is a bare name such as `docket`, the runner looks for it in the
 folders above; a path is used as written.
-
-When the desktop app starts the board, it also stops it: quitting from the tray, or sending the app
-`SIGTERM`, `SIGINT` or `SIGHUP`, stops the board and its embedded runner. A board the app found
-already running is left running.
 
 ## Local credential handling
 
@@ -347,38 +342,43 @@ docket
 ```
 
 A team that can finish a task with nobody present is `lights-out`. Any other team is `attended`, and
-the line ends with the fixes docket asks for, in docket's words (the example above is the doctor's
-own test data). A team that is `attended`, or reports any fix, **keeps its tasks at autonomy level
-L3**, however high the project's level is: Tack will not merge them by itself. The project's
-Automation settings show the same teams and fixes in the ladder at the top of the tab. Run the fix with docket's own
-commands, then run the doctor again. The Merge button is not held by this ceiling. See
-[Automating a Project](../user-guide/automation.md) for the person's side.
+the line ends with the fixes docket asks for, in docket's words. A team that is `attended`, or reports
+any fix, **keeps its tasks at autonomy level L3**, however high the project's level is: Tack will not
+merge them by itself. The project's Automation settings show the same teams and fixes in the ladder at
+the top of the tab. Run the fix with docket's own commands, then run the doctor again. The Merge button
+is not held by this ceiling. See [Automating a Project](../user-guide/automation.md) for the person's
+side.
 
 The end of each team's line says which folders its sandbox reads besides its own work: the folders
 docket granted, `reads nothing outside its work` when there are none, or `reads: not reported by this
 docket` for a docket that does not say. The Teams block of the Automation settings shows the same fact
 under each role's team.
 
-When the daemon does not answer, the `daemon:` line says why, for example "not answering at
-http://127.0.0.1:7399/health; the runner starts it with the runner" (the runner is configured to
-start it but has not), or "no binary is set to start one".
+When the daemon does not answer, the `daemon:` line says why: "not answering at `<url>/health`; the runner
+starts it with the runner" (the runner is set to start it and has not yet), "… and no binary is set to
+start one", or "… start it, or remove base_url so the runner can" (you named a `base_url` nobody serves).
 
 The Teams block of the Automation settings has a button to apply a repository's teams. The board has
-no line to docket or to the project's folder, so it asks a runner that has the agent: the runner makes
+no line to docket or to the project's folder, so it asks a runner that has the agent. That runner makes
 each team from its shape on its docket, then applies the team's `.docket/teams/<team>` folder from the
-project's folder. A `build` team is made to work in the project's folder; a team of any other shape works
-in a folder docket makes for it, so it never writes in the project's checkout, and a team that already
-exists is left as it is. This needs a docket that lists `podShape` among the `features` of its `/health`; the
-button, and the **Create** button beside a missing team in the Orchestration Map and in the preview of an
-imported project file, are disabled, with their reason, until a runner reports one, and the project's code
-must be a folder on the runner's computer, and docket must run on that computer too, because it reads the team's folder from its own disk (a docket elsewhere answers that the folder was not found). A `build` team's agents work in a worktree under docket's own state, not in the checkout, so they cannot change the folder that is applied; a change to what the folder runs is read by a person again before docket applies it. A request no runner answers within half a minute is not applied.
+project's folder. A team that already exists is left as it is. Tack writes no recipe, service, secret or
+quota: it only asks docket to apply what the repository holds. You can still apply a team with docket's
+own commands on that machine.
 
-docket will not apply a folder that runs commands on the machine (an install command, an allowed command,
-open network access) until someone has read them. The runner passes docket's list to the board with the
-code docket gave for it; a person reads the commands in the board and confirms with the code, and the
-board asks the runner again with that code, which it sends to docket as `accept`. A folder that changes between the two is refused and asks again. Tack
-writes no recipe, service, secret or quota: it only asks docket to apply what the repository holds. You
-can still apply a team with docket's own commands on that machine.
+- **Where teams work.** A `build` team is made to work in the project's folder, though its agents work in
+  a worktree under docket's own state, so they cannot change the folder that is applied. A team of any
+  other shape works in a folder docket makes for it and never writes in the project's checkout.
+- **What it needs.** A docket that lists `podShape` among the `features` of its `/health`. The button, and
+  the **Create** button beside a missing team in the Orchestration Map and in the preview of an imported
+  project file, are disabled, with their reason, until a runner reports one. The project's code must be a
+  folder on the runner's computer, and docket must run on that computer too, because it reads the team's
+  folder from its own disk (a docket elsewhere answers that the folder was not found).
+- **Commands need a reading.** docket will not apply a folder that runs commands on the machine (an
+  install command, an allowed command, open network access) until someone has read them. The runner
+  passes docket's list to the board with a code from docket. A person reads the commands in the board and
+  confirms with the code, and the board asks the runner again with that code, which it sends to docket as
+  `accept`. A folder that changes between the two is refused and asks again.
+- **Timing.** A request no runner answers within half a minute is not applied.
 
 ### What a team's sandbox can read
 
@@ -422,56 +422,72 @@ checked against its checksum.
 ## Installing the project's dependencies
 
 A project can say how its dependencies are installed before an agent works on its code. By default
-the command comes from the lockfile at the root of the repository: `npm ci` for
-`package-lock.json`, `pnpm install --frozen-lockfile` for `pnpm-lock.yaml`, `yarn install
---immutable` for `yarn.lock`, `uv sync --frozen` for `uv.lock`, `poetry install` for `poetry.lock`
-and `cargo fetch` for `Cargo.lock`; with several lockfiles the first in that order wins, and with
-none nothing is installed. In Settings → Automation, under **Where the code is**, a project can
-replace the command with its own single line or turn the install off. The same screen and the Run
-dialog show what will run. For a folder on the board's own computer the board reads the lockfile
-itself; for any other project the line says it is detected on the runner when the run starts.
+the command comes from the lockfile at the root of the repository:
+
+| Lockfile | Command |
+|---|---|
+| `package-lock.json` | `npm ci` |
+| `pnpm-lock.yaml` | `pnpm install --frozen-lockfile` |
+| `yarn.lock` | `yarn install --immutable` |
+| `uv.lock` | `uv sync --frozen` |
+| `poetry.lock` | `poetry install` |
+| `Cargo.lock` | `cargo fetch` |
+
+With several lockfiles the first in that order wins, and with none nothing is installed. In Settings →
+Automation, under **Where the code is**, a project can replace the command with its own single line or
+turn the install off. The same screen and the Run dialog show what will run. For a folder on the board's
+own computer the board reads the lockfile itself; for any other project the line says it is detected on
+the runner when the run starts.
 
 For Claude Code, Codex and opencode the runner makes the copy of the code the agent works in, so it
-also runs the command there, before the agent starts, within the run's time limit. A package's own
-install script runs as you, so the command runs where the agent does, inside the sandbox: with a
-scratch home instead of yours, so it cannot read or write your files, and with an environment of a few
-names only (`PATH`, `HOME`, the locale, certificate files and the package registry's settings), not the
-runner's whole environment. Where the runner holds agents to their web access (`[egress] enforce`), the
-install goes through the same proxy and reaches only the package registry: the one the lockfile's package
-manager uses, and any registry named in the runner's own `NPM_CONFIG_REGISTRY`, `PIP_INDEX_URL` or `UV_INDEX_URL`.
+also runs the command there, before the agent starts, within the run's time limit. A docket run is
+prepared by docket, not by the runner.
+
+**Where it runs.** A package's own install script runs as you, so the command runs where the agent
+does, inside the sandbox:
+
+- with a scratch home instead of yours, so it cannot read or write your files;
+- with an environment of a few names only (`PATH`, `HOME`, the locale, certificate files and the package
+  registry's settings), not the runner's whole environment;
+- where the runner holds agents to their web access (`[egress] enforce`), through the same proxy, reaching
+  only the package registry: the one the lockfile's package manager uses, and any registry named in the
+  runner's own `NPM_CONFIG_REGISTRY`, `PIP_INDEX_URL` or `UV_INDEX_URL`.
+
 The tools it needs are found on the runner's `PATH`; a tool kept under a version manager's folder is
 shown to the sandbox together with the folder beside its `bin`. Its output is read with the registry's
 tokens removed. Where the machine has no sandbox and the administrator turned the requirement off, the
-install runs as the runner does, as the agent does, and the run's timeline says "Installed without a
-sandbox"; where the requirement is on, nothing is installed and the run ends as failed. What npm, pnpm and yarn install into
-`node_modules` is kept once in the runner's state folder, under `prepare-cache`, per lockfile. The
-next run with the same lockfile gets its own `node_modules` whose files are hard links to the kept
-ones, so it prepares in seconds without running the command and without copying the packages; the
-state folder and the workspaces must therefore be on the same filesystem, and when they are not the
-command simply runs every time. A file named `.tack-prepared` in that folder marks it as the runner's, and
-the folder is not counted as the agent's change; when the project's `.gitignore` already lists it,
-git leaves it out by itself. `uv sync`, `poetry install`, `cargo fetch` and a
-command a project replaced keep nothing and run every time. If the command exits with an error or
-runs out of time, the run ends as failed before the agent starts and spends no tokens; its reason is
-"Could not prepare the dependencies", the command and how it ended, and the last lines of its output.
-A docket run is prepared by docket, not by the runner.
+install runs as the runner does, and the run's timeline says "Installed without a sandbox". Where the
+requirement is on, nothing is installed and the run ends as failed.
 
-A command a project replaced is a shell command the board chose, so the runner runs it only if you allow
-it. By default it does not: the run ends as failed before the agent starts, with the reason that the runner
-does not let the board replace the install command. To allow it, write the following in the runner's settings
-file; the command the lockfile implies never needs it.
+**What is kept.** What npm, pnpm and yarn install into `node_modules` is kept once in the runner's state
+folder, under `prepare-cache`, per lockfile. The next run with the same lockfile gets its own
+`node_modules` whose files are hard links to the kept ones, so it prepares in seconds without running the
+command and without copying the packages. The state folder and the workspaces must therefore be on the
+same filesystem; when they are not, the command simply runs every time. A file named `.tack-prepared`
+in that folder marks it as the runner's, and the folder is not counted as the agent's change; when the
+project's `.gitignore` already lists it, git leaves it out by itself. `uv sync`, `poetry install`,
+`cargo fetch` and a command a project replaced keep nothing and run every time.
+
+**When it fails.** If the command exits with an error or runs out of time, the run ends as failed before
+the agent starts and spends no tokens. Its reason is "Could not prepare the dependencies", with the
+command, how it ended and the last lines of its output.
+
+**A replaced command.** A command a project replaced is a shell command the board chose, so the runner
+runs it only if you allow it. By default it does not: the run ends as failed before the agent starts,
+with the reason that the runner does not let the board replace the install command. To allow it, write
+the following in the runner's settings file; the command the lockfile implies never needs it.
 
 ```toml
 [prepare]
 board_may_replace = true
 ```
 
-The runner installs only what the agent can use. When a run's tools are named and none of them runs
-a command (only Read, Grep, Glob, WebFetch and WebSearch) and the card has no check that runs
-something (a command, a test or a metric), nothing is installed, whatever the project's install
-setting says, and the run's timeline says "No install: this profile runs no commands". A run with
-every tool, with no tool list, or with a check installs as before. The agent's sandbox stays on for
-every run.
+**When nothing is installed.** The runner installs only what the agent can use. When a run's tools are
+named and none of them runs a command (only Read, Grep, Glob, WebFetch and WebSearch) and the card has
+no check that runs something (a command, a test or a metric), nothing is installed, whatever the
+project's install setting says, and the run's timeline says "No install: this profile runs no commands".
+A run with every tool, with no tool list, or with a check installs as before. The agent's sandbox stays
+on for every run.
 
 ## Non-loopback and security posture
 
@@ -494,7 +510,7 @@ loopback address, whatever token the board uses.
 
 What a runner does once an attempt has succeeded, and before its workspace is deleted. Each step is the
 runner's, on its machine. None of them can change the attempt's outcome: if one fails, the attempt is
-still `succeeded` and the failure is recorded as an event on its timeline.
+still `succeeded` and the failure shows on its timeline.
 
 **Evidence.** For every agent, and also for a cancelled attempt, the runner records what the attempt
 changed against the revision it started from. It uploads three artifacts: `changes.patch` (the full
@@ -506,7 +522,7 @@ written, and it says why.
 
 **Verification.** A runner with an enabled `[verify]` section runs a program of yours over that
 evidence and uploads the merge-readiness pack it writes. It is off by default. A verifier that fails,
-is missing or times out records `attempt.verify_failed` and nothing more. The pack is what a person
+is missing or times out shows "Verification failed" on the attempt's timeline and changes nothing else. The pack is what a person
 reads in [Reviewing a merge-readiness pack](../user-guide/reviewing-runs.md#reviewing-a-merge-readiness-pack).
 The settings are in the [Configuration](configuration-reference.md);
 `tack runner doctor` reports whether the verifier is on and whether its program is found.
@@ -514,7 +530,7 @@ The settings are in the [Configuration](configuration-reference.md);
 **Branch push.** A runner with `push_branches = true` under `[git]` commits what the agent left
 uncommitted onto a branch named `<prefix><first 8 characters of the item's id>-a<attempt number>` and
 pushes it to the remote the repository came from, using your own git credentials. It is off by
-default. A failed push records `attempt.push_failed`. Turn it on only for agents you would trust with
+default. A failed push shows "Pushing the branch failed" on the timeline. Turn it on only for agents you would trust with
 those credentials. The [Configuration](configuration-reference.md#pushing-the-attempts-branch-git) page says what the push does and does not guard against.
 
 **Pull request.** Not at completion: the board opens it when the attempt is accepted in its

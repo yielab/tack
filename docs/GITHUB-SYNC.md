@@ -26,8 +26,8 @@ id marks it as already synced.
 - **No webhook receiver.** Tack listens on `127.0.0.1` by default and the desktop app never exposes
   it, so GitHub could not deliver to it. A poll with the same token the push uses reaches every
   install.
-- **Best-effort.** A push is fire-and-forget, like outbound webhooks: a failure is logged and never
-  blocks or fails the item update or the comment. The poll logs and skips a repository that errors
+- **Best-effort.** A push is fire-and-forget: a failure is logged and never blocks or fails the item
+  update or the comment. The poll logs and skips a repository that errors
   rather than failing the whole pass.
 - **Last write wins.** The poll moves an item through the project's ordinary workflow, with the same
   validation `PATCH /api/items/{id}` uses, and creates comments directly, so an inbound move or
@@ -46,12 +46,12 @@ id marks it as already synced.
 ## Configuration
 
 Nothing is sent to GitHub without a token, so sync is inert by default. The poll also needs an interval.
+Set these on the server (their defaults are in [Configuration](CONFIG.md)):
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TACK_GITHUB_TOKEN` | _(none)_ | Personal access token with `repo` scope. Enables the push, and lets the poll start. Never logged. |
-| `TACK_GITHUB_API_BASE` | `https://api.github.com` | The API root, for GitHub Enterprise or a mock. |
-| `TACK_GITHUB_POLL_SECONDS` | `0` | Poll interval in seconds. `0` is off. |
+- `TACK_GITHUB_TOKEN`: a personal access token with `repo` scope. It enables the push and lets the poll
+  start. Never logged.
+- `TACK_GITHUB_POLL_SECONDS`: the poll interval in seconds. `0`, the default, is off.
+- `TACK_GITHUB_API_BASE`: the API root, only for GitHub Enterprise or a mock.
 
 A project can carry its own token as a reference rather than a value:
 `PATCH /api/projects/{id}` with `{"github_token_ref": "store:<name>"}`, where `<name>` is a secret

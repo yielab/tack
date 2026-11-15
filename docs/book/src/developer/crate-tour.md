@@ -1,17 +1,24 @@
 # Crate Tour
 
-This chapter is for contributors who need to find the file that owns a behaviour. It walks through each Rust crate in the main workspace: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. The workspace has ten crates: `tack-protocol` (the contract the server and the runner share), `tack-core` (pure domain logic), `tack-orch` (pure runs policy), `tack-db` (the store), `tack-app` (the use cases and the background ticks), `tack-api` (HTTP), `tack-runner`, `tack-cli`, `tack-test-support`, which holds test helpers, and `tack-evals`, a development harness that is never released. An eleventh, `tack-desktop`, sits outside that workspace by design; its own section at the end of this chapter says why. `scripts/check-crate-graph.sh --print` prints which crate may depend on which, `scripts/arch-facts.sh` prints that table with the current counts, and the check fails on any edge outside it.
+This chapter is for contributors who need to find the file that owns a behaviour. After reading it you can name the crate and file behind a feature, and you know what each crate deliberately does not own.
+
+The workspace has ten crates: `tack-protocol` (the contract the server and the runner share), `tack-core` (pure domain logic), `tack-orch` (pure runs policy), `tack-db` (the store), `tack-app` (the use cases and the background ticks), `tack-api` (HTTP), `tack-runner`, `tack-cli`, `tack-test-support` (test helpers) and `tack-evals` (a development harness that is never released). An eleventh, `tack-desktop`, sits outside the workspace by design; its section at the end says why.
 
 > The SolidJS web UI in `frontend/` is covered separately in
 > [Frontend & Design System](frontend.md) — structure, the design-token system,
 > and the `shared/ui` component kit.
 >
-> This chapter is a per-file walkthrough, not a reference. How an automatic run, a docket
-> team and the merge ceiling are built is in [Runs, Teams and Automation](runs-and-teams.md);
-> the project file is in [The Project File Format](project-file.md). Crate boundaries and the
-> rules that hold across crates are in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md),
-> the authority when the two disagree on a fact. Modules a section does not name are small
-> and carry a doc comment on their first lines; `ls` the crate's `src/` for the full list.
+> **Who owns which fact.** This chapter is a per-file walkthrough, not a reference. It owns
+> *where things live*. [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md)
+> owns the crate boundaries (the allowed dependency edges, what each crate may name) and the rules
+> that hold across crates. The [Architecture Overview](index.md) owns the narrative: why the layers
+> exist and how a request travels. When this chapter and `ARCHITECTURE.md` disagree on a boundary,
+> `ARCHITECTURE.md` wins.
+>
+> How an automatic run, a docket team and the merge ceiling are built is in
+> [Runs, Teams and Automation](runs-and-teams.md); the project file is in
+> [The Project File Format](project-file.md). Modules a section does not name are small and carry
+> a doc comment on their first lines; `ls` the crate's `src/` for the full list.
 
 ---
 
@@ -221,6 +228,12 @@ The digest (ADR 0034, decision 6): what a reader should know about some projects
 
 ---
 
+### `notification.rs`
+
+What tells a person that something needs them (ADR 0035), as pure values and two rules. `notice` says which board fact is worth a notification and `closes` says which fact ends one. A **needs-you** notification stays open until the fact that answers it; an **info** one is unread until read. A `Kind` is `Decision`, `RunFailed`, `ChangeSet`, `RunFinished`, `DueSoon`, `ChildrenFinished`, `Memory` or `QualityTrend`. Nothing here touches the store, a clock or HTTP: `tack_app::notifications` applies the rules (see below).
+
+---
+
 ### `trigger.rs`
 
 What wakes a profile (ADR 0034, decision 8), as pure values and rules. A `Trigger` is a `Source` (an `EventKind` with a `Filter`, or a `Schedule` of ISO weekdays and a minute of the day in a stated zone), a profile, a quiet period, a daily cap and a `ThreadScope` (the home project, and optionally the credential whose projects count). `fires(trigger, happened, own, reaches)` says whether a `Happened` belongs in the trigger's next run; `own` is `profile_labels(...)`, the principal labels the profile works under (the credentials its triggers name, its triggers' `trigger:<id>` and its threads' `thread:<id>`), and `is_echo` makes an event a principal of that set caused never fire it. `burst_ready` waits for quiet but not for more than an hour, `cap_reached` counts the last 24 hours, `schedule_due` compares the latest scheduled moment with the last run (or the trigger's creation), and `run_input` writes what the run is told: why it started, up to 50 events and the digest.
@@ -245,7 +258,9 @@ The project file. `outline.rs` holds the serde types of every section (`Outline`
 
 **Owns:** SQLite connection pool initialisation, the migration runner, every `sqlx` line in the server, and `StoreError`. Commands are `Repository` methods in `repo/`; read models are functions in `queries/`.
 
-**Does not own:** HTTP concerns, config loading, or business rule enforcement. The repository functions are thin: they translate between Rust structs and SQL rows. It is the only crate allowed to name `sqlx`, and no `sqlx` type crosses its edge: every call returns `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }` or `Sql`), which `AppError` and `ApiError` both wrap. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables; `scripts/check-crate-graph.sh` and the bans in `deny.toml` keep `sqlx` and the raw pool in those two crates.
+**Does not own:** HTTP concerns, config loading, or the rules of the domain. The repository functions translate between Rust structs and SQL rows; a rule that needs a fact from the transaction (a status move, a parent) is asked of `tack-core` through a gate (`StatusGate`, `ParentGate`) and the store holds none of it.
+
+Every call returns `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }` or `Sql`), which `AppError` and `ApiError` both wrap, and no `sqlx` type crosses the crate's edge. The rule that only `tack-db` and `tack-test-support` name `sqlx` or the raw pool is in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md).
 
 ---
 
@@ -340,7 +355,7 @@ One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, 
 
 ### `threads.rs`
 
-Opens a thread (a conversation between a person and a profile, ADR 0034 decision 7), writes in it and starts the turn each message causes: a run of the thread's profile against the thread's hidden item, under the principal `thread:<id>`, whose input is the window of messages and the digest. The rules that bound a thread are `tack_core::thread`'s; the routes are `/api/threads` in `tack-api`.
+Opens a thread (a conversation between a person and a profile, ADR 0034 decision 7), writes in it and starts the turn an operator's message causes (an agent's message starts none): a run of the thread's profile against the thread's hidden item, under the principal `thread:<id>`, whose input is the window of messages and the digest. The rules that bound a thread are `tack_core::thread`'s; the routes are `/api/threads` in `tack-api`.
 
 ### `triggers.rs`
 
@@ -357,6 +372,10 @@ Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon
 ### `retention.rs` and `observability.rs`
 
 Two sibling background loops, each a `tick()` plus a `spawn()`. Retention purges stale terminal-attempt event rows from `execution_events` outright (there is no roll-up table) on an injectable clock, so tests never depend on wall time; `tack serve` spawns it only when the operator turned it on. Observability computes a periodic, id-free snapshot of runner, queue, lease and event counts and logs alerts from it. It is keyed only by the domain's two small, closed state vocabularies (`agent_runners.state`, `execution_requests.state`), never by attempt, request or runner id, so the label set stays bounded regardless of fleet size.
+
+### `notifications/`
+
+The inbox (ADR 0035). `Inbox` (`mod.rs`) is the one write path of the `notifications` tables: it opens a `Notice` the rule in `tack-core`'s `notification.rs` decided on, closes it when the fact that answers it arrives, and tells the live socket (`GET /api/notifications/live`) about each change. `subscriber.rs` feeds it from the event bus and keeps it true to the store: the bus is in memory and lossy, so `reconcile` reads what waits on a person from the store at start, after the bus says it dropped events and periodically, and `reconcile_memory` does the same for a team's pending memory. `delivery.rs` hands each notification to its channels and retries a failed one with a backoff; `channel.rs` is the `Channel` trait and `webhook.rs` its first implementation, one signed POST to the operator's URL.
 
 ### `ports.rs`
 
@@ -411,6 +430,7 @@ pub struct AppState {
     pub workspace_id: Uuid,
     pub broadcast_tx: broadcast::Sender<BoardEvent>,          // the browser's share of the events
     pub event_bus: tack_app::events::EventBus,                // every consumer of a domain event
+    pub notifications: tack_app::notifications::Inbox,        // what needs a person: the inbox's one write path
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,    // the embedded runner's seam
     pub tasks: TaskTracker,                                   // work started after answering
 }
@@ -429,7 +449,7 @@ pub struct AppState {
 
 ### `handlers/`
 
-One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `create_as`, which a run started by the board itself goes through, and a `resolve_profile` that calls the one in `tack-app`'s `runs/start_run.rs`, beside `default_selector`), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `teams.rs` (the teams the agents report), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The manager's surface (ADR 0034) is `agent_credentials.rs`, `change_sets.rs`, `digest.rs`, `threads.rs` and `triggers.rs`, and `agent_access.rs` is the closed table of routes an agent credential may call. The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
+One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `create_as`, which a run started by the board itself goes through, and a `resolve_profile` that calls the one in `tack-app`'s `runs/start_run.rs`, beside `default_selector`), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `teams.rs` (the teams the agents report), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The manager's surface (ADR 0034) is `agent_credentials.rs`, `change_sets.rs`, `digest.rs`, `threads.rs` and `triggers.rs`, and `src/agent_access.rs` (beside `handlers/`) is the closed table of routes an agent credential may call. The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`. `routing.rs` serves the one router every screen asks which team and profile take an item, `team_apply.rs` applies a repository's teams through the runner, and `notifications.rs` serves the inbox.
 
 The board's own timed work (the auto-start tick, the autonomy tick that merges and demotes, the merge itself, the GitHub poll and the remote backup) is in `tack-app`; a handler that needs one of them calls it. What `tack-app` needs back from this crate is `ports.rs`, the implementation of `tack_app::ports` over `AppState`.
 
@@ -466,7 +486,7 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 
 ---
 
-### `error.rs`
+### `error.rs` in `tack-api`
 
 `ApiError` is the unified error type for all handlers. Every variant has a `code()`, a `StableErrorCode`, and the code decides the status (`StableErrorCode::status()`):
 
@@ -609,7 +629,7 @@ The composition root of `tack serve`, and the only place in this crate that name
 
 Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and an **optional** `Commands` enum; the command bodies are in `cmd/`. Run `tack --help` for the authoritative list. The groups are:
 
-- Board basics: `serve`, `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `sprint`, `config`, `completions`
+- Board basics: `serve`, `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `types`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `sprint`, `config`, `completions`
 - Backup/restore: `backup`, `backups`, `restore`
 - Project setup: `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`
 - Agent onboarding and the runner-fleet surface: `mcp` (MCP server over stdio), `execution` (create/list/cancel/reconcile execution requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (run `tack` as a systemd/launchd background service), `agent-profile` (instructions, tool policy, limits, fleet)
@@ -698,4 +718,4 @@ Builds the Tauri app and calls `attach_or_start` before creating the window — 
 
 ### `tray.rs`
 
-Builds the tray icon and its menu: **Open Tack** (show or refocus the window), a disabled **agent execution status line**, a **Launch at login** toggle (unchecked until you turn it on), and **Quit**. The status line polls `GET /api/local-runner` every three seconds — at the port this app's own `settings.json` names, falling back to the default — and renders one of six typed labels: *on*, *off*, *turning on…*, *turning off…* (the persisted preference and the runtime state disagreeing while a toggle takes effect), *waiting for the server…* (nothing answering yet), and *status unavailable (request failed)*. It is a status line and not a switch: it never writes, and a server that has not answered is never rendered as *off*. Closing the window only hides it — the server keeps running; **Quit** is the action that actually stops it.
+Builds the tray icon and its menu: **Open Tack** (show or refocus the window), a disabled **agent execution status line**, a **Launch at login** toggle (unchecked until you turn it on), and **Quit**. The tooltip also says how many notifications are open (`GET /api/notifications?state=open&limit=0`). The status line polls `GET /api/local-runner` every three seconds — at the port this app's own `settings.json` names, falling back to the default — and renders one of six typed labels: *on*, *off*, *turning on…*, *turning off…* (the persisted preference and the runtime state disagreeing while a toggle takes effect), *waiting for the server…* (nothing answering yet), and *status unavailable (request failed)*. It is a status line and not a switch: it never writes, and a server that has not answered is never rendered as *off*. Closing the window only hides it — the server keeps running; **Quit** is the action that actually stops it.

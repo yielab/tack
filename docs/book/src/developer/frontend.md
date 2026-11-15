@@ -4,8 +4,9 @@ The web UI is a [SolidJS](https://www.solidjs.com/) single-page app in `frontend
 built with Vite and Tailwind v4. It talks to the API over `fetch` and a WebSocket,
 and is embedded into the `tack` binary at release time via the `embed-spa` feature.
 
-This page covers how the frontend is organized and, in particular, the **design
-token system** every component relies on.
+This page is for contributors who change the web UI. After reading it you know where code
+goes, which module boundary you must not cross, and how the **design token system** every
+component relies on works.
 
 ## Layout
 
@@ -15,7 +16,7 @@ frontend/src/
 ├── features/     One folder per surface: board, list, calendar, timeline,
 │                 orchestration, sprints, item-detail, dashboard (Overview and
 │                 Factory metrics), projects, settings, templates, agents,
-│                 changesets, threads
+│                 changesets, threads, notifications (the inbox)
 ├── shared/
 │   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs, Card,
 │   │             Switch, ConfirmDialog, Fold, CommandPalette, SearchBar,
@@ -24,7 +25,8 @@ frontend/src/
 │   │             RunState, LoadError, RouteBoundary and the icon set
 │   ├── tree.ts   ancestorsOf / itemsUnder: the one place the web derives from the tree
 │   ├── state/    Context stores + signals (project, items, theme, palette,
-│   │             display, commandPalette, optimistic updates, toasts)
+│   │             display, commandPalette, optimistic updates, notifications,
+│   │             the auto-start explanation)
 │   ├── api/      Typed fetch client, one module per resource, and the
 │   │             generated schema.gen.ts
 │   ├── realtime/ Reconnecting board WebSocket
@@ -119,7 +121,7 @@ tree out. The one thing the web derives is an item's ancestors and what lies und
 holds the project's items. Every view draws a group the same way, with these pieces:
 
 - `TypeTile` (`shared/ui/TypeTile.tsx`): a type's name in its catalog colour, stacked for a type that
-  holds work and flat for work. It replaces the old type badge everywhere.
+  holds work and flat for work.
 - `ProgressBar` (`shared/ui/ProgressBar.tsx`): the server's `Progress` as a bar and "3 of 7 done" or
   "12 of 20 points", plus "n need you"; `progressText` and `needsYouText` give the same words without
   the bar.

@@ -30,6 +30,8 @@ The Status line in each file is the authority. The last column of the table belo
 
 | ADR | Title | Status | Replaced or amended by |
 |---|---|---|---|
+| 0036 | [the board orchestrates, and a team declares what it accepts](https://github.com/yielab/tack/blob/develop/docs/adr/0036-the-board-orchestrates-and-a-team-declares-what-it-accepts.md) | Accepted 2026-11-04 | — |
+| 0035 | [a person is told what needs them](https://github.com/yielab/tack/blob/develop/docs/adr/0035-a-person-is-told-what-needs-them.md) | Accepted 2026-11-04 | — |
 | 0034 | [a manager is a profile that works through the board](https://github.com/yielab/tack/blob/develop/docs/adr/0034-a-manager-is-a-profile-that-works-through-the-board.md) | Accepted 2026-11-01 | — |
 | 0033 | [the screen says what needs you first, and a project shows its teams at work](https://github.com/yielab/tack/blob/develop/docs/adr/0033-the-screen-says-what-needs-you-first-and-a-project-shows-its-teams-at-work.md) | Accepted 2026-11-01 | decision 1, by [Phase 86](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-86.md) |
 | 0032 | [a team is shown as it is, a task can go to a team, and what a run finds can become items](https://github.com/yielab/tack/blob/develop/docs/adr/0032-a-team-is-shown-as-it-is-a-task-can-go-to-a-team-and-what-a-run-finds-can-become-items.md) | Accepted 2026-10-31 | 0034 (decision 4) |
@@ -67,7 +69,7 @@ The Status line in each file is the authority. The last column of the table belo
 
 ### Adding a row
 
-Add a row when an ADR is created. Take the title from the file's first heading and the status word and date from its Status line. Fill "Superseded by" from the dated note in the older file, which says whether the replacement is whole or partial.
+Add a row when an ADR is created. Take the title from the file's first heading and the status word and date from its Status line. Fill "Replaced or amended by" from the dated note in the older file, which says whether the replacement is whole or partial.
 
 ## Reading order for newcomers
 
@@ -84,7 +86,7 @@ After these, [ADR 0022](https://github.com/yielab/tack/blob/develop/docs/adr/002
 
 ## Numbers before 2026-10-26
 
-On 2026-10-26 the ADRs were renumbered to run from 0001 without gaps, and the ones with nothing left to decide moved to `docs/closed-cycles/adr` and kept their number. Commit messages and anything written before that date use the old numbers; this table translates them.
+Commit messages written before 2026-10-26 use the ADRs' old numbers. This table translates them to today's numbers. The ADRs with nothing left to decide live in `docs/closed-cycles/adr`.
 
 | Old | New | File |
 |---|---|---|

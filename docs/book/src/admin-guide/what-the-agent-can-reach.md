@@ -173,10 +173,17 @@ which the runner pins when it makes the workspace, not from a branch name the ag
 could move. [prill](https://github.com/yielab/prill) reads its `prill.yaml` from that
 commit, so an agent that edits `prill.yaml` does not change how its own work is checked.
 
-The pack also lists the files that decide how work is checked, under *The agent changed
-how it is checked*: everything under `.github/`, any file or folder with `test` in its
-name, and `package.json`, `Cargo.toml`, `Makefile`, `justfile` and `prill.yaml`. An
-empty list is left out.
+The pack also lists the files that decide how work is checked, under *The agent changed how it is
+checked*. Changing one of them also holds the automatic merge. They are:
+
+- everything under `.github/` or `.githooks/`;
+- everything under a folder named `test`, `tests`, `__tests__`, `spec`, `specs` or `e2e`;
+- test files (`test_*.py`, `*_test.py`, `*_test.go`, `*.test.<ext>`, `*.spec.<ext>`) and the config files
+  of Jest, Vitest and Playwright;
+- build and manifest files at any depth: `package.json`, `Cargo.toml`, `Makefile`, `justfile`,
+  `prill.yaml`, `pyproject.toml`, `tox.ini`, `setup.cfg`, `pytest.ini`, `conftest.py` and `go.mod`.
+
+An empty list is left out.
 
 A run ends when its process ends. The first result the agent prints is the one that
 counts, and a non-zero exit status is a failure even if the agent's output said it

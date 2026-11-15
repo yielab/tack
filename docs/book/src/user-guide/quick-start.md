@@ -1,6 +1,6 @@
 # Quick Start
 
-Install Tack, start it, create a project and add a task. Prefer pictures? The [Step-by-Step Tutorial](tutorial.md) walks the same path, through to an agent run, with a screenshot at every step.
+This page is for someone who has just heard of Tack. After reading it you will have Tack installed and running, a project with a task on its board, and the three steps that hand that task to an agent. Prefer pictures? The [Step-by-Step Tutorial](tutorial.md) walks the same path, through to an agent run, with a screenshot at every step.
 
 ---
 
@@ -39,9 +39,9 @@ scoop install https://raw.githubusercontent.com/yielab/tack/main/packaging/scoop
 
 Or download the `.msi` from the [releases page](https://github.com/yielab/tack/releases).
 
-**Desktop app.** Download it from the [releases page](https://github.com/yielab/tack/releases) — the `.AppImage` or `.deb` on Linux, the `.msi` on Windows, or the `.dmg` on macOS (built separately for Apple Silicon and Intel). Opening it starts the same server this page describes, inside its own window, with an icon in your system tray: closing the window leaves it running, and the tray's **Quit** is what actually stops it. If the server it started stops on its own, the tray tells you once — the status line reads "Server stopped" with the exit reason, and reopening the app starts it again; if the app is instead pointed at a server it did not start and that server goes quiet, the tray says so after a few seconds rather than staying silent. Once it's open, skip to [First use](#first-use).
+**Desktop app.** Download it from the [releases page](https://github.com/yielab/tack/releases): the `.AppImage` or `.deb` on Linux, the `.msi` on Windows, or the `.dmg` on macOS (one for Apple Silicon, one for Intel). Opening it starts the same server this page describes, inside its own window, with an icon in your system tray. Closing the window leaves the server running; the tray's **Quit** stops it. If the server stops on its own, the tray says so once, and reopening the app starts it again. Once the app is open, skip to [First use](#first-use).
 
-**Docker:** build the image from the repository's `Dockerfile`:
+**Docker.** Build the image from the repository's `Dockerfile`:
 
 ```sh
 git clone https://github.com/yielab/tack.git && cd tack
@@ -54,12 +54,12 @@ The container listens on every interface, so Tack refuses to start without `TACK
 
 See [Deployment → Docker](../admin-guide/deployment.md#docker) for the compose file and configuration.
 
-**Manual download.** Grab the archive for your platform and `SHA256SUMS` from the [releases page](https://github.com/yielab/tack/releases), verify, then run:
+**Manual download.** Grab the `tack-v…` archive for your platform and `SHA256SUMS` from the [releases page](https://github.com/yielab/tack/releases), verify, then run:
 
 ```sh
 # Linux / macOS
 sha256sum -c --ignore-missing SHA256SUMS   # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
-tar xzf tack-*.tar.gz && cd tack-*/
+tar xzf tack-v*.tar.gz && cd tack-v*/
 ./tack
 ```
 
@@ -75,7 +75,7 @@ On **Windows**, extract the zip and double-click `tack.exe`.
 tack            # starts the server + web UI at http://localhost:3210
 ```
 
-Then open **`http://localhost:3210`** in your browser. On first start, Tack creates `tack.db` and a `storage/` folder in the folder you started it from, and runs the schema migrations automatically. Those two paths *are* your data — back them up and you've backed up everything.
+Then open **`http://localhost:3210`** in your browser. On first start, Tack creates `tack.db` and a `storage/` folder in the folder you started it from. Those two paths are your data. Use `tack backup` to copy them safely; see [Backup & Restore](../admin-guide/backup-restore.md).
 
 **Verify the server is up:**
 
@@ -84,26 +84,24 @@ curl http://localhost:3210/api/health
 # {"status":"ok","version":"…","migrations_applied":…}
 ```
 
-`version` is the build you installed and `migrations_applied` is how many database migrations it has run; it only grows as Tack does.
-
-If this fails, see [Troubleshooting](troubleshooting.md).
+`version` is the build you installed. If the request fails, see [Troubleshooting](troubleshooting.md).
 
 ---
 
 ## First use
 
-1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and type "new project". Choose a **project type** — a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md) you can customize later. Then answer **Does this project have code?**:
-   - **An existing folder on this computer** — pick the folder once, by typing its path or, in the desktop app, with **Browse…** (in a browser tab the button is shown disabled, with "Available in the desktop app"). This is the choice if you want an agent to work on code you already have.
-   - **A new folder Tack creates** — Tack makes the folder and starts a git repository in it.
-   - **No code yet** — a plain project manager. You can change the answer later under **Settings → Automation** (see [Automating a Project](automation.md)).
+1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and choose **New Project**. Give it a name and choose a **project type**: a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md), which you can change later. Then answer **Does this project have code?**
+   - **An existing folder on this computer.** Pick the folder by typing its path or, in the desktop app, with **Browse…** (in a browser tab the button is disabled and says "Available in the desktop app"). Choose this if you want an agent to work on code you already have.
+   - **A new folder Tack creates.** Tack makes the folder and starts a git repository in it.
+   - **No code yet.** A plain project manager. You can change the answer later under **Settings → Automation** (see [Automating a Project](automation.md)).
 
-2. **Add an item.** On the Board, click **Add item** in any column, or the **+ New** button in the top bar. Give it a title and create it. An *item* is the basic unit of work — a task, bug, building, assignment, or whatever your vocabulary calls it.
+2. **Add an item.** On the Board, click **Add item** in any column, or the **+ New** button in the top bar. Give it a title and create it. An *item* is the basic unit of work: a task, bug, building, assignment, or whatever your project's vocabulary calls it.
 
-3. **Move it.** Drag the card to another column. The status saves at once; the card moves before the server confirms.
+3. **Move it.** Drag the card to another column. The new status saves at once.
 
-4. **Open the detail drawer.** Click the card body (not the drag handle) to see all fields, dependencies, comments, attachments, and custom fields. See [Working with Items](items.md).
+4. **Open the item.** Click the card to open its drawer, with its description, dependencies, comments, attachments and custom fields. See [Working with Items](items.md).
 
-5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Theme, palette, text size and zoom are in Settings → Display & accessibility — see [Appearance](appearance.md).
+5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Theme, palette, text size and zoom are in **Settings → Display & accessibility**; see [Appearance](appearance.md).
 
 Ready to put it on a network or add a token? See [Administration & Security](../admin-guide/administration.md).
 
@@ -111,7 +109,7 @@ Ready to put it on a network or add a token? See [Administration & Security](../
 
 ## Hand a task to an agent
 
-Nothing here runs an agent until you turn one on: **Run with agent** says "Agent execution is off" until then. Three steps, none of which asks for a model name or a repository address:
+A task can be done by an agent: a program such as Claude Code that reads and edits your files and reports back. Nothing runs an agent until you turn execution on: **Run with agent** says "Agent execution is off" until then. Three steps, none of which asks for a model name or a repository address:
 
 1. **Turn agents on for this computer.** Open **Agents** in the sidebar and click **Turn on**. It starts at once, with no restart. Sign in to the agent you want with the agent's own command (for example `claude`); the page tells you which agents are installed and whether each is signed in. See [Agents on this computer](running-agents.md#agents-on-this-computer).
 2. **Tell the project where its code is.** If you answered **Does this project have code?** when you created it, this is done; otherwise open **Settings → Automation**. See [Where the agent works](automation.md#where-the-agent-works).
@@ -131,4 +129,4 @@ To contribute or to run with hot reload, follow the [contributing guide](https:/
 
 ## Settings and environment
 
-Tack reads its port, database location, log level and access token from settings you give the server when it starts. The defaults suit a single computer: the server listens on `127.0.0.1:3210` and makes its own access token, which your browser and the `tack` command pick up without being told. The [Configuration](../admin-guide/configuration-reference.md) page lists every setting, and [Administration & Security](../admin-guide/administration.md) covers tokens, allowed origins, webhooks and cloud backup.
+The defaults suit a single computer: the server listens on `127.0.0.1:3210` and makes its own access token, which your browser and the `tack` command pick up without being told. The [Configuration](../admin-guide/configuration-reference.md) page lists every setting, and [Administration & Security](../admin-guide/administration.md) covers tokens, allowed origins, webhooks and cloud backup.

@@ -4,7 +4,7 @@ This page is for integrators and contributors who call Tack's HTTP API. It cover
 
 **Spec of record:** [`docs/openapi.json`](openapi.json), generated from the router. Where this page and the spec disagree, the spec is right.
 **Base URL:** `http://localhost:3210/api`
-**WebSocket URL:** `ws://localhost:3210/api/projects/{id}/boards/live`
+**WebSocket URLs:** `ws://localhost:3210/api/projects/{id}/boards/live` (a board) and `ws://localhost:3210/api/notifications/live` (the inbox)
 
 Every path, method, parameter and request/response schema name is generated, not written by hand:
 `GET /api/openapi.json` from a running server, the checked-in `docs/openapi.json`, or its rendering
@@ -55,7 +55,7 @@ It is never logged.
 
 ### Runner protocol surface — `/api/runner/v1`
 
-The `/api/runner/v1/*` paths (enroll, refresh, claim, heartbeat, the activity feed, and per
+The `/api/runner/v1/*` paths (enroll, refresh, claim, heartbeat, the team activity feed, the team operations poll and result, and per
 attempt accept, start, events, decisions, the decision poll, answered-elsewhere, artifacts, artifact
 content, completion, the cancellation observation and the recovery observation)
 are a **sibling** of `/api` on the outer router, not nested under it — they never
@@ -112,6 +112,14 @@ Every message is a JSON object tagged by `type`:
 The channel is a single Tokio broadcast (capacity 100) shared by every project; each connection
 filters by `project_id` server-side. Sends are fire-and-forget: a disconnected client misses events
 with no replay, and reloads current state on reconnect.
+
+### The notifications socket
+
+`GET /api/notifications/live` is a second WebSocket with the same handshake (subprotocol `tack.v1`, the token as `tack.auth.<base64url token>` or the session cookie). It is not per project: it carries what needs a person anywhere on the board.
+
+- On connect it sends `{"open": n}`, the number of open notifications.
+- Then each change as `{"type": "opened" | "closed" | "read", …, "open": n}`.
+- After a stretch of changes it could not keep up with, it sends `{"open": n}` again, which tells the client to read the list afresh with `GET /api/notifications`.
 
 ---
 

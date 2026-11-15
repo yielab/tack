@@ -66,7 +66,7 @@ reads from the top down, in the same order every time: the verdict first, then w
    worked, and the exact prompt it read), the **Usage** in full (see [Usage](#usage)), the
    **Raw log** and whether the verifier signed its pack. On the item's own page these sit in a side column.
 
-Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on the
+Every path on the tab is relative to the project, not to the working folder the agent was given on the
 computer that ran it.
 
 Sections 5 to 7 are folds: a header you press (with a chevron) that says in one line what is inside while it
@@ -200,7 +200,7 @@ levels, and the one in use says **Set here**:
 | **Read** | Read the board and talk. It changes nothing, and proposes nothing. |
 | **Propose** | Every change waits for you to apply it. This is the level a project starts at. |
 | **Act** | Everything but new items applies by itself: who does an item, priority, moves, dependencies, comments and due dates. New items wait for you. |
-| **Create** | New items apply by themselves too, up to two limits you set: how many in one change set, and how many in a day (UTC). Both are 0 until you set them, so Create is off by default and behaves like Act until you raise them. |
+| **Create** | New items apply by themselves too, up to two limits you set, **New items per change set** and **New items per day** (a day counts in UTC). Both are 0 until you set them, so Create is off by default and behaves like Act until you raise them. |
 
 The stricter of this setting and the agent's own credential wins: a credential that may only propose never goes
 beyond Propose, whatever the setting says. See [Agent credentials](../admin-guide/administration.md#agent-credentials).
@@ -288,9 +288,19 @@ When a card has nothing to count, it says **Not measured** and why, never `0`.
 
 ### Quality of the work
 
-Under the cards, the folded section **Quality of the work** reads the period's runs as rates, each with the counts behind it, and opens into small tables: how often a run succeeded (a run turned away before it started is left out), how often the first run of a task was accepted, how many extra runs a task needed, how often a merged pull request was reverted, and how often each verifier's word agreed with what happened to the work (work you rejected, or whose pull request was reverted, is bad; work you accepted and kept is good), plus, for a task that repeats, how often any three of its runs all succeed. It also lists the questions each agent asked you per hundred steps and how often you allowed them, why runs stopped, and the same rates cut by profile, agent, model, team and prompt fingerprint. Every figure counts runs or tokens, never money, and a figure with nothing to count says **Not measured**.
+Under the cards, the folded section **Quality of the work** reads the period's runs as rates, each with the counts behind it, and opens into small tables:
 
-**Verifier agreement** has a row for each verifier: the pack the verifier leaves, and the Reviewer profile. The Reviewer ends its report with a line `Verdict: merge`, `Verdict: review` or `Verdict: reject`; when a Reviewer run is started from another run's work (**Start over from this run's work** with the Reviewer profile chosen, or `from_run` in `POST /api/executions`), Tack keeps that word with the run it reviewed, and a later Reviewer run on the same run replaces it. A Reviewer run started from no run, or one whose report has no such line, is not counted. Each row shows how often the verifier approved bad work and rejected good work, how many it got right, how many it left to you, and how many judged runs it said nothing about.
+- how often a run succeeded (a run turned away before it started is left out);
+- how often the first run of a task was accepted, and how many extra runs a task needed;
+- how often a merged pull request was reverted;
+- how often each verifier's word agreed with what happened to the work (work you rejected, or whose pull request was reverted, is bad; work you accepted and kept is good);
+- for a task that repeats, how often any three of its runs all succeed;
+- the questions each agent asked you per hundred steps and how often you allowed them, and why runs stopped;
+- the same rates cut by profile, agent, model, team and prompt fingerprint.
+
+Every figure counts runs or tokens, and a figure with nothing to count says **Not measured**.
+
+**Verifier agreement** has a row for each verifier: the pack the verifier leaves, and the Reviewer profile. The Reviewer ends its report with a line `Verdict: merge`, `Verdict: review` or `Verdict: reject`. When a Reviewer run is started from another run's work (**Start over from this run's work** with the Reviewer profile chosen), Tack keeps that word with the run it reviewed, and a later Reviewer run on the same run replaces it. A Reviewer run started from no run, or one whose report has no such line, is not counted. Each row shows how often the verifier approved bad work and rejected good work, how many it got right, how many it left to you, and how many judged runs it said nothing about.
 
 ### Tokens by model and by team
 

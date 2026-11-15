@@ -1,5 +1,7 @@
 # Workflows & Statuses
 
+This page is for the person who sets up how work moves through a project. After reading it you can choose a starting workflow, rename and reorder its columns, cap how many items a column holds, and restrict which moves are allowed.
+
 A **workflow** is the set of named status columns that items move through in a project. Each column has:
 
 - **Name** — the label shown on the board (e.g., "In Progress")

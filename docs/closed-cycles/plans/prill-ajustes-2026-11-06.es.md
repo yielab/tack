@@ -1,3 +1,5 @@
+> **Archivado 2026-11-15.** Construido como Phase 94 (2026-11-07); movido aquí sin cambios desde `docs/plans/` o `docs/audits/`. Lo vigente está en el roadmap.
+
 # prill visto desde Tack: qué ajustar en Tack, qué pedirle a prill y qué investigar
 
 **Fecha:** 2026-11-06. **Para:** el mantenedor de prill y el de Tack (hoy la misma persona). **Estado:**

@@ -1,14 +1,16 @@
 # Views
 
+This page is for anyone who looks at a project's work. After reading it you will know what each screen shows, how to move work on each, and how to tell where a task stands and where its agent run stands.
+
 Tack has six **work tabs** — Board, Orchestration, List, Calendar, Timeline and Sprint (the last
 takes your project's word for a sprint) — all showing the same items. An item created in one appears at once
 in the others. Four more screens are in the project's sidebar: **Overview** and **Factory metrics** show
 statistics, **Change sets** lists what agents proposed and **Threads** holds your conversations with them (see
 [Managers and Threads](talking-with-a-manager.md)).
 
-Every view shares the same shell: a sidebar to switch project and view (on a short window its list scrolls, and a fade under its lower edge says there is more, such as **Agents** and **Settings**), a top bar with item
+Every view shares the same shell: a sidebar to switch project and view (on a short window its list scrolls, so scroll down to reach **Agents** and **Settings**), a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
-on `Ctrl+K`. Theme, palette, text size and zoom are set in Settings → Display & accessibility — see
+on `Ctrl+K`. Theme, palette, text size and zoom are set in **Settings → Display & accessibility**; see
 [Appearance](appearance.md).
 
 ---
@@ -60,129 +62,86 @@ Kanban columns driven by the project's workflow statuses.
 
 ## Orchestration
 
-Where the Board answers "where is this item in my workflow", Orchestration answers who is doing it,
-how far along its team's own process it has got, what is waiting for you and what nobody will take. It
-is a picture of the agents' work in this project, drawn from the items, their runs, the profiles and
-roles, and what each team reports about itself. It follows changes as they happen, and its tab stays
-off, with the words "No agent has worked in this project yet", until a task has run; opened by its address
-before then, the page says the same and links to the Agents page.
+Where the Board answers "where is this item in my workflow", Orchestration answers who is doing it, how far along its team's own process it has got, what is waiting for you and what nobody will take. It draws the agents' work in this project from the items, their runs, the profiles and roles, and what each team reports about itself, and it follows changes as they happen.
 
-A switch beside the title chooses between **Flow** and **Map**; **Compare** sits under the Map. Flow is what you
-see first, and Tack remembers in this browser which of the two you left on.
+Its tab stays off, with the words "No agent has worked in this project yet", until a task has run. Opened by its address before then, the page says the same and links to the Agents page.
+
+A switch beside the title chooses between **Flow** and **Map**; **Compare** sits under the Map. Flow is what you see first, and Tack remembers in this browser which of the two you left on.
 
 ### Flow
 
-#### The summary row
+Flow shows the work as it happens, with one lane for each team.
 
-Four counts of the tasks' **Work** sit under the title: **Needs you** (runs that ask you something plus
-runs ready for review), **Running**, **Queued** and **Nobody will take it**. Press one to show only the
-lanes with a task in that state, and press it again to show all. Under them one line says how many runs
-are open in this project against the number it keeps open by itself, and how many runs the computers
-take at a time.
+**The summary row.** Four counts of the tasks' **Work** sit under the title: **Needs you** (runs that ask you something plus runs ready for review), **Running**, **Queued** and **Nobody will take it**. Press one to show only the lanes with a task in that state, and press it again to show all. Under them, one line says how many runs are open in this project against the number it keeps open by itself, and how many runs the computers take at a time.
 
-#### One lane for each team
+**One lane for each team.** Every team that a profile of this project uses gets a lane, and so does each single agent such a profile uses. Lanes that need you come first, then lanes with work running, then idle lanes, which fold to their header (press the arrow to unfold one).
 
-Every team that has a profile this project uses gets a lane, and so does
-each single agent it uses; a single agent is a lane with one station. Lanes that need you come first,
-then lanes with work running, then idle lanes, which fold to their header (press the arrow to unfold
-one). The header names the team (press the name to open its card on the Agents page) and shows what the
-team reported about itself: the shape it gave itself, whether it works in the repository or in a folder,
-whether it runs to the end or stops to ask a person, its network, and, as a line of words, how its
-changes are merged here (you merge them, or the team runs lights-out). A fact the team did not report is
-named once as not reported. The team's members are a row of round marks, one for each role: a ring means
-the member changes the project, a small dot means it can propose items, and hovering or focusing a mark
-tells its model. Two meters finish the header: a bar of what the team is running and what waits, and the
-tokens its runs counted today against the project's daily limit, or the count alone when the project has
-no daily limit.
+The header names the team (press the name to open its card on the Agents page) and shows what the team reported about itself:
 
-#### The stations
+- the shape it gave itself, and whether it works in the repository or in a folder;
+- whether it runs to the end or stops to ask a person, and its network;
+- how its changes are merged here: you merge them, or the team runs lights-out.
 
-A lane reads left to right. **Up next** holds the tasks routed to the team that have
-not started, most urgent first, the order the project takes them in; each says whether it **starts by
-itself** (and at which column) or is **by hand**, and a queued task says why it has not started. Then
-come the team's own steps, as it reported them. A check between two steps is a small mark between them,
-with its word under it:
-a command, a reviewer, a person or a check outside the team; a step that runs side by side with another
-is drawn as a stack. Then **Needs you** and **Ended today**, which says how
-the tasks that ended in the last day ended, such as "2 finished · 1 cancelled · 1 failed", each with its
-run-state icon, and unfolds to the tasks themselves. A team that reports no steps has one station, **Working**, which says the agent reports
-no steps; so does a run whose current step the team cannot name.
+A fact the team did not report is named once as not reported. The team's members are a row of round marks, one for each role: a ring means the member changes the project, a small dot means it can propose items, and hovering or focusing a mark tells its model. Two meters finish the header: a bar of what the team is running and what waits, and the tokens its runs counted today against the project's daily limit (or the count alone when the project has no daily limit).
 
-#### A task is a token
+**Reading a lane.** A lane reads left to right:
 
-It shows its type, its title, the path of what it sits under (an epic, then the item inside it, each a link), the run's state in the same
-words and marks as everywhere else, and how long the run has been going. A task a reviewer or a check
-sent back shows a small arrow with how many times out of how many it may go back. A task that waits for
-another says **after:** with that task's title and lane; pointing at the line, or tabbing to it, lights
-up the task it waits for. A task whose run proposed items says how many were created, and a task
-created from a proposal says **from:** with the task it came from. Press a token's title to open the
-task on its Execution tab (on the run's question when the run is asking).
+- **Up next** holds the tasks routed to the team that have not started, most urgent first, the order the project takes them in. Each says whether it **starts by itself** (and at which column) or is **by hand**, and a queued task says why it has not started.
+- Then come the team's own steps, as it reported them. A check between two steps is a small mark between them, with its word under it: a command, a reviewer, a person or a check outside the team. Steps that run side by side are drawn as a stack. A team that reports no steps has one step, **Working**, which says the agent reports none; so does a run whose current step the team cannot name.
+- **Needs you** and **Ready for review** hold what waits for you.
+- **Ended today** says how the tasks that ended in the last day ended, such as "2 finished · 1 cancelled · 1 failed", each with its run-state icon, and unfolds to the tasks themselves.
 
-Only work is a token. An item that holds work (an epic, a building, a course) has no token of its own,
-so it never waits at Up next or starts by itself. The one time it appears is when you ask an agent to
-plan it: that run is a token in the lane of the team that plans, marked **Planning**, with the item's
-type drawn as a stacked tile, and it ends where any run ends. The tasks it proposes become tokens of
-their own once you accept them.
+**A task on a lane** shows its type, its title, the path of what it sits under (an epic, then the item inside it, each a link), the run's state in the same words and marks as everywhere else, and how long the run has been going. Press the title to open the task on its Execution tab (on the run's question when the run is asking).
 
-#### Nobody will take it
+- A task that a reviewer or a check sent back shows a small arrow with how many times out of how many it may go back.
+- A task that waits for another says **after:** with that task's title and lane; pointing at the line, or tabbing to it, lights up the task it waits for.
+- A task whose run proposed items says how many were created, and a task created from a proposal says **from:** with the task it came from.
 
-When a task goes to no lane, a lane at the top, in the warning colour, lists it
-with the reason: there is no profile to fall back on (no profile chosen on the task, none on its role, none by default for the project and no built-in Implementer), its role has no profile, the
-profile it uses no longer exists, or no computer reports the team, or the agent, its profile names. A task goes where a run of it would go: the profile chosen on it, else the one its roles agree on, else the project's default. Each has the
-**Who does it** choice beside it, so a choice made there is saved on the task at once.
+Only work appears on a lane. An item that holds work (an epic, a building, a course) never waits at Up next or starts by itself. The one time it appears is when you ask an agent to plan it: that run shows on the lane of the team that plans, marked **Planning**, with the item's type drawn as a stacked tile, and it ends where any run ends. The tasks it proposes appear on their own once you accept them.
 
-#### Teams not used here
+**Nobody will take it.** When a task goes to no lane, a lane at the top, in the warning colour, lists it with the reason:
 
-A folded row at the foot lists the teams no profile of this project uses.
-**Make a profile for it** is off for each, with the reason; profiles are made on the Agents page.
+- there is no profile to fall back on (none chosen on the task, none on its role, none by default for the project, and no built-in Implementer);
+- its role has no profile;
+- the profile it uses no longer exists;
+- no computer reports the team, or the agent, its profile names.
 
-#### Sending a task to another team
+A task goes where a run of it would go: the profile chosen on it, else the one its roles agree on, else the project's default. Each task in this lane has the **Who does it** choice beside it, and a choice made there is saved on the task at once.
 
-A task that has not started can be dragged to another lane's Up next,
-or sent with the small arrow on the token, **Move to…**, which opens a menu of the other lanes (arrow
-keys choose, Enter picks, Escape closes). Either way Tack asks first, then changes the task's **Who does
-it** to a profile of that lane; nothing starts because of it, and the choice can be changed from the task
-as before. A task a run holds, a running one among them, cannot change hands: its arrow is off and says
-why, and a lane that cannot take the task will not accept the drop. A screen reader hears each move,
-and each task that changes station, in a polite announcement such as "Collect the notes: review, saas-notes".
-With motion reduced, in Tack's display settings or by the system's, a task simply appears at its new
-station instead of sliding to it.
+**Teams not used here.** A folded row at the foot lists the teams that no profile of this project uses. **Make a profile for it** is off for each, with the reason; profiles are made on the Agents page.
+
+**Sending a task to another team.** A task that has not started can be dragged to another lane's Up next, or sent with the small arrow on its card, **Move to…**, which opens a menu of the other lanes (arrow keys choose, Enter picks, Escape closes). Either way Tack asks first, then changes the task's **Who does it** to a profile of that lane. Nothing starts because of it, and you can change the choice from the task as before.
+
+A task that a run holds, a running one among them, cannot change hands: its arrow is off and says why, and a lane that cannot take the task will not accept the drop. A screen reader hears each move in a polite announcement such as "Collect the notes: review, saas-notes". With motion reduced, in Tack's display settings or by the system's, a task appears at its new place instead of sliding to it.
 
 ### Map
 
-Where Flow shows work as it happens, the Map shows the structure behind it: how a task finds
-its team. Four columns read from left to right, **Roles**, **Profiles**, **Teams** and **Members**. Every
-profile is a box, the same ones the Run with agent dialog offers, whether or not a role or a task uses it,
-so a team a profile names is never drawn as unreachable when the dialog offers it. A
-line, always drawn, joins a role to its profile, a profile to the team (or single agent) that runs it, and a team to the
-members it reported, and a line is as wide as the number of open tasks routed along it, so the busy
-routes stand out and a route nothing uses is a hairline. Under each team's name the Map says where it
-runs, on this computer or on another. The project's default profile is marked, and a task that names no
-role and no profile of its own goes to it. A role with no profile and a team no profile names are drawn
-with a dashed edge, say so in words, and carry the fix as a link: **Settings → Automation → Teams** to
-give the role a profile, **Agents → profiles** to make one for the team. A team or an agent that a profile
-names and no computer reports is drawn grey, and listed under the diagram with the command or the sentence
-that closes the gap and a **Copy** button. The Map is a view; nothing is edited on it.
+Where Flow shows work as it happens, the Map shows the structure behind it: how a task finds its team. Four columns read from left to right: **Roles**, **Profiles**, **Teams** and **Members**.
 
-Press a box, or a column's title, to go to Flow narrowed to what passes through it: the lanes that role,
-profile, team or member can reach, and the tasks nobody will take because of it. A line above the lanes
-says what Flow is narrowed to, and **Show everything** takes it off. With the keyboard, Tab enters the
-Map at one stop; the arrow keys move between boxes (up and down along a column, left and right to a
-box it is joined to), and Enter opens the box in Flow. The same routes are written out as sentences, one
-for each line, under **Routes as text**, together with what is dashed and what is the default.
+- Every profile is a box, the same ones the Run with agent dialog offers, whether or not a role or a task uses it.
+- A line joins a role to its profile, a profile to the team (or single agent) that runs it, and a team to the members it reported. A line is as wide as the number of open tasks routed along it, so the busy routes stand out and a route nothing uses is a hairline.
+- Under each team's name the Map says where it runs, on this computer or on another. The project's default profile is marked: a task that names no role and no profile of its own goes to it.
+- A role with no profile and a team no profile names are drawn with a dashed edge, say so in words, and carry the fix as a link: **Settings → Automation → Teams** to give the role a profile, **Agents → profiles** to make one for the team.
+- A team or an agent that a profile names and no computer reports is drawn grey, and listed under the diagram with the command or the sentence that closes the gap and a **Copy** button.
+
+The Map is a view; nothing is edited on it.
+
+Press a box, or a column's title, to go to Flow narrowed to what passes through it: the lanes that role, profile, team or member can reach, and the tasks nobody will take because of it. A line above the lanes says what Flow is narrowed to, and **Show everything** takes it off.
+
+With the keyboard, Tab enters the Map at one stop; the arrow keys move between boxes (up and down along a column, left and right to a box it is joined to), and Enter opens the box in Flow. The same routes are written out as sentences, one for each line, under **Routes as text**, together with what is dashed and what is the default.
 
 ### Compare
 
-Under the Map, a table sets the teams side by side, one column each, with these rows: where
-the team works, what it delivers, whether it runs to the end or stops for a person, its network, its
-members, which of them change the project, its steps and what checks each, which can propose items, how
-its changes are merged here, the token limit for one run and the tokens counted today. A fact a team did
-not report reads **not reported**, never a guess; hover it, or read on, for why. A row that no team filled is
-one line across the table that says so ("not reported by any of the 3 teams"). A step named like its role
-("lead", run by Lead) is written once. In the Map a box's second line wraps onto a further line when it is long, and
-what still does not fit is in its tooltip. Every empty station of a lane reads **None**. What a team delivers
-and the limit for a run come from the profiles that name the team, and a run's limit falls back to the
-project's provisional one when the profile sets none.
+Under the Map, a table sets the teams side by side, one column each. Its rows are:
+
+- where the team works, and what it delivers;
+- whether it runs to the end or stops for a person, and its network;
+- its members, which of them change the project, and which can propose items;
+- its steps and what checks each;
+- how its changes are merged here;
+- the token limit for one run, and the tokens counted today.
+
+A fact a team did not report reads **not reported**, never a guess. A row that no team filled is one line across the table that says so ("not reported by any of the 3 teams"). What a team delivers and the limit for a run come from the profiles that name the team, and a run's limit falls back to the project's provisional one when the profile sets none.
 
 ---
 
@@ -201,7 +160,7 @@ controls to filter, edit and rearrange the columns.
 - **Filter.** **Filter…** matches as you type against the title, assignee and status, and the work list beside it keeps only items whose latest run is in that state (**Your turn**, **Queued**, **Running**, **Needs you**, **Ready for review**, **Failed** or **Not started**). A parent that holds a match stays in view, open, so the match is never shown without where it belongs; **Clear filter** brings every row back.
 - **Work.** The Work column sits beside Status and says where the item's latest run is, in the same words and symbols as the Board (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled**, **Not started**); an item that has never run shows a dash. Status is the column you chose; Work is what the agents report, so a row can be in Backlog and Running at once.
 - **Edit in place.** Press a status, priority, assignee or due date to change it where it is, and the title's pencil to rename it (the title itself opens the item). Enter or leaving the field saves, Escape puts the value back, and the keyboard returns to the cell.
-- **Columns** shows or hides columns (the title stays: rows are named and nested by it), and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser. **Type** is hidden until you show it, because each row already carries a type tile.
+- **Columns** shows or hides columns (the title stays: rows are named and nested by it), and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser. **Type** is hidden until you show it, because each row already carries a type tile. Until you choose columns yourself, a column that no item has a value in (for example Assignee or Due, in a project that sets none) stays hidden too.
 - **Move a row under another.** Drag it onto the row it should go under, or open the row's **⋯** menu and choose **Move under…**: a field lists exactly the items the row may go under, with **No parent** to take it to the top; type to narrow them, use the arrow keys, and press Enter. When the move is not allowed (for example, "An epic cannot go under a task.") the row stays where it was and the reason appears above the list until you dismiss it.
 
 ---
@@ -237,7 +196,7 @@ Two-pane sprint planning. The tab and the words below follow your project's [voc
 
 - **Left pane (backlog):** work not assigned to any sprint, sorted by priority. When the project has items that hold work (epics, buildings, courses), the backlog is set out under the heading of the item each piece of work sits in, the way a lane of the [Board](#board) is headed, and work with no parent comes last under **No parent**. A heading with no work waiting in the backlog is left out.
 - **Only work goes in a sprint.** An item that holds work is planned through the work under it: it has no card to drag, and if the server refuses a move ("An epic does not go in a sprint: its items do."), the reason appears on screen.
-- **Right pane:** one lane per sprint that is not closed, showing its dates, the done and total items of work, the points done and planned, and a progress bar. **New sprint** adds one; **Edit** on a lane changes its name, goal and dates.
+- **Right pane:** one lane per sprint that is not closed, showing its dates, the done and total items of work, the points done and planned, and a progress bar. **+ New sprint** (in your project's word for a sprint) adds one; **Edit** on a lane changes its name, goal and dates.
 - **Drag from the backlog** into a lane to assign the item. Drag between lanes to reassign. Drag back to the backlog to unassign. A sprint accepts items only while it is planning or active.
 - A sprint moves through *planning*, *active*, *review* and *closed*. The button on each lane takes it to the next one: **Start**, **Complete** (to review), then **Close**.
 
@@ -259,8 +218,8 @@ Read-only project statistics, in the sidebar.
 ## Factory metrics
 
 Read-only, per project — **Factory metrics** in the sidebar. It answers how well agent work is
-going on this project: how often a run needed a person, how long the person took, what verification
-cost, how many changes were accepted and merged, and how many tokens the runs used. A card with nothing to
+going on this project: how often a run needed a person, how long the person took, how many tokens
+verification used, how many changes were accepted and merged, and how many tokens the runs used. A card with nothing to
 measure says **Not measured** and why, never `0`. Every card is defined in
 [Factory metrics](reviewing-runs.md#factory-metrics).
 

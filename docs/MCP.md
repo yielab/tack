@@ -228,8 +228,8 @@ should be able to trigger on its own say-so).
 
 Each tool is declared once, as one `Tool { name, spec, kind, handler }` value in the module of its
 domain under `crates/tack-cli/src/mcp/`: `items`, `projects`, `runs` (executions), `fleet`
-(fleets and agent profiles), `board` (the digest, teams and roles) or `changes` (change sets, and how an
-agent's writes become them). `spec` is the description and input schema `tools/list` advertises,
+(fleets and agent profiles), `board` (the digest, teams and roles), `changes` (change sets, and how an
+agent's writes become them) or `threads` (reading and posting in a thread). `spec` is the description and input schema `tools/list` advertises,
 `kind` is `Read` or `Write`, and `handler` is the function that validates the arguments and calls
 the API. `tools/list` and `tools/call` both read the table `TOOLS` in `mcp/tool.rs`, so a tool is
 listed exactly when it can be called. To add a tool, write its `Tool` and handler in its domain's

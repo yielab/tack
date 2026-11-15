@@ -12,7 +12,7 @@ All examples assume the default base URL `http://127.0.0.1:3210`. The `curl` exa
 
 ## Authentication
 
-The API always has a token, except in one case described under [Network exposure](#network-exposure-and-tls). **Every** `/api/*` route requires `Authorization: Bearer <token>` or the session cookie below. Two endpoints are open: `GET /api/health`, a liveness probe, and `GET /api/openapi.json`.
+The API always has a token, except in one case described under [Network exposure](#network-exposure-and-tls). **Every** `/api/*` route requires `Authorization: Bearer <token>` or the session cookie below. Two endpoints are open: `GET /api/health`, a liveness check, and `GET /api/openapi.json`.
 
 You can choose the token or let the server make one:
 
@@ -86,7 +86,9 @@ Change it when the browser loads the UI from a different origin than the API —
 TACK_ALLOWED_ORIGINS='https://tack.example.com,https://app.example.com' tack serve
 ```
 
-List every origin you serve the UI from; entries are matched exactly, with no wildcards. The bundled SPA served by the same process needs no extra entry.
+List every origin you serve the UI from; entries are matched exactly, with no wildcards, and each must be a bare `http(s)://host[:port]` (the server refuses to start with one that is not). The web page served by the same process needs no extra entry.
+
+The same list gates the board's live updates, which use a WebSocket. A server bound to a loopback address also accepts any page loaded from a loopback address, so a local development UI on any port needs no entry. A server bound anywhere else, or a page loaded from another host, needs its origin listed or the connection is refused.
 
 ---
 
@@ -124,13 +126,13 @@ Non-attachment requests are capped by `TACK_MAX_BODY_SIZE` (bytes, default `2097
 TACK_MAX_BODY_SIZE=5242880 tack serve   # raise to 5 MB
 ```
 
-The file-upload endpoint (`POST /api/items/{id}/attachments`) is exempt from this limit and is always capped at 50 MB, regardless of `TACK_MAX_BODY_SIZE`.
+The file-upload endpoint (`POST /api/items/{id}/attachments`) and the restore endpoint (`POST /api/restore`) are exempt from this limit and are always capped at 50 MB, regardless of `TACK_MAX_BODY_SIZE`. A request over its limit is answered `413`.
 
 ---
 
 ## Webhooks
 
-Set `TACK_WEBHOOK_URL` to receive an HTTP `POST` for every notification Tack opens: a question an agent asks, a run that failed, a change set that waits, a run that finished, an item due within the hour, a clear fall in a profile's or an agent's success. Edits to items and sprints are not sent; the board's API and live view carry those.
+Set `TACK_WEBHOOK_URL` to receive an HTTP `POST` for every notification Tack opens: a question an agent asks, a run that failed, a change set that waits, a run that finished, the end of a parent's last open run, an item due within the hour, a team's memory that waits for approval, a clear fall in a profile's or an agent's success. Edits to items and sprints are not sent; the board's API and live view carry those.
 
 ```sh
 TACK_WEBHOOK_URL='https://hooks.example.com/tack' tack serve
@@ -148,6 +150,7 @@ The event name is sent both as the `X-Tack-Event` request header and as the `eve
 | `notification.run_failed` | A run failed |
 | `notification.change_set` | An agent proposed a change set |
 | `notification.run_finished` | A run finished |
+| `notification.children_finished` | No child of a parent item has a run open any more |
 | `notification.due_soon` | An item is due within the next hour (checked hourly) |
 | `notification.memory` | A docket team holds something it learnt and waits for you to approve it with docket's own command (one is sent for each project that uses the team, with that project's `project_id`, within about five minutes of the team's report changing) |
 | `notification.quality_trend` | The success rate of a profile or an agent over the last seven days is clearly below the 28 days before (checked once a day) |

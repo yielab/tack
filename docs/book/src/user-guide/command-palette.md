@@ -1,5 +1,8 @@
 # Command Palette & Search
 
+This page is for anyone who prefers the keyboard. After reading it you can jump to any screen, run
+common actions and find an item by text without touching the mouse.
+
 Tack has two keyboard-first ways to get around: a **command palette** for jumping
 to views and running actions, and a **search bar** for finding items by text.
 

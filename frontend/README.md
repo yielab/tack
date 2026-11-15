@@ -54,7 +54,7 @@ frontend/src/
 ├── app/         # App shell, layouts and the route table (routes.tsx)
 ├── features/    # One folder per screen: projects, board, orchestration, list, calendar,
 │                #   timeline, sprints, dashboard, item-detail, templates, agents, changesets,
-│                #   threads, settings
+│                #   threads, notifications, settings
 ├── shared/      # What features share: api/, ui/, state/, execution/, runWithAgent/, vocab/, ...
 ├── test/        # Vitest setup
 └── index.css    # Tailwind and the design tokens

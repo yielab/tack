@@ -71,39 +71,35 @@ let item = state.repo.get_item(id).await?;
 
 The Axum HTTP server is also fully async. A server handling 1,000 concurrent connections does not need 1,000 threads — Tokio multiplexes them on a small thread pool (by default, one thread per CPU core).
 
-The WebSocket handler in `crates/tack-api/src/handlers/websocket.rs` is the clearest example of the async model in action:
+The WebSocket code in `crates/tack-api/src/handlers/websocket.rs` is the clearest example of the async model in action. `board_live` hands `serve_live` a closure that feeds one client; `serve_live` runs it beside a reader task:
 
 ```rust
-async fn handle_socket(socket: WebSocket, project_id: Uuid, state: AppState) {
-    let (mut sender, mut receiver) = socket.split();
-
-    // Subscribe to the broadcast channel
+// board_live: the feed for one client (shortened)
+serve_live(ws, move |mut out| async move {
     let mut rx = state.broadcast_tx.subscribe();
-
-    // Spawn one task to forward broadcast events to this client
-    let mut send_task = tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            if event_matches_project(&event, project_id) {
-                let Ok(json) = serde_json::to_string(&event) else { continue };
-                if sender.send(Message::Text(json.into())).await.is_err() {
-                    break;
-                }
-            }
+    while let Ok(event) = rx.recv().await {
+        // Only send events for this project
+        if event_matches_project(&event, project_id) && !out.send(&event).await {
+            break;
         }
-    });
-
-    // Spawn another task to read messages from the client
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = receiver.next().await {
-            // handle pings, close frames, etc.
-        }
-    });
-
-    // Wait for either task to finish, then abort the other
-    tokio::select! {
-        _ = &mut send_task => { recv_task.abort(); }
-        _ = &mut recv_task => { send_task.abort(); }
     }
+})
+
+// serve_live: what runs for every connection (shortened)
+let (sender, mut receiver) = socket.split();
+let mut send_task = tokio::spawn(feed(Outbox(sender)));
+let mut recv_task = tokio::spawn(async move {
+    while let Some(Ok(msg)) = receiver.next().await {
+        if matches!(msg, Message::Close(_)) {
+            break;
+        }
+    }
+});
+
+// Wait for either task to finish, then abort the other
+tokio::select! {
+    _ = &mut send_task => { recv_task.abort(); }
+    _ = &mut recv_task => { send_task.abort(); }
 }
 ```
 
@@ -145,7 +141,7 @@ pub struct AppState {
 
 `broadcast::channel(100)` creates a multi-producer, multi-consumer channel with a buffer of 100 messages. A handler can send an event with `websocket::broadcast_event(&state, BoardEvent::ItemUpdated { project_id, item_id, old_status, new_status })`. Most item changes do not call it directly: the handler emits a domain event (`state.events().emit(...)`), and `board_message` in `ports.rs` turns the ones the browser understands into `BoardEvent`s on this channel.
 
-Each WebSocket connection calls `state.broadcast_tx.subscribe()` to get its own receiver. The event is delivered to every active subscriber. The filter in `handle_socket` discards events for other projects.
+Each WebSocket connection calls `state.broadcast_tx.subscribe()` to get its own receiver. The event is delivered to every active subscriber. The filter in `board_live` (`event_matches_project`) discards events for other projects.
 
 ---
 

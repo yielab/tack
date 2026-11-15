@@ -1,19 +1,16 @@
 # A Team
 
-A **team** is whoever does a card's work: one agent, or several working together. You do not build teams in
-Tack. An agent keeps its own teams and tells Tack what they are, and Tack shows you exactly that. This page
-answers the six questions you ask of any team, whether you have one or five. The **Agents** page, under
-**Teams**, has a sheet for each team an agent reports, with one heading for each question, and each section below
-says what that part of the sheet holds. Two of the answers depend on a project (how far a team goes in it, and
-which of its roles send it work), so choose the project at the top of **Teams** to read them.
+This page is for the person who sends work to agents and wants to know what a team will do with it. After reading it you can answer, for any team, what it is for, who is in it, what happens to a card, when it asks, how far it goes and how to send it work.
+
+A **team** is whoever does a card's work: one agent, or several working together. You do not build teams in Tack. An agent keeps its own teams and tells Tack what they are, and Tack shows you exactly that.
+
+The **Agents** page, under **Teams**, has a sheet for each team an agent reports, with one heading for each of the six questions; each section below says what that part of the sheet holds. Two of the answers depend on a project (how far a team goes in it, and which of its roles send it work), so choose the project at the top of **Teams** to read them.
 
 Teams of several members come from docket. Claude Code, Codex and opencode are single agents, and Tack counts
 each as a team of one: it has a sheet of its own, marked **A team of one**, that reads "One agent, `claude-code`"
-with the model it runs on. Such a team delivers a branch, has one way of working (the agent's own loop), and
-needs only what the runner's check says, that it is signed in and, where the agent will not choose one, that a
-model is named. Profiles that name no agent are listed under **Profiles with no team**.
-How a profile chooses its agent and team is in [Automating a Project](automation.md#teams); how docket is
-installed is in [Installing and Operating Runners](../admin-guide/runners.md).
+with the model it runs on. Such a team delivers a branch, has one way of working (the agent's own loop), and needs only that the agent is signed in and, where it will not choose one, that a model is named. Profiles that name no agent are listed under **Profiles with no team**.
+
+How a profile chooses its agent and team is in [Automating a Project](automation.md#teams); how docket is installed is in [Installing and Operating Runners](../admin-guide/runners.md).
 
 ---
 
@@ -64,29 +61,25 @@ given, and how long it took. See [Reviewing a Run](reviewing-runs.md).
 
 ## When does it ask?
 
-The sheet gives the team's **Supervision**, says **Runs to the end by itself** or **Stops to ask a person**, with
-what to change in docket so that it runs to the end, and says whether it reaches the network and whether it
-proposes items. **Web** says how the team reads the web, in docket's own words, and the change that gives it the web when it reads none. **Search** says which web search the team has (SearXNG, Brave Search, your own service or none) and whether it is ready; when it is not, it gives the one docket command that makes it ready, and for a team with none, the other way to set one up. A team without a search still runs, only with less to go on. The search is set up on docket's computer with those commands, and the Brave key stays there: Tack never sees it. What the team's work still needs reads "The operator still has to…" with what to do, for example
-signing an agent in on the runner's computer; a need already met reads "Ready". A need the team says only makes its work poorer, such as a research team that cannot read PDFs, reads "Runs without it, with less…" and
-does not stop a run: Run with agent says what the run will lack and still starts. A team that stops to ask limits how far Tack may merge by itself: see
-[The ceiling](automation.md#ceiling).
+The sheet gives the team's **Supervision**. It says **Runs to the end by itself** or **Stops to ask a person**, with what to change in docket so that it runs to the end, and says whether the team reaches the network and whether it proposes items. A team that stops to ask limits how far Tack may merge by itself: see [The ceiling](automation.md#ceiling).
 
-A docket team also learns about its work. After a task it may note a fact about the repository: a file that is
-generated, a tool that works, a pitfall, a convention. docket accepts by itself what it can check (a path that is
-there, a command whose exit status it saw), refuses what it can see is wrong, and holds back the rest until you
-decide. The sheet shows both under **What it has learnt** (newest first, an entry whose file has since gone marked
-**Stale**) and **What it waits to learn**. Each waiting entry gives the two commands that decide it, with a **Copy**
-button: `docket pod memory approve <id> --pod <team>` and `docket pod memory refuse <id> --pod <team> --reason "<why>"`.
-When your docket can decide an entry from the board, **Approve** and **Refuse** on the sheet do it: **Approve**
-makes the team use the entry from its next task, **Refuse** asks you why first (the team keeps your reason with
-the entry), and the entry leaves **What it waits to learn** at once. With an older docket the two buttons are greyed
-and say that docket decides this with its own command for now. If the entry was decided elsewhere meanwhile, the
-sheet says it is no longer waiting. A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens the team's sheet, and it
-closes once the entry is decided, however you decided it. A team's memory asks you in the projects that use that
-team: a project uses it when one of its roles, or its default profile, runs a profile that names the team, and
-the inbox then has one line for that project. A team no project uses asks nobody, and the sheet still shows its
-memory. Changing the role away from the team closes the line. The board hears of a change when the computer next
-reports its teams, which takes a few minutes. A team whose docket does not offer this shows no memory.
+Three more lines say what the team has to read and what it still needs:
+
+- **Web** says how the team reads the web, in docket's own words, and the change that gives it the web when it reads none.
+- **Search** says which web search the team has (SearXNG, Brave Search, your own service or none) and whether it is ready. When it is not, the line gives the one docket command that makes it ready, and for a team with none, the other way to set one up. A team without a search still runs, only with less to go on. The search is set up on docket's computer with those commands, and the Brave key stays there: Tack never sees it.
+- What the team's work still needs reads "The operator still has to…" with what to do, for example signing an agent in on the runner's computer; a need already met reads "Ready". A need the team says only makes its work poorer, such as a research team that cannot read PDFs, reads "Runs without it, with less…" and does not stop a run: Run with agent says what the run will lack and still starts.
+
+### What the team has learnt
+
+A docket team also learns about its work. After a task it may note a fact about the repository: a file that is generated, a tool that works, a pitfall, a convention. docket accepts by itself what it can check (a path that is there, a command whose exit status it saw), refuses what it can see is wrong, and holds back the rest until you decide.
+
+The sheet shows both under **What it has learnt** (newest first, an entry whose file has since gone marked **Stale**) and **What it waits to learn**. Each waiting entry gives the two commands that decide it, with a **Copy** button: `docket pod memory approve <id> --pod <team>` and `docket pod memory refuse <id> --pod <team> --reason "<why>"`.
+
+When your docket can decide an entry from the board, **Approve** and **Refuse** on the sheet do it: **Approve** makes the team use the entry from its next task, **Refuse** asks you why first (the team keeps your reason with the entry), and the entry leaves **What it waits to learn** at once. With an older docket the two buttons are greyed and say that docket decides this with its own command for now. If the entry was decided elsewhere meanwhile, the sheet says it is no longer waiting.
+
+A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens the team's sheet, and it closes once the entry is decided, however you decided it. A team's memory asks you in the projects that use that team: a project uses it when one of its roles, or its default profile, runs a profile that names the team, and the inbox then has one line for that project. A team no project uses asks nobody, and the sheet still shows its memory. Changing the role away from the team closes the line. The board hears of a change when the computer next reports its teams, which takes a few minutes. A team whose docket does not offer this shows no memory.
+
+### Questions during a run
 
 When a team asks, the question waits in the **Now** panel and on the task's Execution tab, under **Needs you**.
 Answer it there, or in docket's own command, and the question closes either way. A team about to do something that

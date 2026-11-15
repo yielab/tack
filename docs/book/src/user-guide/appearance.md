@@ -31,6 +31,7 @@ Choose one under **Palette**. Every surface, accent, badge and chart changes at 
 - **Zoom** scales the whole interface, from 80% to 200%. It applies to the desktop app. In a browser tab, use the browser's own zoom: Ctrl + and Ctrl − (⌘ on a Mac), and Ctrl 0 to reset.
 - **High-legibility font** switches all text to Atkinson Hyperlegible, drawn so similar letters and digits (I l 1, O 0) stay distinct.
 - **Reduce motion** turns off slide, fade and pulse animations. If your system already asks for reduced motion, animations are off either way.
+- **Always show priority on cards** shows the priority on every Board card. Without it a card shows its priority only when it is not Medium.
 
 ---
 

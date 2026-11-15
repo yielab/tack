@@ -227,8 +227,8 @@ its own; raise it there too. See [Request limits](administration.md#request-limi
 ## A succeeded run has no pull request, pack or branch
 
 **Cause.** Everything after a succeeded attempt is optional and best-effort, and none of it changes the
-attempt's result. The attempt's timeline records why a step did not happen, as `attempt.verify_skipped`,
-`attempt.verify_failed`, `attempt.push_skipped` or `attempt.push_failed`. The usual reasons: the runner has
+attempt's result. The attempt's timeline records why a step did not happen, as "Verification skipped",
+"Verification failed", "Branch not pushed" or "Pushing the branch failed". The usual reasons: the runner has
 no `[verify]` section enabled, or no `push_branches = true` under `[git]`; the verifier program is not
 on the runner's `PATH`; git has no credentials for the remote; the task is not linked to a GitHub issue,
 or the board has no `TACK_GITHUB_TOKEN`. A pull request needs both of those last two.
@@ -351,15 +351,19 @@ Not sent to docket. The team saas-research cannot reach the web and this run nee
 its network as none and no member holds `fetch`. ...
 ```
 
-**Cause.** Before docket gets the task, Tack reads what the team says it can do. The run stops there
-when the team has no network and no member that reads the web while the run needs the web (the profile's
-network is on, or the person turned it on for the run), when the profile is a Planner and no member of
-the team can propose items, when the run changes the repository and the team delivers a report,
-when the profile names a way of working the team does not have, cannot run in full or whose file does not
-load, or when the team says
-one of its needs is not met (a service it still has to be given, or an agent that is not signed in on the
-runner); a need the team says only degrades its work does not refuse the run. Otherwise the team would start, find it cannot, and stop to ask a person for something only its
-own setup can give. Nothing was sent and no token was spent.
+**Cause.** Before docket gets the task, Tack reads what the team says it can do, and stops the run there
+when the team cannot do what the run needs. Otherwise the team would start, find it cannot, and stop to
+ask a person for something only its own setup can give. Nothing was sent and no token was spent. The run
+stops when:
+
+- the team has no network and no member that reads the web, and the run needs the web (the profile's
+  network is on, or the person turned it on for the run);
+- the profile is a Planner and no member of the team can propose items;
+- the run changes the repository and the team delivers a report;
+- the profile names a way of working the team does not have, cannot run in full, or whose file does not
+  load;
+- the team says one of its needs is not met (a service it still has to be given, or an agent that is not
+  signed in on the runner). A need the team says only degrades its work does not refuse the run.
 
 **What to do.** Make the change the reason names, with docket's own commands, on the runner's machine:
 

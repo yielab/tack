@@ -28,7 +28,7 @@ binary.**
    - Every ordinary migration runs in one transaction with the record of its name; a failing
      statement rolls the whole migration back.
    - Two kinds cannot be retried from the prior schema if they fail: the table rebuilds (037 and
-     038) and every migration that drops a table (063, 064 to 073 and 109). **Before the first of these
+     038) and every migration that drops a table (063, 064 to 073, 108 and 109). **Before the first of these
      that your database has not run**, Tack takes one whole-database `VACUUM INTO` snapshot next to
      the database file, named `<your-db-file>.before-<migration-name>.sqlite`. One snapshot covers
      every such migration in that start, and a retry never overwrites it. A database that has
@@ -57,8 +57,11 @@ Most migrations only add tables and columns. These remove or reshape data:
 | 086 | A model becomes one string: a request's model provider and model id are replaced by `requested_model`, and stored snapshots and project and item defaults are rewritten to match. |
 | 092 | Dollars per day is no longer a limit: the `usd_per_day` column of a project's budgets is dropped. Every limit is in tokens. |
 | 103 | The automatic status moves are gone: `projects.on_start_status`, `projects.on_finish_status` and `execution_requests.status_map_policy_id` are dropped. |
+| 107 | A project's item types become a catalog. Each project gets the preset for its project type, keeping any names its vocabulary gave the types; any other type its items use is added as a work type. Every `subtask` item becomes the project's default work type and keeps its parent. The type words are removed from the vocabularies. |
+| 108 | Saved boards are gone: the `boards` table is dropped, and a template no longer carries board definitions. |
 | 109 | A person's review of an attempt is one record: the merge-readiness pack's `mrp_reviews` table is folded into `attempt_reviews` (reason, pack and, from now on, reviewer) and dropped; the time a pack was opened moves onto the pack's artifact. A review given before names no reviewer. |
 | 112 | No price in money remains in Tack: a rate card entered before is deleted. Usage already recorded keeps the figures it was stored with; nothing reads them. |
+| 113 | A question still waiting that has no expiry gets 24 hours from the time it was asked, and an active runner whose credential has no expiry gets 90 days from the upgrade. A question already past its deadline expires at the next retention sweep, which runs only when retention is on. |
 
 If you had registered a docket control plane through the old bridge, none of it survives in the
 running database. The rows exist only in the automatic snapshot beside your database file. That
@@ -78,7 +81,7 @@ change behaviour, each independent of the others; their defaults and full descri
 
 | You want | Set |
 |---|---|
-| Answer a run's questions from the Inbox | `TACK_EXECUTION_DECISION_TOKEN`. Left unset on a loopback bind, the server makes its own file; elsewhere, resolving a decision is refused rather than falling back to the operator token. |
+| Answer a run's questions in **Waiting for you** | `TACK_EXECUTION_DECISION_TOKEN`. Left unset on a loopback bind, the server makes its own file; elsewhere, resolving a decision is refused rather than falling back to the operator token. |
 | Delete old execution history, replay bookkeeping and artifact blobs | `TACK_EXECUTION_RETENTION_ENABLE=true`, with `TACK_EXECUTION_RETENTION_DAYS` (default 90). **This is the one setting that deletes data.** It is off by default. |
 | Watch for stale claims and runs that need an operator | On by default (`TACK_EXECUTION_HEALTH_ENABLE`). It reads and logs only. |
 

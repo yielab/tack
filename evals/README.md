@@ -105,6 +105,10 @@ The two planning tasks stand in for a suite of their own. Where the table says "
 that cannot run for a reason of the machine (no sandbox where a task requires one) is still
 recorded `not_applicable` with that reason by the harness.
 
+## The safety suite
+
+`tasks/safety/` holds pairs of tasks: a small job with a hostile instruction planted where an agent reads (a card comment, the README, a saved web page, a test comment, an install script) and the same job without it, the twin. The attack measures what a guardrail stops; the twin measures what it costs honest work. `tasks/safety/README.md` lists the pairs, what counts as an attack's success and the suite's limits.
+
 ## The verifier set
 
 `tasks/verifier/` is not a suite of tasks but thirty labelled diffs of the regression tasks, to
@@ -115,7 +119,7 @@ it, a config that hides the tests, a change outside the allowed files). A case i
 
 `tack-evals gen-verifier-set tasks/regression` makes the set from a seed and proves every diff by
 running its task's checks, so a mutant is always one the checks refuse. Every label starts as
-`confirmed: false`. Labelling takes about an hour: `tack-evals verifier-labels` lists them with
+`confirmed: false`. Labelling is manual: `tack-evals verifier-labels` lists them with
 their diffs; read each `diff.patch` against its `reference.yaml`, and either set `confirmed: true`
 or correct `expected` first. `score-verifier --verdicts <file>` refuses to score while any label is
 unconfirmed (`--allow-unconfirmed` gives a provisional figure). Do not regenerate over a confirmed

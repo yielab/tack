@@ -190,21 +190,23 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: Who does it, with the profiles of Claude Code as radio buttons (Implementer, Planner, Researcher, Reviewer); a What will happen summary of the agent and model, the branch, the install, the checks, the permissions and the network; two switches, Ask before each action and Web tools; the collapsed sections What the agent will read and Advanced for this run; and Cancel and Start run under the limit.">
 
-- **Who does it** asks for the agent first, then the profile. The agents are a row of pills, Docket first,
-  then Claude Code, Codex and OpenCode: each one the computer reports, and any agent a profile names that the
-  computer does not report, greyed with the reason. Docket is chosen when a profile names a team, unless the
-  project or the task names another agent. Under the chosen agent you see only its profiles, each a radio
-  button, and one line with five icons for what that agent can do: stop a run, pick it back up after a
-  restart, answer questions, propose items and report usage. Only something the agent cannot do, or did not
-  report, is drawn crossed out; hover it for the reason. Under Docket the profiles are grouped by team; a team
-  shows who is in it as small chips and an icon for where it works (a branch of your repository, or its own
-  folder), and the teams that no profile names yet are one greyed row, "3 teams have no profile yet", with a
-  link to the Agents page. Under any other agent the profiles are one list. A profile that runs on any agent
-  is under each of them; changing the agent keeps it, and lets go of a profile the new agent does not run, so
-  you pick again (or, when the agent has only one profile, it is picked for you). The profile the task's role
-  chose is already selected, under its agent, and says so under its row ("Chosen by the role X"; the other
-  sources are "Project default", "Saved on this task", "The built-in Implementer", or "More than one role has
-  a profile, so the project default is used"). [Teams](automation.md#teams) explains how a role chooses.
+- **Who does it** asks for the agent first, then the profile.
+  - The agents are a row of pills, Docket first, then Claude Code, Codex and OpenCode: each one the computer
+    reports, and any agent a profile names that the computer does not report, greyed with the reason. Docket is
+    chosen when a profile names a team, unless the project or the task names another agent.
+  - Under the chosen agent you see only its profiles, each a radio button, and one line with five icons for what
+    that agent can do: stop a run, pick it back up after a restart, answer questions, propose items and report
+    usage. Only something the agent cannot do, or did not report, is drawn crossed out; hover it for the reason.
+  - Under Docket the profiles are grouped by team. A team shows who is in it as small chips and an icon for where
+    it works (a branch of your repository, or its own folder). The teams that no profile names yet are one greyed
+    row, "3 teams have no profile yet", with a link to the Agents page. Under any other agent the profiles are
+    one list.
+  - A profile that runs on any agent is under each of them. Changing the agent keeps it, and lets go of a profile
+    the new agent does not run, so you pick again (or, when the agent has only one profile, it is picked for you).
+  - The profile the task's role chose is already selected, under its agent, and says so under its row ("Chosen by
+    the role X"; the other sources are "Project default", "Saved on this task", "The built-in Implementer", or
+    "More than one role has a profile, so the project default is used"). [Teams](automation.md#teams) explains
+    how a role chooses.
 - **What will happen** is one line each, with an icon: which profile runs the task and on which model; where
   the agent works ("on a new branch of your repo", "in the folder, directly"; a profile whose team works in
   its own folder on this computer says "in the team's own folder on this computer, not in this repository");
@@ -225,14 +227,17 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 - **Ask before each action.** On when the agent is not sandboxed or the card was imported, off otherwise. When on, the agent pauses
   and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
   pause, the switch is disabled and says why.
-- **Web tools.** Off by default, unless the profile says its role needs the network (the profile's box on
-  the Agents page) or, for any agent but docket, the profile's tools for the agent you picked include the
-  web tools, in which case the switch starts on and you can turn it off for this run. opencode reaches the
-  network on every run, so for it the switch is on, disabled, and says why. A choice the
-  task remembered wins over the profile. A card that was imported (from GitHub, Linear or a file) starts with
-  it off, and the dialog says why under **Ask before each action**; you can turn both on or off for the run. Turning it on lets the agent fetch pages and search the web. Off
-  turns those tools off, but the agent's shell can still reach the network. A line under the switches says
-  whether the agent is sandboxed or has your user's access to this machine; see
+- **Web tools.** Off by default, unless the profile says its role needs the network (the profile's box on the
+  Agents page) or, for any agent but docket, the profile's tools for the agent you picked include the web tools.
+  Then the switch starts on and you can turn it off for this run.
+  - opencode reaches the network on every run, so for it the switch is on, disabled, and says why.
+  - A choice the task remembered wins over the profile.
+  - A card that was imported (from GitHub, Linear or a file) starts with it off, and the dialog says why under
+    **Ask before each action**; you can turn both on or off for the run.
+  - On lets the agent fetch pages and search the web. Off turns those tools off, but the agent's shell can still
+    reach the network.
+
+  A line under the switches says whether the agent is sandboxed or has your user's access to this machine; see
   [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md).
 - **Advanced.** The model, the allowed tools, the **Token limit** and the
   timeout (both filled from the profile; clear the token limit to run without one), and the steps after a

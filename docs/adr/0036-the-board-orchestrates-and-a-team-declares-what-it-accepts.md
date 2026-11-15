@@ -1,13 +1,13 @@
 # ADR 0036: the board orchestrates and a team declares what it accepts — one owner per concept, a method chosen per task, a limit at each level with its owner
 
-**Status: ACCEPTED 2026-11-04 and built.** Executed by Phase 89 (`docs/plans/phase-89.md`). Builds on
+**Status: ACCEPTED 2026-11-04 and built.** Executed by Phase 89 (`docs/closed-cycles/plans/phase-89.md`). Builds on
 ADR 0021 (every run goes to a team), ADR 0024 (limits in tokens, each naming who applies it), ADR 0030
 decision 5 (Tack configures no prompt, service or secret for a team), ADR 0032 (a team is shown as
 it is; a person always accepts a plan) and ADR 0034 (a manager works through the board). Amends
 ADR 0021's header (its decision 2 route was never built, its default pod and its gate changed) and
 ADR 0024's decision table (decision 1 was overturned by ADR 0027 decision 5). **Amended 2026-11-05
 (accepted and built 2026-11-05)** with decisions 10 to 13, an item is a group or work, executed by
-Phase 93 (`docs/plans/phase-93.md`); decision 7's
+Phase 93 (`docs/closed-cycles/plans/phase-93.md`); decision 7's
 card becomes the group's lane, row and page.
 
 **The ask.** A person sets up a project with several teams — one that fixes code, one that
@@ -132,7 +132,7 @@ recorded answers), four things differed from the proposal and Tack follows docke
 ## What is asked of docket
 
 Four additive changes on API 6, each announced in `features`, so Tack probes them and degrades to
-today's behaviour when absent; the text sent to docket's session is in `docs/plans/phase-89.md`
+today's behaviour when absent; the text sent to docket's session is in `docs/closed-cycles/plans/phase-89.md`
 §"What docket is asked". `podShape` (the shape as a `pod.yaml` key; apply reaches folder pods),
 `podContract` (`delivers`, `methods[]`, `needs[]` on `GET /pods/<p>`), `pipelineChecked` (a per-task
 pipeline with a missing role is refused at claim), `podResume` (`budgetWindow`, `POST /pods/<p>/resume`,

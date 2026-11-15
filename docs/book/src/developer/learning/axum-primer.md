@@ -174,12 +174,13 @@ pub struct AppState {
     pub workspace_id: Uuid,
     pub broadcast_tx: broadcast::Sender<BoardEvent>,
     pub event_bus: EventBus,
+    pub notifications: Inbox,
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
     pub tasks: TaskTracker,
 }
 ```
 
-`AppState` is the equivalent of Express's `app.locals` (or a FastAPI `app.state`). It contains everything handlers need that is not in the request itself: the repository (which wraps the database pool), the configuration, the channels that carry events to the browser and to other consumers, the embedded runner's control, and the tracker for work a handler starts after it has answered.
+`AppState` is the equivalent of Express's `app.locals` (or a FastAPI `app.state`). It contains everything handlers need that is not in the request itself: the repository (which wraps the database pool), the configuration, the channels that carry events to the browser and to other consumers, the inbox that tells a person what needs them, the embedded runner's control, and the tracker for work a handler starts after it has answered.
 
 It is registered once at startup and then cloned into every handler call:
 

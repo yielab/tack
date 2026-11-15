@@ -2,8 +2,8 @@
 
 This page is for the person who decides how a finished run reaches the main branch. After reading it you
 can merge a run from Tack with one button, let a task merge when you move it to Done, and set the rules under
-which Tack merges by itself. The merge is the third step of the ladder in
-[Automating a Project](automation.md#merge), where the rules for teams and for starting runs are.
+which Tack merges by itself. These rules are the **Merge** section of **Settings → Automation**; the
+other sections (who works on a task, when a task starts) are in [Automating a Project](automation.md).
 
 When an agent's run finishes on a branch and its pull request is open, you can merge it
 from Tack instead of going to GitHub. There are three ways, and a project uses as many of

@@ -10,9 +10,8 @@ no cloud account.
 
 Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
 maintenance schedule — through configurable vocabulary and workflow columns, and can hand any
-task to a real coding-agent run instead of just tracking it. No accounts. No cloud. No
-subscriptions. One binary, one SQLite file.
-
+task to a real coding-agent run instead of just tracking it. No accounts and no cloud: one
+binary and one SQLite file.
 
 ## The board and the runner
 
@@ -21,19 +20,21 @@ Under the hood, Tack is two components, built to be one product.
 > **The board** is the project manager: workflows, timelines, dependencies, per-project
 > vocabulary — one binary, one SQLite file, no accounts, no cloud. It is the plan, the
 > policy and the record. It decides *what* runs, *when*, under *which* limits, and it keeps
-> the durable history of every run: events, decisions, artifacts, and what it measurably
-> cost. **It never executes code and never holds a model credential.**
+> the durable history of every run: events, decisions, files, and the tokens it used.
+> **It never executes code and never holds a model credential.**
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, prepares
 > a workspace for the agent, launches the coding agent you already use — Claude Code,
-> Codex, opencode, or docket — and reports back. **It holds the keys; the board never sees them.**
+> Codex, opencode, or docket — and reports back. **Any secret the agent needs stays with the
+> runner; the board never sees it.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS hands work to runners on ten developers' machines, each with its
-> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board: the board
-> stops accepting its updates. A board that restarts does not lose a run: the runner remembers
-> what it started. **One developer runs both in one process with one command.**
+> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board: once its
+> hold on the attempt lapses, the board refuses its updates. A board that restarts does not lose a
+> run: the runner writes a local journal before it starts any process. **One developer runs both
+> in one process with one command.**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="diagrams/two-components-dark.svg">
@@ -54,7 +55,7 @@ A few terms recur throughout this documentation:
 | **Type** | A kind of item a project has, with its own name, colour and level: one that holds work (an Epic, a Building) or one that is work (a Task, a Work Order). Each project owns its catalog of types. See [Types and words](user-guide/vocabulary.md). |
 | **Vocabulary** | Per-project label overrides that rename the other built-in terms to your domain — "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Types and words](user-guide/vocabulary.md). |
 | **Runner** | A small worker process that lives where your code and credentials already are, pulls work from the board, launches a coding agent, and reports back. See [Running Agents on Tasks](user-guide/running-agents.md) and the [Administrator Guide](admin-guide/runners.md). |
-| **Run** | One execution of an item by a runner. At most one attempt is active at a time, and every run stays in the item's history: what the agent did, the questions it asked, the files it produced, and what it used. |
+| **Run** | One execution of an item by a runner. Every run stays in the item's history: what the agent did, the questions it asked, the files it produced, and the tokens it used. |
 | **Status and Work** | A task's **Status** is its column, and only a person sets it. Its **Work** is what the agents report about its newest run (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled or Not started). A run never moves a task. See [Views](user-guide/views.md#status-and-work). |
 | **Team and manager** | A **team** is a group of agents an agent runtime such as docket keeps, which a task can be sent to. A **manager** is an agent profile that looks after a project through the board and proposes its changes for you to apply. See [Automating a Project](user-guide/automation.md) and [Managers and Threads](user-guide/talking-with-a-manager.md). |
 

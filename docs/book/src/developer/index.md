@@ -1,6 +1,8 @@
 # Architecture Overview
 
-This is the front door of the Developer Guide. It is for contributors who change Tack and integrators who build on it. After reading it you will know how the code is layered, where the other two guides stop and this one starts, and which page to read next.
+This is the front door of the Developer Guide. It is for contributors who change Tack and integrators who build on it. After reading it you will know why the code is layered the way it is, how a request travels through it, where the other two guides stop, and which page to read next.
+
+Three pages share the architecture, and each owns one thing. This page owns the *why*: the layering rule, the item model and the paths a request and a live event take. The [Crate Tour](crate-tour.md) owns *where things live*, file by file. [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) owns the *boundaries*: what each crate may hold and name, and the rules that hold across crates. Where they disagree, `docs/ARCHITECTURE.md` wins.
 
 ## How the three guides fit
 
@@ -16,9 +18,9 @@ A user page that needs a setting points to the Administrator Guide for how to se
 
 | Page | Read it to |
 |---|---|
-| This page | See the layering, the item model, a request's path and the live board channel |
+| This page | See why the code is layered, the item model, a request's path and the live board channel |
 | [Crate Tour](crate-tour.md) | Find the file that owns a behaviour, crate by crate |
-| [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) | Check a crate's boundary and the implementation rules that hold across crates |
+| [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) | Check what a crate may hold and name, and the implementation rules that hold across crates |
 | [Runs, Teams and Automation](runs-and-teams.md) | Follow an automatic run from a waiting task to a merge, and see how docket teams, the ceiling, usage and recurrence are built |
 | [The Runner Contract](runner-contract.md) | Write or change a runner, or an adapter for an agent |
 | [The Project File Format](project-file.md) | Produce, check or extend the file that carries a whole project |
@@ -36,9 +38,7 @@ A user page that needs a setting points to the Administrator Guide for how to se
 2. Skim the [Crate Tour](crate-tour.md) for the crate you will touch.
 3. Read [Runs, Teams and Automation](runs-and-teams.md) if you work on runs, agents or merging, or [The Project File Format](project-file.md) if you work on import and export.
 4. Read the six records listed in [Architecture Decisions](decisions.md#reading-order-for-newcomers).
-5. Before your first change, read [Testing](testing.md) and run `.githooks/pre-push`.
-
-> `docs/ARCHITECTURE.md` states each crate's boundary and the rules that hold across crates, and is the authority when it and this guide disagree. This page is the narrative walkthrough.
+5. Before your first change, read [Testing](testing.md) and run `.githooks/pre-push` (the gate a push must pass).
 
 ## Why a board and a runner
 
@@ -70,22 +70,15 @@ tack-test-support -> tack-protocol tack-core tack-db
 tack-evals        -> tack-test-support
 ```
 
-Each line lists what a crate may depend on; `scripts/check-crate-graph.sh --print` prints exactly this, and the check fails on any other normal dependency. No reverse edges are allowed. `tack-test-support` holds test helpers and is a dependency of the others' tests only. `tack-evals` is a development tool that is never released, and nothing depends on it. An eleventh crate,
-`tack-desktop`, is deliberately excluded from this workspace (its own `Cargo.toml`
-and lockfile) because Tauri drags GTK/WebKit/glib into whatever workspace holds it —
-see the [Crate Tour](crate-tour.md#tack-desktop) for how it supervises `tack` instead
-of linking against it. `scripts/arch-facts.sh` prints the crate, route, migration and test counts, so this page quotes none of them.
+Each line lists what a crate may depend on. `scripts/check-crate-graph.sh --print` prints exactly this, and the check fails on any other normal dependency. No reverse edges are allowed. `scripts/arch-facts.sh` prints the crate, route, migration and test counts, so this page quotes none of them.
 
-**What this means in practice:**
+Two crates stand apart. `tack-test-support` holds test helpers and is a dependency of the others' tests only. `tack-evals` is a development tool that is never released, and nothing depends on it. An eleventh crate, `tack-desktop`, is deliberately excluded from the workspace (its own `Cargo.toml` and lockfile) because Tauri drags GTK/WebKit/glib into whatever workspace holds it; the [Crate Tour](crate-tour.md#tack-desktop) says how it supervises `tack` instead of linking against it.
 
-- `tack-protocol`, `tack-core` and `tack-orch` do no I/O. `tack-core` holds the planning and runs policy as pure structs, enums and functions, so every test in it runs without a database.
-- `tack-db` is the only crate that names `sqlx`. Commands are `Repository` methods, read models are functions in `queries/`, and every call fails with `StoreError`.
-- `tack-app` holds the use cases of a run and every background tick. It reaches back into what still lives in `tack-api` through the traits in `tack_app::ports`.
-- `tack-api` is the only crate that names `axum`. A handler extracts, calls a `tack-app` use case or a `tack-db` method, maps the error and responds.
-- `tack-cli` is the single `tack` binary and the composition root: `serve.rs` builds the `Repository`, hands it to the server and spawns the ticks. Its client commands only talk to a running server over HTTP, so the CLI works whether the server is local or remote.
-- `tack-runner` is a separate binary. It speaks runner-v1 to `tack-api` over loopback or the network, the same way a remote runner does, and never depends on `tack-db` or `tack-api`.
+What each crate may hold and name is in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md). Three consequences matter for the rest of this page:
 
-Each crate's boundary, in full, is in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md); the file-by-file walk is the [Crate Tour](crate-tour.md).
+- **Rules live below the I/O.** `tack-protocol`, `tack-core` and `tack-orch` do no I/O, so every rule in them is a pure function over plain values.
+- **Names are fenced.** Only `tack-db` names `sqlx` and only `tack-api` names `axum`. Every storage call fails with `StoreError`, and every handler extracts, calls a `tack-app` use case or a `tack-db` method, maps the error and responds.
+- **The CLI is a client.** `tack-cli` is the single `tack` binary and the composition root: `serve.rs` builds the `Repository`, hands it to the server and spawns the background ticks. Its client commands only talk to a running server over HTTP, so the CLI works whether the server is local or remote. `tack-runner` is a separate binary that speaks runner-v1 to `tack-api` the same way a remote runner does, and never depends on `tack-db` or `tack-api`.
 
 **Why bother?** The layering prevents the kind of "everything knows about everything" entanglement that makes codebases brittle. It also means:
 
@@ -127,9 +120,9 @@ Axum router (tack-api/src/router.rs)
 Handler: update_item (tack-api/src/handlers/items.rs)
     │  1. Validates the body, then loads repo.get_item_snapshot(id) and checks If-Match
     │  2. Calls repo.get_project(project_id) to load the workflow
-    │  3. Calls repo.update_item_atomically(id, input, &workflow, expected_version), which
-    │     inside one transaction calls workflow.validate_transition(old, new) and
-    │     workflow.check_wip_limit(new, count)  ← both pure, no I/O in tack-core
+    │  3. Calls repo.update_item_atomically(id, input, &workflow, &Hierarchy, expected_version),
+    │     which inside one transaction asks the workflow (StatusGate: validate_transition and
+    │     check_wip_limit) and the tree rule (ParentGate) ← all pure, no I/O in tack-core
     │  4. after_update(...) then: state.events().emit(DomainEvent::item_changed(...))  ← the bus,
     │     and with it the WebSocket event
     │  5. create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
@@ -150,7 +143,7 @@ HTTP client receives JSON
 
 A few things worth noting:
 
-- Step 3 calls pure functions in `tack-core`. No extra database round-trip is needed to validate the transition: the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct. The repository runs them in the same transaction as the write, so a rejected move leaves the item's version untouched.
+- Step 3 calls pure functions in `tack-core`. No extra database round-trip is needed to validate the transition: the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct. The repository runs the checks in the same transaction as the write, so a rejected move leaves the item's version untouched.
 - The handler owns the orchestration. It decides the order of validation, persistence, and notification. The repository and the core crate do not know about each other.
 - Errors propagate upward via Rust's `?` operator. The `ApiError` type (in `tack-api/src/error.rs`) implements `IntoResponse`, giving every failure a `StableErrorCode` (one per rule of `CoreError`), which decides the HTTP status and is in the body as `code`.
 
@@ -201,7 +194,7 @@ On WebSocket connection (GET /api/projects/{id}/boards/live):
   handler upgrades the connection
   spawns two tasks:
     send_task:  rx.recv() in a loop → filter by project_id → send JSON to client
-    recv_task:  reads messages from client (handles Close, Ping)
+    recv_task:  reads messages from client (ignores all but Close)
   tokio::select! on both tasks — whichever ends first, the other is aborted
 ```
 

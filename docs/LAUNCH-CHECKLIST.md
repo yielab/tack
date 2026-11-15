@@ -17,6 +17,7 @@ automatically; every step under "Publish list" is a human action.
 | 7 | The live GitHub repository description matches the current harness list (four: Claude Code, Codex, docket, opencode) | `gh repo view yielab/tack --json description --jq .description` |
 | 8 | The recovery demo asset is a valid, playable file | `file docs/screenshots/recovery-demo.gif` |
 | 9 | Docs site is reachable | `curl -sI https://yielab.github.io/tack/` (expect `HTTP/2 200`) |
+| 10 | The release workflow's build jobs pass on `develop`. A dispatch run builds the archives and the desktop bundles but never creates a release or pushes an image | `gh workflow run release.yml --ref develop`, then `gh run list --workflow release.yml --limit 1` (expect `success`) |
 
 **Not verified from this machine:** the macOS and Windows install paths. Only
 `linux-x86_64` has been installed and run end to end.
@@ -30,17 +31,22 @@ automatically; every step under "Publish list" is a human action.
    ```
    **The next tag is `v0.2.0-beta.1`.** The version is bumped in `Cargo.toml`, the desktop crate,
    `tauri.conf.json`, `frontend/package.json` and their lockfiles, and `CHANGELOG.md` has its
-   section. The last published release is `v0.1.0-beta.9`. The `v0.1.0-beta.10` tag (2026-10-14)
-   points at `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the
-   repository does not allow, so the run failed before it started and no release exists. It is not
-   re-cut: its changes ship in `v0.2.0-beta.1`. Until that release is published the install
-   commands in `README.md` look up the newest published release, so they install `v0.1.0-beta.9`.
-   `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs.
+   section. The last published release is `v0.1.0-beta.9`. The `v0.1.0-beta.10` tag points at
+   `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the repository does not
+   allow, so its run failed before it started and no release exists. It is not re-cut: its changes ship
+   in `v0.2.0-beta.1`. Until that release is published the install commands in `README.md` install
+   `v0.1.0-beta.9`.
 
-2. **Write the release notes on GitHub.** The desktop app installers (`.AppImage`/`.deb` for
-   Linux, `.dmg` for macOS, `.msi` for Windows) are the first links in the release description,
-   since the desktop app is the primary way to use Tack. The binary installers (`install.sh`,
-   `install.ps1`) and the Homebrew and Scoop links follow.
+   `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs, signs
+   `SHA256SUMS` with cosign, attests build provenance, opens the Homebrew pull request (step 3) and
+   pushes the container image to `ghcr.io/yielab/tack` (`linux/amd64`, tagged with the release tag; no
+   `latest` for a pre-release). Its changelog section becomes the release notes.
+
+2. **Edit the release notes on GitHub.** The workflow fills in a warning about the unsigned desktop
+   app and the tag's `CHANGELOG.md` section. Put the desktop app installers (`.AppImage`/`.deb` for
+   Linux, `.dmg` for macOS, `.msi` for Windows) first among the links, since the desktop app is the
+   primary way to use Tack. The binary installers (`install.sh`, `install.ps1`) and the Homebrew and Scoop
+   links follow.
 
 3. **Re-point the packaging recipes at the new release**, once its artifacts exist.
    `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing else

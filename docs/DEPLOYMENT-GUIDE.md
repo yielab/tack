@@ -23,11 +23,15 @@ Prebuilt binaries for Linux (x86_64 and ARM64), macOS (Intel and
 Apple Silicon) and Windows are attached to each [GitHub Release](https://github.com/yielab/tack/releases), along with the desktop
 app installers. Each archive contains the single `tack` executable, `LICENSE`, `README.md`, and a
 `QUICKSTART.txt`. Each release also has a separate `tack-runner` archive, for machines that only run
-agents. Releases ship a `SHA256SUMS` file, build provenance attestations and SBOMs — verify before
-deploying:
+agents. Releases ship a `SHA256SUMS` file with its keyless cosign signature (`SHA256SUMS.sigstore.json`),
+build provenance attestations and SBOMs. Verify before deploying:
 
 ```bash
 sha256sum -c SHA256SUMS            # checksums
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/yielab/tack/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS                       # signature on the checksums (optional)
 gh attestation verify tack --repo yielab/tack   # provenance (optional)
 ```
 
@@ -42,9 +46,11 @@ curl --proto '=https' --tlsv1.2 -fsSL \
 
 Fetches the installer from the release it installs and installs `tack` from that release into
 `~/.local/bin` (set `TACK_INSTALL_DIR` to change it). It verifies the archive against that release's
-own `SHA256SUMS` before extracting anything, and refuses to install on a mismatch — Option A's manual
-check, done for you. `TACK_SKIP_CHECKSUM=1` skips the check and is the only way to do so. The README
-lists the Homebrew, Scoop and PowerShell installers.
+own `SHA256SUMS` before extracting anything, and refuses to install on a mismatch (Option A's manual
+check, done for you). It then checks the signature on `SHA256SUMS` with `cosign`, or with an
+authenticated `gh`, when one is on the `PATH`; with neither it says the signature was not checked.
+`TACK_SKIP_CHECKSUM=1` skips both checks and is the only way to do so. `TACK_VERSION` picks the release
+(the newest by default). The README lists the Homebrew, Scoop and PowerShell installers.
 
 ### Option C — build from source
 
@@ -287,10 +293,11 @@ not time the connection out.
 
 ## Docker
 
-A `Dockerfile` and `docker-compose.yml` ship at the repo root. The image is a three-stage build (build
-the web UI, compile a static musl binary that embeds it, copy it onto a distroless base), producing a
-shell-less image barely larger than the binary. There is a single service and a single volume for the
-database and attachments.
+Each release also publishes an image for `linux/amd64` at `ghcr.io/yielab/tack`, tagged with the release
+tag; a pre-release such as `v0.2.0-beta.1` has no `latest` tag. To build your own, a `Dockerfile` and
+`docker-compose.yml` ship at the repo root. The image is a three-stage build (build the web UI, compile a
+static musl binary that embeds it, copy it onto a distroless base), producing a shell-less image barely
+larger than the binary. There is a single service and a single volume for the database and attachments.
 
 The container binds `0.0.0.0` internally, so it **refuses to start until you set `TACK_API_TOKEN`**
 (uncomment the example in `docker-compose.yml`) or `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1`.
@@ -308,7 +315,8 @@ docker run -d --name tack -p 3210:3210 -v tack-data:/data \
 ```
 
 Everything is stored under `/data` (`/data/tack.db` + `/data/storage`), persisted by the named
-volume. The container has no runner; attach runners from other machines. The distroless image has no
+volume. The process runs as user ID `65532`, so a folder you mount in place of the volume must be
+writable by it. The container has no runner; attach runners from other machines. The distroless image has no
 shell, so health-check the container from the host (`curl .../api/health`) or via a proxy.
 
 ---

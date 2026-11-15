@@ -5,14 +5,17 @@ what happened when a runner, its machine or the agent it started died in the mid
 know whether Tack retried the attempt by itself, and put a stuck attempt back in the queue when it is
 safe.
 
-**The governing rule:** Tack does not
-claim that an agent runs exactly once. The board can make sure two runners never hold the same attempt
-at once, but a runner or network crash after a process has actually started
-can leave it genuinely unclear whether that process is still running, and nothing on the board can prove
-it is dead. The promise is narrower: at most one runner holds an attempt at a time, the runner
-writes a local journal before it starts any process, repeated completion reports change nothing, and
-an attempt goes to `needs_operator` whenever a safe retry cannot be proven. **A runner going quiet never,
-by itself, starts a second process on the same workspace.**
+**The governing rule:** Tack does not claim that an agent runs exactly once. The board can make sure two
+runners never hold the same attempt at once. But if a runner or the network crashes after a process has
+started, it can be unclear whether that process is still running, and nothing on the board can prove it is
+dead. The promise is narrower:
+
+- At most one runner holds an attempt at a time.
+- The runner writes a local journal before it starts any process.
+- Repeated completion reports change nothing.
+- An attempt goes to `needs_operator` whenever a safe retry cannot be proven.
+
+**A runner going quiet never, by itself, starts a second process on the same workspace.**
 
 ---
 
@@ -59,11 +62,11 @@ any agent process was ever allowed to start
 An agent that runs in docket is the exception to that last row. docket keeps the task
 in its own daemon, so it survives a restart of the runner. When the restarted runner finds
 the task still running, and its journal kept the claim, the runner asks the board once
-whether the attempt's lease is still its own. If it is, the runner follows the task to its
+whether the attempt is still assigned to it. If it is, the runner follows the task to its
 end as it would a new run, and no recovery observation is sent: a question the task was
 waiting on is still on the board and is answered there, and the run ends as any other.
 The attempt's time limit starts over at that moment, so the time before the restart is not
-counted against it. If the lease is no longer the runner's, or anything cannot be proven,
+counted against it. If the attempt is no longer assigned to the runner, or anything cannot be proven,
 the runner reports `process_running` and the attempt goes to an operator as described below.
 Every other agent runs as a process of the runner, which a restart ends, so it always takes
 the path below.

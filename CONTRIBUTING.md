@@ -99,11 +99,13 @@ driver takes your side without a conflict and `.githooks/post-merge` regenerates
    with it.
 7. **Describe the pull request:** what changed and why, how you tested it, and any follow-ups. The
    [template](.github/PULL_REQUEST_TEMPLATE.md) has the checklist.
-8. **Write the commit subject as one plain sentence after a verb:** `Add:` for something new,
-   `Fix:` for a bug, `Change:` for different behaviour, `Clean:` for code or docs removed with no
-   change in behaviour, `Chore:` for regenerated files and housekeeping, `Docs:` for documentation only, `Release:` for a version bump. Say what a user
-   or maintainer can now do or no longer suffers, for example `Fix: an open "Run with agent" dialog
-   survives the board's realtime refetch`. No AI-attribution lines (no `Co-Authored-By` trailers).
+8. **Write the commit subject as one plain sentence after a type word:** `Feature:` for something
+   new, `Fix:` for a bug, `Change:` for different behaviour, `Refactor:` for structure with no change
+   in behaviour, `Docs:` for documentation only, `Roadmap:` for the roadmap's cards, `Test:` and
+   `Evals:` for tests and eval suites, `Style:` for formatting and lint only, `Chore:` for regenerated
+   files and housekeeping, `Release:` for a version bump. Say what a user or maintainer can now do or no longer suffers,
+   for example `Fix: an open "Run with agent" dialog survives the board's realtime refetch`. No
+   AI-attribution lines (no `Co-Authored-By` trailers).
 9. **Review.** The maintainer reviews, may ask for changes, and merges once CI is green. Every job
    in `.github/workflows/ci.yml` that runs on a pull request must pass.
 
@@ -148,8 +150,7 @@ Tagging and publishing a release is the maintainer's step, written in
   the reasons are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Prefer returning `Result` over panicking.
 - Unsupported is typed, unknown is explicit, unmeasured is nullable. No `unimplemented!()`, and no
-  zero standing in for "unknown": never render `$0.00` for money nobody measured; the literal is
-  `Not measured`.
+  zero standing in for "unknown": a token count nobody measured is `Not measured`, never `0`.
 - Errors, logging and the secrets-in-backups rule: [Adding Features](https://yielab.github.io/tack/developer/adding-features.html#conventions-every-change-follows).
 
 ### Comments

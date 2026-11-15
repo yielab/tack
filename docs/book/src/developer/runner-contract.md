@@ -24,7 +24,7 @@ Whoever creates the request, the server writes the instructions the harness is g
 
 ## The protocol surface
 
-The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outside the operator token check. `docs/openapi.json` lists 18 operations there, all authenticated with the runner's own hashed bearer credential:
+The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outside the operator token check. `docs/openapi.json` lists every operation there (`jq '.paths | keys[] | select(startswith("/api/runner/v1"))' docs/openapi.json`), all authenticated with the runner's own hashed bearer credential:
 
 | Group | Operations |
 |---|---|
@@ -34,7 +34,7 @@ The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outsi
 | Team activity | `activity` (additive: the tasks a harness's teams hold that changed) |
 | Team operations | `operations/poll`, `operations/{operation_id}/result` (additive: what a person asked of a harness's team from the board, and how it went) |
 
-Seventeen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The fixtures under `docs/contracts/runner-v1/` are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the list, so a changed or added fixture fails there until the pin is updated.
+Every operation but the content upload carries a JSON body with `protocol_version`; the upload carries the artifact's bytes. The fixtures under `docs/contracts/runner-v1/` are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the list, so a changed or added fixture fails there until the pin is updated.
 
 ### Several attempts at once
 
@@ -54,9 +54,20 @@ A question waits for its person. The runner sends no `expires_at` and no clock o
 
 Every runner reports a **capability snapshot** at enrollment and refresh time: protocol version, concurrency, installed harness versions, and per-feature support for `cancel`, `resume`, `decisions`, `artifacts`, and `usage`, each as `unsupported | advisory | supported` with an optional reason (`docs/contracts/runner-v1/capabilities.json`). The scheduler and UI are required to read this snapshot rather than assume a feature works.
 
-A harness entry may also carry `teams` (each team the harness runs: its profile and the violations that keep it from running lights-out, and, each only when the harness says it, its members and models, whether it runs to the end or asks a person, its network, its queue, where it works, its records, a shape label and its steps; a harness with no teams reports none) and `autonomy_ceiling` (`L3` when any team is capped, else `L5`). Both are optional, and an unknown field lands in `additional`. `capabilities.with-teams.json` is the example. A harness entry also carries, in `additional` under `features`, what that agent itself can do: the same `cancel`, `resume`, `decisions`, `artifacts` and `usage` values as above, and `proposals` (whether its runs can propose items), each with its reason. It is the adapter's `declared_capabilities()`, written by the probe (`HarnessCapability::set_features`, read back with `features()`), so each agent is reported on its own and not only by the runner-wide `features`; an older runner leaves it out, and a reader shows that as "not reported". The board reads them when it decides whether an automatic merge is allowed; see [the ceiling](runs-and-teams.md#the-ceiling).
+A harness entry may also carry:
 
-**The one enforced rule:** an adapter may claim `cancel: supported` only if its harness announces the process groups its shell tool starts, or stops its work over its own API. `AdapterRegistry::register_probe` rejects any other probe that claims it, at registration time, before any attempt can reference it: `crates/tack-runner/src/harness/mod.rs`, proved by `harness::tests::registering_a_probe_overclaiming_cancel_support_is_rejected`. The reason is structural: a harness's own shell tool spawns its subprocess in a new session outside the runner's process group, so without being told the group the runner cannot promise it stopped (confirmed with `ps` against each real harness installation; see each harness's own `fixtures/<kind>/README.md`). docket's cancellation is a call to its own cancel route, which stops the running step and its process group, so `cancel` is `supported` for docket and `advisory` for the other three harnesses. On a cancellation of a harness that announces process groups the runner stops the main group, then sends SIGTERM and, after the grace period, SIGKILL to each announced group still live. The cancellation evidence carries `details.groups` as `{tracked, killed, survived}`. A harness that announces nothing always shows `tracked: 0`, which means nothing was reported, not that nothing was left.
+- **`teams`:** each team the harness runs, with its profile and the violations that keep it from running lights-out. Each of these is present only when the harness says it: its members and models, whether it runs to the end or asks a person, its network, its queue, where it works, its records, a shape label and its steps. A harness with no teams reports none.
+- **`autonomy_ceiling`:** `L3` when any team is capped, else `L5`.
+- **`features`** (in `additional`): what that agent itself can do. These are the same `cancel`, `resume`, `decisions`, `artifacts` and `usage` values as above, plus `proposals` (whether its runs can propose items), each with its reason. It is the adapter's `declared_capabilities()`, written by the probe (`HarnessCapability::set_features`, read back with `features()`), so each agent is reported on its own and not only by the runner-wide `features`. An older runner leaves it out, and a reader shows that as "not reported".
+
+`teams` and `autonomy_ceiling` are optional, and an unknown field lands in `additional`. `capabilities.with-teams.json` is the example. The board reads them when it decides whether an automatic merge is allowed; see [the ceiling](runs-and-teams.md#the-ceiling).
+
+**The one enforced rule:** an adapter may claim `cancel: supported` only if its harness announces the process groups its shell tool starts, or stops its work over its own API. `AdapterRegistry::register_probe` (`crates/tack-runner/src/harness/mod.rs`) rejects any other probe that claims it, at registration time, before any attempt can reference it. The test is `harness::tests::registering_a_probe_overclaiming_cancel_support_is_rejected`.
+
+- **Why:** a harness's own shell tool spawns its subprocess in a new session outside the runner's process group, so without being told the group the runner cannot promise it stopped (confirmed with `ps` against each real harness installation; see each harness's own `fixtures/<kind>/README.md`).
+- **docket:** its cancellation is a call to its own cancel route, which stops the running step and its process group, so `cancel` is `supported` for docket and `advisory` for the other three harnesses.
+- **A harness that announces process groups:** on a cancellation the runner stops the main group, then sends SIGTERM and, after the grace period, SIGKILL to each announced group still live. The cancellation evidence carries `details.groups` as `{tracked, killed, survived}`.
+- **A harness that announces nothing** always shows `tracked: 0`, which means nothing was reported, not that nothing was left.
 
 | Feature | Ceiling in this build | Why |
 |---|---|---|
@@ -72,7 +83,14 @@ A harness entry may also carry `teams` (each team the harness runs: its profile 
 
 1. A restarted runner reads its own journal and reports what it actually observed: `ProcessStopped`, `ProcessRunning`, or `Ambiguous` (`POST /api/runner/v1/attempts/{id}/recovery-observation`). For docket, the adapter's `reconcile` reads the task named by the journal's `<team>/<task id>` and reports it stopped when the task is in a terminal state.
 
-   When `reconcile` answers `ProcessRunning`, the journal is `process_observed_running` and it holds the claim (`AttemptJournal.claimed_work`, which carries references to secrets and no literal environment value), the engine calls `resume`, then sends one heartbeat for the lease with the journal's fencing token. If the heartbeat is accepted, `recover` hands the prepared run back as `RunCycle::Resumed` instead of following it, and `serve` follows it in a run slot of its own (`follow_resumed`), so the ticker heartbeats its lease with every other and the journals behind it are recovered without waiting. It takes the same path a fresh run takes after it starts (`follow_to_end`: the wait, evidence, verifier, publish, terminal report), and no recovery observation is sent. The attempt's deadline starts over at the resume. Decisions the board already holds for the attempt are read once and are not created again when the agent asks the same question; the existing decision is waited for. If `resume` fails or answers `Unsupported`, or the heartbeat is refused, the runner reports `ProcessRunning`. A journal with no recorded claim is recovered by that report alone.
+   When `reconcile` answers `ProcessRunning`, the journal is `process_observed_running` and it holds the claim (`AttemptJournal.claimed_work`, which carries references to secrets and no literal environment value). The engine then:
+
+   - calls `resume`, then sends one heartbeat for the lease with the journal's fencing token;
+   - when the heartbeat is accepted, has `recover` hand the prepared run back as `RunCycle::Resumed` instead of following it. `serve` follows it in a run slot of its own (`follow_resumed`), so the ticker heartbeats its lease with every other and the journals behind it are recovered without waiting;
+   - takes the same path a fresh run takes after it starts (`follow_to_end`: the wait, evidence, verifier, publish, terminal report), and sends no recovery observation;
+   - starts the attempt's deadline over at the resume, and reads the decisions the board already holds once, so the agent asking the same question waits for the existing decision instead of creating another.
+
+   If `resume` fails or answers `Unsupported`, or the heartbeat is refused, the runner reports `ProcessRunning`. A journal with no recorded claim is recovered by that report alone.
 2. The server computes a disposition: `SafePreSpawnRequeue` (nothing had started yet, automatically safe), `NeedsOperator` (anything else), or `AlreadyTerminal`.
 3. An operator resolves a `needs_operator` request explicitly, with an audited reason:
 
@@ -82,7 +100,7 @@ tack execution reconcile <request-id> \
   --reason "confirmed process was killed via ps on the runner host"
 ```
 
-This calls `POST /api/executions/{id}/requeue`, which only succeeds for a request the server itself authoritatively recovered. An unresolved or already-queued request returns `409 invalid_transition` with the current state named in `details`, never a silent no-op. `crates/tack-cli/tests/e6_scheduler_e2e_test.rs` pins it.
+This calls `POST /api/executions/{id}/requeue`, which only succeeds for a request the server itself authoritatively recovered. An unresolved or already-queued request returns `409 invalid_transition` with the current state named in `details`, never a silent no-op. `crates/tack-cli/tests/e6_scheduler_e2e_test.rs` (a module of the crate's `it` test binary) pins it.
 
 ## Proposals: the plan format
 
@@ -90,7 +108,19 @@ What a run finds can become items, whichever agent ran it. The format is plan-v1
 
 Each agent's adapter turns its own way in into the same `plan` artifact, and says in `features.proposals` (a capability value, optional like `teams`) whether its runs can. Claude Code, Codex and opencode write the file at the root of their work tree and report it supported; an adapter that reports nothing reads as unsupported, "this agent does not say".
 
-`POST /api/items/{id}/items-from-plan` accepts a proposal without knowing where it came from. Each entry carries the four keys and `depends_on`; `artifact_id` is optional, and absent means a file the person uploaded (the new items' source says `plan` either way). Entries are created in list order, each under its `parent`'s new item or under the item. `type` is used when the project has it, else the item's own type when that is work, else the project's default work type; `role` by name when the project has it; `team` becomes the run settings' profile when exactly one profile names it. An entry may instead name a `profile_id`: any profile, with a team or without (a built-in one has none), goes into the run settings and wins over `team`. `depends_on` becomes blockers between the new items. An unknown role or type, or a team that no profile or several profiles name, is reported on that entry of the response (`unknown_role`, `unknown_type`, `unresolved_team`, `unknown_profile` for a `profile_id` no profile has, in which case the entry's `team` is still tried) and never refuses the request; an index outside the list, a parent that is not earlier, or a loop of blockers does, before anything is written. Nothing creates items from a proposal except a person accepting it.
+`POST /api/items/{id}/items-from-plan` accepts a proposal without knowing where it came from. Each entry carries the four keys and `depends_on`. `artifact_id` is optional, and absent means a file the person uploaded (the new items' source says `plan` either way). Entries are created in list order, each under its `parent`'s new item or under the item. Each key is resolved like this:
+
+- **`type`:** used when the project has it, else the item's own type when that is work, else the project's default work type.
+- **`role`:** by name, when the project has it.
+- **`team`:** becomes the run settings' profile when exactly one profile names it.
+- **`profile_id`** (instead of `team`): any profile, with a team or without (a built-in one has none), goes into the run settings and wins over `team`.
+- **`depends_on`:** becomes blockers between the new items.
+
+What the response and the refusals say:
+
+- An unknown role or type, or a team that no profile or several profiles name, is reported on that entry of the response and never refuses the request. The codes are `unknown_role`, `unknown_type`, `unresolved_team` and `unknown_profile` (a `profile_id` no profile has; the entry's `team` is then still tried).
+- An index outside the list, a parent that is not earlier, or a loop of blockers refuses the request, before anything is written.
+- Nothing creates items from a proposal except a person accepting it.
 
 ## Version compatibility
 
@@ -131,4 +161,4 @@ Live, end-to-end proof of the real client: `crates/tack-runner/tests/bootstrap_e
 
 **docket is proved against a fake, not a real docket.** `crates/tack-runner/tests/docket_api.rs` drives `DocketAdapter` against `crates/tack-runner/tests/fake_docket/mod.rs`, an in-process docket that answers from recordings of a real one (`scripts/capture-docket-fixtures.sh`). It covers the version probe and the "needs docket 0.3.0-beta.1" refusal, the teams and the ceiling, the task body key by key, the default team named for the folder, the trace cursor surviving a restart, approvals and parked questions as decisions, and the task's branch coming back into the worktree. The daemon's supervision is proved in `crates/tack-runner/src/harness/docket/daemon/tests.rs`. Only the local suite below runs a real docket.
 
-The whole workflow through the browser is proven by hand with a local suite that is not versioned (`onboarding-lab/e2e/docket-prill-e2e.sh` in the maintainer's checkout). It builds Tack from the checkout, runs docket and prill from their own source trees against a local model, and drives a project, its runner, its settings, a bug, a feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a screenshot per step. It makes real model calls, so CI never runs it.
+The whole workflow through the browser is proven by hand with a live suite that is not versioned. It builds Tack from the checkout, runs docket and prill from their own source trees against a model, and drives a project, its runner, its settings, a bug, a feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a screenshot per step. It makes real model calls, so CI never runs it.
