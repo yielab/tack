@@ -494,7 +494,7 @@ const AttemptRow: Component<{
         <Show when={!terminal() && !(dupe() && asking())}>
           <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             {asking()
-              ? 'The agent is waiting for your answer — see Needs you below.'
+              ? 'The agent is waiting for your answer — see Needs you below. Its time limit is paused until you answer.'
               : 'The agent is working. Its steps appear in the timeline as it takes them; the tokens it used appear here when it finishes.'}
           </p>
         </Show>
@@ -546,7 +546,7 @@ const AttemptRow: Component<{
       </Show>
 
       <Show when={asking()}>
-        <RunSection id="needs" title="Needs you" summary={dupe() ? undefined : 'The agent is waiting for your answer.'} headingRef={(el) => (needsHeading = el)}>
+        <RunSection id="needs" title="Needs you" summary={dupe() ? undefined : 'The agent is waiting for your answer. Its time limit is paused until you answer.'} headingRef={(el) => (needsHeading = el)}>
           <DecisionInbox
             requestId={props.requestId}
             attemptNumber={props.attempt.attempt_number}

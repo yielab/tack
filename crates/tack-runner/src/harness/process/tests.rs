@@ -410,6 +410,67 @@ async fn a_process_exceeding_timeout_is_killed_and_reported_timed_out() {
     assert_eq!(result.exit, ProcessExit::TimedOut);
 }
 
+/// The timeout bounds the agent's work, not a person's: a child that waits on a question for
+/// longer than the whole timeout is not killed, gets the answer when it comes and exits on its
+/// own.
+#[tokio::test]
+async fn a_question_waiting_longer_than_the_timeout_does_not_time_the_child_out() {
+    let workspace_dir = temp_workspace("ask-past-timeout");
+    let workspace = workspace_dir.path();
+    let mut process_spec = spec(workspace, env_with_mode("ask"));
+    process_spec.stdin = Some(b"the prompt\n".to_vec());
+    process_spec.keep_stdin_open = true;
+    let (questions_tx, mut questions_rx) = mpsc::channel(1);
+    let (answers_tx, answers_rx) = mpsc::channel(1);
+    let person = tokio::spawn(async move {
+        let question: Question = questions_rx.recv().await.expect("a question");
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        answers_tx
+            .send(DecisionAnswer {
+                option_id: Some("allow_once".to_owned()),
+                text: None,
+                unanswered: false,
+            })
+            .await
+            .expect("the read loop waits for the answer");
+        question
+    });
+
+    let result = process_spec
+        .spawn()
+        .await
+        .expect("spawn")
+        .wait_with_capture_and_questions(
+            &ProcessLimits::new(4096, 4096, Duration::from_millis(300)),
+            &SecretMaterial::new(),
+            |line| {
+                line.strip_prefix("ASK:").map(|prompt| {
+                    StreamSignal::Question(Question {
+                        vendor_id: "q-1".to_owned(),
+                        kind: "tool_permission".to_owned(),
+                        prompt: prompt.to_owned(),
+                        options: Vec::new(),
+                        recommendation: None,
+                        metadata: serde_json::Map::new(),
+                    })
+                })
+            },
+            |_, answer| answer.option_id.clone().unwrap_or_default().into_bytes(),
+            Some((questions_tx, answers_rx)),
+            None,
+        )
+        .await
+        .expect("wait");
+
+    assert_eq!(person.await.expect("the person answered").prompt, "do-thing");
+    assert_eq!(result.exit, ProcessExit::Exited(0));
+    assert!(
+        result.stdout.text.contains("fake-harness-answered:allow_once"),
+        "{}",
+        result.stdout.text
+    );
+}
+
 /// Acceptance: secret canaries are absent from logs and events. A canary
 /// value is placed in the child's environment and stdin, and the fake
 /// binary is asked to actively echo it back on both stdout and stderr —

@@ -838,7 +838,6 @@ pub struct DecisionCreateReport {
     pub prompt: String,
     pub options: Vec<DecisionOption>,
     pub recommendation: Option<Recommendation>,
-    pub expires_at: Timestamp,
     pub metadata: Map<String, Value>,
 }
 
@@ -945,7 +944,8 @@ impl AttemptDataProtocol for HttpPullProtocol {
             prompt: report.prompt.clone(),
             options: report.options.clone(),
             recommendation: report.recommendation.clone(),
-            expires_at: Some(instant(&report.expires_at)?),
+            // Tack's clock never closes a question: it waits for a person.
+            expires_at: None,
             metadata: report.metadata.clone(),
         };
         let path = format!("/attempts/{}/decisions", report.attempt_id);

@@ -48,7 +48,7 @@ Every request carries a correlation id in the `x-request-id` header, which the r
 
 A decision's `kind` is a free string. Every harness that can pause sends `tool_permission`. docket sends `approval` for a gated tool call and `consult` for a question a step has parked on. The inbox renders any kind, and the answer returns on the same decision route, so a new kind needs no protocol change.
 
-When a decision expires or the attempt's time runs out, the runner answers the harness with the question's last option (its safe default) and sets `unanswered: true` on that `DecisionAnswer`; the flag is never on the wire and never set on an answer a person gave. An adapter for which that option would read as a person's refusal (docket) checks the flag and cancels the run instead of posting it.
+A question waits for its person. The runner sends no `expires_at` and no clock of the runner's answers a decision; the attempt's `timeout_seconds` bounds the agent's work, and `SupervisedProcess::wait_with_capture_and_questions` stops that clock while its read loop waits for an answer (the docket adapter does the same between two polls that see the task waiting). When the board closes a decision nobody answered (its attempt ended) or the create fails, the runner answers the harness with the question's last option (its safe default) and sets `unanswered: true` on that `DecisionAnswer`; the flag is never on the wire and never set on an answer a person gave. An adapter for which that option would read as a person's refusal (docket) checks the flag and cancels the run instead of posting it.
 
 ## Capability matrix
 

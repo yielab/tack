@@ -416,10 +416,12 @@ Answering needs the **decision token**, a secret your administrator sets that is
 sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the
 session, and once it is given neither place asks again (**Change** replaces it). How to set it is in
 [Installing and Operating Runners](../admin-guide/runners.md#non-loopback-and-security-posture). A question
-nobody answers in time expires, and an expired question is never treated as an Allow. The run then ends as
-*Nobody answered* with the question, when it was asked and how long the team waited; it does not read as a
+waits until you answer it or stop the run: Tack never answers it for you, and the run's time limit counts only
+the agent's work, so it is paused while the run waits for you (the run's panel and **Needs you** say so). A docket
+team can give its own questions a deadline; a question docket expires is never treated as an Allow. The run then
+ends as *Nobody answered* with the question, when it was asked and how long the team waited; it does not read as a
 denial, because nobody denied anything. A run ends as *approval denied* only when a person refused the question.
-A question left past its time is cancelled, never answered "no" for you: the team stops without a refusal on its record.
+A question left past docket's time is cancelled, never answered "no" for you: the team stops without a refusal on its record.
 
 ---
 

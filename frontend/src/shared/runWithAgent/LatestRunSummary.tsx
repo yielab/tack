@@ -456,7 +456,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 fallback={
                   <p class="text-sm" style={muted()}>
                     {asking()
-                      ? 'The agent is waiting for your answer.'
+                      ? 'The agent is waiting for your answer. Its time limit is paused until you answer.'
                       : 'The agent is working on it.'}
                   </p>
                 }

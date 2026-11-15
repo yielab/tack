@@ -5134,7 +5134,7 @@ async fn a_denied_approval_posts_deny_with_the_reason() {
     );
 }
 
-/// The answer the engine makes up when Tack's own deadline for a decision passes: the deny
+/// The answer the engine makes up when the board closes a decision nobody answered: the deny
 /// option, marked as one nobody gave.
 #[tokio::test]
 async fn a_decision_that_expired_in_tack_cancels_the_task_and_posts_no_deny() {

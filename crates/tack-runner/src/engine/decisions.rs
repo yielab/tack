@@ -140,11 +140,6 @@ where
                         ..recommendation
                     }
                 }),
-                expires_at: Timestamp::new(
-                    state
-                        .expires_at
-                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                ),
                 metadata: scrub_metadata_with_prompt(question.metadata.clone(), prompt),
             };
             data_protocol.create_decision(session, report).await.is_ok()
@@ -163,10 +158,9 @@ where
     }
 
     /// Polls a pending decision once. Resolved answers it as given; a state
-    /// this runner does not recognize as still-pending, or the attempt's own
-    /// deadline passing, answers it as the question's deny option. A
-    /// transport failure leaves it pending for the next tick — the deadline
-    /// still bounds how long that can go on.
+    /// this runner does not recognize as still-pending answers it as the
+    /// question's deny option. A transport failure leaves it pending for the
+    /// next tick. No clock answers it: a question waits for its person.
     pub(super) async fn advance_pending(
         &self,
         session: &RunnerSession,
@@ -220,10 +214,6 @@ where
                     }
                 }
             }
-        }
-        if chrono::DateTime::<chrono::Utc>::from(self.clock.now()) >= state.expires_at {
-            let opened = state.pending.take().expect("just matched Some above");
-            send_answer(state.decisions, deny_answer(&opened.question)).await;
         }
     }
 

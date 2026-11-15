@@ -3128,12 +3128,12 @@ async fn resubmitting_the_same_terminal_event_is_idempotent() {
 // the server side of `create_decision`/`poll_decisions`.
 // -----------------------------------------------------------------
 
-/// `(row, the create call fails?, a resolved answer preset via poll, the
-/// attempt's own timeout, the option_id the run receives, whether that answer is marked as
-/// one nobody gave)`. `expired` never
-/// presets a poll answer, so the only way it resolves is the deadline —
-/// `1` second is enough for `AdvancingClock` (one simulated second per
-/// `now()` call) to pass it within the first heartbeat tick.
+/// `(row, the create call fails?, the decision's state and answer the poll returns, how many
+/// seconds pass before the poll returns it, the attempt's own timeout, the option_id the run
+/// receives, whether that answer is marked as one nobody gave)`. `answered-after-the-timeout`
+/// answers half a minute into an attempt whose timeout is one second (`AdvancingClock` moves
+/// one simulated second per `now()` call): Tack's clock never answers a question, so the run
+/// still receives the person's answer.
 #[tokio::test(start_paused = true)]
 async fn a_question_becomes_a_decision_and_its_answer_returns() {
     let canary = "top-secret-instructions-canary-9f21";
@@ -3165,26 +3165,52 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
     type Row = (
         &'static str,
         bool,
-        Option<&'static str>,
+        Option<(&'static str, Option<&'static str>)>,
+        u64,
         u64,
         &'static str,
         bool,
     );
-    let rows: [Row; 3] = [
+    let rows: [Row; 4] = [
         (
             "resolved",
             false,
-            Some("allow_once"),
+            Some(("resolved", Some("allow_once"))),
+            0,
             3600,
             "allow_once",
             false,
         ),
-        ("expired", false, None, 1, "deny", true),
-        ("create-fails", true, None, 3600, "deny", true),
+        (
+            "answered-after-the-timeout",
+            false,
+            Some(("resolved", Some("allow_once"))),
+            30,
+            1,
+            "allow_once",
+            false,
+        ),
+        (
+            "closed-by-the-board",
+            false,
+            Some(("expired", None)),
+            0,
+            3600,
+            "deny",
+            true,
+        ),
+        ("create-fails", true, None, 0, 3600, "deny", true),
     ];
 
-    for (name, create_fails, preset_answer, timeout_seconds, expect_option_id, expect_unanswered) in
-        rows
+    for (
+        name,
+        create_fails,
+        polled,
+        answer_after,
+        timeout_seconds,
+        expect_option_id,
+        expect_unanswered,
+    ) in rows
     {
         let (root_dir, journal) = fresh_journal(&format!("decision-{name}"));
         let root = root_dir.path();
@@ -3197,12 +3223,12 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
         data_protocol
             .create_decision_fails
             .store(create_fails, Ordering::SeqCst);
-        if let Some(option_id) = preset_answer {
-            *data_protocol.poll_response.lock().expect("lock") = DecisionPollResponse {
+        if let Some((state, option_id)) = polled {
+            let response = DecisionPollResponse {
                 decisions: vec![ResolvedDecision {
                     decision_id,
-                    state: "resolved".into(),
-                    answer: Some(DecisionAnswer {
+                    state: state.into(),
+                    answer: option_id.map(|option_id| DecisionAnswer {
                         option_id: Some(option_id.to_owned()),
                         text: None,
                         unanswered: false,
@@ -3212,6 +3238,11 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
                 }],
                 next_after: None,
             };
+            let poll_response = data_protocol.poll_response.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(answer_after)).await;
+                *poll_response.lock().expect("lock") = response;
+            });
         }
 
         let received = Arc::new(Mutex::new(None));

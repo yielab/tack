@@ -45,7 +45,7 @@ use crate::error::IoKind;
 use tokio::{
     io::AsyncReadExt,
     process::{Child, Command},
-    sync::{mpsc, oneshot},
+    sync::{mpsc, oneshot, watch},
     time,
 };
 
@@ -370,6 +370,11 @@ impl SupervisedProcess {
     /// what this method actually waits on. Without `questions` stdin is
     /// already closed, and a question or reply has no one to reach.
     ///
+    /// The timeout bounds the agent's work, not a person's: while the loop
+    /// waits for the answer to a question the clock stops, and the time it
+    /// waited is added to the deadline. A question nobody answers keeps the
+    /// child waiting until someone answers it or the run is cancelled.
+    ///
     /// With `progress`, each [`StreamSignal::Progress`] is scrubbed and
     /// handed on without waiting: a step that finds the channel full is
     /// dropped rather than slow the read. `signal`/`answer` stay generic
@@ -402,6 +407,9 @@ impl SupervisedProcess {
             capture_bounded(&mut stderr_pipe, stderr_cap, stderr_stopped).await
         });
         let (stdout_stop, mut stdout_stopped) = oneshot::channel::<()>();
+        // Whether the read loop is waiting for a person's answer; the deadline below does not run
+        // while it is.
+        let (waiting_tx, mut waiting_rx) = watch::channel(false);
 
         let stdout_cap = limits.max_stdout_bytes;
         let groups = Arc::clone(&self.groups);
@@ -474,10 +482,13 @@ impl SupervisedProcess {
                         let resolved = if questions_tx.send(question.clone()).await.is_err() {
                             deny_option(&question)
                         } else {
-                            answers_rx
+                            let _ = waiting_tx.send(true);
+                            let answer = answers_rx
                                 .recv()
                                 .await
-                                .unwrap_or_else(|| deny_option(&question))
+                                .unwrap_or_else(|| deny_option(&question));
+                            let _ = waiting_tx.send(false);
+                            answer
                         };
                         let bytes = answer(&question, &resolved);
                         let Some(pipe) = stdin.as_mut() else { break };
@@ -519,7 +530,9 @@ impl SupervisedProcess {
         };
         tokio::pin!(read_and_drive);
 
-        let deadline = time::Instant::now() + limits.timeout;
+        let mut deadline = time::Instant::now() + limits.timeout;
+        // When the read loop began waiting for an answer; the deadline is moved on by the wait.
+        let mut waiting_since: Option<time::Instant> = None;
         let mut stdout_raw: Option<RawCapture> = None;
         let exit = {
             let child_wait = self.child.wait();
@@ -533,8 +546,22 @@ impl SupervisedProcess {
                     }
                     accumulator = &mut read_and_drive, if stdout_raw.is_none() => {
                         stdout_raw = Some(accumulator);
+                        if let Some(since) = waiting_since.take() {
+                            deadline += since.elapsed();
+                        }
                     }
-                    () = time::sleep_until(deadline) => {
+                    Ok(()) = waiting_rx.changed(), if stdout_raw.is_none() => {
+                        let waiting = *waiting_rx.borrow_and_update();
+                        match (waiting, waiting_since) {
+                            (true, None) => waiting_since = Some(time::Instant::now()),
+                            (false, Some(since)) => {
+                                deadline += since.elapsed();
+                                waiting_since = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                    () = time::sleep_until(deadline), if waiting_since.is_none() => {
                         break ProcessExit::TimedOut;
                     }
                 }

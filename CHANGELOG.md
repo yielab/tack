@@ -11,6 +11,10 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+### Fixed
+
+- A question waits for its person. A Claude Code, Codex or opencode run stops its clock while it waits for an answer, so a question nobody answers no longer ends the run with "The run's time ran out after 60 minutes": the run stays waiting until someone answers it or stops it, and the time limit counts only the agent's work. Tack no longer gives a question a deadline of its own, which had also cancelled a docket task whose question outlived the attempt's time; a question docket's team expires itself still ends the run as *Nobody answered*. The run's panel and **Needs you** say the time limit is paused.
+
 ## [0.2.0-beta.1] - 2026-11-10
 
 The version moves to `0.2.0` because this release changes what Tack needs from docket (HTTP API

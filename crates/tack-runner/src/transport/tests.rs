@@ -538,7 +538,6 @@ async fn run_events_decisions_and_artifacts_exchange(
                     .expect("frozen options"),
                 recommendation: serde_json::from_value(frozen_decision["recommendation"].clone())
                     .expect("frozen recommendation"),
-                expires_at: Timestamp::new("2026-08-06T12:30:00Z"),
                 metadata: frozen_decision["metadata"]
                     .as_object()
                     .cloned()
@@ -633,6 +632,8 @@ async fn events_decisions_and_artifacts_use_their_routes_and_shapes() {
         recorded[1].body["recommendation"],
         frozen_decision["recommendation"]
     );
+    // Tack's clock never closes a question, so the runner sends no expiry.
+    assert!(recorded[1].body.get("expires_at").is_none());
     assert_eq!(recorded[3].body, frozen_manifest);
 }
 

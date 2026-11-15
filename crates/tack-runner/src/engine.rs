@@ -131,13 +131,11 @@ const PROGRESS_BATCH_MAX: usize = 50;
 const POLL_FROM_THE_START: &str = "1970-01-01T00:00:00Z";
 
 /// The mutable state one attempt's decision round trips share: the channel
-/// pair to the running harness, whatever is currently pending an answer, and
-/// the fixed deadline the attempt's own timeout set. Bundled so
-/// `open_decision`/`advance_pending` take one seam, not four loose `&mut`s.
+/// pair to the running harness and whatever is currently pending an answer.
+/// Bundled so `open_decision`/`advance_pending` take one seam, not loose `&mut`s.
 struct DecisionState<'a> {
     decisions: &'a mut Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
     pending: &'a mut Option<PendingDecision>,
-    expires_at: chrono::DateTime<chrono::Utc>,
     /// The decisions the board already holds for this attempt when the runner
     /// took it back after a restart: a question asked again that is among them
     /// is not created a second time, it is waited for.
@@ -1114,12 +1112,13 @@ where
     /// an attempt whose answer asks for it. When it flips mid-run the harness
     /// is cancelled and the attempt ends `cancelled`.
     ///
-    /// A question is polled for resolution on its own short timer, never past
-    /// `spec`'s own `timeout_seconds`, the one deadline governing the whole
-    /// attempt: a decision that outlives it is answered as the question's own
-    /// deny option — same as a create that never succeeded or an answer
-    /// channel that was dropped — so a harness waiting on stdin is never left
-    /// waiting forever.
+    /// A question is polled for resolution on its own short timer for as long
+    /// as it stays open: Tack's clock never answers it. The attempt's
+    /// `timeout_seconds` bounds the agent's work, and the harness stops that
+    /// clock while it waits for a person. Only the board closing the decision
+    /// (the attempt ended, a person stopped the run), a create that never
+    /// succeeded or a dropped answer channel answers it as the question's own
+    /// deny option, marked as one nobody gave.
     async fn wait_with_lease_renewal(
         &self,
         session: &RunnerSession,
@@ -1135,10 +1134,6 @@ where
             .resolved_agent_profile
             .instructions
             .as_str();
-        let timeout_seconds = i64::try_from(spec.work.request.timeout_seconds).unwrap_or(i64::MAX);
-        let expires_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
-            + chrono::Duration::seconds(timeout_seconds);
-
         let mut decisions = self.adapter.decision_channels(handle).await;
         let mut progress = self.adapter.progress_channel(handle).await;
         let mut elsewhere = self.adapter.answered_elsewhere_channel(handle).await;
@@ -1161,7 +1156,6 @@ where
             let mut state = DecisionState {
                 decisions: &mut decisions,
                 pending: &mut pending,
-                expires_at,
                 known: known_decisions,
             };
             tokio::select! {
