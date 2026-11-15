@@ -21,7 +21,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 ## [0.2.0-beta.1] - 2026-11-10
 
 The version moves to `0.2.0` because this release changes what Tack needs from docket (HTTP API
-version 6, docket `0.2.0-beta.6` or later) and reshapes the code it is built from. It carries
+version 6, docket `0.3.0-beta.1` or later) and reshapes the code it is built from. It carries
 Phases 73 to 95. The `v0.1.0-beta.10` tag of 2026-10-14 never had a release, so everything since
 `v0.1.0-beta.9` ships here, and the `[0.1.0-beta.10]` section below is the part of it that was
 written first.
@@ -57,9 +57,9 @@ and a template is that file without items (ADR 0022). Beside them: Settings → 
 accessibility and the fixes from an accessibility audit, and the documentation split into a
 User, an Administrator and a Developer Guide.
 
-Two behaviours change for docket users: the runner needs docket `0.2.0-beta.6` (HTTP API
+Two behaviours change for docket users: the runner needs docket `0.3.0-beta.1` (HTTP API
 version 6) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
-0.2.0-beta.6". Upgrading applies migrations 088–092 on first start: a role's profile and a
+0.3.0-beta.1 (API 6)". Upgrading applies migrations 088–092 on first start: a role's profile and a
 profile's fleet, a task's recurrence, the auto-start settings, the roles, profiles and
 automation a template carries, and the removal of dollars per day; then migrations 093–114, from the
 install command and the provisional token limit to the notifications, the catalog of item types, the web
@@ -629,9 +629,9 @@ access mode per profile, the removal of the rate card, default expiries and the 
   now a dialog with a listbox; the closed mobile sidebar leaves the Tab order; icon-only buttons
   have names. Notifications are announced, and an error stays until it is dismissed. The axe
   scan adds WCAG 2.2, a pass at 200% text, and a keyboard test.
-- **The docket agent runs through docket's HTTP API, version 5, against a long-lived team.**
-  The runner supervises `docket start --dispatch` on this computer, accepts only `apiVersion`
-  `"5"` (anything else reads "needs docket 0.2.0-beta.6"), ensures the team's pod in the
+- **The docket agent runs through docket's HTTP API, version 6, against a long-lived team.**
+  The runner supervises `docket start --dispatch` on this computer, accepts `apiVersion` 6 or
+  later (anything older reads "needs docket 0.3.0-beta.1 (API 6)"), ensures the team's pod in the
   project's checkout, posts each attempt as one task (the brief, a gate from its command or test
   criterion, the profile's token budget, restrictions that only narrow), follows the trace,
   answers approvals and parked questions from Tack's inbox, cancels over HTTP, and brings the

@@ -25,8 +25,8 @@ Under the hood, Tack is two components, built to be one product.
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, prepares
-> a workspace for the agent, launches the coding agent you already use — Claude Code,
-> Codex, opencode, or docket — and reports back. **Any secret the agent needs stays with the
+> a workspace for the agent, launches the coding agent you already use (Claude Code, Codex
+> or opencode) or hands the task to a long-lived docket team, and reports back. **Any secret the agent needs stays with the
 > runner; the board never sees it.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
@@ -54,7 +54,7 @@ A few terms recur throughout this documentation:
 | **Project type** | A template chosen at creation that pre-loads a matching workflow *and* vocabulary (software, construction, legal, …). Everything stays editable afterward. |
 | **Type** | A kind of item a project has, with its own name, colour and level: one that holds work (an Epic, a Building) or one that is work (a Task, a Work Order). Each project owns its catalog of types. See [Types and words](user-guide/vocabulary.md). |
 | **Vocabulary** | Per-project label overrides that rename the other built-in terms to your domain — "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Types and words](user-guide/vocabulary.md). |
-| **Runner** | A small worker process that lives where your code and credentials already are, pulls work from the board, launches a coding agent, and reports back. See [Running Agents on Tasks](user-guide/running-agents.md) and the [Administrator Guide](admin-guide/runners.md). |
+| **Runner** | A small worker process that lives where your code and credentials already are, pulls work from the board, launches a coding agent or hands the task to docket, and reports back. See [Running Agents on Tasks](user-guide/running-agents.md) and the [Administrator Guide](admin-guide/runners.md). |
 | **Run** | One execution of an item by a runner. Every run stays in the item's history: what the agent did, the questions it asked, the files it produced, and the tokens it used. |
 | **Status and Work** | A task's **Status** is its column, and only a person sets it. Its **Work** is what the agents report about its newest run (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled or Not started). A run never moves a task. See [Views](user-guide/views.md#status-and-work). |
 | **Team and manager** | A **team** is a group of agents an agent runtime such as docket keeps, which a task can be sent to. A **manager** is an agent profile that looks after a project through the board and proposes its changes for you to apply. See [Automating a Project](user-guide/automation.md) and [Managers and Threads](user-guide/talking-with-a-manager.md). |
