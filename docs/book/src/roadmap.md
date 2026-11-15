@@ -42,7 +42,7 @@ Everything built is under Delivered. What is left:
 
 A recorded run of the whole flow, from an empty board to a small web service running on the machine,
 with docket on Claude Sonnet and Haiku, prill as the verifier and docket's traces in Langfuse, found
-three defects. Each card stands alone, and none waits on docket: where docket owns the fact, the card
+four defects. Each card stands alone, and none waits on docket: where docket owns the fact, the card
 says what Tack does without it and what is asked of docket.
 
 **D1 — A commit names its item.** Every change a run leaves is a commit whose subject says nothing
@@ -95,6 +95,25 @@ agent made was right and was lost twice for this reason.
 - Done when: the run preview's sentence is under a screen test for a docket profile without network, the
   fake docket has a `features` capture with and without the loopback report, and the live suite has one
   test that opens a local port inside a docket run and is expected to fail until docket reports loopback.
+
+**D4 — A manager's turn reaches its team.** Found by the second recording (2026-11-15), which adds a
+research task, the items it proposes and a manager. **Agents → Add a manager** with a new profile makes
+it with no kind. Tack reads a profile with no kind, or any kind but Planner and Researcher, as one whose
+runs change the repository. So in a project with a repository, the first message in the manager's
+thread ends at once: "Not sent to docket. The team notas-manager delivers a report and this run changes
+the repository". The manager's docket team works in a folder and writes to the board only through change
+sets. Picking an existing profile does the same unless someone set its kind by hand. The live suite never
+met it, because its manager profile is made through the API as a Researcher.
+
+- The rule: a turn of a thread changes the board through change sets and never the repository, so a
+  turn needs no repository, whatever the profile's kind. A run that the same profile starts on an item
+  keeps the rule it has today.
+- The preset's sentence under **Add manager** says what the manager may change: the board, through
+  change sets, never the code.
+- Done when: a runner test sends a thread turn of a profile with no kind to a folder team that delivers
+  a report and the team gets the task. A test of the preset adds a manager with a new profile in a
+  project with a repository and its first turn starts. The recorded demo's manager chapter runs with a
+  profile made by **Add a manager**, with no kind set by hand.
 
 ## Future, not planned
 
