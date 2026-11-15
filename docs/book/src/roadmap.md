@@ -42,7 +42,7 @@ Everything built is under Delivered. What is left:
 
 A recorded run of the whole flow, from an empty board to a small web service running on the machine,
 with docket on Claude Sonnet and Haiku, prill as the verifier and docket's traces in Langfuse, found
-four defects. Each card stands alone, and none waits on docket: where docket owns the fact, the card
+five defects. Each card stands alone, and none waits on docket: where docket owns the fact, the card
 says what Tack does without it and what is asked of docket.
 
 **D1 — A commit names its item.** Every change a run leaves is a commit whose subject says nothing
@@ -114,6 +114,18 @@ met it, because its manager profile is made through the API as a Researcher.
   a report and the team gets the task. A test of the preset adds a manager with a new profile in a
   project with a repository and its first turn starts. The recorded demo's manager chapter runs with a
   profile made by **Add a manager**, with no kind set by hand.
+
+**D5 — The run dialog says where the chosen team works.** Found by the same recording. A research task
+sent to a folder team showed "on a new branch of …/notas" under "What will happen", and the run then
+worked in the team's folder and left no branch. The dialog learns where a team works from the project's
+automation teams, which hold only the teams that a role's profile, or the project's default profile,
+names. A profile picked in the dialog whose team no role names is read as a repository team.
+
+- The dialog takes where the chosen profile's team works (`works_in`) from what the runners report of
+  that team, the same report Agents → Teams shows, whether or not a role names it.
+- Done when: a screen test picks, in the run dialog, a profile whose folder team no role names and reads
+  "in the team's own folder on this computer, not in this repository", and the recorded demo's research
+  chapter shows that sentence.
 
 ## Future, not planned
 
