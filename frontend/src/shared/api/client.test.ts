@@ -4,6 +4,7 @@ import {
   requestBlob,
   requestForm,
   ApiError,
+  isSessionEnded,
   tokenStore,
 } from './client';
 
@@ -195,5 +196,59 @@ describe('shared/api/client', () => {
     const headers = fetchMock.mock.calls[0][1]!.headers as Headers;
     expect(headers.has('Content-Type')).toBe(false);
     expect((fetchMock.mock.calls[0][1] as RequestInit).redirect).toBe('error');
+  });
+
+  describe('an ended session', () => {
+    const unauthorized = () =>
+      new Response(JSON.stringify({ error: { status: 401, message: 'Unauthorized', code: 'unauthorized' } }), { status: 401 });
+    const page = () => new Response('<!doctype html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+
+    it('loads the page in the background to renew the cookie, then sends the call again', async () => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(page())
+        .mockResolvedValueOnce(jsonResponse({ id: '7' }));
+
+      await expect(request<{ id: string }>('/projects/7')).resolves.toEqual({ id: '7' });
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const renewal = fetchMock.mock.calls[1];
+      expect(String(renewal[0])).toBe(new URL('/', window.location.href).toString());
+      expect((renewal[1] as RequestInit).redirect).toBe('manual');
+      expect(fetchMock.mock.calls[2][0]).toBe('/api/projects/7');
+    });
+
+    it('says the session ended when the call is still refused after the renewal', async () => {
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(page())
+        .mockResolvedValueOnce(unauthorized());
+
+      const error = await request('/projects').catch((e: unknown) => e);
+      expect(isSessionEnded(error)).toBe(true);
+      expect((error as ApiError).status).toBe(401);
+      expect((error as ApiError).message).toBe('Your session ended. Reload the page to sign in again.');
+    });
+
+    it('does not send the call again when the page could not be loaded (a sign-in in front of the board)', async () => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(new Response(null, { status: 302 }));
+
+      const error = await request('/projects').catch((e: unknown) => e);
+      expect(isSessionEnded(error)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('never renews for a page that holds its own token', async () => {
+      tokenStore.set('secret-token');
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(unauthorized());
+
+      const error = await request('/projects').catch((e: unknown) => e);
+      expect(isSessionEnded(error)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

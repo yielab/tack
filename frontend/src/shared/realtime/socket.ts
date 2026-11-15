@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from 'solid-js';
-import { apiBaseUrl, tokenStore } from '../api/client';
+import { apiBaseUrl, renewSession, tokenStore } from '../api/client';
 
 const LIVE_PROTOCOL = 'tack.v1';
 const AUTH_PROTOCOL_PREFIX = 'tack.auth.';
@@ -55,12 +55,15 @@ export function createReconnectingSocket(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
 
-  const scheduleReconnect = () => {
+  // A socket refused before it opened may be one whose session cookie ran out: the session is
+  // renewed before the next try, so the live view comes back by itself.
+  const scheduleReconnect = (neverOpened: boolean) => {
     if (closed) return;
     setStatus('reconnecting');
     reconnectTimer = setTimeout(() => {
       delay = Math.min(delay * 2, maxDelay);
-      connect();
+      if (neverOpened) void renewSession().finally(connect);
+      else connect();
     }, delay);
   };
 
@@ -72,8 +75,10 @@ export function createReconnectingSocket(
     // with the fixed `tack.v1` protocol, never echoing this credential.
     const protocols = token ? [LIVE_PROTOCOL, websocketTokenProtocol(token)] : [LIVE_PROTOCOL];
     ws = new WebSocketImpl(url, protocols);
+    let opened = false;
 
     ws.onopen = () => {
+      opened = true;
       delay = initialDelay; // reset backoff on a healthy connection
       setStatus('open');
     };
@@ -95,7 +100,7 @@ export function createReconnectingSocket(
 
     ws.onclose = () => {
       ws = null;
-      if (!closed) scheduleReconnect();
+      if (!closed) scheduleReconnect(!opened);
     };
 
     ws.onerror = () => {

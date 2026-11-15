@@ -14,6 +14,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 ### Fixed
 
 - A question waits for its person. A Claude Code, Codex or opencode run stops its clock while it waits for an answer, so a question nobody answers no longer ends the run with "The run's time ran out after 60 minutes": the run stays waiting until someone answers it or stops it, and the time limit counts only the agent's work. Tack no longer gives a question a deadline of its own, which had also cancelled a docket task whose question outlived the attempt's time; a question docket's team expires itself still ends the run as *Nobody answered*. The run's panel and **Needs you** say the time limit is paused.
+- A page left open longer than its session no longer shows "Unauthorized" everywhere. The browser's session cookie lasts twelve hours; when a call is refused for that, the page loads itself in the background to renew the cookie and sends the call again, and the live view does the same before it reconnects. When the session cannot be renewed (a sign-in in front of the board asks again), the page says "Your session ended. Reload the page to sign in again." with a **Reload the page** button, instead of "Unauthorized" and **Try again**.
 
 ## [0.2.0-beta.1] - 2026-11-10
 

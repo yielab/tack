@@ -1,5 +1,6 @@
 import { Show, type Component } from 'solid-js';
 import Button from './Button';
+import { isSessionEnded } from '../api/client';
 
 export interface LoadErrorProps {
   /** What could not be loaded, as a noun phrase: "the autonomy settings". */
@@ -21,9 +22,15 @@ const LoadError: Component<LoadErrorProps> = (props) => {
           <span style={{ color: 'var(--color-text-secondary)' }}>{reason()}</span>
         </Show>
       </p>
-      <Button size="sm" variant="secondary" onClick={props.onRetry}>
-        Try again
-      </Button>
+      {isSessionEnded(props.error) ? (
+        <Button size="sm" variant="secondary" onClick={() => window.location.reload()}>
+          Reload the page
+        </Button>
+      ) : (
+        <Button size="sm" variant="secondary" onClick={props.onRetry}>
+          Try again
+        </Button>
+      )}
     </div>
   );
 };

@@ -1,8 +1,10 @@
 import { ErrorBoundary, type Component, type JSX } from 'solid-js';
 import Button from './Button';
+import { isSessionEnded } from '../api/client';
 
 /** Catches whatever a screen throws while it renders or loads, and says so in its place instead of a blank page.
- *  "Try again" draws the screen from scratch. One wraps the app and one wraps each route. */
+ *  "Try again" draws the screen from scratch; a session that ended offers "Reload the page" instead, since
+ *  only a page load signs the browser in again. One wraps the app and one wraps each route. */
 const RouteBoundary: Component<{ children: JSX.Element }> = (props) => (
   <ErrorBoundary
     fallback={(err, reset) => {
@@ -16,7 +18,11 @@ const RouteBoundary: Component<{ children: JSX.Element }> = (props) => (
             {err instanceof Error && err.message ? err.message : 'Something went wrong while drawing it.'}
           </p>
           <div class="flex flex-wrap items-center gap-3">
-            <Button onClick={reset}>Try again</Button>
+            {isSessionEnded(err) ? (
+              <Button onClick={() => window.location.reload()}>Reload the page</Button>
+            ) : (
+              <Button onClick={reset}>Try again</Button>
+            )}
             <a href="/projects" class="text-sm underline" style={{ color: 'var(--color-accent-ink)' }}>
               All projects
             </a>

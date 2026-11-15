@@ -99,6 +99,58 @@ export class ApiError extends Error {
   }
 }
 
+/** The `code` of the error a request ends with when the board still refuses it after the session
+ *  was renewed: the page has to be loaded again (a sign-in in front of the board may ask for it). */
+export const SESSION_ENDED = 'session_ended';
+
+/** What a person reads for {@link SESSION_ENDED}. */
+const SESSION_ENDED_MESSAGE = 'Your session ended. Reload the page to sign in again.';
+
+/** True for the error a request ends with when its session could not be renewed. */
+export function isSessionEnded(error: unknown): boolean {
+  return error instanceof ApiError && error.code === SESSION_ENDED;
+}
+
+let renewing: Promise<boolean> | null = null;
+
+/**
+ * The browser reaches `/api` with the `tack_session` cookie, which lasts twelve hours and which only
+ * a page response sets. A tab left open longer gets `401` on every call; loading the page once in
+ * the background sets the cookie again without reloading the tab, so nothing the person typed is
+ * lost. Only for a page served by the board itself and holding no token of its own. A redirect (a
+ * sign-in in front of the board) is not followed and reads as not renewed. Concurrent callers share
+ * one renewal.
+ */
+export function renewSession(): Promise<boolean> {
+  if (tokenStore.get() || apiOrigin() !== window.location.origin) return Promise.resolve(false);
+  renewing ??= fetch(new URL(import.meta.env.BASE_URL, window.location.href), {
+    credentials: 'same-origin',
+    redirect: 'manual',
+    cache: 'no-store',
+    headers: { Accept: 'text/html' },
+  })
+    .then((res) => res.ok)
+    .catch(() => false)
+    .finally(() => {
+      renewing = null;
+    });
+  return renewing;
+}
+
+/** One API call: on `401` the session is renewed once and the call sent again (a `401` is answered
+ *  before the board reads the request, so sending it again is safe). Still `401` after that, the
+ *  error says the session ended. */
+async function send(path: string, init: RequestInit): Promise<Response> {
+  const go = () => fetch(apiUrl(path), { ...init, credentials: 'same-origin', redirect: 'error' });
+  let res = await go();
+  if (res.status !== 401) return res;
+  if (await renewSession()) {
+    res = await go();
+    if (res.status !== 401) return res;
+  }
+  throw new ApiError(401, SESSION_ENDED_MESSAGE, SESSION_ENDED);
+}
+
 /** Join the configured base with a leading-slash path. */
 export function apiUrl(path: string): string {
   return `${BASE}${path}`;
@@ -168,7 +220,7 @@ export async function requestWithHeaders<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(apiUrl(path), { ...init, headers, credentials: 'same-origin', redirect: 'error' });
+  const res = await send(path, { ...init, headers });
 
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return { data: undefined as T, headers: res.headers };
@@ -178,7 +230,7 @@ export async function requestWithHeaders<T>(
 /** Fetch a binary payload (downloads, exports, backups). */
 export async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
   const headers = authHeaders(init?.headers);
-  const res = await fetch(apiUrl(path), { ...init, headers, credentials: 'same-origin', redirect: 'error' });
+  const res = await send(path, { ...init, headers });
   if (!res.ok) throw await toApiError(res);
   return res.blob();
 }
@@ -189,7 +241,7 @@ export async function requestBlob(path: string, init?: RequestInit): Promise<Blo
  */
 export async function requestForm<T>(path: string, form: FormData): Promise<T> {
   const headers = authHeaders();
-  const res = await fetch(apiUrl(path), { method: 'POST', body: form, headers, credentials: 'same-origin', redirect: 'error' });
+  const res = await send(path, { method: 'POST', body: form, headers });
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
