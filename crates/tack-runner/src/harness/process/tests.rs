@@ -462,10 +462,16 @@ async fn a_question_waiting_longer_than_the_timeout_does_not_time_the_child_out(
         .await
         .expect("wait");
 
-    assert_eq!(person.await.expect("the person answered").prompt, "do-thing");
+    assert_eq!(
+        person.await.expect("the person answered").prompt,
+        "do-thing"
+    );
     assert_eq!(result.exit, ProcessExit::Exited(0));
     assert!(
-        result.stdout.text.contains("fake-harness-answered:allow_once"),
+        result
+            .stdout
+            .text
+            .contains("fake-harness-answered:allow_once"),
         "{}",
         result.stdout.text
     );
