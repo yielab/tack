@@ -18,23 +18,46 @@
 // `execution_updated`-style `BoardEvent` variant (or a dedicated execution
 // WebSocket) can replace the interior of {@link createExecutionRealtime}
 // with zero change to `store.ts#connectRealtime`'s call site.
+//
+// **A poll that knows when to stop.** A tab left open for days must not call
+// the board every few seconds, nor keep calling into a sign-in's redirect
+// once the session in front of the board ran out. So a tick is skipped while the page is hidden (one runs as soon as it
+// shows again), the wait doubles up to a minute while calls cannot reach the
+// board, and the poll stops for good once the session ended: only loading the
+// page again signs it back in (`api/client.ts#sessionEnded`).
+
+import { sessionEnded, unreachableCount } from '../api/client';
 
 export type ExecutionInvalidationEvent =
   | { scope: 'list' }
   | { scope: 'request'; requestId: string };
 
-export type ExecutionRealtimeStatus = 'active' | 'disposed';
+export type ExecutionRealtimeStatus = 'active' | 'stopped' | 'disposed';
+
+/** What the poll reads about the connection before it schedules the next tick. */
+export interface ExecutionRealtimeHealth {
+  /** The session ended: polling again cannot succeed until the page is loaded again. */
+  ended: () => boolean;
+  /** Calls in a row that could not reach the board. */
+  unreachable: () => number;
+}
 
 export interface ExecutionRealtimeOptions {
   /** Poll interval in ms. Default 4000 — frequent enough for an operator
    *  watching an in-flight run, bounded so a busy fleet view doesn't
    *  hammer the list endpoint. */
   intervalMs?: number;
+  /** The longest wait between ticks while the board cannot be reached. Default 60000. */
+  maxIntervalMs?: number;
   /** Injectable timer functions — tests use `vi.useFakeTimers()` and never
    *  a real wall-clock sleep. Defaults to the global
-   *  `setInterval`/`clearInterval`. */
-  setIntervalImpl?: (handler: () => void, timeoutMs: number) => ReturnType<typeof setInterval>;
-  clearIntervalImpl?: (handle: ReturnType<typeof setInterval>) => void;
+   *  `setTimeout`/`clearTimeout`. */
+  setTimeoutImpl?: (handler: () => void, timeoutMs: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutImpl?: (handle: ReturnType<typeof setTimeout>) => void;
+  /** Defaults to the API client's own session and reachability. */
+  health?: ExecutionRealtimeHealth;
+  /** The page whose visibility pauses the poll. Defaults to `document`. */
+  page?: Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
   /**
    * Individual request ids to poll beyond the list itself — e.g. an
    * item-detail view watching one in-flight request closely. Read on every
@@ -51,12 +74,14 @@ export interface ExecutionRealtime {
   onInvalidate: (cb: (event: ExecutionInvalidationEvent) => void) => () => void;
   /**
    * Tears down the poll timer and clears all listeners. **Idempotent**: a
-   * second call is a no-op rather than a double `clearInterval` or a
+   * second call is a no-op rather than a double `clearTimeout` or a
    * double listener-teardown — disposed exactly once, no leak, no
    * double-dispose — and `realtime.test.ts` calls this twice to prove it.
    */
   dispose: () => void;
 }
+
+const CLIENT_HEALTH: ExecutionRealtimeHealth = { ended: sessionEnded, unreachable: unreachableCount };
 
 /**
  * Creates a bounded-poll invalidation subscription. Every tick emits one
@@ -68,12 +93,17 @@ export interface ExecutionRealtime {
 export function createExecutionRealtime(options: ExecutionRealtimeOptions = {}): ExecutionRealtime {
   const {
     intervalMs = 4000,
-    setIntervalImpl = setInterval,
-    clearIntervalImpl = clearInterval,
+    maxIntervalMs = 60_000,
+    setTimeoutImpl = setTimeout,
+    clearTimeoutImpl = clearTimeout,
+    health = CLIENT_HEALTH,
+    page = typeof document === 'undefined' ? undefined : document,
     watchedRequestIds = () => [],
   } = options;
 
   let disposed = false;
+  let stopped = false;
+  let handle: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<(event: ExecutionInvalidationEvent) => void>();
 
   const emit = (event: ExecutionInvalidationEvent) => {
@@ -86,27 +116,57 @@ export function createExecutionRealtime(options: ExecutionRealtimeOptions = {}):
     }
   };
 
-  const tick = () => {
+  const hidden = () => page?.visibilityState === 'hidden';
+
+  const cancel = () => {
+    if (handle !== null) clearTimeoutImpl(handle);
+    handle = null;
+  };
+
+  // The wait doubles with each call in a row that could not reach the board, up to the cap.
+  const schedule = () => {
+    cancel();
+    if (disposed || stopped || hidden()) return;
+    const wait = Math.min(intervalMs * 2 ** Math.min(health.unreachable(), 16), maxIntervalMs);
+    handle = setTimeoutImpl(tick, wait);
+  };
+
+  function tick() {
+    handle = null;
     if (disposed) return;
+    if (health.ended()) {
+      stopped = true;
+      return;
+    }
+    if (hidden()) return; // `onVisibility` runs one as soon as the page shows again
     emit({ scope: 'list' });
     for (const requestId of watchedRequestIds()) {
       emit({ scope: 'request', requestId });
     }
-  };
+    schedule();
+  }
 
-  const handle = setIntervalImpl(tick, intervalMs);
+  const onVisibility = () => {
+    if (disposed || stopped) return;
+    if (hidden()) cancel();
+    else tick();
+  };
+  page?.addEventListener('visibilitychange', onVisibility);
+
+  schedule();
 
   return {
-    status: () => (disposed ? 'disposed' : 'active'),
+    status: () => (disposed ? 'disposed' : stopped ? 'stopped' : 'active'),
     onInvalidate(cb) {
       if (disposed) return () => {};
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
     dispose() {
-      if (disposed) return; // idempotent: no double clearInterval, no double teardown
+      if (disposed) return; // idempotent: no double clearTimeout, no double teardown
       disposed = true;
-      clearIntervalImpl(handle);
+      cancel();
+      page?.removeEventListener('visibilitychange', onVisibility);
       listeners.clear();
     },
   };

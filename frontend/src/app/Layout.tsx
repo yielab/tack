@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, useParams, useLocation } from '@solidjs/r
 import Sidebar from '../shared/ui/Sidebar';
 import SearchBar from '../shared/ui/SearchBar';
 import ToastContainer from '../shared/ui/ToastContainer';
+import SessionEndedBanner from '../shared/ui/SessionEndedBanner';
 import Breadcrumb from '../shared/ui/Breadcrumb';
 import HelpButton from '../shared/ui/HelpButton';
 import { WaitingBadge } from '../shared/runWithAgent/WaitingForYou';
@@ -174,6 +175,8 @@ const LayoutInner: Component<LayoutProps> = (props) => {
             ⌃K
           </button>
         </header>
+
+        <SessionEndedBanner />
 
         {/* Board is full-bleed (own scroll); other views get the centered column. */}
         <main id="main" tabindex={-1} class="flex-1 min-h-0 min-w-0 flex flex-col focus:outline-none">

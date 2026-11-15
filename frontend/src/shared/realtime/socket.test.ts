@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createReconnectingSocket, liveUrl } from './socket';
+import { sessionEnded, tokenStore } from '../api/client';
 import { FakeWebSocket, WS, latest } from './fakeWebSocket';
 
 describe('liveUrl', () => {
@@ -95,5 +96,23 @@ describe('createReconnectingSocket', () => {
 
     vi.advanceTimersByTime(60000);
     expect(FakeWebSocket.instances).toHaveLength(1); // no reconnect
+  });
+
+  it('stops once a sign-in in front of the board ended the session', async () => {
+    tokenStore.set(null);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 302 }));
+    const sock = createReconnectingSocket('ws://x/live', () => {}, { WebSocketImpl: WS, initialDelay: 1000 });
+    latest().serverClose(); // refused before it opened
+
+    await vi.advanceTimersByTimeAsync(1000); // the renewal finds the sign-in
+    expect(sessionEnded()).toBe(true);
+    expect(sock.status()).toBe('closed');
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(FakeWebSocket.instances).toHaveLength(1); // nothing more was opened
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    tokenStore.set(null);
+    fetchMock.mockRestore();
+    sock.close();
   });
 });

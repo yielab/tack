@@ -6,6 +6,8 @@
 
 /** Base URL for the API. Relative by default so the SPA works same-origin when
  * served from the `tack` binary or behind a reverse proxy. */
+import { createSignal } from 'solid-js';
+
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 const TOKEN_STORAGE_KEY = 'tack_api_token';
@@ -69,6 +71,9 @@ export const tokenStore = {
     return scoped?.storage.getItem(scoped.key) ?? null;
   },
   set(token: string | null): void {
+    // A new credential is a new session: calls are sent again.
+    setEnded(false);
+    failures = 0;
     const scoped = scopedStorage();
     if (!scoped) return;
     if (token) scoped.storage.setItem(scoped.key, token);
@@ -111,15 +116,39 @@ export function isSessionEnded(error: unknown): boolean {
   return error instanceof ApiError && error.code === SESSION_ENDED;
 }
 
+/**
+ * Once a session ends, no call is sent until the page is loaded again: a page left open behind a
+ * sign-in would otherwise keep polling into the sign-in's redirect forever. Reactive, so the shell
+ * can say so once instead of every screen failing on its own.
+ */
+const [ended, setEnded] = createSignal(false);
+
+/** True once a call ended the session; only loading the page again starts a new one. */
+export const sessionEnded = ended;
+
+/** Calls in a row that could not reach the board (no connection, or a gateway in front of it
+ *  answering 502 to 504). Back to zero on the first call that reaches it. */
+let failures = 0;
+
+/** How many calls in a row could not reach the board; pollers wait longer the higher it is. */
+export function unreachableCount(): number {
+  return failures;
+}
+
+function endSession(): ApiError {
+  setEnded(true);
+  return new ApiError(401, SESSION_ENDED_MESSAGE, SESSION_ENDED);
+}
+
 let renewing: Promise<boolean> | null = null;
 
 /**
  * The browser reaches `/api` with the `tack_session` cookie, which lasts twelve hours and which only
  * a page response sets. A tab left open longer gets `401` on every call; loading the page once in
  * the background sets the cookie again without reloading the tab, so nothing the person typed is
- * lost. Only for a page served by the board itself and holding no token of its own. A redirect (a
- * sign-in in front of the board) is not followed and reads as not renewed. Concurrent callers share
- * one renewal.
+ * lost. Only for a page served by the board itself and holding no token of its own. A redirect or
+ * a refusal (a sign-in in front of the board) is not followed and ends the session; a page that
+ * cannot be reached at all leaves it as it is. Concurrent callers share one renewal.
  */
 export function renewSession(): Promise<boolean> {
   if (tokenStore.get() || apiOrigin() !== window.location.origin) return Promise.resolve(false);
@@ -129,7 +158,13 @@ export function renewSession(): Promise<boolean> {
     cache: 'no-store',
     headers: { Accept: 'text/html' },
   })
-    .then((res) => res.ok)
+    .then((res) => {
+      if (res.ok) return true;
+      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400) || res.status === 401 || res.status === 403) {
+        setEnded(true);
+      }
+      return false;
+    })
     .catch(() => false)
     .finally(() => {
       renewing = null;
@@ -137,18 +172,45 @@ export function renewSession(): Promise<boolean> {
   return renewing;
 }
 
+/** True for a `403` the board did not write: every refusal of the board's own carries its
+ *  `{ "error": … }` envelope, so anything else is a sign-in in front of it turning away a browser
+ *  whose session ran out. */
+async function refusedInFront(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  try {
+    const body: unknown = JSON.parse(await res.clone().text());
+    return !(body && typeof body === 'object' && 'error' in body);
+  } catch {
+    return true;
+  }
+}
+
 /** One API call: on `401` the session is renewed once and the call sent again (a `401` is answered
  *  before the board reads the request, so sending it again is safe). Still `401` after that, the
- *  error says the session ended. */
+ *  error says the session ended, and so does a sign-in in front of the board that redirects the call
+ *  (`redirect: 'error'` makes that a network error, told apart by loading the page) or refuses it. */
 async function send(path: string, init: RequestInit): Promise<Response> {
+  if (ended()) throw new ApiError(401, SESSION_ENDED_MESSAGE, SESSION_ENDED);
   const go = () => fetch(apiUrl(path), { ...init, credentials: 'same-origin', redirect: 'error' });
-  let res = await go();
+  let res: Response;
+  try {
+    res = await go();
+  } catch (err) {
+    if (err instanceof TypeError) {
+      await renewSession();
+      if (ended()) throw endSession();
+      failures += 1;
+    }
+    throw err;
+  }
+  if (await refusedInFront(res)) throw endSession();
+  failures = res.status >= 502 && res.status <= 504 ? failures + 1 : 0;
   if (res.status !== 401) return res;
   if (await renewSession()) {
     res = await go();
     if (res.status !== 401) return res;
   }
-  throw new ApiError(401, SESSION_ENDED_MESSAGE, SESSION_ENDED);
+  throw endSession();
 }
 
 /** Join the configured base with a leading-slash path. */

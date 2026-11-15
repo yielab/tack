@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from 'solid-js';
-import { apiBaseUrl, renewSession, tokenStore } from '../api/client';
+import { apiBaseUrl, renewSession, sessionEnded, tokenStore } from '../api/client';
 
 const LIVE_PROTOCOL = 'tack.v1';
 const AUTH_PROTOCOL_PREFIX = 'tack.auth.';
@@ -56,9 +56,14 @@ export function createReconnectingSocket(
   let closed = false;
 
   // A socket refused before it opened may be one whose session cookie ran out: the session is
-  // renewed before the next try, so the live view comes back by itself.
+  // renewed before the next try, so the live view comes back by itself. A session that ended
+  // (a sign-in in front of the board) stops the socket: only loading the page again signs it in.
   const scheduleReconnect = (neverOpened: boolean) => {
     if (closed) return;
+    if (sessionEnded()) {
+      setStatus('closed');
+      return;
+    }
     setStatus('reconnecting');
     reconnectTimer = setTimeout(() => {
       delay = Math.min(delay * 2, maxDelay);
@@ -69,6 +74,10 @@ export function createReconnectingSocket(
 
   const connect = () => {
     if (closed) return;
+    if (sessionEnded()) {
+      setStatus('closed');
+      return;
+    }
     const token = tokenStore.get();
     // Browser WebSockets cannot set Authorization. A base64url subprotocol is
     // request-header data (not a query string) and the server replies only

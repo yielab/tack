@@ -5,7 +5,9 @@ import {
   requestForm,
   ApiError,
   isSessionEnded,
+  sessionEnded,
   tokenStore,
+  unreachableCount,
 } from './client';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -249,6 +251,62 @@ describe('shared/api/client', () => {
       const error = await request('/projects').catch((e: unknown) => e);
       expect(isSessionEnded(error)).toBe(true);
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a sign-in in front of the board', () => {
+    const page = () => new Response('<!doctype html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+    const redirected = () => new Response(null, { status: 302 });
+
+    it('ends the session when the call is redirected and the page is too, and sends nothing more', async () => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(new TypeError('NetworkError when attempting to fetch resource.'))
+        .mockResolvedValueOnce(redirected());
+
+      const error = await request('/executions').catch((e: unknown) => e);
+      expect(isSessionEnded(error)).toBe(true);
+      expect(sessionEnded()).toBe(true);
+
+      const again = await request('/executions').catch((e: unknown) => e);
+      expect(isSessionEnded(again)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2); // the second call never left the page
+    });
+
+    it('ends the session on a refusal the board did not write', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response('<html>Forbidden</html>', { status: 403, headers: { 'Content-Type': 'text/html' } })
+      );
+
+      const error = await request('/executions').catch((e: unknown) => e);
+      expect(isSessionEnded(error)).toBe(true);
+    });
+
+    it("keeps the board's own refusal as the board's error", async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        jsonResponse({ error: { status: 403, message: 'Not allowed', code: 'forbidden' } }, { status: 403 })
+      );
+
+      const error = await request('/executions').catch((e: unknown) => e);
+      expect(isSessionEnded(error)).toBe(false);
+      expect((error as ApiError).code).toBe('forbidden');
+      expect(sessionEnded()).toBe(false);
+    });
+
+    it('counts a call that could not reach the board and forgets it once one does', async () => {
+      vi.spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce(page())
+        .mockResolvedValueOnce(new Response('', { status: 502 }))
+        .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+      await expect(request('/executions')).rejects.toBeInstanceOf(TypeError);
+      expect(sessionEnded()).toBe(false);
+      expect(unreachableCount()).toBe(1);
+      await expect(request('/executions')).rejects.toBeInstanceOf(ApiError);
+      expect(unreachableCount()).toBe(2);
+      await request('/executions');
+      expect(unreachableCount()).toBe(0);
     });
   });
 });
