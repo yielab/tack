@@ -204,12 +204,9 @@ where
                                 },
                             );
                             send_answer(state.decisions, answer).await;
-                            return;
-                        }
-                        if resolved.state != "pending" {
+                        } else if resolved.state != "pending" {
                             let opened = state.pending.take().expect("just matched Some above");
                             send_answer(state.decisions, deny_answer(&opened.question)).await;
-                            return;
                         }
                     }
                 }
