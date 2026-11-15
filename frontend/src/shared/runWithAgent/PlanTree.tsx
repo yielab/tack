@@ -116,6 +116,16 @@ export function treeSummary(rs: Row[]): string {
   return parts.join(' · ');
 }
 
+/**
+ * The project's type a row's word names: its key, or its name in any case (a team writes "Feature" where the catalog keys
+ * it "feature"; the server takes either, as it makes the same key of the word). Undefined when the project has no such type.
+ */
+export function typeIn(types: Offer['types'], word: string | null): string | undefined {
+  if (!word) return undefined;
+  const key = word.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '');
+  return types.find((t) => t.value === word || t.value === key || t.label.toLowerCase() === word.trim().toLowerCase())?.value;
+}
+
 /** An option list that still shows a value the project does not have, so the file's own word stays visible. */
 export function withCurrent(options: Array<{ value: string; label: string }>, current: string | null) {
   if (!current || options.some((o) => o.value === current)) return options;
@@ -160,7 +170,8 @@ const PlanTree: Component<{
     const frozen = () => !!r().locked;
     const uid = createUniqueId();
     const fid = (name: string) => `plan-${uid}-${name}`;
-    const typeMissing = () => !!r().type && ctx().ready === true && !ctx().types.some((t) => t.value === r().type);
+    const typeValue = () => typeIn(ctx().types, r().type) ?? r().type;
+    const typeMissing = () => !!r().type && ctx().ready === true && !typeIn(ctx().types, r().type);
     const others = () => rows().map((_, j) => j).filter((j) => j !== i && !waitsOn(rows(), i).includes(j));
     return (
       <div data-testid="plan-row" class="min-w-0 space-y-2 rounded-item p-2" style={{ border: '1px solid var(--color-border-light)' }}>
@@ -229,9 +240,9 @@ const PlanTree: Component<{
               <option value="" selected={!r().type}>
                 Default
               </option>
-              <For each={withCurrent(ctx().types, r().type)}>
+              <For each={withCurrent(ctx().types, typeValue())}>
                 {(t) => (
-                  <option value={t.value} selected={r().type === t.value}>
+                  <option value={t.value} selected={typeValue() === t.value}>
                     {t.label}
                   </option>
                 )}

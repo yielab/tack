@@ -217,6 +217,20 @@ describe('PlanPanel', () => {
     expect(rows[1].querySelector('[data-testid="plan-type-note"]')).toBeNull();
   });
 
+  it('a_type_named_by_its_name_is_the_projects_type', async () => {
+    // A team writes the type the way a person reads it ("Bug"); the catalog keys it "bug", and the server takes either.
+    const named = { v: '1', subtasks: [{ title: 'Fix', description: '', acceptance: [], depends_on: [], type: 'Bug' }, { title: 'Chore', description: '', acceptance: [], depends_on: [], type: 'TASK' }] };
+    routeFetch(named, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    const rows = container.querySelectorAll('[data-testid="plan-row"]');
+    expect(rows[0].querySelector('[data-testid="plan-type-note"]')).toBeNull();
+    expect(rows[1].querySelector('[data-testid="plan-type-note"]')).toBeNull();
+    const types = Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Type"]'));
+    expect(types.map((s) => s.value)).toEqual(['bug', 'task']);
+    expect(Array.from(types[0].options).map((o) => o.textContent)).not.toContain('Bug (not in this project)');
+  });
+
   it('a_role_the_project_has_is_not_marked_as_missing', async () => {
     const named = { v: '1', subtasks: [{ title: 'Settings', description: '', acceptance: [], depends_on: [], role: 'Backend' }, { title: 'Docs', description: '', acceptance: [], depends_on: [], role: 'Writer' }] };
     routeFetch(named, { created: [] }, []);
