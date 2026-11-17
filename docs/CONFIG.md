@@ -171,8 +171,8 @@ timeout_seconds = 1800
 sign_key = ""            # optional: prill's private key; the pack is then signed (see below)
 ```
 
-**`kind = "prill"`** (the default): the program is [prill](https://github.com/yielab/prill),
-which reads commits only and speaks its own documents. For each attempt the runner:
+**`kind = "prill"`** (the default): the program is prill, an external verifier that Tack
+has a built-in adapter for. It reads commits only and speaks its own documents. For each attempt the runner:
 
 1. commits what the agent left in the workspace through a temporary index — the agent's own
    index and `HEAD` are untouched, no ref is written, and the runner's markers

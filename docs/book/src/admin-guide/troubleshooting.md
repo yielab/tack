@@ -449,7 +449,7 @@ TACK_AUTO_START_SECONDS=30 tack serve
 If the look runs and still starts nothing, two administrator causes remain. With no active runner, or with
 several and no fleet named by the profile, Tack cannot tell where to run the task, so it starts none: enroll
 a runner, or name a fleet. And the automatic merge that follows a started run needs `TACK_GITHUB_TOKEN`,
-a non-zero `TACK_GITHUB_POLL_SECONDS` and a `prill` the board can run. See
+a non-zero `TACK_GITHUB_POLL_SECONDS` and a verifier the board can run (`TACK_PRILL_PROGRAM`). See
 [Starting tasks by itself](runners.md#starting-tasks-by-itself).
 
 ---

@@ -429,18 +429,18 @@ files in the directory are recorders, not tests — `screenshots.spec.ts`, `reco
 `agent-assets.spec.ts` and `tutorial-assets.spec.ts` produce the README's and the book's images
 and GIFs, each through its own config. The default config ignores them and CI never runs them.
 
-**Live docket and prill suite.** `docket-prill-e2e.sh` and its `docket-prill.spec.ts` are not
-versioned: the maintainer keeps them in a git-ignored folder, so a fresh clone does not have them. The script builds `tack` with the SPA
-embedded, runs docket and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`) in a scratch
-`HOME`, and drives a project through the UI the way a person would, including a manager that works
-through the board with an agent credential. CI never runs it and never needs docket or prill; the
-three meet only here. A test that needs a model can fail on the local model alone, so read the log
+**Live suite against docket and a verifier.** The live suite is not versioned: the maintainer
+keeps it in a git-ignored folder, so a fresh clone does not have it. It builds `tack` with the SPA
+embedded, runs docket and the verifier (prill) from their own source trees in a scratch `HOME`, and
+drives a project through the UI the way a person would, including a manager that works through the
+board with an agent credential. CI never runs it and never needs docket or a verifier; the three
+meet only here. A test that needs a model can fail on the local model alone, so read the log
 before blaming Tack. The knobs are listed at the top of the script.
 
-`docket-prill-e2e.sh --check` needs no model and no container. It runs
+Its `--check` mode needs no model and no container. It runs
 `scripts/capture-docket-fixtures.sh` against a real docket and compares the keys of docket's answers
 with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`. It compares
-`docs/contracts/mrp-v1/fixtures/prill/` with prill's own contract fixtures, runs the
+`docs/contracts/mrp-v1/fixtures/prill/` with the verifier's own contract fixtures, runs the
 `briefing_schema` test (`#[ignore]`d in CI because it needs `prill` on `PATH`), and runs the fake
 docket's tests against the captures, so a key that docket sends and the fake does not, or the
 reverse, fails by name. It exits non-zero when anything drifted. What a capture cannot reach stays

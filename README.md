@@ -114,8 +114,8 @@ one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/
 - **Agent runs.** Progress shows on the task while the agent works. With *Ask before each
   action*, it waits for your answer on the task. A run that changed files waits for your
   review.
-- **Verification and delivery.** A verifier of your choice, an independent tool or a program of
-  your own, can check the change against the acceptance criteria. The runner can push the work as
+- **Verification and delivery.** A verifier of your choice, an independent tool such as prill or
+  a program of your own, can check the change against the acceptance criteria. The runner can push the work as
   a branch and, for a task linked to a GitHub issue, Tack opens the pull request.
 - **Recovery.** A run interrupted by a crash isn't lost or started again. It waits for
   your decision.
@@ -155,9 +155,6 @@ each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability
 - **[docket](https://github.com/yielab/docket)** gives a repository a team of AI agents
   and governs what they may do: roles, policies, approvals and an audit trail. Tack can run
   it as the agent on a task.
-- **prill** is an independent verifier of agents' changes. It re-runs the change on clean
-  code in a sandbox with no network and writes a merge-readiness report. It isn't published
-  yet.
 
 ## Development
 

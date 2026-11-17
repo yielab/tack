@@ -170,8 +170,8 @@ workspace was made, and sends exactly that commit.
 
 The verifier and the review pack are computed from the commit the work started from,
 which the runner pins when it makes the workspace, not from a branch name the agent
-could move. [prill](https://github.com/yielab/prill) reads its `prill.yaml` from that
-commit, so an agent that edits `prill.yaml` does not change how its own work is checked.
+could move. The verifier reads its own settings file (for prill, `prill.yaml`) from that
+commit, so an agent that edits that file does not change how its own work is checked.
 
 The pack also lists the files that decide how work is checked, under *The agent changed how it is
 checked*. Changing one of them also holds the automatic merge. They are:

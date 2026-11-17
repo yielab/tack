@@ -37,7 +37,7 @@ Everything built is under Delivered. What is left:
 ### Cards from the recorded demo (2026-11-14)
 
 A recorded run of the whole flow, from an empty board to a small web service running on the machine,
-with docket on Claude Sonnet and Haiku, prill as the verifier and docket's traces in Langfuse, found
+with docket on Claude Sonnet and Haiku, an independent verifier and docket's traces in Langfuse, found
 five defects. Each card stands alone, and none waits on docket: where docket owns the fact, the card
 says what Tack does without it and what is asked of docket.
 
@@ -65,7 +65,7 @@ demo it said that three tests could not open a socket, and a person on the board
 the agent's summary, read from the database, did.
 
 - Tack reads `verify.outputTail` of the step whose gate failed and shows it on the Execution tab, under
-  the run's reason, in the same block prill's output tail uses in Checks, with its command and exit code.
+  the run's reason, in the same block the verifier's output tail uses in Checks, with its command and exit code.
 - The run's terminal reason carries the tail too, so the inbox, the CLI and the API say the same thing.
 - A tail is shown as docket sent it: Tack does not cut it again or try to read meaning into it.
 - Done when: the fake docket has a capture of a failed gate with its `outputTail`, a test asserts the tail
@@ -74,9 +74,9 @@ the agent's summary, read from the database, did.
 
 **D3 — The jail and the verifier agree about localhost.** At network `none`, docket's jail forbids every
 `AF_INET` and `AF_INET6` socket with a seccomp filter, without a network namespace of its own, so
-`127.0.0.1` is forbidden too. prill runs the same commands in a container with network none, where
-loopback works. A test suite that starts a server on a local port, common in web projects, passes
-prill and fails docket's gate, and the run ends failed with no change kept. In the demo the fix the
+`127.0.0.1` is forbidden too. The verifier runs the same commands in a container with network none,
+where loopback works. A test suite that starts a server on a local port, common in web projects, passes
+the verifier and fails docket's gate, and the run ends failed with no change kept. In the demo the fix the
 agent made was right and was lost twice for this reason.
 
 - Tack says it before the run: the run dialog's "What will happen" says, for a docket team without
@@ -320,8 +320,8 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   reads as a wait, and an action that leaves the team is seen whole before it is approved.
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-82.md).
 - **Phase 81 — what the audit found.** No ADR. Background work with one owner that stops on shutdown,
-  typed answers from the docket and prill adapters, tests for routes and upgrade paths nobody covered,
-  one wire format and one error model, one UI kit. The rule it keeps: CI never needs docket or prill;
+  typed answers from the docket and verifier adapters, tests for routes and upgrade paths nobody covered,
+  one wire format and one error model, one UI kit. The rule it keeps: CI never needs docket or a verifier;
   everything that talks to the real programs is a local suite the maintainer runs by hand.
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-81.md).
 - **Phase 80 — a run that waits on a person.** A docket run parked on a question is no longer
@@ -368,7 +368,7 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   codebase that does everything a user can do, which retired the docket control-plane bridge.
 - [Phases 65–72](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/boards/roadmap-phases-65-72.md) — the
   `v0.1.0-beta.9` release; briefs, evidence and the verifier's merge-readiness pack; a run a
-  normal person can start; the first live docket + prill run; the security phase after the
+  normal person can start; the first live run through docket and a verifier; the security phase after the
   withdrawn tag; the agent bringing its own model; and merging from Tack.
 
 ---

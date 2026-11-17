@@ -251,7 +251,7 @@ Some entries are shorter:
 - A hop recorded before docket kept a manifest has `prompts: []`, never an invented layer.
 - A task with no hop has no `steps` at all.
 
-The runner stages the same value as one artifact of the attempt, `trajectory.json`, with the evidence. For a prill verifier the attempt evidence then names the `family` of the last implementer step beside the model and a `trajectory` whose `uri` is where the board serves that artifact and whose `digest` is the SHA-256 of the staged bytes. Without steps neither is sent, and no `claims` are.
+The runner stages the same value as one artifact of the attempt, `trajectory.json`, with the evidence. For the default verifier (`kind = "prill"`) the attempt evidence then names the `family` of the last implementer step beside the model and a `trajectory` whose `uri` is where the board serves that artifact and whose `digest` is the SHA-256 of the staged bytes. Without steps neither is sent, and no `claims` are.
 
 ### The branch comes back
 

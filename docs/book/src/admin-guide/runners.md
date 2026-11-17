@@ -574,5 +574,5 @@ is about the part you run. It happens **in the board's process**, not in a runne
   fleet first.
 
 The automatic **merge** that follows is a separate job. It runs on the GitHub poll, so it needs both
-`TACK_GITHUB_TOKEN` and a non-zero `TACK_GITHUB_POLL_SECONDS`, and a `prill` the board can run
+`TACK_GITHUB_TOKEN` and a non-zero `TACK_GITHUB_POLL_SECONDS`, and a verifier the board can run
 (`TACK_PRILL_PROGRAM`). The project's Automation settings say when one of these is missing.

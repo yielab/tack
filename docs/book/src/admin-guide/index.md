@@ -60,6 +60,6 @@ does it on its own machine. A runner reaches the board over the `/api/runner/v1`
 credential, separate from the operator token. So a runner can sit on a laptop, a build server or a
 spare machine, and the board only has to be reachable from it.
 
-The board also calls one program of its own: [prill](https://github.com/yielab/prill), looked up
-with `TACK_PRILL_PROGRAM`, to check a signed pack before an automatic merge. Without it, projects
+The board also calls one program of its own: the verifier's, looked up with `TACK_PRILL_PROGRAM`,
+to check a signed pack before an automatic merge. Without it, projects
 cannot merge by themselves. See [Configuration](configuration-reference.md).

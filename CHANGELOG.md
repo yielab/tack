@@ -44,9 +44,9 @@ made it.
 - A wait is no longer a question, and an action that leaves is seen before it is approved. A docket step that waits until a time shows on the timeline as "The team waits until 14:00. Nobody needs to answer." with a clock, never asks anything, and the run's time limit does not run while it waits; a wait that ran out with no step to go to next ends the run with that sentence. An approval of something that leaves the team (an email, a post, a write to a service) is titled "This action leaves the team" and shows the whole action above the options, scrolling past twenty lines; Tack keeps it only while the question is open and erases it in the same write that answers or expires the question, and when docket does not show it Tack does not ask.
 - A docket run now receives the card as fields. The request carries the item as data (`task`), and the adapter sends docket's `task` (objective, done when, acceptance, constraints, risk, kind, the paths the criteria name) beside a `description` that holds only the profile's instructions and the card's fenced text, so the brief and the definition of done are no longer sent twice and the adapter no longer cuts them out of prose. "Run again" sends the questions docket asked in the previous attempt with the option a person picked, so nobody is asked the same thing twice. The other three agents read the same prose as before.
 - Internal: an item and its run history are two types. `Item` is the stored row, read through one column list; `ItemCard` (the item plus `needs_review`, `merge_note`, `started_by`, `team` and `merged_by`) is what the board, the item page and a PATCH answer return, and the HTTP shape of those answers is unchanged. The workflow and WIP rules of a move are `tack-core`'s `StatusGate`, which the store consults inside its transaction instead of holding them. A task whose stored run settings no longer fit is now a corrupt-row error naming the column, instead of reading as having none. A project export no longer carries the five derived fields on its items.
-- Internal: the background loops' settings are one `LoopConfig` owned by `tack-app` (the keys and variables keep their names), and the process environment is read once in each crate's config module and handed down as values: the runner's harness search, readiness check, verifier, install and `env:` secrets, the CLI's `~/.tackrc` lookup, the API's `PATH` for prill and the launch nonce. No test sets a process variable any more. New: `[secrets] platform_store = "off"` in the runner's file skips the OS credential store and uses the owner-only file.
-- Internal: `Host` is gone. `tack-app` owns the GitHub calls, the pull request an accepted attempt opens and the move an accepted pack makes; what it still needs from `tack-api` is three small traits with typed errors (the prill check, stored artifacts, board events). `tack serve --with-runner` reaches the server as a value instead of through a process-wide environment variable, and the server reads its configuration once.
-- A docket run keeps what each step was made of. When the task ends, the run's result holds one entry per hop with the prompts it ran (layer, name, version, hash, scope), the model and its class and family, the verdict, and what the agent assumed and asked; a hop recorded before docket kept a manifest says it recorded no prompt. The same list is stored as an artifact of the attempt, and a prill verifier is given the model's family and that artifact's address and digest as the attempt's trajectory.
+- Internal: the background loops' settings are one `LoopConfig` owned by `tack-app` (the keys and variables keep their names), and the process environment is read once in each crate's config module and handed down as values: the runner's harness search, readiness check, verifier, install and `env:` secrets, the CLI's `~/.tackrc` lookup, the API's `PATH` for the verifier and the launch nonce. No test sets a process variable any more. New: `[secrets] platform_store = "off"` in the runner's file skips the OS credential store and uses the owner-only file.
+- Internal: `Host` is gone. `tack-app` owns the GitHub calls, the pull request an accepted attempt opens and the move an accepted pack makes; what it still needs from `tack-api` is three small traits with typed errors (the verifier's check, stored artifacts, board events). `tack serve --with-runner` reaches the server as a value instead of through a process-wide environment variable, and the server reads its configuration once.
+- A docket run keeps what each step was made of. When the task ends, the run's result holds one entry per hop with the prompts it ran (layer, name, version, hash, scope), the model and its class and family, the verdict, and what the agent assumed and asked; a hop recorded before docket kept a manifest says it recorded no prompt. The same list is stored as an artifact of the attempt, and the default verifier is given the model's family and that artifact's address and digest as the attempt's trajectory.
 - A docket team may work in a folder, and a run keeps the records it wrote. A task given to a team with no repository ends Succeeded with what the team's last step said it did, with nothing to merge or open as a pull request, instead of failing with "branch not applied" (a team that has a repository and ends with no work still fails). When a docket task ends, the run's result holds the rows the team wrote in it, for each record set the team declares (at most 50 per set, read only), beside the steps; Settings → Automation → Teams says which teams work in a folder and what record sets they keep. Tack no longer names a team shape when it creates a team, so docket's own default stands.
 - `tack serve --with-runner` no longer exits at boot on a slow machine. The server announced its address and started the embedded runner at once, while the address reached the runner on another task; when the runner was first, the start failed and took the server down with exit status 1. The start now waits (up to ten seconds) for the address.
 
@@ -70,7 +70,7 @@ access mode per profile, the removal of the rate card, default expiries and the 
 - A **Listed** profile's hosts have an editor. The profile form shows **Hosts it may reach** under **Web access**: add a host (`docs.rs`, or `*.crates.io` for every host under it) and remove one, saved in the profile's `tool_policy.allowed_hosts`; the server's refusal of a name that is not a host (a scheme, a path, an upper-case letter) is shown as it is. With **Closed** or **Open** the list is shown greyed out with its reason, and the saved hosts are kept.
 - The built-in Reviewer profile ends its report with a verdict line, `Verdict: merge`, `Verdict: review` or `Verdict: reject`, and a Reviewer run started from another run's work (`from_run`) keeps that word with the run it reviewed (a later Reviewer run on the same run replaces it). The factory metrics' `work_quality.verifier_agreement` is now a list with one entry per verifier, `prill` and `reviewer`, each with its false approvals and false rejections against what you did with the work, and **Quality of the work** shows a row for each; the field `without_a_pack` is now `without_a_word`. A Reviewer profile whose instructions you edited keeps them: add the verdict line yourself to have it counted.
 - The install of a project's dependencies runs in the agent's sandbox. The runner installs them before the agent starts, and a package's `postinstall` runs as you; it now runs inside `bwrap` with a scratch home (it cannot read or write your files), an environment of `PATH`, `HOME`, the locale, certificate files and the package registry's settings only, and its output read with the registry's tokens removed. With `[egress] enforce` on, the install goes through the runner's proxy and reaches only the registry of the lockfile's package manager and any registry the runner's own settings name. A command the board replaced runs only when the runner's new `[prepare]` table says `board_may_replace = true` (the default is `false`); otherwise the run ends as failed with that reason before the agent starts, and a project that replaced its install command needs the setting to keep running. Where there is no `bwrap` and `[sandbox] required = false`, the install runs as before and the run's timeline says "Installed without a sandbox"; with the requirement on and no `bwrap`, nothing is installed. The Prepares line of the Run with agent dialog says "Installs inside the sandbox" or "Installs without a sandbox (the administrator turned the requirement off)", with a help hint.
-- What examines the agent holds the merge, for all four agents. A change to a file that decides how the work is checked no longer merges by itself: with a prill pack the signal is the pack's own flags (`tautological_test`, `tests_deleted`, `test_config_changed`, `analysis_suppressed`, `dependencies_changed`, `config_changed_in_head`), now carried in the pack as data (`flags`); with no pack it is the list of files the runner records as `checks_changed` in `evidence.json`, matched by exact name (so `latest/x.md` and `contest.md` are no longer taken for tests) and widened to `pyproject.toml`, `tox.ini`, `setup.cfg`, `go.mod`, the JavaScript test runners' config and `.githooks/`. The task says "A file that decides how the work is checked changed: ... Confirm before it merges", and the **Merge** button asks for a written reason, kept as the run's accepting review. The rule "Checks that changed hold the merge" is now met for Claude Code, Codex, opencode and docket.
+- What examines the agent holds the merge, for all four agents. A change to a file that decides how the work is checked no longer merges by itself: with the default verifier's pack the signal is the pack's own flags (`tautological_test`, `tests_deleted`, `test_config_changed`, `analysis_suppressed`, `dependencies_changed`, `config_changed_in_head`), now carried in the pack as data (`flags`); with no pack it is the list of files the runner records as `checks_changed` in `evidence.json`, matched by exact name (so `latest/x.md` and `contest.md` are no longer taken for tests) and widened to `pyproject.toml`, `tox.ini`, `setup.cfg`, `go.mod`, the JavaScript test runners' config and `.githooks/`. The task says "A file that decides how the work is checked changed: ... Confirm before it merges", and the **Merge** button asks for a written reason, kept as the run's accepting review. The rule "Checks that changed hold the merge" is now met for Claude Code, Codex, opencode and docket.
 - An imported card starts with less. A card that did not come from a person typing it (GitHub, Linear, a project file or an outline) now runs, in every agent, asking before each action and without web tools unless the request says otherwise, where only docket was told it was untrusted before. The run dialog starts **Ask before each action** on and **Web tools** off for it, says "This card was imported, so the agent asks before each action and has no web tools." under the switch, and you can change either for the run. opencode reaches the network on every run, so its web tools stay on. The run dialog's list of rules now counts "untrusted items" as applied for the four agents.
 - The web access a profile chose is enforced, not asked for, where the runner's `[egress] enforce` is on and the agent runs in `bwrap`: the sandbox is started without a network in every mode (`--unshare-net`), and the runner's proxy is the agent's only way out, reached through a Unix socket the sandbox shows and a small forwarder (the runner's own executable, started inside the sandbox) that answers on the sandbox's loopback, so `HTTP_PROXY` and `HTTPS_PROXY` keep working for the agent's CLI. A program that ignores the proxy settings reaches nothing, and the rules about this computer's own address and private networks hold in Open too. The run dialog's Network line says **enforced** or **not enforced on this computer**, and the Web access help changes with it. Without `bwrap` (the sandbox requirement turned off) the network cannot be closed: `tack runner doctor` and the capability report say so, and the run carries a **Web access not enforced** event with the reason. With `enforce` off nothing changes.
 - A profile chooses how far its agent may reach on the web, one setting called **Web access** in the profile editor with a help hint: **Closed** (only the model's own address), **Listed** (the model and the hosts listed in the profile's `tool_policy.allowed_hosts`) or **Open** (any public site, for a profile that browses). A new profile starts with the mode of its kind: Implementer and custom profiles Listed, Reviewer and Planner Closed, Researcher Open; the project file and `POST`/`PATCH /api/agent-profiles` carry it as `egress_mode`. When the runner's new `[egress]` table sets `enforce = true` (off by default), each run of Claude Code, Codex or opencode goes through a proxy of the runner's on loopback, told to the agent by `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`. In every mode the proxy refuses this computer's own address, private networks, link-local addresses and the cloud metadata addresses, judged on the address a name resolves to, and it connects to that address and no other. A refused destination is an event on the run's timeline ("Web access refused", with the host and why), each reached one is logged with its bytes, and over plain HTTP only `GET`, `HEAD` and `OPTIONS` to a URL of at most 2048 bytes pass. An HTTPS tunnel hides its URL, so Open limits where the agent connects, not what it sends: a public site it allows can still receive data. The run dialog's Network line names the mode (and says whether it is enforced) and `tack runner doctor` prints whether the runner enforces it. docket confines its own traffic and is not changed. `[egress] model_hosts` lists the provider hosts of an agent the runner cannot know them for (opencode).
@@ -525,7 +525,7 @@ access mode per profile, the removal of the rate card, default expiries and the 
   with "Available in the desktop app", and the cloud backup buttons (Back up now, Restore latest, Verify
   latest, refresh) are shown with "Set up cloud backup first" until it is set up; none is hidden any more.
 - **Screens say "the verifier", and name no variable or command.** The Merge step, Factory metrics, the
-  enrolment token and the runner's settings file link to the Administrator Guide in place of `prill`,
+  enrolment token and the runner's settings file link to the Administrator Guide in place of the verifier's program name,
   `TACK_RUNNER_ENROLLMENT_TOKEN`, `docket init` and `docket setup sandbox read add`. The board's "not
   installed" sentence for the verifier and the "Run again at L3" reason follow the same rule.
 - **The Automation ladder reads as one list.** Its folded sections have their disclosure marker back, and the
@@ -566,8 +566,8 @@ access mode per profile, the removal of the rate card, default expiries and the 
   completion, recovery) and the runner's engine (decisions, outcome, resume). In the frontend, `shared/`
   no longer imports from `features/`, and a test forbids it.
 - A docket run makes one copy of the code, docket's own: the runner no longer checks out a second one, and reads the base commit and the task's branch from the project's repository, whose working tree, index and `HEAD` it never changes. A command verifier (`kind = "command"`) has no working copy to read for such a run and records `attempt.verify_failed`; use `kind = "prill"`.
-- **"prill is not installed on the board" names both ways to fix it:** a `[verify]` table naming
-  prill in the runner's settings file, or `TACK_PRILL_PROGRAM`.
+- **"The verifier is not installed on the board" names both ways to fix it:** a `[verify]` table
+  in the runner's settings file, or `TACK_PRILL_PROGRAM`.
 - **The day's token limit is reserved when a run is admitted.** A run starts only if today's
   counted tokens, the limits of the project's open runs and its own fit in the day; otherwise it
   waits with "Today's token limit is reserved by 2 open runs (1 600 000 of 2 000 000)". A run
@@ -659,9 +659,9 @@ access mode per profile, the removal of the rate card, default expiries and the 
 - **The timeline words docket's escalations for a person.** It says what was asked, the label of the
   option a person picked, and "docket decided this on its own", with no option ids, policy names or
   levels. The event kinds the runner writes and the metrics query reads are one set of constants.
-- prill's fixtures are copied again from its `mrp/v1` contracts (the `coverage` stage and the
-  `m6-fields` pack are among them), and a test covers a prill that does not answer in time.
-  prill's `coverage` section is not carried into the merge-readiness pack; its stage is.
+- The default verifier's fixtures are copied again from its `mrp/v1` contracts (the `coverage` stage
+  and the `m6-fields` pack are among them), and a test covers a verifier that does not answer in time.
+  Its `coverage` section is not carried into the merge-readiness pack; its stage is.
 
 ### Removed
 
@@ -679,10 +679,9 @@ access mode per profile, the removal of the rate card, default expiries and the 
   imports without it, with a warning in the preview. A request whose `budgets` carries
   `cost_usd` is refused `field_removed`, and Claude Code is no longer given `--max-budget-usd`:
   a dollar limit stopped only the models that had a price (ADR 0024 decision 3).
-- **The live Tack + docket + prill suite leaves the tree.** `scripts/docket-prill-e2e.sh`,
-  `frontend/e2e/docket-prill.spec.ts` and `frontend/playwright.docket-prill.config.ts` now live in
-  the git-ignored `onboarding-lab/e2e/`, since the suite needs real programs and spends model calls
-  and CI never runs it.
+- **The live suite against docket and a verifier leaves the tree.** Its script, its Playwright spec
+  and its config now live in a git-ignored folder, since the suite needs real programs and spends
+  model calls and CI never runs it.
 - `make changelog`, `make changelog-release` and `cliff.toml`. The changelog is written by hand
   in each change, and a release's notes are its section here.
 
@@ -757,10 +756,10 @@ access mode per profile, the removal of the rate card, default expiries and the 
 - **The pack card says whether the pack is signed.** It showed the verdict, the criteria and the review but never
   that the verifier had signed the pack. It now reads "Signed by the verifier" with the fingerprint of what was
   signed, or "Not signed" when the pack carries no signature.
-- **The board can record a pack in prill's store.** `prill record mrp` was handed the pack Tack shows, a translation
-  prill refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now also uploads the
-  pack as prill printed it (`mrp.prill.json`), and the board hands prill that one. A run whose verifier was not
-  prill, or one made before this change, holds no such pack and is not recorded.
+- **The board can record a pack in the verifier's store.** The verifier's `record mrp` was handed the pack Tack
+  shows, a translation it refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now
+  also uploads the pack as the verifier printed it (`mrp.prill.json`), and the board hands it that one. A run whose
+  verifier was not `kind = "prill"`, or one made before this change, holds no such pack and is not recorded.
 - **A restarted runner starts from its saved session.** With a valid `session.json` in its state folder the runner stopped
   with "runner enrollment credential is required", so the spent single-use token had to be supplied again. The
   credential is now needed only when there is no saved session; if the server refuses the saved session (expired or
@@ -782,7 +781,7 @@ access mode per profile, the removal of the rate card, default expiries and the 
   (auto-start, the GitHub poll, due-soon, retention, the health watch, the remote backup) were
   fire-and-forget: a panic in one was lost without a line, and two of them had no stop signal at all.
   They now share one stop signal, finish the pass they are in, and a panic is logged with the loop's name.
-  A merge, a GitHub push or the pack going to prill, started when a request answered, is waited for
+  A merge, a GitHub push or the pack going to the verifier, started when a request answered, is waited for
   (up to ten seconds) instead of being cut off half done.
 - **A finished run's board move and its follow-up are written with its completion.** The item moved to its
   finish status and the follow-up run for a rejected change were written after the attempt had ended, each
@@ -842,9 +841,9 @@ access mode per profile, the removal of the rate card, default expiries and the 
   the run is alive. When the run ends, however it ends, the question is marked expired, and a board
   that kept such questions from before closes them when it starts. Before, they stayed pending for good
   unless the retention sweep was turned on.
-- **The Factory page finds the prill this computer verifies with.** When `TACK_PRILL_PROGRAM` is unset,
+- **The Factory page finds the verifier this computer verifies with.** When `TACK_PRILL_PROGRAM` is unset,
   the board uses the program its embedded runner verifies with before looking for `prill` on `PATH`.
-  Before, it said "prill is not installed on the board" while the runner was verifying with prill. The
+  Before, it said the verifier was not installed on the board while the runner was verifying with it. The
   sentence now says how to set it.
 - **A run that delivers no change is no longer shown as succeeded.** When an agent reports success but
   the branch equals its base, the attempt ends failed with "The agent reported success but delivered no
@@ -966,7 +965,7 @@ metrics page per project measures the loop.
 A run a normal person can start (Phases 67 and 68, ADR 0015): a project knows where its code
 is, the agent works on a branch of that folder or in the folder itself, its own model is the
 default, and a finished run hands over what it did for review. Then the first live run of
-the whole workflow, with docket as the agent and prill as the verifier, and what it found
+the whole workflow, with docket as the agent and an independent verifier, and what it found
 (ADR 0016). And a project with all its items from one outline or CSV (ADR 0017).
 
 A tag `v0.1.0-beta.10` was pushed on 2026-10-12 and withdrawn the same day: a security audit
@@ -1030,8 +1029,8 @@ one model string.
   is Tack's, not the runner's
 - **agents:** The Agents page is about this computer: the agents installed here, a test run
   with nothing typed, and docket and opencode listed beside codex and claude-code
-- **runner:** prill is the runner's native verifier (`[verify] kind = "prill"`, the default):
-  the runner hands prill the attempt's work and documents and translates its pack into
+- **runner:** the runner has a native verifier adapter (`[verify] kind = "prill"`, the default):
+  the runner hands the verifier the attempt's work and documents and translates its pack into
   `mrp-v1`; `kind = "command"` keeps the old contract
 - **cli:** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`) gives the
   embedded runner the same configuration file `tack runner start --config` reads
@@ -1111,7 +1110,7 @@ one model string.
   hold its providers, models and credentials, read-only, and nothing else there; a request
   that names no model runs on docket's own default, and the Agents page's Sign in line and the
   model field's list come from `docket setup harness --json`
-- **runner:** The prill verifier's evidence names the model that generated the work and no
+- **runner:** The default verifier's evidence names the model that generated the work and no
   longer a provider family
 
 ### Removed
@@ -1209,8 +1208,8 @@ one model string.
 
 - **book:** Every screenshot and GIF re-recorded; the tutorial records the whole workflow; the
   quick start, the agent pages and the task docs follow the new run flow
-- **testing:** `scripts/docket-prill-e2e.sh` drives the whole workflow through the UI with
-  docket and prill built from source against a local model, with a screenshot per step
+- **testing:** a live suite drives the whole workflow through the UI with
+  docket and a verifier built from source against a local model, with a screenshot per step
 - **readme:** Lead with the pitch, and re-capture the screenshots
 - **book:** Walk install to a finished agent run, every step photographed
 - **readme:** Lead with the desktop app; say what the server form is for
