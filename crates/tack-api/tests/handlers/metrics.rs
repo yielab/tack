@@ -750,7 +750,7 @@ async fn quality_is_prills_and_spend_is_tokens() {
     assert!(m.get("quality").is_none(), "{m}");
     assert_eq!(
         m["quality_unavailable"],
-        "no repository has a prill store yet"
+        "no repository has a verifier store yet"
     );
 
     // With a store: prill's figures, named as prill's, with its version.

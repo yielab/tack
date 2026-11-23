@@ -1789,7 +1789,7 @@ const MIGRATION_086: [&str; 8] = [
 ];
 
 // 087: autonomy level and merge authority per project, path/type domains, the merge ledger,
-// budgets, brief versions, and the pull-request merge facts prill records.
+// budgets, brief versions, and the pull-request merge facts the verifier records.
 const MIGRATION_087: [&str; 14] = [
     "ALTER TABLE projects ADD COLUMN autonomy_level TEXT NOT NULL DEFAULT 'L3'
         CHECK (autonomy_level IN ('L3','L4','L5'))",

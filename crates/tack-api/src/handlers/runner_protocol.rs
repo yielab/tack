@@ -2107,7 +2107,7 @@ pub async fn submit_completion(
             .await;
         }
         if let Some(app) = state.app.clone() {
-            // The pack goes to prill's store; the runner does not wait for it, and a failure
+            // The pack goes to the verifier's store; the runner does not wait for it, and a failure
             // is retried when the pull request is next followed.
             let attempt_id = attempt_id.clone();
             app.tasks.clone().spawn(async move {

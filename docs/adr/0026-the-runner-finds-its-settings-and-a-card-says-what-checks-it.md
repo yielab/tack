@@ -14,17 +14,17 @@ without one, and then it has no docket, no verifier and no branch push, with no 
 happened on every My SaaS rerun. In the same rerun the onboarding skill wrote two gate scripts
 and a content folder My SaaS never had, to check work that had no test.
 
-**If you do nothing:** every restart can silently turn docket and prill off; a card with no check
+**If you do nothing:** every restart can silently turn docket and the verifier off; a card with no check
 looks the same in the run dialog as one with three.
 
 ## Decisions
 
 | # | Decision | What a person sees |
 |---|---|---|
-| 1 | **A default place for the runner's settings.** With no `--runner-config` and no `TACK_LOCAL_RUNNER_CONFIG`, the embedded runner reads `<per-user config dir>/tack/runner.toml` when it exists. It is outside the data folder. The variable set but empty means no file | Write `~/.config/tack/runner.toml` once; docket and prill stay on across restarts |
+| 1 | **A default place for the runner's settings.** With no `--runner-config` and no `TACK_LOCAL_RUNNER_CONFIG`, the embedded runner reads `<per-user config dir>/tack/runner.toml` when it exists. It is outside the data folder. The variable set but empty means no file | Write `~/.config/tack/runner.toml` once; docket and the verifier stay on across restarts |
 | 2 | **The board names the file.** `GET /api/local-runner` carries `config_file`; the Agents page and `tack runner doctor` print it, or say there is none and what that turns off. The "prill is not installed" sentence names the `[verify]` table as well as `TACK_PRILL_PROGRAM` | "Settings from …", or "No settings file: this computer runs no docket team and verifies nothing" |
 | 3 | **A card with no acceptance check says so before it runs.** The run dialog shows a note, never a blocker, when the card's brief has no acceptance criterion | "This card has no acceptance check: nothing tests what the agent delivers, so a person reviews it" |
-| 4 | **Who makes a test, and when.** A bug's failing test is written by the run (docket's red step); a feature's tests are part of the change and prill judges them; an area with no tests at all gets no invented gate: the board says so (decision 3) and a person reviews. Onboarding uses the tests a repository already has, where they apply, and writes none | Onboarding prepares the project; it does not add scripts that check work |
+| 4 | **Who makes a test, and when.** A bug's failing test is written by the run (docket's red step); a feature's tests are part of the change and the verifier judges them; an area with no tests at all gets no invented gate: the board says so (decision 3) and a person reviews. Onboarding uses the tests a repository already has, where they apply, and writes none | Onboarding prepares the project; it does not add scripts that check work |
 
 ## Not decided
 
@@ -34,4 +34,4 @@ whoever makes the copy prepares it, from the repository's lockfile.
 
 ## Not done, on purpose
 
-No autodetection of docket or prill, no generated settings file, no editor for it in the UI.
+No autodetection of docket or the verifier, no generated settings file, no editor for it in the UI.

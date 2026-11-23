@@ -4150,7 +4150,7 @@ export interface components {
             attestation_public_key?: string | null;
             /**
              * @description Read only: why Tack could not merge by itself here, whatever the level
-             *     (GitHub polling off, no prill on the board, no public key); empty when
+             *     (GitHub polling off, no verifier on the board, no public key); empty when
              *     nothing on this board stops it.
              */
             automatic_merge_blocked_by?: string[];
@@ -4195,7 +4195,7 @@ export interface components {
              * @description How many times a rejected change goes back to the agent; 0 is never.
              */
             verify_loop_max_attempts: number;
-            /** @description The verification stages prill must require before Tack merges alone. */
+            /** @description The verification stages the verifier must require before Tack merges alone. */
             verify_require: string[];
         };
         Blocked: {
@@ -6005,7 +6005,7 @@ export interface components {
             /**
              * Format: int64
              * @description Merged and not reverted at the time of the query: no CI, defect or
-             *     window behind it, so it is not a quality figure (prill's `quality` is).
+             *     window behind it, so it is not a quality figure (the verifier's `quality` is).
              */
             merged_not_reverted: number;
             /**
@@ -6391,11 +6391,11 @@ export interface components {
             /** @description False when the idempotency key had been used: this is the first answer again. */
             made: boolean;
         };
-        /** @description What prill measured. Present only when prill answered. */
+        /** @description What the verifier measured. Present only when it answered. */
         Quality: {
             prill_version: string;
             repositories: components["schemas"]["RepositoryQuality"][];
-            /** @description Always `prill`. */
+            /** @description The verifier that measured: always `prill`, the one whose store Tack reads. */
             source: string;
         };
         QualityCut: {
@@ -6469,9 +6469,9 @@ export interface components {
             /** @description Why the waiting operations are turned down. */
             reason: string;
         };
-        /** @description One repository's figures from prill's store. */
+        /** @description One repository's figures from the verifier's store. */
         RepositoryQuality: {
-            /** @description prill's `metrics/v1` document, as prill printed it. */
+            /** @description The verifier's `metrics/v1` document, as it printed it. */
             metrics: Record<string, never>;
             /** @description `owner/repo`. */
             repository: string;
@@ -7959,7 +7959,7 @@ export interface components {
              * @description Labelled work the verifier handed to a person (`review`): neither right nor wrong.
              */
             handed_to_a_person: number;
-            /** @description Who said it: `prill` (the pack Tack reads) or `reviewer` (the Reviewer profile's verdict line). */
+            /** @description Who said it: `prill` (the verifier's pack Tack reads) or `reviewer` (the Reviewer profile's verdict line). */
             verifier: string;
             /**
              * Format: int64
@@ -8047,7 +8047,7 @@ export interface components {
             stops: components["schemas"]["StopCount"][];
             /** @description Runs that succeeded ÷ runs that ended after starting (failed or succeeded). */
             success_rate: components["schemas"]["Ratio"];
-            /** @description One entry per verifier, in order: `prill`, then `reviewer`. */
+            /** @description One entry per verifier, in order: `prill` (the verifier's pack), then `reviewer`. */
             verifier_agreement: components["schemas"]["VerifierAgreement"][];
         };
         /** @description Full workflow configuration for a project. */

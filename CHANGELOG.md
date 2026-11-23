@@ -11,6 +11,10 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+### Changed
+
+- The screens name the verifier by its role. A merge held because the verifier's pack did not say merge reads "The verifier did not say merge", a refused signature "The verifier refused the attestation", and the quality figures with no store yet "no repository has a verifier store yet". The configuration keeps its names (`[verify] kind = "prill"`, `TACK_PRILL_PROGRAM`).
+
 ### Fixed
 
 - A question waits for its person. A Claude Code, Codex or opencode run stops its clock while it waits for an answer, so a question nobody answers no longer ends the run with "The run's time ran out after 60 minutes": the run stays waiting until someone answers it or stops it, and the time limit counts only the agent's work. Tack no longer gives a question a deadline of its own, which had also cancelled a docket task whose question outlived the attempt's time; a question docket's team expires itself still ends the run as *Nobody answered*. The run's panel and **Needs you** say the time limit is paused.

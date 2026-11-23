@@ -1,9 +1,9 @@
 //! What the loops and the merge need from the part of Tack that still serves HTTP, as small
-//! ports: the prill that checks a signature and receives a pull request ([`Verifier`]), the
+//! ports: the verifier that checks a signature and receives a pull request ([`Verifier`]), the
 //! stored files of an attempt ([`Artifacts`]) and the board's live event channel
 //! ([`DomainEvents`]). `tack-api` implements each over its own state; a port stays a trait only
 //! where its implementor names an HTTP type this crate may not (`ArtifactStorage`'s body
-//! stream, the WebSocket channel, the prill process the API runs) and a test can stand a fake
+//! stream, the WebSocket channel, the verifier process the API runs) and a test can stand a fake
 //! in its place. The GitHub calls are [`crate::github_sync::GitHub`], the embedded runner's
 //! secret store is [`LocalRunnerControl`]: both live in this crate, so neither is a port.
 
@@ -15,25 +15,25 @@ use crate::events::DomainEvent;
 use crate::github_sync::GitHub;
 use crate::local_runner::LocalRunnerControl;
 
-/// What the board says when it cannot start prill; every caller reads it from here.
+/// What the board says when it cannot start the verifier; every caller reads it from here.
 pub const NOT_INSTALLED: &str = "The verifier is not installed on the board. An administrator sets it up: see the Administrator Guide";
 
-/// Why prill did not accept an attestation. The text is what the merge record and the item show.
+/// Why the verifier did not accept an attestation. The text is what the merge record and the item show.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VerifierError {
     #[error("{}", NOT_INSTALLED)]
     NotInstalled,
     #[error("the board could not stage the attestation")]
     CouldNotStage,
-    /// prill ran and refused; carries its reason.
+    /// The verifier ran and refused; carries its reason.
     #[error("{0}")]
     Refused(String),
 }
 
-/// The prill the board runs.
+/// The verifier the board runs.
 #[async_trait]
 pub trait Verifier: Send + Sync {
-    /// Whether prill accepts `envelope` signed by `public_key_pem` for `commit`: the key id it
+    /// Whether the verifier accepts `envelope` signed by `public_key_pem` for `commit`: the key id it
     /// names, or why not.
     async fn verify_attestation(
         &self,
@@ -42,7 +42,7 @@ pub trait Verifier: Send + Sync {
         commit: &str,
     ) -> Result<String, VerifierError>;
 
-    /// Called once GitHub's report on pull request `number` of `repo` is stored: tell prill what
+    /// Called once GitHub's report on pull request `number` of `repo` is stored: tell the verifier what
     /// became of it. A failure is logged by the implementor and tried again on the next tick.
     async fn pull_request_observed(&self, repo: &str, number: i64);
 }

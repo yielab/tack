@@ -184,7 +184,7 @@ impl fmt::Display for Hold {
             Hold::FromMcp => {
                 f.write_str("This run came through MCP; merge it with the Merge button")
             }
-            Hold::NotMerge => f.write_str("prill did not say merge"),
+            Hold::NotMerge => f.write_str("The verifier did not say merge"),
             Hold::LevelBelowL4 => f.write_str(
                 "This change's domain is not authorised for automatic merge (needs L4 or L5)",
             ),
@@ -381,7 +381,7 @@ mod tests {
                 Err(Hold::FromMcp),
             ),
             (
-                "auto, prill said review",
+                "auto, the verifier said review",
                 Facts {
                     decision: MergeDecision::Review,
                     ..base(Trigger::Auto)

@@ -38,7 +38,7 @@ them never measured; and Tack keeps holding a credential it does not need.
 | 7 | **docket runs from contract 1.2 (docket 0.2.0-beta.5).** Contract 1.2 lets `docket exec` read the endpoint, credential and default model from the person's own `docket setup`, makes `--model` optional, and adds an offline setup report (ready, default model, models, providers). Tack probes for it by name, as it probes 1.1; a docket without it reads **Doesn't run here: needs docket 0.2.0-beta.5 or later**. There is no interim path through `DOCKET_LLM_BASE_URL`. |
 | 8 | **The default model is the project's, for its default agent, or the agent's own.** A run's model is the one it names; otherwise the project's default model when the run uses the project's default agent; otherwise none (the agent's default). Changing the project's default agent clears its default model. The agent-profile and fleet `default_model` tiers are removed: a model string belongs to one agent, and neither a profile nor a fleet names one. |
 | 9 | **The scheduler matches the agent, not the model.** `ModelSelector`, `model_combinations` and the "model combination not declared" reason are removed. A request that names no model goes to an agent whose probe says it needs one (`requires_model`) only to fail eligibility with "<agent> needs a model named". |
-| 10 | **prill gets the model, not a family.** The verifier's evidence carries `generator.model` and no `generator.family`: the provider Tack used as a stand-in no longer exists. |
+| 10 | **The verifier gets the model, not a family.** The verifier's evidence carries `generator.model` and no `generator.family`: the provider Tack used as a stand-in no longer exists. |
 
 If you accept this table, you have accepted the ADR. Everything below is evidence.
 

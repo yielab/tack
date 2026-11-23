@@ -112,7 +112,7 @@ impl crate::Repository {
             return Ok(false);
         }
         // A held merge keeps the key id it was verified with so a tick need not run
-        // prill again; any change here may replace the key, so every unmerged
+        // the verifier again; any change here may replace the key, so every unmerged
         // attempt of the project is verified afresh.
         sqlx::query(
             "UPDATE tack_merges SET attestation_keyid = NULL WHERE project_id = ? AND merged_at IS NULL",

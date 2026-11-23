@@ -218,8 +218,8 @@ pub async fn rerun_at_l3(repo: &Repository, attempt_id: &str) -> (bool, Option<S
     (true, None)
 }
 
-/// The decision the signed statement carries, read from the envelope prill just accepted: the
-/// statement's predicate is the whole pack prill wrote, so its `recommendation.decision` is
+/// The decision the signed statement carries, read from the envelope the verifier just accepted: the
+/// statement's predicate is the whole pack it wrote, so its `recommendation.decision` is
 /// covered by the signature, unlike the pack the runner translated.
 fn statement_decision(envelope: &[u8]) -> Result<MergeDecision, String> {
     let unreadable = || "The signed statement could not be read".to_owned();

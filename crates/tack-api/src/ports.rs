@@ -1,4 +1,4 @@
-//! The ports `tack-app` calls back into, over the API's own state: the prill the board runs, the
+//! The ports `tack-app` calls back into, over the API's own state: the verifier the board runs, the
 //! artifact store and the board's event channel (`tack_app::ports`), and the GitHub the board
 //! is configured with. An event goes to the in-process bus every consumer subscribes to, and,
 //! when it has a message the open boards understand, to the WebSocket as that message.

@@ -56,13 +56,13 @@ pub struct AppState {
     /// the routes are absent, not present-and-refusing.
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
     /// The use cases a handler starts in the background after answering (a merge, a GitHub
-    /// push, the pack going to prill). Shutdown closes it and waits for them, so none is cut
+    /// push, the pack going to the verifier). Shutdown closes it and waits for them, so none is cut
     /// off half done.
     pub tasks: TaskTracker,
 }
 
 impl AppState {
-    /// The prill the board runs: the one place that asks the embedded runner.
+    /// The verifier the board runs: the one place that asks the embedded runner.
     pub async fn prill(&self) -> crate::prill::Prill {
         let runner = match &self.local_runner {
             Some(control) => control.verify_program().await,

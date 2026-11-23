@@ -96,7 +96,7 @@ pub async fn attest_verify(
                 .split_once("attestation invalid: ")
                 .map_or(line.trim_start_matches("prill: "), |(_, reason)| reason);
             Err(VerifierError::Refused(if reason.is_empty() {
-                format!("prill refused the attestation ({})", output.status)
+                format!("The verifier refused the attestation ({})", output.status)
             } else {
                 reason.to_owned()
             }))

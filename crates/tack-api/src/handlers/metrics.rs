@@ -2,8 +2,8 @@
 //! minutes and tokens, and what became of its pull requests. Every number is
 //! computed from rows; every ratio carries its numerator and denominator, and a
 //! figure with nothing to measure is `null` with its reason (`denominator_zero`
-//! or `not_measured`), never 0. Quality figures are prill's, read from its
-//! store and named as prill's. Nothing here is priced: spend is tokens.
+//! or `not_measured`), never 0. Quality figures are the verifier's, read from its
+//! store and named as its own. Nothing here is priced: spend is tokens.
 
 use crate::extract::{Json, Path, Query};
 use axum::extract::State;
@@ -92,24 +92,24 @@ pub struct Outcomes {
     pub closed: i64,
     pub reverted: i64,
     /// Merged and not reverted at the time of the query: no CI, defect or
-    /// window behind it, so it is not a quality figure (prill's `quality` is).
+    /// window behind it, so it is not a quality figure (the verifier's `quality` is).
     pub merged_not_reverted: i64,
 }
 
-/// One repository's figures from prill's store.
+/// One repository's figures from the verifier's store.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RepositoryQuality {
     /// `owner/repo`.
     pub repository: String,
-    /// prill's `metrics/v1` document, as prill printed it.
+    /// The verifier's `metrics/v1` document, as it printed it.
     #[schema(value_type = Object)]
     pub metrics: serde_json::Value,
 }
 
-/// What prill measured. Present only when prill answered.
+/// What the verifier measured. Present only when it answered.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Quality {
-    /// Always `prill`.
+    /// The verifier that measured: always `prill`, the one whose store Tack reads.
     pub source: String,
     pub prill_version: String,
     pub repositories: Vec<RepositoryQuality>,
@@ -159,7 +159,7 @@ pub struct FactoryMetrics {
     /// Tasks merged in the window whose newest merged run began by itself and whose
     /// requests never had a resolved decision, over the tasks merged in the window.
     pub lights_off_rate: Ratio,
-    /// prill's figures; absent when `quality_unavailable` says why.
+    /// The verifier's figures; absent when `quality_unavailable` says why.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<Quality>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -299,7 +299,7 @@ async fn pack_tokens(storage: &ArtifactStorage, reference: Option<&str>) -> Opti
     Some(usage.get("tokens_in")?.as_i64()? + usage.get("tokens_out")?.as_i64()?)
 }
 
-/// prill's figures for each repository the project opened pull requests in
+/// The verifier's figures for each repository the project opened pull requests in
 /// that has a store, or why there are none.
 async fn prill_quality(
     state: &AppState,
@@ -328,7 +328,7 @@ async fn prill_quality(
         }
     }
     if found.is_empty() {
-        return Err(failure.unwrap_or_else(|| "no repository has a prill store yet".to_owned()));
+        return Err(failure.unwrap_or_else(|| "no repository has a verifier store yet".to_owned()));
     }
     Ok((version, found))
 }

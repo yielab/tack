@@ -50,16 +50,16 @@ none does.
 
 - **Three copies per docket run.** Tack's runner checks out the project into
   `<state dir>/workspaces/<attempt>` (`git worktree add --detach`). For docket it only reads
-  `HEAD`, resets onto docket's branch at the end and passes the folder to prill as `--repo`.
+  `HEAD`, resets onto docket's branch at the end and passes the folder to the verifier as `--repo`.
   docket makes its own worktree under `~/.docket/workspaces/projects/<pod>-implementer/tasks/<id>`;
   that is where the agent works and the team's checks run, jailed, with no network on a
-  lights-out team. prill materializes its base, head and overlay trees from git and accepts any
+  lights-out team. The verifier materializes its base, head and overlay trees from git and accepts any
   git repository with `--base`/`--head`.
 - **Nothing installs anything.** Neither Tack's runner nor docket has a setup step; git does not
   copy ignored files, so `node_modules` is absent. Measured in a fresh worktree of My SaaS:
   `Cannot find package 'eslint'`, `Cannot find module 'vitest/config'`, `tsc` 7.0.2 (global)
   against 5.9.3 (the project's).
-- **prill already does it this way:** `prepare.command` runs once, with network, in a container
+- **The verifier already does it this way:** `prepare.command` runs once, with network, in a container
   whose result is kept; every check after it has no network; its configuration is read from the
   base commit.
 - **Token use per task (decision 5).** Bai et al. 2026 (arXiv 2604.22750): the same task varies up to

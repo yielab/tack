@@ -50,7 +50,7 @@ The Status line in each file is the authority. The last column of the table belo
 | 0019 | [the agent brings its own model](https://github.com/yielab/tack/blob/develop/docs/adr/0019-the-agent-brings-its-own-model.md) | Accepted 2026-10-13 | 0021 |
 | 0018 | [the agent reaches only what you gave it](https://github.com/yielab/tack/blob/develop/docs/adr/0018-the-agent-reaches-only-what-you-gave-it.md) | Accepted 2026-10-12 | — |
 | 0017 | [a project and its items from one outline or CSV](https://github.com/yielab/tack/blob/develop/docs/adr/0017-projects-from-an-outline-or-a-csv.md) | Accepted 2026-10-12 | — |
-| 0016 | [what the first docket + prill run found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0016-what-the-docket-and-prill-run-found.md) | Accepted 2026-10-12 | 0019, 0020 |
+| 0016 | [what the first run through docket and a verifier found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0016-what-the-docket-and-prill-run-found.md) | Accepted 2026-10-12 | 0019, 0020 |
 | 0015 | [a run a normal person can start](https://github.com/yielab/tack/blob/develop/docs/adr/0015-a-run-a-normal-person-can-start.md) | Accepted 2026-10-07 | 0019 |
 | 0014 | [agent onboarding — prerequisites discovery, validation, and configuration clarity](https://github.com/yielab/tack/blob/develop/docs/adr/0014-agent-onboarding-prerequisites-and-validation.md) | Accepted 2026-10-03 | 0015 |
 | 0013 | [every attempt leaves evidence; an independent verifier certifies it; the runner pushes, the board opens the pull request](https://github.com/yielab/tack/blob/develop/docs/adr/0013-evidence-merge-readiness-and-the-verifier-boundary.md) | Accepted 2026-10-03 | 0015, 0018, 0020 |

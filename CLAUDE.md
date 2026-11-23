@@ -29,10 +29,11 @@ every closed plan, board, handoff and audit in `docs/closed-cycles/` (frozen). A
 - **Future, not planned:** Phase 76 (`docs/plans/phase-76.md`, ADR 0025, proposed; re-read it
   against the tree before opening it), status rules, and what Phase 94 left out. Until Phase 76
   is opened the project file only creates and updates, never deletes.
-- **The live suite** lives in the git-ignored `onboarding-lab/e2e/` (`docket-prill-e2e.sh`, plus
-  `--check` for drift against the fixtures), beside the `onboard-project` skill it exercises. It
-  passed 35/35 against docket `3caccedd` (2026-11-08). CI never needs docket or prill: every other
-  docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
+- **The live suite** lives in the git-ignored `onboarding-lab/e2e/` (script names in
+  `CLAUDE.local.md`; it also has a `--check` mode for drift against the fixtures), beside the
+  `onboard-project` skill it exercises. It passed 35/35 against docket `3caccedd` (2026-11-08). CI
+  never needs docket or a verifier: every other docket test runs against the in-process fake in
+  `crates/tack-runner/tests/fake_docket/`.
 - **Evals:** the development crate `tack-evals` (`evals/`, baselines in `evals/baselines/`) runs
   regression, safety and verifier suites with real models at integration only, never in CI.
 - **How work is cut:** cards for Sonnet and Haiku agents; a card runs only the tests of what it
@@ -41,7 +42,8 @@ every closed plan, board, handoff and audit in `docs/closed-cycles/` (frozen). A
 Rules that history taught: never add a `Co-Authored-By` trailer (the history was rewritten on
 2026-10-12 to remove 159 of them); never name a real project in a versioned file or a commit message (the history
 was rewritten on 2026-11-10 to remove one, so the fictional project is My SaaS); `CHANGELOG.md`'s `[Unreleased]` is written by hand in the
-change that makes it true; the book is three guides (User, Administrator, Developer) and the
+change that makes it true; the verifier is named by its role, prill only as an example or where it is typed (`kind = "prill"`,
+`TACK_PRILL_PROGRAM`), never linked; the book is three guides (User, Administrator, Developer) and the
 first two carry no source paths, test names or phase numbers. The docs describe `develop` with no version attached:
 never "since vX", "new in", "used to"; a version is named only where a reader needs it to act (the oldest
 docket Tack works with, upgrading), the next release only in the roadmap, history only in `CHANGELOG.md`. Decisions go in an ADR, intent in

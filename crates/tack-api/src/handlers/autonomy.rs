@@ -61,7 +61,7 @@ pub struct AutonomySettings {
     pub level: String,
     /// Replaces the project's domains.
     pub domains: Vec<DomainSettings>,
-    /// The verification stages prill must require before Tack merges alone.
+    /// The verification stages the verifier must require before Tack merges alone.
     pub verify_require: Vec<String>,
     /// PEM public key the signed pack is checked against.
     pub attestation_public_key: Option<String>,
@@ -71,7 +71,7 @@ pub struct AutonomySettings {
     /// Merge when a person moves the task to Done.
     pub merge_on_done: bool,
     /// Read only: why Tack could not merge by itself here, whatever the level
-    /// (GitHub polling off, no prill on the board, no public key); empty when
+    /// (GitHub polling off, no verifier on the board, no public key); empty when
     /// nothing on this board stops it.
     #[serde(default)]
     #[schema(read_only)]

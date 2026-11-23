@@ -1116,7 +1116,7 @@ async fn build_snapshot(
     if let Some(verify) = input.verify {
         snapshot["verify"] = json!(verify);
     }
-    // The stages prill must require for this project; the runner sends them as
+    // The stages the verifier must require for this project; the runner sends them as
     // its `--config` layer. Absent means the project requires none.
     if let Ok(Some(settings)) =
         queries::autonomy::project_settings(repo, &item.project_id.to_string()).await

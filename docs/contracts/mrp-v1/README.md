@@ -5,11 +5,11 @@ The **Merge Readiness Pack** (`mrp-v1`) is a JSON document that certifies whethe
 ## Who produces it
 
 The runner, after an attempt, from what an independent verifier says — Tack never contains
-the verifier. The verifier is **prill** by default (`[verify]` with `kind = "prill"`,
-`docs/CONFIG.md`): the runner snapshots the attempt's workspace, gives prill its own input
-documents, and translates the `mrp/v1` pack prill prints (camelCase; decisions
+the verifier. The default verifier (prill) is the one in use by default (`[verify]` with `kind = "prill"`,
+`docs/CONFIG.md`): the runner snapshots the attempt's workspace, gives the verifier its own input
+documents, and translates the `mrp/v1` pack it prints (camelCase; decisions
 `auto-merge-eligible` / `human-review` / `reject`) into this contract
-(`crates/tack-runner/src/verify/prill.rs`). `fixtures/prill/` holds prill's own packs the
+(`crates/tack-runner/src/verify/prill.rs`). `fixtures/prill/` holds the default verifier's own packs the
 translation is tested on. A verifier of your own (`kind = "command"`) writes `mrp-v1`
 directly. Tack drafts this contract as the consumer: it reads the versions (`v`) it knows
 and never guesses at one it does not.
@@ -37,7 +37,7 @@ The pack is defined by `schema.json` (JSON Schema 2020-12) and contains:
 - **risk**: Risk tier (low|medium|high) and reasons
 - **recommendation**: Merge decision (merge|review|reject) and rationale
 - **usage**: Verifier token consumption (tokens_in, tokens_out)
-- **signature**: `{"kind": "none"}`, or `{"kind": "in-toto", "statement_sha256"}` when the runner's `[verify] sign_key` made prill sign: the hash of the staged `mrp.intoto.json` envelope (media type `application/vnd.in-toto+json`)
+- **signature**: `{"kind": "none"}`, or `{"kind": "in-toto", "statement_sha256"}` when the runner's `[verify] sign_key` made the verifier sign: the hash of the staged `mrp.intoto.json` envelope (media type `application/vnd.in-toto+json`)
 - **produced_by**: Producer identification (program, version)
 - **stages** (optional): every stage the verifier knows, each `{name, status}` plus an optional `reason`; absent when the verifier reports none
 - **flags** (optional): what the verifier flags about the change, each `{code, detail}`; absent when the producer does not report flags, `[]` when it looked and found none. A flag of `tautological_test`, `tests_deleted`, `test_config_changed`, `analysis_suppressed`, `dependencies_changed` or `config_changed_in_head` holds the automatic merge

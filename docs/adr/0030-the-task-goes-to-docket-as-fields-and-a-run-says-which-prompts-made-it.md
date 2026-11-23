@@ -123,7 +123,7 @@ beside `steps` (the rows the run wrote) and reads the last step's `summary` as a
   Tack already names the pipeline per type (`pipeline_by_type`); that is the lever.
 - **Reading docket's `/metrics`.** Tack's factory metrics are its own; a cache-hit ratio per role
   belongs to docket's dashboard row (its ADR 0033).
-- **Sending `claims` to the verifier.** prill's `attempt-evidence/v0` leaves `Claim` unspecified
+- **Sending `claims` to the verifier.** Its `attempt-evidence/v0` leaves `Claim` unspecified
   (`contracts/attempt-evidence-v0/schema.json`); nothing can be sent against an empty schema.
 - **A new event kind per hop record.** The timeline already has a line per hop from the trace;
   the record is read once, at settle, into `steps`. A second line per hop would say the same thing

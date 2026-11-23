@@ -31,7 +31,7 @@ pub struct WorkQuality {
     pub rework_per_item: Ratio,
     /// Pull requests reverted ÷ pull requests merged or reverted.
     pub revert_after_merge: Ratio,
-    /// One entry per verifier, in order: `prill`, then `reviewer`.
+    /// One entry per verifier, in order: `prill` (the verifier's pack), then `reviewer`.
     pub verifier_agreement: Vec<VerifierAgreement>,
     pub pass_pow_k: PassPowK,
     /// Questions put to a person, by agent and kind.
@@ -47,7 +47,7 @@ pub struct WorkQuality {
 /// not reverted; any other task has no label and is not counted.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct VerifierAgreement {
-    /// Who said it: `prill` (the pack Tack reads) or `reviewer` (the Reviewer profile's verdict line).
+    /// Who said it: `prill` (the verifier's pack Tack reads) or `reviewer` (the Reviewer profile's verdict line).
     pub verifier: String,
     /// Said merge on good work, or reject on bad work.
     pub agreed: i64,
@@ -395,7 +395,7 @@ fn reviewer_words(attempts: &[&QualityAttempt]) -> HashMap<String, MergeDecision
         .collect()
 }
 
-/// Every quality figure of the window from the attempts' rows, prill's word on each attempt
+/// Every quality figure of the window from the attempts' rows, the verifier's word on each attempt
 /// that has a pack, and the questions asked.
 pub(super) fn work_quality(
     attempts: &[QualityAttempt],
@@ -516,7 +516,7 @@ mod tests {
         );
     }
 
-    /// The Reviewer's word is read from the attempts and counted beside prill's, never mixed into it.
+    /// The Reviewer's word is read from the attempts and counted beside the verifier's, never mixed into it.
     #[test]
     fn each_verifier_is_counted_on_its_own_word() {
         let mut approved_bad = attempt("approved-bad");
