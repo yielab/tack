@@ -165,28 +165,28 @@ controls to filter, edit and rearrange the columns.
 
 ---
 
-## Calendar
-
-Monthly grid positioned by due date. Drag to reschedule.
-
-- Work appears on the day of its due date. Work without one is listed in the **Unscheduled** tray under the grid.
-- **An item that holds work** (an epic, a building, a course) with a due date is a **milestone** on that day: a chip with its type and title, at the top of the day. It is not dragged, and it never appears in the tray; set its date on its page. A project with no such item looks as it always did.
-- **Drag** a piece of work from one day to another to change its due date, or from the tray onto a day to schedule it. Drop an item on the tray to clear its due date.
-- **← Previous**, **Next →** and **Today** move between months.
-- Click an item to open the item drawer.
-
----
-
 ## Timeline
+
+When work is due and how long it spans. A switch beside the title, **Bars** or **Month**, chooses the layout; the choice is in the page's address, so a link opens the same one, and Bars is where it starts. Click an item in either layout to open the item drawer.
+
+### Bars
 
 Gantt-style horizontal bar chart. Drag to reschedule.
 
 - Each piece of work with a start date or a due date is a bar spanning its dates.
-- **An item that holds work** (an epic, a building, a course) is a **summary bar**: a flat bar, with its type and title, from the earliest start of its work to the latest due date of its work, with its work listed under it. The arrow at its left folds the work away and back. Because it sums up its work, it cannot be dragged and its cursor says so: move the work to move the bar. The item's own due date is a diamond on its row, and the bar turns red, with a warning mark, when its work ends after that date. Rows follow the tree: an item, then what is under it. A project with no such item looks as it always did.
+- **An item that holds work** (an epic, a building, a course) is a **summary bar**: a flat bar, with its type and title, from the earliest start of its work to the latest due date of its work, with its work listed under it. The arrow at its left folds the work away and back. Because it sums up its work, it cannot be dragged and its cursor says so: move the work to move the bar. The item's own due date is a diamond on its row, and the bar turns red, with a warning mark, when its work ends after that date. Rows follow the tree: an item, then what is under it.
 - **Drag a bar** sideways to shift both dates. **Drag either edge** to change the start date or the due date on its own.
-- **Week**, **Month** and **Quarter** in the toolbar set the zoom; **Today** returns to the present.
+- **Weeks**, **Months** and **Quarters** set how much time the chart shows; **← Previous**, **Today** and **Next →** move through it.
 - An item blocked by another carries a marker.
-- Scroll sideways to see a longer project. Click a bar to open the item drawer.
+
+### Month
+
+Monthly grid positioned by due date. Drag to reschedule.
+
+- Work appears on the day of its due date. Work without one is listed in the **Unscheduled** tray under the grid.
+- **An item that holds work** (an epic, a building, a course) with a due date is a **milestone** on that day: a chip with its type and title, at the top of the day. It is not dragged, and it never appears in the tray; set its date on its page.
+- **Drag** a piece of work from one day to another to change its due date, or from the tray onto a day to schedule it. Drop an item on the tray to clear its due date.
+- **← Previous**, **Today** and **Next →** move between months.
 
 ---
 
