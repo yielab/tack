@@ -817,7 +817,7 @@ describe('Settings panels', () => {
       expect(has('automation-merge', 'input[name="autonomy-level"]')).toBe(false); // the ladder above is the selector
       expect(has('automation-merge', 'textarea[aria-label="Public key"]')).toBe(true);
       expect(has('automation-merge', 'input[aria-label="Tokens per day"]')).toBe(false);
-      for (const label of ['Tokens per day', 'Automatic merges per day', 'Items waiting at once', 'Provisional tokens per run']) {
+      for (const label of ['Tokens per day', 'Automatic merges per day', 'Items waiting at once', 'Waiting for a person at once', 'Provisional tokens per run']) {
         expect(has('automation-limits', `input[aria-label="${label}"]`), label).toBe(true);
       }
     });
@@ -930,6 +930,16 @@ describe('Settings panels', () => {
       tokens.dispatchEvent(new Event('change', { bubbles: true }));
       await flush();
       expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000 });
+
+      const waiting = withInput(container, 'Waiting for a person at once');
+      waiting.value = '4';
+      waiting.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000, waiting_max: 4 });
+      waiting.value = '';
+      waiting.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(autonomyPuts().at(-1).budgets.waiting_max).toBeNull();
 
       btn(container, "Fill the example stages").click();
       await flush();

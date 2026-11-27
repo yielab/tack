@@ -14,10 +14,11 @@ const BUDGETS = [
   { key: 'tokens_per_day', label: 'Tokens per day', integer: true },
   { key: 'auto_merges_per_day', label: 'Automatic merges per day', integer: true },
   { key: 'queue_items_max', label: 'Items waiting at once', integer: true },
+  { key: 'waiting_max', label: 'Waiting for a person at once', integer: true },
 ] as const;
 
 /**
- * Limits: what the project may spend or queue. Tokens only. Every field saves on
+ * Limits: what the project may spend or queue, and how much may wait for a person. Tokens only. Every field saves on
  * change (`PUT /projects/{id}/autonomy`, the whole object, through the ladder's `save`).
  */
 const Limits: Component<{
@@ -87,6 +88,10 @@ const Limits: Component<{
                   )}
                 </For>
               </div>
+              <Note testid="waiting-max-note">
+                Waiting for a person at once counts the questions, reviews, failures and changes to apply that wait for you.
+                At that number auto-start starts nothing new until one is decided; 0 keeps it paused. Empty means no limit.
+              </Note>
             </FieldShell>
 
             <FieldShell label="Limit for a run whose profile sets none">
