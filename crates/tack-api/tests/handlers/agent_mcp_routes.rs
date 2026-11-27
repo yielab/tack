@@ -62,6 +62,11 @@ const TOOLS: &[Tool] = &[
     ),
     ("create_project", OperatorOnly, &[("POST", "/api/projects")]),
     (
+        "plan_folder",
+        Agent,
+        &[("POST", "/api/projects/{p}/folder/plan")],
+    ),
+    (
         "create_outline",
         OperatorOnly,
         &[
