@@ -274,34 +274,61 @@ test.describe.serial('README screenshots', () => {
     // Items are always created at the initial status (Backlog).
     // We PATCH each one to its target status after creation.
     // due_date must be a full ISO-8601 datetime.
+    // Every item is written for a person first (its description) and says when it is done; two
+    // Backlog items have no Done when yet, so the board's "Not ready" warning shows where it belongs.
     const items: Array<{
       title: string;
       priority: string;
       targetStatus: string;
+      description: string;
+      done?: string;
       due_date?: string;
     }> = [
       // Backlog
-      { title: 'User research & interviews', priority: 'medium', targetStatus: 'Backlog' },
-      { title: 'Analytics event schema', priority: 'low', targetStatus: 'Backlog' },
-      { title: 'Onboarding flow wireframes', priority: 'high', targetStatus: 'Backlog' },
+      { title: 'User research & interviews', priority: 'medium', targetStatus: 'Backlog',
+        description: 'Talk to eight customers who tried the beta and stopped using it within a week. We want to know what they expected on the first day and where they got stuck.' },
+      { title: 'Analytics event schema', priority: 'low', targetStatus: 'Backlog',
+        description: 'Name the events the product sends (sign-up, first project, first invite) so marketing and engineering count the same things.' },
+      { title: 'Onboarding flow wireframes', priority: 'high', targetStatus: 'Backlog',
+        description: 'Sketch the first five minutes: sign-up, the empty board, and the first task. Keep it to three screens.',
+        done: 'The three screens are reviewed with product and linked from the launch plan.' },
       // To Do
-      { title: 'Landing page copywriting', priority: 'medium', targetStatus: 'To Do' },
-      { title: 'Pricing page design', priority: 'medium', targetStatus: 'To Do' },
+      { title: 'Landing page copywriting', priority: 'medium', targetStatus: 'To Do',
+        description: 'Write the hero, the three feature blocks and the FAQ for the relaunched landing page, in the voice of the brand guide.',
+        done: 'Marketing signs off the copy and it is in the CMS as a draft.' },
+      { title: 'Pricing page design', priority: 'medium', targetStatus: 'To Do',
+        description: 'Show the two plans side by side with the yearly discount, and answer the four questions sales hears most.',
+        done: 'The design is approved and the page builds from it on staging.' },
       // In Progress — with due dates so timeline bars show up
-      { title: 'Auth system — OAuth2 + session', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(10) },
-      { title: 'Dashboard charts & burndown', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(15) },
-      { title: 'REST API documentation', priority: 'medium', targetStatus: 'In Progress', due_date: daysFromNow(20) },
+      { title: 'Auth system — OAuth2 + session', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(10),
+        description: 'People sign in with Google or GitHub and stay signed in when they come back. Signing out from settings signs them out on every device.' },
+      { title: 'Dashboard charts & burndown', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(15),
+        description: 'The dashboard shows the sprint burndown and the weekly throughput, so a lead sees at a glance whether the sprint will land.',
+        done: 'Both charts render from real sprint data and stay readable on a laptop screen.' },
+      { title: 'REST API documentation', priority: 'medium', targetStatus: 'In Progress', due_date: daysFromNow(20),
+        description: 'Every public endpoint has a page: what it does, an example request and answer, and the errors it returns. A partner should build an integration without asking us.',
+        done: 'Every public endpoint is documented and the examples run against staging.' },
       // In Review
-      { title: 'Board drag-and-drop polish', priority: 'high', targetStatus: 'In Review' },
-      { title: 'Dark mode contrast fixes', priority: 'medium', targetStatus: 'In Review' },
+      { title: 'Board drag-and-drop polish', priority: 'high', targetStatus: 'In Review',
+        description: 'Dragging a card feels steady: it never jumps, the drop target is clear, and the keyboard can do the same move.',
+        done: 'A card moves between columns by mouse and by keyboard without a jump.' },
+      { title: 'Dark mode contrast fixes', priority: 'medium', targetStatus: 'In Review',
+        description: 'Some labels are hard to read in dark mode. Bring every text and icon up to the contrast the accessibility guide asks for.',
+        done: 'Every screen passes the contrast check in dark mode.' },
       // Done
-      { title: 'Repo & CI setup', priority: 'high', targetStatus: 'Done' },
-      { title: 'Tech stack decision', priority: 'medium', targetStatus: 'Done' },
-      { title: 'Design system tokens', priority: 'medium', targetStatus: 'Done' },
+      { title: 'Repo & CI setup', priority: 'high', targetStatus: 'Done',
+        description: 'One repository, and a pipeline that builds and tests every change before it is merged.',
+        done: 'A pull request cannot merge while the pipeline is red.' },
+      { title: 'Tech stack decision', priority: 'medium', targetStatus: 'Done',
+        description: 'Choose the frameworks we build on and write down why, so nobody has to reopen the question.',
+        done: 'The decision record is written and the team agreed to it.' },
+      { title: 'Design system tokens', priority: 'medium', targetStatus: 'Done',
+        description: 'Colours, type and spacing live in one place, and every screen takes them from there.',
+        done: 'Every screen reads its colours and spacing from the tokens.' },
     ];
 
     for (const item of items) {
-      const { targetStatus, ...createData } = item;
+      const { targetStatus, done, ...createData } = item;
       const r = await request.post(`${API}/projects/${projectId}/items`, {
         data: { ...createData, item_type: 'task' },
       });
@@ -309,6 +336,12 @@ test.describe.serial('README screenshots', () => {
 
       const created = await r.json();
       itemIds[item.title] = created.id;
+      if (done) {
+        const brief = await request.put(`${API}/items/${created.id}/brief`, {
+          data: { acceptance: [{ kind: 'manual', id: 'done', title: done, text: done }], constraints: [] },
+        });
+        expect(brief.ok(), `brief "${item.title}": ${brief.status()}`).toBeTruthy();
+      }
       if (targetStatus !== 'Backlog') {
         const patch = await request.patch(`${API}/items/${created.id}`, {
           data: { status: targetStatus },

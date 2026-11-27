@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -35,6 +35,16 @@ const OTHER_ITEMS = [
   'Migrate DNS to the new host',
   'Refresh the screenshots in the docs',
 ];
+/** Opens "Who does it" behind the Agent row's Change…, picks Claude Code (and `profile` when
+ *  given), and closes it again. */
+async function chooseAgentAndProfile(dialog: Locator, profile?: string): Promise<void> {
+  const change = dialog.getByRole('button', { name: 'Change…', exact: true });
+  if ((await change.getAttribute('aria-expanded')) !== 'true') await change.click();
+  await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
+  if (profile) await dialog.getByRole('radio', { name: profile, exact: true }).check();
+  if ((await change.getAttribute('aria-expanded')) === 'true') await change.click();
+}
+
 const PROFILE_NAME = 'Announcement writer';
 const PROFILE_INSTRUCTIONS =
   'Write the launch announcement for the relaunched marketing site as a blog post of about 400 words: ' +
@@ -412,12 +422,12 @@ test.describe.serial('tutorial screenshots', () => {
     await page
       .getByRole('button', { name: `Run with agent: ${RUN_ITEM_TITLE}` })
       .click();
-    const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+    const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
     await expect(dialog).toBeVisible();
     await page.waitForTimeout(600);
-    // "Who does it": the agent is a row of choices, then the profile a radio.
-    await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
-    await dialog.getByRole('radio', { name: PROFILE_NAME, exact: true }).check();
+    // The Agent row's Change… opens "Who does it": the agent is a row of choices, then the profile a
+    // radio. It is closed again, so the capture shows the dialog as a person first sees it.
+    await chooseAgentAndProfile(dialog, PROFILE_NAME);
     await page.waitForTimeout(500);
     await expect(dialog.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled();
     await dialog.screenshot({
@@ -598,10 +608,10 @@ test.describe('workflow gif', () => {
 
     // ── Run it with Claude Code ────────────────────────────────────────────
     await page.getByRole('button', { name: `Run with agent: ${GIF_ITEM}` }).click();
-    const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+    const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
     await expect(dialog).toBeVisible();
     await page.waitForTimeout(1500);
-    await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
+    await chooseAgentAndProfile(dialog);
     await page.waitForTimeout(1200);
     await dialog.getByRole('button', { name: 'Start run', exact: true }).click();
     await expect(dialog).toBeHidden();
