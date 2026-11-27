@@ -136,6 +136,19 @@ describe('List: groups and work', () => {
     expect(writes().map((w) => w.body)).toEqual([{ parent_id: 'epic2' }]);
   });
 
+  it('delete_is_in_the_row_menu_not_a_button_of_the_row_and_asks_before_it_deletes', async () => {
+    const c = await mountProjectView(() => <List />, 'list', { items: ITEMS });
+    expect(row(c, 'loose').querySelector('button[aria-label="Delete Fix typo"]')).toBeNull();
+    row(c, 'loose').querySelector<HTMLButtonElement>('button[aria-label="More actions for Fix typo"]')!.click();
+    await flush();
+    const entries = [...c.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map((b) => b.textContent);
+    expect(entries).toEqual(['Move under…', 'Delete']);
+    [...c.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Delete')!.click();
+    await flush();
+    expect(document.body.textContent).toContain('Delete item?');
+    expect(vi.mocked(fetch).mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE')).toBe(false);
+  });
+
   it('plus_on_a_row_opens_the_form_for_a_child_and_opens_the_row_to_show_it', async () => {
     const c = await mountProjectView(() => <List />, 'list', { items: ITEMS });
     expect(rowIds(c)).not.toContain('form');

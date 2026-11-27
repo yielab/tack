@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import List from './List';
 import { flush } from '../../test/flush';
+import type { Item } from '../../shared/types';
 import { makeItem, mountProjectView, unmountProjectViews } from '../../test/mountProjectView';
 
 afterEach(unmountProjectViews);
@@ -277,6 +278,58 @@ describe('List filter', () => {
     expect(rowIds(c)).toEqual([]); // Beta is running, not failed
     await choose(runBox(c), '');
     expect(rowIds(c)).toEqual(['b']);
+  });
+});
+
+describe('List readiness', () => {
+  beforeEach(() => localStorage.clear());
+
+  const brief = (not_ready: string | null, risk: 'low' | 'medium' | 'high' | null = null) =>
+    ({ brief_summary: { done_when: not_ready === null, checks: 0, risk, not_ready } }) as Partial<Item>;
+  const notReadyButton = (c: HTMLElement) =>
+    [...c.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Not ready')!;
+
+  it('a_row_says_what_is_missing_in_amber_text_and_shows_a_medium_or_high_risk_chip', async () => {
+    const c = await mountProjectView(() => <List />, 'list', {
+      items: [
+        makeItem({ id: 'a', title: 'Alpha', created_at: '2026-01-01T00:00:00Z', ...brief('no Done when', 'high') }),
+        makeItem({ id: 'b', title: 'Beta', created_at: '2026-01-02T00:00:00Z', ...brief(null, 'low') }),
+        makeItem({ id: 'c', title: 'Gamma', created_at: '2026-01-03T00:00:00Z' }),
+      ],
+    });
+    const row = (id: string) => c.querySelector<HTMLElement>(`[data-item-id="${id}"]`)!;
+    expect(row('a').querySelector('[data-testid="not-ready"]')?.textContent).toBe('Not ready: no Done when');
+    expect(row('a').querySelector('[data-testid="risk-chip"]')?.textContent).toBe('Risk: high');
+    expect(row('b').querySelector('[data-testid="not-ready"]')).toBeNull();
+    expect(row('b').querySelector('[data-testid="risk-chip"]')).toBeNull();
+    expect(row('c').querySelector('[data-testid="not-ready"]')).toBeNull();
+  });
+
+  it('the_not_ready_filter_keeps_only_the_tasks_the_api_calls_not_ready_and_clears_with_the_others', async () => {
+    const c = await mountProjectView(() => <List />, 'list', {
+      items: [
+        makeItem({ id: 'a', title: 'Alpha', created_at: '2026-01-01T00:00:00Z', ...brief('no Done when') }),
+        makeItem({ id: 'b', title: 'Beta', created_at: '2026-01-02T00:00:00Z', ...brief(null) }),
+        makeItem({ id: 'c', title: 'Gamma', created_at: '2026-01-03T00:00:00Z', ...brief('no check a machine runs') }),
+      ],
+    });
+    expect(notReadyButton(c).disabled).toBe(false);
+    expect(c.textContent).not.toContain('The board does not say which tasks are ready yet');
+    notReadyButton(c).click();
+    await flush();
+    expect(notReadyButton(c).getAttribute('aria-pressed')).toBe('true');
+    expect(rowIds(c)).toEqual(['a', 'c']);
+    expect(c.textContent).toContain('2 of 3 items match');
+    [...c.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Clear filter')!.click();
+    await flush();
+    expect(rowIds(c)).toEqual(['a', 'b', 'c']);
+    expect(notReadyButton(c).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('the_not_ready_filter_is_disabled_with_its_reason_when_no_task_carries_a_brief_summary', async () => {
+    const c = await mountProjectView(() => <List />, 'list', { items: [makeItem({ id: 'a', title: 'Alpha' })] });
+    expect(notReadyButton(c).disabled).toBe(true);
+    expect(c.textContent).toContain('The board does not say which tasks are ready yet');
   });
 });
 

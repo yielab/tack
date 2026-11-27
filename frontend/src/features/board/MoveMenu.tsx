@@ -97,7 +97,7 @@ const MoveMenu: Component<{
         // touch screen, which has no hover, nor while its menu is open.
         class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
         style={{
-          width: '24px', height: '24px', padding: 0, border: 'none', 'border-radius': '50%',
+          width: '24px', height: '24px', padding: 0, border: 'none', 'border-radius': 'var(--radius-md)',
           background: 'var(--color-bg-panel)', color: 'var(--color-text-secondary)', cursor: 'pointer',
           display: 'grid', 'place-items': 'center', 'flex-shrink': 0,
           opacity: open() ? 1 : undefined,

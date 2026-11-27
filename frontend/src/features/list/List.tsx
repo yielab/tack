@@ -30,12 +30,13 @@ import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import {
   cardRun, newestRunByItem, passesFilters, type CardRun, type RunFilter,
 } from '../../shared/runWithAgent/cardRun';
-import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2, FiEdit2 } from 'solid-icons/fi';
+import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiMaximize2, FiMinimize2, FiEdit2 } from 'solid-icons/fi';
 import Card from '../../shared/ui/Card';
 import {
   ACTIONS_REM, COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, emptyColumns, matchesQuery, pruneTree, visibleRows,
   type ColDef, type EditableKey, type ItemNode, type SortDir, type SortKey,
 } from './listRows';
+import { NotReadyLine, RiskChip, listsBriefs, notReadyOf } from '../board/briefSummary';
 import { hasColumnChoice, loadDensity, loadHiddenColumns, saveDensity, saveHiddenColumns, type Density } from './listPrefs';
 
 
@@ -105,6 +106,8 @@ export default function List() {
   const [sort, setSort] = createSignal<{ key: SortKey; dir: SortDir } | null>(null);
   const [query, setQuery] = createSignal('');
   const [runFilter, setRunFilter] = createSignal<RunFilter | ''>('');
+  // Only the tasks the API says cannot be verified yet.
+  const [notReadyOnly, setNotReadyOnly] = createSignal(false);
   // Until the person picks columns, the ones no item has a value in stay hidden.
   const [chosen, setChosen] = createSignal(hasColumnChoice());
   const [hidden, setHidden] = createSignal(loadHiddenColumns());
@@ -152,16 +155,21 @@ export default function List() {
   });
   const pointsWord = () => vocabulary()?.story_points?.toLowerCase();
 
-  const filtering = () => query().trim() !== '' || runFilter() !== '';
+  const filtering = () => query().trim() !== '' || runFilter() !== '' || notReadyOnly();
+  // The filter has nothing to look at until the API sends at least one task's brief summary.
+  const knowsReadiness = createMemo(() => listsBriefs(items() ?? []));
   const narrowed = () => filtering() || activeScope() !== 'everything';
   const clearFilter = () => {
     setQuery('');
     setRunFilter('');
+    setNotReadyOnly(false);
     setScope('everything');
   };
   const keep = (item: Item) => {
     const run = runFilter();
-    return matchesQuery(item, query()) && (run === '' || passesFilters(runOf(item), new Set([run])));
+    return matchesQuery(item, query())
+      && (run === '' || passesFilters(runOf(item), new Set([run])))
+      && (!notReadyOnly() || notReadyOf(item) != null);
   };
 
   const shownHidden = createMemo(() =>
@@ -403,7 +411,7 @@ export default function List() {
       <div class="sticky top-0 z-10 bg-app pb-4">
         <div class="flex items-end gap-2.5">
           <div class="min-w-0">
-            <h1 class="text-content m-0 leading-tight truncate" style={{ 'font-size': '2.125rem' }}>
+            <h1 class="text-title text-content m-0 truncate">
               {project()?.name || 'List View'}
             </h1>
             <p class="text-small text-content-subtle">
@@ -442,19 +450,31 @@ export default function List() {
             value={query()}
             onInput={(e) => setQuery(e.currentTarget.value)}
             aria-label="Filter items"
-            class="min-h-9 px-3.5 py-1.5 rounded-full text-sm w-56 max-w-full border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+            class="min-h-9 px-3.5 py-1.5 rounded-md text-sm w-56 max-w-full border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
           />
           <select
             aria-label="Filter by work"
             value={runFilter()}
             onChange={(e) => setRunFilter(e.currentTarget.value as RunFilter | '')}
-            class="min-h-9 px-3.5 rounded-full text-sm border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+            class="min-h-9 px-3.5 rounded-md text-sm border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
           >
             <option value="">Any work</option>
             <For each={RUN_FILTERS}>
               {(f) => <option value={f.value} selected={runFilter() === f.value}>{f.label}</option>}
             </For>
           </select>
+          {/* Refinement of the work filters: the tasks whose brief says what is missing to verify them. */}
+          <Button
+            type="button"
+            variant="secondary"
+            aria-pressed={notReadyOnly()}
+            disabled={!knowsReadiness()}
+            reason={knowsReadiness() ? undefined : 'The board does not say which tasks are ready yet'}
+            onClick={() => setNotReadyOnly((on) => !on)}
+            style={notReadyOnly() ? { 'background-color': 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' } : undefined}
+          >
+            Not ready
+          </Button>
           {/* Only a project with groups has anything to choose between. */}
           <Show when={hasGroups()}>
             <div role="group" aria-label="Show" class="inline-flex items-center gap-1.5">
@@ -465,7 +485,7 @@ export default function List() {
                     type="button"
                     aria-pressed={scope() === choice.value}
                     onClick={() => setScope(choice.value)}
-                    class="min-h-9 rounded-full px-3.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+                    class="min-h-9 rounded-md px-3.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
                     style={{
                       'background-color': scope() === choice.value ? 'var(--color-accent-soft)' : 'var(--color-bg-subtle)',
                       color: scope() === choice.value ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',
@@ -546,18 +566,13 @@ export default function List() {
               <p
                 role="alert"
                 data-testid="list-refusal"
-                class="mb-2 flex items-center gap-2 rounded-md px-3.5 py-2 text-small font-semibold"
-                style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
+                class="mb-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-3.5 py-2 text-small font-semibold"
+                style={{ color: 'var(--color-danger-700)' }}
               >
                 <span class="min-w-0 flex-1">{why()}</span>
-                <button
-                  type="button"
-                  onClick={() => setRefusal(null)}
-                  class="flex-none rounded-full px-2 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
-                  style={{ border: '1px solid currentColor' }}
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={() => setRefusal(null)}>
                   Dismiss
-                </button>
+                </Button>
               </p>
             )}
           </Show>
@@ -620,7 +635,7 @@ export default function List() {
                               <button
                                 type="button"
                                 onClick={() => toggleSort(c.key as SortKey)}
-                                class="max-w-full inline-flex items-center gap-1 rounded-full text-micro font-bold uppercase tracking-wider text-content-subtle hover:text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+                                class="max-w-full inline-flex items-center gap-1 rounded-sm text-micro font-bold uppercase tracking-wider text-content-subtle hover:text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
                               >
                                 <span class="truncate">{headerLabel(c)}</span>
                                 <Show when={sort()?.key === c.key}>
@@ -701,7 +716,7 @@ export default function List() {
   );
 }
 
-// Sortable item row — a pill on the page ground, one cell per shown column.
+// Sortable item row — a white row on the page ground, one cell per shown column.
 function ItemRow(props: {
   item: ItemNode;
   types: ItemTypeDef[];
@@ -737,11 +752,11 @@ function ItemRow(props: {
       data-testid="list-row"
       data-item-id={props.item.id}
       data-holds-work={isGroup() ? 'true' : 'false'}
-      class={`group relative rounded-full transition-[box-shadow,border-color,opacity] duration-200 ${sortable.isActiveDraggable ? 'opacity-50' : ''}`}
+      class={`group relative rounded-lg transition-[box-shadow,border-color,opacity] duration-200 ${sortable.isActiveDraggable ? 'opacity-50' : ''}`}
       style={{
-        'background-color': 'var(--color-bg-panel)',
+        'background-color': 'var(--color-bg-base)',
         // A row another is being dragged over says it is where the drop lands.
-        border: showActions() || sortable.isActiveDroppable ? '2px solid var(--color-accent-line)' : '2px solid transparent',
+        border: showActions() || sortable.isActiveDroppable ? '1px solid var(--color-accent-line)' : '1px solid var(--color-border-light)',
         'box-shadow': showActions() || sortable.isActiveDraggable ? 'var(--shadow-md)' : 'none',
         opacity: props.edit.saving(props.item.id) ? 0.5 : undefined,
       }}
@@ -772,7 +787,7 @@ function ItemRow(props: {
                       disabled={!props.canCollapse && hasRows}
                       title={!props.canCollapse && hasRows ? 'A filter is holding every parent open' : undefined}
                       tabindex={hasRows ? undefined : -1}
-                      class={`flex-shrink-0 grid place-items-center w-5 h-5 rounded-full text-content-muted hover:bg-sunken transition-colors ${hasRows ? '' : 'invisible'}`}
+                      class={`flex-shrink-0 grid place-items-center w-5 h-5 rounded-md text-content-muted hover:bg-sunken transition-colors ${hasRows ? '' : 'invisible'}`}
                     >
                       {props.isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
                     </button>
@@ -806,7 +821,11 @@ function ItemRow(props: {
                               <Show when={props.item.recurrence}>
                                 <Badge class="flex-shrink-0">Repeats</Badge>
                               </Show>
+                              <RiskChip item={props.item} />
                             </div>
+                            <Show when={notReadyOf(props.item)}>
+                              {(reason) => <NotReadyLine reason={reason()} class="mt-0.5" />}
+                            </Show>
                             <Show when={props.item.description}>
                               <p class="text-xs text-content-subtle truncate">
                                 {props.item.description?.replace(/<[^>]*>/g, '').substring(0, 80)}
@@ -820,7 +839,7 @@ function ItemRow(props: {
                             onClick={() => props.edit.start(props.item.id, 'title')}
                             aria-label={`Edit title of ${props.item.title}`}
                             title="Edit title"
-                            class={`flex-shrink-0 w-7 h-7 rounded-full grid place-items-center text-content-muted hover:text-brand transition-opacity focus:opacity-100 ${showActions() ? 'opacity-100' : 'opacity-0'}`}
+                            class={`flex-shrink-0 w-7 h-7 rounded-md grid place-items-center text-content-muted hover:text-brand transition-opacity focus:opacity-100 ${showActions() ? 'opacity-100' : 'opacity-0'}`}
                           >
                             <FiEdit2 size={13} />
                           </button>
@@ -843,10 +862,10 @@ function ItemRow(props: {
                 </Match>
 
                 <Match when={col.key === 'priority'}>
-                  {/* Priority pill — coloured edge instead of an emoji */}
+                  {/* Priority tag — coloured edge instead of an emoji */}
                   <EditableCell item={props.item} col={col} edit={props.edit} shown={priorityLabel(props.item.priority)}>
                     <span
-                      class="inline-flex items-center rounded-full px-2.5 py-[3px] text-xs font-semibold whitespace-nowrap text-content-muted"
+                      class="inline-flex items-center rounded-sm px-2.5 py-[3px] text-xs font-semibold whitespace-nowrap text-content-muted"
                       style={{
                         'background-color': 'var(--color-bg-app)',
                         'box-shadow': `inset 3px 0 0 ${priorityColor(props.item.priority as Priority)}`,
@@ -892,7 +911,7 @@ function ItemRow(props: {
                       <div class="flex-shrink-0 flex gap-1">
                         <For each={props.item.tags?.slice(0, 2)}>
                           {(tag) => (
-                            <span class="text-micro font-semibold px-2.5 py-[2px] rounded-full border border-line text-content-muted">
+                            <span class="text-micro font-semibold px-2.5 py-[2px] rounded-sm border border-line text-content-muted">
                               {tag}
                             </span>
                           )}
@@ -913,25 +932,18 @@ function ItemRow(props: {
             type="button"
             onClick={props.onAddChild}
             aria-label={`Add item to ${props.item.title}`}
-            class="w-7 h-7 rounded-full grid place-items-center bg-app text-content-muted hover:text-brand transition-colors"
+            class="w-7 h-7 rounded-md grid place-items-center text-content-muted hover:bg-sunken hover:text-brand transition-colors"
             title="Add item"
           >
             <FiPlus size={14} />
           </button>
           <ItemMenu
             buttonLabel={`More actions for ${props.item.title}`}
-            entries={[{ label: 'Move under…', onSelect: props.onMoveUnder }]}
+            entries={[
+              { label: 'Move under…', onSelect: props.onMoveUnder },
+              { label: 'Delete', onSelect: props.onDelete },
+            ]}
           />
-          <button
-            type="button"
-            onClick={props.onDelete}
-            aria-label={`Delete ${props.item.title}`}
-            class="w-7 h-7 rounded-full grid place-items-center transition-[filter] hover:brightness-95"
-            style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
-            title="Delete"
-          >
-            <FiTrash2 size={13} />
-          </button>
         </div>
       </div>
     </div>
@@ -951,7 +963,7 @@ function EditableCell(props: { item: Item; col: ColDef; edit: EditApi; shown: st
           onClick={() => props.edit.start(props.item.id, key())}
           aria-label={`${props.col.label} of ${props.item.title}: ${props.shown}. Edit`}
           title={`Edit ${props.col.label.toLowerCase()}`}
-          class="block max-w-full min-w-0 text-left truncate rounded-full decoration-dotted underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+          class="block max-w-full min-w-0 text-left truncate rounded-md decoration-dotted underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
         >
           {props.children}
         </button>
@@ -974,7 +986,7 @@ function CellEditor(props: { item: Item; col: ColDef; edit: EditApi }) {
   };
   const focus = (el: HTMLElement) => queueMicrotask(() => el.focus());
   const field =
-    'min-w-0 w-full min-h-8 px-3 rounded-full border-0 bg-app text-small font-semibold text-content ' +
+    'min-w-0 w-full min-h-8 px-3 rounded-md border-0 bg-app text-small font-semibold text-content ' +
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]';
 
   return (
@@ -1019,11 +1031,11 @@ function CellEditor(props: { item: Item; col: ColDef; edit: EditApi }) {
   );
 }
 
-const pillControl =
-  'flex-shrink-0 min-h-8 text-small px-3 rounded-full border-0 bg-app text-content ' +
+const fieldControl =
+  'flex-shrink-0 min-h-8 text-small px-3 rounded-md border-0 bg-app text-content ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]';
 
-// Inline create form — a soft accent pill under its parent.
+// Inline create form — a soft accent row under its parent.
 function CreateForm(props: {
   level: number;
   types: ItemTypeDef[];
@@ -1040,7 +1052,7 @@ function CreateForm(props: {
     <div role="row">
       <div
         role="cell"
-        class="flex items-center gap-2 p-2 rounded-full bg-accent-soft"
+        class="flex items-center gap-2 p-2 rounded-lg bg-accent-soft"
         style={{ 'margin-left': `${props.level * 24}px` }}
       >
         {/* Type Selector */}
@@ -1048,7 +1060,7 @@ function CreateForm(props: {
           aria-label="Type"
           value={props.type}
           onChange={(e) => props.onTypeChange(e.currentTarget.value)}
-          class={pillControl}
+          class={fieldControl}
         >
           <For each={props.types}>
             {(t) => <option value={t.key}>{t.name}</option>}
@@ -1060,7 +1072,7 @@ function CreateForm(props: {
           aria-label="Priority"
           value={props.priority}
           onChange={(e) => props.onPriorityChange(e.currentTarget.value)}
-          class={pillControl}
+          class={fieldControl}
         >
           <For each={PRIORITIES}>
             {(p) => <option value={p.value}>{p.emoji} {p.label}</option>}
@@ -1078,7 +1090,7 @@ function CreateForm(props: {
           }}
           aria-label="Item title"
           placeholder="Item title... (Enter to save, Esc to cancel)"
-          class={`${pillControl} flex-1 min-w-0 px-4 placeholder-[var(--color-text-tertiary)]`}
+          class={`${fieldControl} flex-1 min-w-0 px-4 placeholder-[var(--color-text-tertiary)]`}
           autofocus
         />
 
@@ -1087,7 +1099,7 @@ function CreateForm(props: {
           type="button"
           aria-label="Save"
           onClick={props.onSave}
-          class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center transition-[filter] hover:brightness-95"
+          class="flex-shrink-0 w-8 h-8 rounded-md grid place-items-center transition-[filter] hover:brightness-95"
           style={{ color: 'var(--color-on-accent)', 'background-color': 'var(--color-primary-600)' }}
           title="Save (Enter)"
         >
@@ -1097,7 +1109,7 @@ function CreateForm(props: {
           type="button"
           aria-label="Cancel"
           onClick={props.onCancel}
-          class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center bg-app text-content-muted hover:text-content transition-colors"
+          class="flex-shrink-0 w-8 h-8 rounded-md grid place-items-center bg-app text-content-muted hover:text-content transition-colors"
           title="Cancel (Esc)"
         >
           <FiX size={16} />

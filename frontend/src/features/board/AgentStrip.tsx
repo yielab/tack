@@ -32,14 +32,21 @@ const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateNa
 /**
  * One row under the board title that counts the board's runs by state, one chip per state. Each
  * counter is a toggle that narrows the board to the cards in that state. Needs you and Ready for
- * review are accented while they are above zero, because they are what the person acts on. Hidden
- * when the project has never run anything.
+ * review are accented while they are above zero, because they are what the person acts on. It opens
+ * with how many of them wait for a person, against the project's limit when it sets one. Hidden when
+ * the project has never run anything and sets no limit.
  */
 const AgentStrip: Component<{
   counts: RunCounts;
   active: ReadonlySet<RunFilter>;
   onToggle: (filter: RunFilter) => void;
+  /** The most tasks the project lets wait for a person at once; absent or null when it sets none. */
+  waitingMax?: number | null;
+  /** Why auto-start has stopped starting tasks at that limit, in the API's own words. */
+  pausedReason?: string | null;
 }> = (props) => {
+  // What waits for a person, as Needs you counts it: a run asking a question, a run ready for review and a failure.
+  const waitingForYou = () => props.counts.needs + props.counts.review + props.counts.failed;
   const counter = (filter: RunFilter, count: () => number, label: string, state?: RunStateName, note?: string) => {
     const on = () => props.active.has(filter);
     // A counter at zero has nothing to narrow to, unless it is already narrowing the board.
@@ -53,7 +60,7 @@ const AgentStrip: Component<{
         title={unusable() ? `No work under ${label}` : note}
         data-testid={`strip-${filter}`}
         onClick={() => props.onToggle(filter)}
-        class="inline-flex min-h-7 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+        class="inline-flex min-h-8 items-center gap-1.5 rounded-md px-3 text-small font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
         style={{
           'background-color': on()
             ? 'var(--color-accent-soft)'
@@ -75,7 +82,7 @@ const AgentStrip: Component<{
             </span>
           )}
         </Show>
-        <span class="text-sm font-bold tabular-nums">{count()}</span>{' '}
+        <span class="text-lead font-bold tabular-nums">{count()}</span>{' '}
         {label}
         <Show when={note}>
           <span class="sr-only">{`. ${note}`}</span>
@@ -85,17 +92,34 @@ const AgentStrip: Component<{
   };
 
   return (
-    <Show when={totalRuns(props.counts) > 0}>
+    <Show when={totalRuns(props.counts) > 0 || props.waitingMax != null}>
       <div
         role="group"
         aria-label="Work in this project"
         data-testid="agent-strip"
         class="flex flex-wrap items-center gap-2"
-        style={{ padding: '0 22px 10px' }}
+        style={{ padding: '0 24px 16px' }}
       >
-        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task of this project. The column is its status, which only a person changes. The sidebar's Waiting for you counts every project.">
+        <span class="text-small font-semibold" style={{ color: 'var(--color-text-secondary)' }} title="What the agents report for each task of this project. The column is its status, which only a person changes. The sidebar's Waiting for you counts every project.">
           Work in this project
         </span>
+        {/* What waits for a person comes first: it is the work in progress that no agent can move. */}
+        <span
+          data-testid="strip-waiting-for-you"
+          class="text-small font-semibold"
+          style={{ color: waitingForYou() > 0 ? 'var(--run-needs-ink)' : 'var(--color-text-secondary)' }}
+        >
+          {waitingForYou() === 0 && props.waitingMax == null
+            ? 'Nothing waiting for you'
+            : `${waitingForYou()}${props.waitingMax != null ? ` of ${props.waitingMax}` : ''} waiting for you`}
+        </span>
+        <Show when={props.pausedReason}>
+          {(reason) => (
+            <span data-testid="strip-paused" class="text-small" style={{ color: 'var(--run-needs-ink)' }}>
+              {reason()}
+            </span>
+          )}
+        </Show>
         {/* Not started appears only once a run was turned away: five chips are the ones a person acts on. */}
         <For each={COUNTERS.filter((entry) => entry.state !== 'notstarted' || props.counts.notstarted > 0 || props.active.has('notstarted'))}>
           {(entry) => (
