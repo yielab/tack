@@ -11,7 +11,7 @@ The whole loop in one recording — a new project pointed at a folder, a task wi
 criteria, a Claude Code run tracked from the card, the finished run reviewed and accepted, and
 the files it changed (the wait for the agent is shortened):
 
-<img src="../screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project 'Docs Site' created with an existing folder on this computer as its code; a task 'Add a changelog page' added on the board with two acceptance criteria; Run with agent with Claude Code; the card's chip and the task's Runs following the run until it reads 'Finished — needs your review'; Accept; what the agent did; the files from the run; and the board again.">
+<img src="../screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project 'Docs Site' created with an existing folder on this computer as its code; a task 'Add a changelog page' added on the board with two Done when checks; Run with agent with Claude Code; the card's chip and the task's Runs following the run until it reads 'Finished — needs your review'; Accept; what the agent did; the files from the run; and the board again.">
 
 This page walks **one** path: the release binary and the web UI. The
 [Quick Start](quick-start.md) covers the alternatives — the desktop app, Docker, building from
@@ -70,7 +70,7 @@ workflow, plus a three-step onboarding card:
 
 ## 4. Add tasks
 
-Click the **+** in any column (or the onboarding card's **+ Add item**). Only the
+Click **+ Add item** in any column (or the onboarding card's **+ Add item**). Only the
 title is required; type, parent, priority, description, story points and tags are
 there when you want them. The first task is the one an agent will write:
 
@@ -79,17 +79,17 @@ there when you want them. The first task is the one an agent will write:
 A few tasks later the board is a board. The banner on top offers to let this board run
 its items with an agent; this tutorial gets there in step 6:
 
-<img src="../screenshots/tutorial/05-board-tasks.png" width="98%" alt="The board with four tasks in Backlog — Draft the launch announcement, Redesign the pricing page, Migrate DNS to the new host, Refresh the screenshots in the docs — each with a run button, and a banner reading 'This board can run its items with an agent' with Turn on and Dismiss.">
+<img src="../screenshots/tutorial/05-board-tasks.png" width="98%" alt="The board with four tasks in Backlog — Draft the launch announcement, Redesign the pricing page, Migrate DNS to the new host, Refresh the screenshots in the docs — each with a Run button and a 'Not ready: No Done when and no check a machine runs' warning, and a banner reading 'This board can run its items with an agent' with Turn on and Dismiss.">
 
 ## 5. Say what "done" means
 
-Click the task to open its drawer. The task reads top down: its description, its
+Click the task to open its drawer. The task reads top down: its title, the next step (a **Work** panel with **Run with agent**), its description, its
 **Done when** list and a collapsed **For the agent** block. **Done when** is a checklist, one line per
 thing a person checks before calling the task done (these are the task's *acceptance criteria*).
 **Add check** adds a line, and each line saves when you leave it. For this task, add three checks:
-*About 400 words*, *Ends with a call to action* and *A post the team can publish on launch day*.
+*About 400 words*, *Ends with a call to action* and *A post the team can publish on launch day without rewriting it*. Until a task has a Done when line, or a check a machine runs, its card on the board says **Not ready: No Done when and no check a machine runs**. That is a warning, not a block: you can still run the task.
 
-<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' with the status Backlog, the next step saying nothing has run yet with a Run with agent button, the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day — each with Up, Down and Remove, an Add check button, and the For the agent, Runs and Properties folds closed.">
+<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' with the Backlog and Medium chips under the title, the Work panel saying nothing has run yet with a Run with agent button, the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day without rewriting it — each with a ⋯ menu, an Add check button, the For the agent and Runs folds closed, and the Activity comments below.">
 
 **For the agent** holds what only the agent needs: checks a machine runs, limits on what it may
 touch, and the risk you see. This announcement needs none of it. The agent receives the criteria
@@ -111,7 +111,7 @@ Click **Turn on**. It starts at once, with no restart and no second program. The
 from the top:
 
 - **Step 2** lists the agents Tack found on this machine, with their versions. This machine has
-  Codex and Claude Code; the tutorial uses Claude Code.
+  Codex, Claude Code, Docket and OpenCode, each with what contains it; the tutorial uses Claude Code.
 - **Step 3, Sign in**, has one row per installed agent. Each row asks the agent itself, so it
   reads **Signed in**, or **Not signed in. Run `<command>` in a terminal.** with a link to the
   agent's own documentation. Tack holds no model key and never signs in for you.
@@ -120,7 +120,7 @@ from the top:
 
 Press **Run test** now; if it passes, everything after this step will work.
 
-<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex and Claude Code installed and contained by this computer, docket not installed, OpenCode installed but refused here until its containment is available; the Sign in step with Codex and Claude Code signed in; the Test run section with a Run test button; what each agent can do as a table; the Teams section; Add a manager; and a collapsed Advanced section.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex, Claude Code, Docket and OpenCode installed, each with how it is contained; the Sign in step with all four signed in; the Test run section with a Run test button; what each agent can do as a table; and the Teams section with the built-in profiles that have no team.">
 
 ## 7. Set up the project's agent
 
@@ -129,7 +129,7 @@ code is, how the agent works on it (on a new branch of your repo, or in the fold
 definition of done, and the **Agent** section: which agent, which model, and the default profile.
 Each section is a single line until you open it; the picture shows **Agent** open:
 
-<img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings, opened: 'No default agent'; agent choices Claude Code, Codex and OpenCode; the Model field reading 'Choose an agent first'; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">
+<img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings, opened: 'No default agent'; agent choices Claude Code, Codex, Docket and OpenCode; the Model field reading 'Choose an agent first'; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">
 
 Once an agent is chosen, the **Model** field offers **Agent's default** (recommended: the agent
 uses whatever model it uses on its own), the models the agent listed or suggested, and **Another
@@ -145,60 +145,59 @@ Profiles** at the bottom of the Agents page) and press **+ Create agent profile*
 tutorial, fill in:
 
 - **Name**: *Announcement writer*.
-- **Instructions**: *Write a 400-word launch announcement and reply with the text only. Do not
-  call any tool.*
+- **Instructions**: *Write the launch announcement for the relaunched marketing site as a blog post of about 400 words: a headline, an intro paragraph, three feature sections of two sentences each, and a closing call to action. Reply with the announcement text only; do not call any tool.*
 - **Tools**: leave **All tools** unticked and tick only **Read**, **Grep** and **Glob** under
   claude-code. Giving the profile only read tools also tells Tack it is not expected to change files.
 
-<img src="../screenshots/tutorial/10-agent-profile.png" width="40%" alt="The create-profile form: name 'Announcement writer', instructions to write a 400-word launch announcement and reply with the text only without calling any tool, an empty Summary and Delivers, Team No team, Web access listed, what the profile does, an empty token limit and time limit, the network switch off, Tools with All tools unticked and only Read, Grep and Glob ticked for claude-code, and Create and Cancel buttons.">
+<img src="../screenshots/tutorial/10-agent-profile.png" width="40%" alt="The create-profile form: name 'Announcement writer', instructions to write a blog post of about 400 words and reply with the announcement text only without calling any tool, an empty Summary and Delivers, Team No team, Web access listed, what the profile does, an empty token limit and time limit, the network box unticked, Tools with All tools unticked and only Read, Grep and Glob ticked for claude-code, and Create and Cancel buttons.">
 
 Click **Create**.
 
 ## 8. Assign the task to an agent
 
-Back on the board, every card carries a **Run with agent** button (the ▶ on the card, or the same
-button in the task's drawer). The dialog opens with a summary of the run (the profile, the model and
-where the agent works) and asks only what you might want to change. Under **Who does it**, pick
-**Claude Code**, then the profile *Announcement writer*, and leave everything else as it is. What each
+Back on the board, every card carries a **Run** button (or press **Run with agent** in the task's drawer). The dialog
+opens on **What will happen**, in a few rows: **Agent** (the profile, the agent and the model),
+**Where**, **Checked by**, **Ask first** and **Network**. Everything else is folded under **Options**.
+Press **Change…** on the **Agent** row, and under **Who does it** pick
+**Claude Code**, then the profile *Announcement writer*. Leave everything else as it is. What each
 part of the dialog does, and where its defaults come from, is in
 [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
-<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': Who does it with Claude Code chosen among Claude Code, Codex and OpenCode and the profile Announcement writer selected; What will happen: the profile and the agent's default model, a new branch of a local repository, no install, three Done when checks, contained by this computer, web tools off; Ask before each action and Web tools unticked; What the agent will read and Advanced for this run closed; the provisional token limit; Cancel and Start run.">
+<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement', What will happen: Agent reads Announcement writer, Claude Code, the agent's default, with Change…; Where reads on a new branch of a repository, running on this computer; Checked by reads 3 Done when and verifier on; Ask first has the switch 'Ask me before each action' off; Network has the switch 'Let the agent use web tools' off. Below are the closed Options fold (model, branch, tools, token limit), a Preview what the agent reads link, the provisional token limit, and Cancel and Start run.">
 
 ## 9. Run it and track it
 
 Click **Start run**. The request queues, the runner picks it up and the agent starts. The board says
-so without being asked: the card carries a live status chip, here still **Queued**. Clicking the
+so without being asked: the card carries a live status chip, here **Running**. Clicking the
 chip opens the task's **Runs**:
 
-<img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the strip counts 1 Queued, and the 'Draft the launch announcement' card carries a live 'Queued' chip.">
+<img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the Work in this project strip counts 1 Running and nothing waiting for you, and the 'Draft the launch announcement' card carries a live 'Running' chip.">
 
 The drawer follows the run as it happens. The **next step** under the title reads **Running**
-(*The agent is working on it*) with **Follow live** and **Stop**, and the **Runs** fold shows **Run 1**
-with the runner that took it. What the agent did, and the tokens it used, appear when it finishes:
+(*The agent is working on it*) with the tokens it has used against the limit, **Follow live** and **Stop**. What the agent did, and the tokens it used, appear in the **Runs** fold when it finishes:
 
-<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the next step at the top of the drawer reads Running, 'The agent is working on it', 0 of 2 000 000 tokens against the provisional limit, with Follow live and Stop buttons; Run 1 below says its steps appear as it takes them.">
+<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run, over the board whose card chip reads Running: the Work panel at the top of the drawer reads Running, 'The agent is working on it', 0 of 2 000 000 tokens against the provisional limit, with Follow live and Stop buttons, above the description and the Done when list.">
 
 ## 10. See the result
 
 When the run finishes, the same **Runs** fold is the record of what happened: one run card with its status,
-the verdict it waits for (**Accept** or **Reject…**), what the agent concluded, what it did and what
-it got, and its usage (tokens counted against the limit, folded under **Usage**). The **next step**
+the verdict it waits for (**Accept** or **Reject…**), what the agent concluded, the **Checks** and the **Changes**, and folds for the **Steps**, the **Files from this run** and **Technical**
+(its ids, its raw log and its **Usage**: the tokens counted against the limit). The **next step**
 under the title gives the same in short. This agent only wrote text and its profile allows only
 read tools, so no change was expected: the run reads **Finished — no changes recorded**, and **What
 the agent concluded** is the announcement itself:
 
-<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the task's Runs: Run 1 by Claude Code, 'The agent ended without changing any files. What it said is below.', about 3 800 tokens counted, not merged because no branch was pushed, a 'This run is waiting for your verdict' box with Accept and Reject…, What the agent concluded showing the opening of the announcement with Read full report and Download report.md, three Done when checks waiting for a person, Changes saying no files changed, and the Steps, Files from this run, Technical and Details folds; the board card behind carries a Finished chip.">
+<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the task's Runs: Run 1 by Claude Code, 'The agent ended without changing any files. What it said is below.', 3 979 tokens counted, not merged because no branch was pushed, a 'This run is waiting for your verdict' box with Accept and Reject…, a Run again button, What the agent concluded showing the opening of the announcement with Read full report and Download report.md, Checks saying 0 of 3 checks passed and 3 need a person, Changes saying this run changed no files, and the Steps, Files from this run and Technical folds, with Activity below; the board card behind carries a Finished chip.">
 
 **Files from this run** lists what the run produced, each file one click from viewing or downloading:
 the agent's own run log (the announcement is in it), `changes.patch` (empty here, because this agent
 only wrote text), `files.json`, the `brief.json` it was given, and the `evidence.json` file that
 ties them together:
 
-<img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 19.3 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 7.6 KB), each with View and Download.">
+<img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 23.6 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 7.8 KB), each with a view and a download button.">
 
-A run that changes files reads **Finished — needs your review** instead, and the card carries a
-**Needs your review** flag until you **Accept** or **Reject** it; the recording at the top of this
+A run that changes files reads **Finished — needs your review** instead, and the card reads
+**Ready for review** until you **Accept** or **Reject** it; the recording at the top of this
 page shows that, end to end. (A run that was allowed to change files but changed nothing reads
 **Failed**, with that as its reason.)
 

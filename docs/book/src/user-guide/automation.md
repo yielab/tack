@@ -27,8 +27,8 @@ view on a wide screen:
    definition of done the agent reads.
 3. **Merge.** The rules for letting Tack merge a finished change by itself, as far as you allow
    ([Merge](#merge)).
-4. **Limits.** How many tokens a day, how many automatic merges a day and how many waiting items the
-   project allows, and the limit for a run whose profile sets none ([Token limits](running-agents.md#token-limits)).
+4. **Limits.** How many tokens a day, how many automatic merges a day, how many items wait for review and how many
+   things wait for a person at once, and the limit for a run whose profile sets none ([Token limits](running-agents.md#token-limits)).
 5. **Agents.** How far an agent may go on this board, and the triggers that wake a manager; see
    [Managers and Threads](talking-with-a-manager.md) and [How far an agent may
    go](reviewing-runs.md#how-far-an-agent-may-go).
@@ -41,7 +41,7 @@ A run never changes a task's status: the column is yours, and what the agents re
 See [Status and Work](views.md#status-and-work).
 
 > **Which tasks does this touch?** Only tasks with a role. A role is how Tack knows a task is meant for an
-> agent. Create roles under **Settings → Roles**, and give a task a role in the **Custom fields and roles** fold of its **Related** column.
+> agent. Create roles under **Settings → Roles**, and give a task a role in the **Custom fields and roles** fold under its **Related**.
 
 ---
 
@@ -195,13 +195,13 @@ hold:
 - A profile resolves for it, as under [Teams](#teams), and an agent is named by the profile or by the
   project's default agent.
 - There is a machine to run on: the profile's fleet, or exactly one active runner.
-- The project's daily limits are not spent (tokens, items waiting for your review; see
+- The project's limits are not reached (tokens, items waiting for your review, things waiting for a person; see
   [Budgets](merging.md#budgets)).
 - Fewer than the cap of runs are open in the project.
 
 A task that waits in the status because one of these does not hold says so, on the board card and on the task
 itself, as "Waiting to start:" and the reason: "Blocked by 2 unfinished tasks", "3 runs are already open,
-the most this project allows", "This project's token limit is reached", "No one is chosen to do it", "No
+the most this project allows", "This project's token limit is reached", "4 of 5 waiting for you: auto-start is paused until one is decided", "No one is chosen to do it", "No
 computer can run it" or "It already has a run open". When the reason has a way out, the sentence says it. A
 task that nothing holds back shows no line, and it starts at the next look.
 
@@ -296,7 +296,7 @@ When Tack acts without you, it tells you in three places.
 
 Hover a badge for a one-sentence explanation.
 
-**The task's Automation row**, the last line of the next step in the task drawer, says what happens to this task
+**The task's Automation row**, the last line of the next step on the task's page and in its drawer, says what happens to this task
 without you:
 
 - "Starts by itself when it reaches To Do · Team saas-content · Merge L3", when the project starts tasks by
@@ -323,7 +323,7 @@ without you:
 
 These are the folded sections inside **Who** and **When**. Each saves as soon as you change it.
 
-<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: the Autonomy ladder with L3 set and L4 and L5 blocked, what stops this project reaching a higher rung, the jump links Who, When, Merge, Limits and Agents, and the Who section with the agent, the teams, where the code is and how the agent works on it, above the When section.">
+<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: the Autonomy ladder with L3 set and L4 and L5 blocked, what stops this project reaching a higher rung, the jump links Who, When, Merge, Limits, Agents and Notifications, and the Who section with the agent, the teams, where the code is and how the agent works on it, above the When section.">
 
 ### Where the code is
 

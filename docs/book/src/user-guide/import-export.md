@@ -184,7 +184,7 @@ The file is **refused** for:
 - an automation setting with an unknown code origin, workspace mode or default agent, a folder that is not an absolute path, a URL that is not a URL, an install command that is not one line, an unknown default profile, an auto-start status the workflow does not have, an auto-start cap below 1, or a level other than L3, L4 or L5;
 - an item that names a role, sprint or field found neither in the file nor in the project;
 - a `key` that is not a key (see [Keys](#keys)) on something the file creates, or that is already the key of another row;
-- a brief that breaks the rules of the Brief tab, such as two criteria with the same id; the problem names the item;
+- a brief that breaks the rules the item's page also checks, such as two criteria with the same id; the problem names the item;
 - the item rules of the outline: no title, a `ref` used twice, a `parent` or `depends_on` that names no item or an ambiguous title, a parent or dependency loop, a due date that is not a date, a title over 500 characters, a negative estimate, more than 20 tags, or more than 1,000 items.
 
 The file is **accepted with a warning** for:
@@ -272,7 +272,7 @@ Two branches that change two items change two files, and a diff names the item. 
 | For each item: title, description, type, parent, blockers, roles, tags, estimate, repeat, field values and brief | Where an item is (its status), who answers for it and when (assignee, priority, sprint, due date) |
 | | Runs and what they leave, decisions, comments, attachments, change sets and links |
 
-Moving a card never changes a file. An item's run settings (agent, model, network, tools, approvals) never enter the folder, because they widen what an agent reaches and a file is text anyone can edit. When a file gives a status, priority, assignee, sprint or due date for an item that exists, the plan says "the board's" and keeps what the board has. Items created on the board reach the folder at the next export.
+In a project with a revision, the item page marks each field: those the folder holds read **In the project folder**, and the board's read **The board's**; see [Working with Items](items.md). Moving a card never changes a file. An item's run settings (agent, model, network, tools, approvals) never enter the folder, because they widen what an agent reaches and a file is text anyone can edit. When a file gives a status, priority, assignee, sprint or due date for an item that exists, the plan says "the board's" and keeps what the board has. Items created on the board reach the folder at the next export.
 
 ### Keys
 
@@ -300,10 +300,10 @@ The first export makes the folder authoritative. Until a project has a revision,
 
 An import is never applied blind. It first builds a **plan**, and the plan is also what **Revert to this…** and `--dry-run` show. Each line is one of:
 
-- **new**: the folder has it and the board does not;
-- **changed**: a field differs, listed as `path: from → to`, such as `name: Contenido → Content` or `brief.risk: low → medium`;
-- **removed**: the board has it and the folder no longer does, with what the removal costs;
-- **kept**, with its reason: the board's status, assignee, priority, sprint or due date; something created on the board since the last revision; something removed on the board since the last revision; or a removal that is refused (see below).
+- **New**: the folder has it and the board does not;
+- **Changed**: a field differs, listed as `path: from → to`, such as `name: Contenido → Content` or `brief.risk: low → medium`;
+- **Removed**: the board has it and the folder does not, with what the removal costs;
+- **Kept**, with its reason: the board's status, assignee, priority, sprint or due date; something created on the board since the last revision; something removed on the board since the last revision; or a removal that is refused (see below).
 
 The plan compares three things for every field: the **last revision** (what the folder last knew), the **board** now, and the **folder** you are importing.
 
@@ -316,7 +316,7 @@ The plan compares three things for every field: the **last revision** (what the 
 
 A thing the board created since the last revision is never removed because the folder lacks it. A thing the board removed is not brought back by a folder that did not change it. If the folder changed a thing the board removed, or the board changed a thing the folder removed, that is a conflict too.
 
-**Conflicts** are listed with the three values. A plan with a conflict cannot be applied until you say who wins for all of them: **prefer the folder** or **prefer the board** (`--prefer folder` or `--prefer board`). The plan still lists each conflict after you choose, so you can see what was chosen. Choosing per conflict is shown disabled with its reason.
+**Conflicts** are listed with the three values. A plan with a conflict cannot be applied until you say who wins for all of them: **Prefer the folder** or **Prefer the board** (`--prefer folder` or `--prefer board`; a revert offers its revision in place of the folder). The plan still lists each conflict after you choose, so you can see what was chosen. Choosing per conflict is shown disabled with its reason.
 
 ### What a removal costs
 
@@ -349,7 +349,7 @@ A change to `.tack/` in a run's work is a change to the plan, so a person merges
 
 ### An item's brief
 
-An item's brief says what makes it done. In a project file or a folder an item carries it as `brief`, with the four parts of the Brief tab: `definition_of_done`, `risk` (`low`, `medium` or `high`), `acceptance` (criteria, each `manual` or a command a machine runs) and `constraints`. It is checked by the same rules as a save from the Brief tab, and a brief with none of its four parts is no brief. A brief the file changes is a new version of the item's brief, as after an edit on the Brief tab. A run already started keeps the brief it was given. The parts are described under [Acceptance criteria and For the agent](items.md#acceptance-criteria-and-for-the-agent).
+An item's brief says what makes it done. In a project file or a folder an item carries it as `brief`, with four parts: `definition_of_done` (the task's own **Done when** sentence), `risk` (`low`, `medium` or `high`), `acceptance` (criteria, each `manual`, which reads as a **Done when** line, or a check a machine runs, which is listed under **For the agent**) and `constraints`. It is checked by the same rules as a save from the item's page, and a brief with none of its four parts is no brief. A brief the file changes is a new version of the item's brief, as after an edit on the item's page. A run already started keeps the brief it was given. The parts are described under [Acceptance criteria and For the agent](items.md#acceptance-criteria-and-for-the-agent).
 
 ---
 

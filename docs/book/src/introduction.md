@@ -6,7 +6,7 @@
 Codex, opencode, or docket — and track the run as part of the item's history.** Self-hosted, one binary,
 no cloud account.
 
-<img src="screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two acceptance criteria, Run with agent with Claude Code, the card's chip and the task's Runs following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run">
+<img src="screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two Done when checks, Run with agent with Claude Code, the card's chip and the task's Runs following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run">
 
 Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
 maintenance schedule — through configurable vocabulary and workflow columns, and can hand any
@@ -67,7 +67,7 @@ repeating them.
 
 | Guide | For whom | You will find |
 |-------|----------|---------------|
-| **[User Guide](user-guide/quick-start.md)** | Anyone who works in Tack: managing projects, running agents on tasks, reviewing and merging their work | The board and its views (including Orchestration), items, workflows, running an agent, reviewing a run, automating a project (teams, starting by itself, merging), managers and threads, project files, the CLI |
+| **[User Guide](user-guide/quick-start.md)** | Anyone who works in Tack: managing projects, running agents on tasks, reviewing and merging their work | The board and its views (including Orchestration), what needs you, items, workflows, running an agent, reviewing a run, automating a project (teams, starting by itself, merging), managers and threads, project files, the CLI |
 | **[Administrator Guide](admin-guide/index.md)** | Whoever installs, secures and operates a board and its runners | Deployment, configuration and the full variable reference, tokens, agent credentials and network exposure, installing runners and agents, what an agent can reach, backup, restore and recovery |
 | **[Developer Guide](developer/index.md)** | Contributors and integrators | Architecture, how runs, teams and automation are built, the runner contract, the project file format, the API and MCP, testing, the decisions behind it |
 | **[Learning Path](developer/learning/index.md)** | Developers new to Rust, Axum or SolidJS | The stack explained with analogies |

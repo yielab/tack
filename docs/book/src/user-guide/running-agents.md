@@ -19,7 +19,7 @@ always runs and an agent executor that stays off until you turn it on. Everythin
 
 With no agent turned on, **Run with agent** says "Agent execution is off" instead of showing a form.
 
-Turning agents on for one computer is a switch on the Agents page. A shared server needs a separate
+Turning agents on for one computer is a button on the Agents page. A shared server needs a separate
 runner instead, which is an administrator's task: see
 [Installing and Operating Runners](../admin-guide/runners.md).
 
@@ -29,9 +29,9 @@ runner instead, which is an administrator's task: see
 
 The **Agents** page is about this computer only. It holds nothing that belongs to a project.
 
-<img src="../screenshots/tutorial/08-agents-on.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed and contained, a Sign in step with one row per installed agent, a Run test button, and what each agent can do.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="60%" alt="The Agents page: Agent execution on this machine with a Turn off button and the time it has run since, Agents on this machine with each agent's version and whether it is contained, a Sign in step with one row per installed agent, a Test run with a Run test button, and What each agent can do.">
 
-1. **Turn agents on.** One switch for this computer. It takes effect at once, with no restart.
+1. **Turn agents on.** **Turn on** is one button for this computer (**Turn off** once it is on). It takes effect at once, with no restart.
 2. **See which agents are installed**, with their versions. Tack looks where a terminal would
    look; if an agent is installed somewhere unusual, see
    [Where Tack looks for an agent](../admin-guide/runners.md#where-tack-looks-for-a-harness-binary).
@@ -197,7 +197,7 @@ never stops the run.
 **What will happen** has five rows:
 
 - **Agent** names the profile that runs the task, its team when it has one, the agent and the model. **Change…**
-  opens the list of agents and profiles.
+  opens **Who does it**, the list of agents and profiles.
   - The agents are a row of buttons, Docket first, then Claude Code, Codex and OpenCode: each one the computer
     reports, and any agent a profile names that the computer does not report, greyed with the reason. Docket is
     chosen when a profile names a team, unless the project or the task names another agent.
@@ -401,10 +401,10 @@ anyway is never given to a runner that would ignore it.
 
 With docket, a question names the call and docket's reason for stopping it. For example: *Allow bash to run
 "sh -c 'echo done > DONE.txt'"? docket's policy: 'sh' is not on the curated allowlist.* The agent's own
-reason follows when it gave one. **Allow** lets the call run. **Deny** refuses it, tells the agent it was
+reason follows when it gave one. The choices are docket's own, such as **Approve once**, **Approve for this task** and **Deny**; Claude Code, Codex and opencode offer **Allow once** and **Deny**. An approval lets the call run. **Deny** refuses it, tells the agent it was
 refused, and the agent carries on.
 
-A question waits first in the task's **next step**, with its answers open, and in its **Runs**, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload.
+A question waits first in the task's **next step**, with its answers open, and in its **Runs**, in the run's **Needs you** section, which appears by itself while the run waits for you. It is also a line in the project's **Needs you**, whose **Answer** button opens it. A question asked while you already have the task open appears without a reload.
 
 A question is a panel that asks one thing in words. Its amber header says **Needs you**, gives the question, and
 says who asks and how long ago. Each question shows its kind, so a tool permission reads differently from a
@@ -435,10 +435,10 @@ you to approve it blind; the timeline says to answer it in docket, where it is s
 
 If you answer a question in docket itself, with its own command, instead of in Tack, the question here closes as **Answered in docket** and the timeline says so; it is not an expiry and it is not marked as your answer. The team goes on, and its next question appears here at once. This needs a docket recent enough to tell Tack when a question was settled; with an older one the question stays open here until the run ends.
 
-<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you in the Runs: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; the answers sit below, then the decision-token field.">
+<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you in the Runs: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; the three choices are radio buttons with uPlot selected, a Send answer button sits below them, then the decision-token field.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
-sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the
+sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in the run's **Needs you** section; the browser keeps it for the
 session, and once it is given neither place asks again (**Change** replaces it). How to set it is in
 [Installing and Operating Runners](../admin-guide/runners.md#non-loopback-and-security-posture). A question
 waits until you answer it or stop the run: Tack never answers it for you, and the run's time limit counts only

@@ -78,7 +78,7 @@ answer, which appears in the thread under the profile's name. When the profile b
 answer is what the team's last step handed off. A docket team whose docket can keep a conversation going keeps the context itself: your thread is one conversation in docket and each message continues it, so the earlier turns are not sent again. If docket has ended the conversation (it took its twenty turns, or it was closed there), your next message starts a new one from the thread so far, and the turn says so.
 
 While the turn runs, the thread shows it as work in progress under your message. If the agent needs an
-answer from you before it can go on, the question appears right there, and you answer it in the thread. A
+answer from you before it can go on, the question appears right there, and you answer it in the thread. The question also waits in the project's **Needs you**, whose **Answer** button opens the thread. A
 turn that cannot answer says so under your message and the reason appears as the next message. Nothing is
 lost: write again, or close the thread and start another.
 
@@ -94,7 +94,7 @@ turn started a moment before, the thread says that the message was not sent and 
 
 An answer may propose changes to the board: new items, who does an item, a priority, a move, a dependency, a
 comment or a due date. They appear inside the answer as a **change set**, in the same panel as everywhere
-else: tick the changes you want, edit them, and press **Apply**, or press **Reject** and say why. Nothing
+else: tick the changes you want, edit them, and press the solid button (**Apply 3 changes**, or **Create 2 items** when every change makes an item), or press **Turn down all** and say why. Nothing
 changes on the board until you apply it, except what the project's **Agents on the board** setting lets
 through on its own. See [When an agent proposes changes](reviewing-runs.md#when-an-agent-proposes-changes).
 

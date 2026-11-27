@@ -3,7 +3,7 @@
 **An open-source project manager that can assign tasks to AI agents.**
 
 <p align="center">
-  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, a strip counting the work that needs you, and two cards carrying an agent run's state, Needs you and Finished" />
+  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a Run button on every card, a strip counting the work that needs you, two cards carrying an agent run's state, Needs you and Finished, and a Not ready warning on tasks with no Done when" />
 </p>
 
 <p align="center">
@@ -93,15 +93,15 @@ Scoop, Docker and building from source are in the [Quick Start](https://yielab.g
 
 <img src="docs/screenshots/tutorial/02-new-project.png" width="70%" alt="The Create New Project dialog: a name, a description, the question 'Does this project have code?', and the project type." />
 
-**2. Add a task** and write its acceptance criteria: what must be true when it's done.
+**2. Add a task** and write its **Done when** checklist: what must be true when it's done.
 
-<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Work panel with a Run with agent button, the description, a Done when list of three checks and an Add check button." />
+<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's drawer: the Work panel with a Run with agent button, the description, a Done when list of three checks and an Add check button, and the For the agent and Runs folds." />
 
 **3. Run it with an agent** and review the result on the task. Agents are off until you
 open **Agents** in the sidebar and press **Turn on** (or start the server with
 `--with-runner`).
 
-<img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: who does it (the agent and the profile), what will happen, Ask before each action, Web tools, and Start run." />
+<img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: What will happen in five rows (Agent with Change…, Where, Checked by, Ask first and Network), a closed Options fold, and Start run." />
 
 The **Agents** page also shows which agents Tack found on this computer, whether each
 one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.

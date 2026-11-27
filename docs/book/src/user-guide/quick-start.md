@@ -99,9 +99,9 @@ curl http://localhost:3210/api/health
 
 3. **Move it.** Drag the card to another column. The new status saves at once.
 
-4. **Open the item.** Click the card to open its drawer, with its description, dependencies, comments, attachments and custom fields. See [Working with Items](items.md).
+4. **Open the item.** Click the card to open its drawer: the next step, the description, a **Done when** list, **For the agent**, the **Runs** and the comments, with the properties, dependencies, attachments and custom fields in the **Properties** fold at the end. See [Working with Items](items.md).
 
-5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Theme, palette, text size and zoom are in **Settings → Display & accessibility**; see [Appearance](appearance.md).
+5. **Find your way around.** **Needs you**, the first place in a project's sidebar, lists what waits for a person. Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Theme, palette, text size and zoom are in **Settings → Display & accessibility**; see [Appearance](appearance.md).
 
 Ready to put it on a network or add a token? See [Administration & Security](../admin-guide/administration.md).
 
@@ -115,9 +115,9 @@ A task can be done by an agent: a program such as Claude Code that reads and edi
 2. **Tell the project where its code is.** If you answered **Does this project have code?** when you created it, this is done; otherwise open **Settings → Automation**. See [Where the agent works](automation.md#where-the-agent-works).
 3. **Open a task and click Run with agent**, then **Start run**. The defaults are the recommended ones. See [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: the profile to run as, a What will happen summary of the agent, branch, checks and network, two switches, collapsed What the agent will read and Advanced sections, and a Start run button.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: What will happen in five rows (Agent with Change…, Where, Checked by, Ask first and Network, the last two with a switch), a closed Options fold for the model, branch, tools and token limit, a Preview what the agent reads link, the token limit, and Cancel and Start run buttons.">
 
-When the run ends, the task's **Runs** show the attempt. If the agent changed anything, the task is marked **Needs your review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal, see [Running from the command line](running-agents.md#running-from-the-command-line). To start the server with agents already on, run `tack serve --with-runner`.
+When the run ends, the task's **Runs** show the attempt. If the agent changed anything, the task reads **Ready for review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal, see [Running from the command line](running-agents.md#running-from-the-command-line). To start the server with agents already on, run `tack serve --with-runner`.
 
 ---
 

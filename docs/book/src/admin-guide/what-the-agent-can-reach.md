@@ -135,7 +135,7 @@ Binding beyond loopback still needs a token; see [Network exposure](administrati
 A run that asks pauses before each action and waits for a person to answer in **Waiting for you**. Whether a
 run asks depends on the sandbox, and it is decided in two places:
 
-- **The Run with agent dialog.** "Ask before each action" starts switched on when any machine the run
+- **The Run with agent dialog.** **Ask me before each action**, in its **Ask first** row, starts switched on when any machine the run
   could land on reports the chosen agent as not contained (`sandbox: none`), and off otherwise. The
   person can switch it either way. For an agent that cannot pause to ask, the switch is disabled and the
   dialog says "This agent can't pause to ask — it always decides on its own."
@@ -242,7 +242,7 @@ Know before you turn it on:
 
 ## What "Web tools" does and does not do
 
-The **Web tools** switch decides whether the agent may use its own web-fetch and
+The **Let the agent use web tools** switch, in the dialog's **Network** row, decides whether the agent may use its own web-fetch and
 web-search tools. Off, claude-code is started without them. It does not cut the
 network: unless the runner enforces [web access](#web-access), a shell command the
 agent runs can still reach any address the machine can, inside the sandbox or not. If a run must not reach the network, run it on a machine
