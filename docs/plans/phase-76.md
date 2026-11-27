@@ -63,7 +63,7 @@ Every row of ADR 0025's two tables and the amendment's four defaults, plus:
 | The folder | `.tack/project.yaml`: the `Outline` with `items` empty, as the single file writes it. `.tack/items/<key>.md`: `---\n` + the item's plan fields but `description` and `key`, as YAML + `---\n` + the description as Markdown (nothing when it has none). The key is the file name without `.md`, and a file whose name fails `is_key` while creating is refused naming the file. `read(files: &BTreeMap<String, String>) -> Result<Outline, Vec<String>>` takes paths relative to `.tack/`; any other path is a problem; items come back in key order and `check` orders them parents first. `write(&Outline) -> BTreeMap<String, String>` writes every visible item, in key order, without the board's keys. `serde-saphyr` (already the workspace's YAML) becomes a dependency of `tack-core`. |
 | The revisions table | `project_plan_revisions (project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, number INTEGER NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('board','file','revert')), hash TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (project_id, number))`. `body` is the outline the folder carries (the configuration plus each item's plan, no board keys) as canonical JSON (maps sorted, items in key order); `hash` is its SHA-256 in hex. |
 | What `merge` compares | `project` (one entry, fields `name`, `description`, `vocabulary`; `type` and `workflow` reported kept with their reason), `types`, `fields`, `profiles`, `roles`, `sprints`, `automation` (one entry), `items` (their plan fields). `teams` is never compared (decision 16). Objects are compared by dotted path (`autonomy.budgets.tokens_per_day`, `brief.risk`); arrays and scalars are leaves, except `depends_on` and `roles`, compared sorted. |
-| The three-way rule, per field at path `p` of an entry on both sides | `board == file` → that; `base == board` → the file's (a change); `base == file` → the board's (kept); else a conflict → `prefer`'s side, or a `Conflict` and the board's value in the merged outline. With no base entry: `board == file` → that, else a conflict. |
+| The three-way rule, per field at path `p` of an entry on both sides | `board == file` → that; `base == board` → the file's (a change); `base == file` → the board's (kept); else a `Conflict`, listed whether or not `prefer` settles it (so the plan shows what was chosen), and the merged outline takes `prefer`'s side, or the board's when there is none. `applies` is `conflicts.is_empty() || prefer.is_some()`. With no base entry: `board == file` → that, else a conflict. |
 | The three-way rule, per entry | In the file, not on the board: in base and `file == base` → kept absent ("removed on the board since the last revision"); in base and `file != base` → a conflict (`prefer=file` creates, `prefer=board` keeps absent); not in base → create. On the board, not in the file: in base and `board == base` → a removal candidate; in base and `board != base` → a conflict (`prefer=file` removes, `prefer=board` keeps); not in base → kept ("created on the board since the last revision", or "no revision yet: export once to make the folder authoritative"). `merge` is pure: it proposes removals; the route turns each into a removal or a kept row with the reason, from `usage_of`. |
 | What a removal costs, and what is refused | A role: the cards that lose it (`item_roles`). A field: the values deleted with it (`custom_field_values`). A sprint: the cards that leave it (`items.sprint_id`). A type: refused when in use, by the catalogue (`item_types.rs` `set_item_types`). A profile: refused when a role of another project or another project's default names it, or a run of it is not terminal. An item: **kept** with the reason when it has a row in `execution_requests`, `comments`, `attachments`, `change_sets` (`anchor_item_id`), `github_links`, or visible children (`items.parent_id`); otherwise removed, and its cost is its blockers (`dependencies`). A built-in profile is never a candidate (`to_bundle` leaves built-ins out). |
 | The project's own settings | `name`, `description` and `vocabulary` through `update_project_in`; `type` and `workflow` never written, reported kept. |
@@ -283,7 +283,10 @@ generated files.
   `run_all` changes nothing; the partial indexes exist (`PRAGMA index_list`).
 - `bundle/tests.rs`, rows in the existing check table: `key: Dev` creating a role (refused); a key
   another row holds (refused, names both); the board row's name under another key (refused); a
-  board row's key with a new name (an update, the rename). A new `the_export_writes_every_key`.
+  board row's key with a new name (an update, the rename). A new `the_export_writes_every_key`. In
+  `sync/tests.rs`, scenario one gains the rename task M could not write before keys existed: the
+  file renames role `Contenido` to `Content` under `key: contenido`, and the plan is one `update`
+  with `fields = [name]`.
 - `bundle.rs` (API): `the_export_is_the_import` now carries `key:` under every role, field, profile
   and sprint, and stays the same text after a round trip; a second import that renames `Contenido`
   to `Content` under `key: contenido` updates the same row.
@@ -341,7 +344,9 @@ of `to_bundle`, `Parts` gains the briefs) and its `tests.rs`; `crates/tack-db/sr
   item has no brief and the project no Done when), read with
   one `list_item_briefs_for_project` per request, never one call per item.
 
-**Tests (RED first):** `brief/tests.rs`: `readiness` rows for no brief, a manual criterion only,
+**Tests (RED first):** `sync/tests.rs`, scenario two gains what task M could not write before
+item keys and briefs existed: the file changes an item's `title` and `brief.risk` under its key,
+and the plan is one `update` with `[title, brief.risk]`. `brief/tests.rs`: `readiness` rows for no brief, a manual criterion only,
 one command criterion, the project's Done when, and a risk. `bundle/tests.rs`: an item whose key the board has is an update with a
 warning for its `status`; a brief with two criteria of the same id is refused naming the item.
 `bundle.rs` (API): importing `my-saas.yaml` creates its two briefs (two `item_brief_versions`
@@ -626,4 +631,11 @@ Owned by the frontend session; this session does not edit it. Two parts:
 
 ## How it went
 
-(Written by task Z.)
+- **M** (`0d9cf86c`): `diff(from, to)` is `merge(Three { base: from, board: from, file: to })`, the
+  mapping that gives the semantics this plan states. `BundleAutomation` has no `on_finish_status`;
+  the scenario uses `default_branch`. The integrator changed one rule: a conflict `prefer` settles
+  stays listed (see "Decided").
+- **Q** (`1dc6efb0`): an attempt merged by hand has no merge-ledger row, so the quality cuts by
+  domain and level put it under "Not merged"; `human_minutes_by_sprint` is ordered by sprint id.
+
+(The rest is written by task Z.)
