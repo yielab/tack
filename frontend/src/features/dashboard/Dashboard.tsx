@@ -1,392 +1,99 @@
-import { createEffect, createResource, For, Show, createMemo, onCleanup } from 'solid-js';
-import { A, useParams, useNavigate } from '@solidjs/router';
-import { api } from '../../shared/api';
-import { useProject } from '../../shared/state/projectContext';
-import { useExecutionStore } from '../../shared/state/executionContext';
-import { computeDashboardStats, computeRunStats, workOf, TOKENS_BY_TEAM_UNAVAILABLE, type RunOutcome, type RunStats } from './computeStats';
-import { useVocab } from '../../shared/vocab/useVocab';
-import { Button, EmptyState, Skeleton } from '../../shared/ui';
-import { IconOverview } from '../../shared/ui/icons';
-import { priorityColor } from '../../shared/ui/PriorityDot';
-import { typeTone } from '../../shared/ui/TypeTile';
-import { useItemTypes } from '../../shared/vocab/useItemTypes';
-import type { TypeColor } from '../../shared/types';
-import type { JSX } from 'solid-js';
-import type { Item, Priority } from '../../shared/types';
-import Card from '../../shared/ui/Card';
-import ProgressBar from '../../shared/ui/ProgressBar';
-import TypeTile from '../../shared/ui/TypeTile';
-import { itemHref } from '../../shared/ui/ItemPath';
+import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js';
+import { useSearchParams } from '@solidjs/router';
+import { Select } from '../../shared/ui';
+import Progress from './Progress';
+import AgentsWork from './AgentsWork';
+import AutonomyByDomain from './AutonomyByDomain';
 
-/** The runs bar's segments, in the order the board lists its states. Colours are the run-state tokens. */
-const RUN_OUTCOMES: ReadonlyArray<{ id: RunOutcome; label: string }> = [
-  { id: 'done', label: 'Done' },
-  { id: 'review', label: 'Ready for review' },
-  { id: 'needs', label: 'Needs you' },
-  { id: 'running', label: 'Queued or running' },
-  { id: 'failed', label: 'Failed' },
-  { id: 'cancelled', label: 'Cancelled' },
+/** The three parts of the Overview, in the order the switch lists them; Progress is the one the address names when it names none. */
+const PARTS = [
+  { id: 'progress', label: 'Progress' },
+  { id: 'agents', label: "Agents' work" },
+  { id: 'autonomy', label: 'Autonomy by domain' },
+] as const;
+
+type Part = (typeof PARTS)[number]['id'];
+
+function partOf(raw: string | string[] | undefined): Part {
+  const id = Array.isArray(raw) ? raw[0] : raw;
+  return PARTS.find((p) => p.id === id)?.id ?? 'progress';
+}
+
+/** The periods the agents' work and the autonomy by domain are read over, in days; `all` is all time. */
+const WINDOWS = [
+  { value: 'all', label: 'All time' },
+  { value: '7', label: 'Last 7 days' },
+  { value: '28', label: 'Last 28 days' },
+  { value: '90', label: 'Last 90 days' },
 ];
 
+function sinceOf(period: string): string | undefined {
+  return period === 'all' ? undefined : new Date(Date.now() - Number(period) * 86_400_000).toISOString();
+}
+
+/** How the project is going: its progress, how well the agents' work is going, and what each domain is trusted with. */
 export default function Dashboard() {
-  const params = useParams();
-  const projectId = params.id!;
-  const navigate = useNavigate();
-
-  const { project, vocabulary } = useProject();
-  const { t } = useVocab();
-  const pointsWord = () => vocabulary()?.story_points?.toLowerCase();
-  const types = useItemTypes();
-  const [items] = createResource(() => api.items.list(projectId));
-  const executions = useExecutionStore();
-
-  // The runs row reads each item's latest run through the store the board fills, so the
-  // project's runs come in one batched request, the same one the board's cards use.
-  createEffect(() => {
-    const stops = workOf(items() ?? []).map((item) => executions.watchItem(item.id));
-    onCleanup(() => stops.forEach((stop) => stop()));
-  });
-
-  // Computed statistics (pure aggregation in computeStats.ts).
-  const stats = createMemo(() =>
-    computeDashboardStats(items() || [], project()?.workflow?.statuses || [], new Date()),
-  );
-
-  // The store holds every run any view has loaded, so only this project's items count.
-  const runStats = createMemo(() =>
-    computeRunStats(
-      workOf(items() || []),
-      [...executions.requests().values()].flatMap((record) => (record.summary ? [record.summary] : [])),
-      new Date(),
-    ),
-  );
-
-  const getStatusCategoryColor = (category: string) => {
-    switch (category) {
-      case 'done': return 'var(--color-success-600)';
-      case 'in_progress': return 'var(--color-primary-600)';
-      case 'todo': return 'var(--color-accent2)';
-      default: return 'var(--color-primary-600)';
-    }
-  };
-
-  const pct = (n: number) => (stats().totalItems > 0 ? Math.round((n / stats().totalItems) * 100) : 0);
+  const [params, setParams] = useSearchParams();
+  const part = createMemo(() => partOf(params.part));
+  const [period, setPeriod] = createSignal('all');
+  const since = createMemo(() => sinceOf(period()));
 
   return (
-    <div class="flex flex-col gap-[18px]">
-      {/* Header */}
-      <div>
-        <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
-          Overview
-        </h1>
-        <p class="mt-0.5 text-small text-content-muted">
-          Project statistics and progress
-        </p>
-      </div>
-
-      {/* Loading */}
-      <Show when={items.loading && !items()}>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5" aria-hidden="true">
-          <For each={[1, 2, 3, 4]}>{() => <Skeleton height="90px" class="rounded-lg!" />}</For>
+    <div class="flex flex-col gap-8">
+      <header class="flex flex-col gap-4">
+        <div>
+          <h1 class="m-0 text-title text-content">Overview</h1>
+          <p class="mt-1 text-small text-content-muted">How the plan is going and how well the agents' work is going</p>
         </div>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5" aria-hidden="true">
-          <For each={[1, 2]}>{() => <Skeleton height="180px" class="rounded-lg!" />}</For>
-        </div>
-      </Show>
-
-      {/* No items yet */}
-      <Show when={!items.loading && (items() ?? []).length === 0}>
-        <Card>
-          <EmptyState
-            icon={<IconOverview size={28} />}
-            title="No data to show yet"
-            description="Statistics appear here once you add items to your project. Start in Board or List."
-            action={
-              <Button variant="secondary" size="sm" onClick={() => navigate(`/projects/${projectId}/board`)}>
-                Go to Board
-              </Button>
-            }
-          />
-        </Card>
-      </Show>
-
-      {/* Stats Grid */}
-      <Show when={(items() ?? []).length > 0}>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          <StatTile label="Total Items" accent>
-            {stats().totalItems}
-          </StatTile>
-          <StatTile label="Completed">
-            {stats().doneItems}
-          </StatTile>
-          <StatTile label="Completion Rate">
-            {stats().completionRate}%
-          </StatTile>
-          <StatTile
-            label="Completed (7 / 30 days)"
-            sub={<>+{stats().recentItems} added in 7 days</>}
+        <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <div
+            role="group"
+            aria-label="Part of the overview"
+            data-testid="overview-parts"
+            class="inline-flex gap-0.5 rounded-md border p-0.5"
+            style={{ 'background-color': 'var(--color-bg-subtle)', 'border-color': 'var(--color-border-light)' }}
           >
-            {stats().throughput7} <span class="text-lg text-content-subtle">/ {stats().throughput30}</span>
-          </StatTile>
-        </div>
-
-        {/* Runs: hidden until the project has run anything, so a board that never ran has no empty row. */}
-        <Show when={runStats().withRuns > 0}>
-          <RunsRow stats={runStats()} projectId={projectId} />
-        </Show>
-
-        {/* Groups: absent in a project without any, so it looks as it always did. */}
-        <Show when={stats().groups.length > 0}>
-          <GroupsPanel groups={stats().groups} pointsWord={pointsWord()} />
-        </Show>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-          {/* Status Distribution */}
-          <MeterCard title="Status Distribution">
-            <For each={stats().byStatus}>
-              {(status) => (
-                <Meter
-                  label={status.name}
-                  value={`${status.count} (${pct(status.count)}%)`}
-                  percent={pct(status.count)}
-                  color={getStatusCategoryColor(status.category)}
-                />
-              )}
-            </For>
-          </MeterCard>
-
-          {/* Priority Distribution — same colours as PriorityDot */}
-          <MeterCard title="Priority Distribution">
-            <For each={Object.entries(stats().byPriority)}>
-              {([priority, count]) => (
-                <Meter
-                  label={priority}
-                  capitalize
-                  value={`${count} (${pct(count)}%)`}
-                  percent={pct(count)}
-                  color={priorityColor(priority as Priority)}
-                />
-              )}
-            </For>
-          </MeterCard>
-
-          {/* Type Distribution */}
-          <MeterCard title="Item Types">
-            <For each={stats().byType}>
-              {(type) => (
-                <Meter
-                  label={types.name(type.name)}
-                  value={`${type.count} (${pct(type.count)}%)`}
-                  percent={pct(type.count)}
-                  color={typeBarColor(types.color(type.name))}
-                />
-              )}
-            </For>
-          </MeterCard>
-
-          {/* Story Points Progress */}
-          <Show when={stats().totalEstimate > 0}>
-            <MeterCard title={`${t('story_points')} Progress`}>
-              <div class="flex items-center justify-between text-small">
-                <span class="text-content-muted">Total Points</span>
-                <span class="font-heading text-2xl text-content">
-                  {stats().totalEstimate}
-                </span>
-              </div>
-              <div class="flex items-center justify-between text-small">
-                <span class="text-content-muted">Completed</span>
-                <span class="font-heading text-2xl" style={{ color: 'var(--color-success-600)' }}>
-                  {stats().completedEstimate}
-                </span>
-              </div>
-              <Meter
-                label="Progress"
-                value={`${Math.round((stats().completedEstimate / stats().totalEstimate) * 100)}%`}
-                percent={(stats().completedEstimate / stats().totalEstimate) * 100}
-                color="var(--color-success-600)"
-              />
-            </MeterCard>
-          </Show>
-        </div>
-      </Show>{/* end: items > 0 */}
-    </div>
-  );
-}
-
-/** Bar colour per item type — the same hue family TypeTile uses; neutral
- *  types fall back to the tertiary text tone so the bar stays visible. */
-function typeBarColor(color: TypeColor): string {
-  const fg = typeTone(color).fg;
-  return fg === 'var(--color-text-secondary)' ? 'var(--color-text-tertiary)' : fg;
-}
-
-/**
- * The runs row: this week's runs as one bar with the count of each outcome in words beside it, what
- * needs a person now, and tokens per team. That last tile is disabled with its reason, since the
- * figure cannot be made from what this page loads. Factory metrics is linked from here, not merged in.
- */
-function RunsRow(props: { stats: RunStats; projectId: string }) {
-  const week = () => props.stats.week;
-  const weekTotal = () => RUN_OUTCOMES.reduce((sum, outcome) => sum + week()[outcome.id], 0);
-  // The bar is a graphic, so its counts are spelled out for a screen reader.
-  const barLabel = () =>
-    weekTotal() === 0
-      ? 'Runs started in the last 7 days: none.'
-      : `Runs started in the last 7 days: ${RUN_OUTCOMES.filter((o) => week()[o.id] > 0)
-          .map((o) => `${week()[o.id]} ${o.label.toLowerCase()}`)
-          .join(', ')}.`;
-
-  return (
-    <section aria-labelledby="runs-heading" class="flex flex-col gap-2.5">
-      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="runs-heading" class="text-lg text-content">Runs</h2>
-        <A
-          href={`/projects/${props.projectId}/factory`}
-          class="text-small font-semibold hover:underline focus:outline-none focus-visible:ring-2"
-          style={{ color: 'var(--color-accent-ink)' }}
-        >
-          Factory metrics
-        </A>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div
-          class="rounded-lg px-5 py-4 flex flex-col gap-3 min-w-0 md:col-span-2 lg:col-span-2"
-          style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
-        >
-          <p class="text-xs font-bold" style={{ color: 'var(--color-text-secondary)' }}>
-            Runs started in the last 7 days
-          </p>
-          <div role="img" aria-label={barLabel()} class="flex h-2 w-full overflow-hidden rounded-full bg-app">
-            <For each={RUN_OUTCOMES}>
-              {(outcome) => (
-                <Show when={week()[outcome.id] > 0}>
-                  <div class="h-full" style={{ flex: week()[outcome.id], background: `var(--run-${outcome.id}-ink)` }} />
-                </Show>
+            <For each={PARTS}>
+              {(p) => (
+                <button
+                  type="button"
+                  aria-pressed={part() === p.id}
+                  data-testid={`overview-part-${p.id}`}
+                  class="h-8 rounded-md px-3.5 text-small focus:outline-none focus-visible:ring-2"
+                  style={{
+                    'background-color': part() === p.id ? 'var(--color-bg-base)' : 'transparent',
+                    color: part() === p.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                    'font-weight': part() === p.id ? 700 : 500,
+                    border: 0,
+                    cursor: 'pointer',
+                    '--tw-ring-color': 'var(--color-focus-ring)',
+                  }}
+                  onClick={() => setParams({ part: p.id === 'progress' ? undefined : p.id }, { replace: true })}
+                >
+                  {p.label}
+                </button>
               )}
             </For>
           </div>
-          <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-small sm:grid-cols-3">
-            <For each={RUN_OUTCOMES}>
-              {(outcome) => (
-                <li class="flex min-w-0 items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    class="h-2.5 w-2.5 flex-none rounded-full"
-                    style={{ background: `var(--run-${outcome.id}-ink)` }}
-                  />
-                  <span class="min-w-0 text-content" style={{ 'overflow-wrap': 'anywhere' }}>
-                    {outcome.label}
-                  </span>
-                  <span class="ml-auto text-content-muted">{week()[outcome.id]}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-          <p class="text-xs text-content-subtle">Each item counts once, by its latest run.</p>
+          <Show when={part() !== 'progress'}>
+            <div class="w-48">
+              <Select label="Period" options={WINDOWS} value={period()} onChange={(e) => setPeriod(e.currentTarget.value)} />
+            </div>
+          </Show>
         </div>
+      </header>
 
-        <StatTile label="Needs you" sub="Questions to answer and runs ready for review, now">
-          {props.stats.needYou}
-        </StatTile>
-        <StatTile label="Tokens per team" unavailable sub={TOKENS_BY_TEAM_UNAVAILABLE}>
-          —
-        </StatTile>
-      </div>
-    </section>
-  );
-}
-
-/** Each top-level group with how far its work is, the ones that need a person first. */
-function GroupsPanel(props: { groups: Item[]; pointsWord?: string }) {
-  return (
-    <Card class="px-5 py-[18px] flex flex-col gap-2.5">
-      <h2 id="groups-heading" class="text-lg text-content">Groups</h2>
-      <ul aria-labelledby="groups-heading" class="m-0 flex list-none flex-col gap-2 p-0">
-        <For each={props.groups}>
-          {(group) => (
-            <li data-testid="group-row" class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <TypeTile type={group.item_type} class="flex-none" />
-              <A
-                href={itemHref(group.project_id, group.id)}
-                class="min-w-0 truncate text-small font-bold hover:underline focus:outline-none focus-visible:ring-2"
-                style={{ color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
-              >
-                {group.title}
-              </A>
-              <Show
-                when={(group.progress?.total ?? 0) > 0}
-                fallback={<span class="text-xs text-content-muted">No work yet</span>}
-              >
-                <ProgressBar progress={group.progress} pointsWord={props.pointsWord} class="ml-auto" />
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
-    </Card>
-  );
-}
-
-function StatTile(props: {
-  label: string;
-  accent?: boolean;
-  /** A figure this page cannot make: the tile is shown disabled, and its `sub` says why. */
-  unavailable?: boolean;
-  sub?: JSX.Element;
-  children: JSX.Element;
-}) {
-  return (
-    <div
-      class="rounded-lg px-5 py-[18px] flex flex-col gap-1.5 min-w-0"
-      role={props.unavailable ? 'group' : undefined}
-      aria-label={props.unavailable ? props.label : undefined}
-      aria-disabled={props.unavailable ? 'true' : undefined}
-      style={props.accent
-        ? { 'background-color': 'var(--color-primary-600)', color: 'var(--color-on-accent)' }
-        : { 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
-    >
-      <p
-        class="text-xs font-bold"
-        style={{ color: props.accent ? 'var(--color-on-accent)' : 'var(--color-text-secondary)' }}
-      >
-        {props.label}
-      </p>
-      <p
-        class="font-heading leading-none"
-        style={{
-          'font-size': '2.5rem',
-          color: props.unavailable ? 'var(--color-text-tertiary)' : undefined,
-        }}
-      >
-        {props.children}
-      </p>
-      <Show when={props.sub}>
-        <p class="text-xs text-content-subtle" style={{ 'overflow-wrap': 'anywhere' }}>{props.sub}</p>
-      </Show>
-    </div>
-  );
-}
-
-function MeterCard(props: { title: string; children: JSX.Element }) {
-  return (
-    <Card class="px-5 py-[18px] flex flex-col gap-2.5">
-      <h2 class="text-lg text-content">{props.title}</h2>
-      {props.children}
-    </Card>
-  );
-}
-
-function Meter(props: { label: string; value: string; percent: number; color: string; capitalize?: boolean }) {
-  return (
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center text-small">
-        <span class="text-content" classList={{ capitalize: !!props.capitalize }}>{props.label}</span>
-        <span class="ml-auto text-content-muted">{props.value}</span>
-      </div>
-      <div class="w-full h-[7px] rounded-full bg-app">
-        <div class="h-full rounded-full" style={{ width: `${props.percent}%`, background: props.color }} />
-      </div>
+      <Switch>
+        <Match when={part() === 'progress'}>
+          <Progress />
+        </Match>
+        <Match when={part() === 'agents'}>
+          <AgentsWork since={since()} />
+        </Match>
+        <Match when={part() === 'autonomy'}>
+          <AutonomyByDomain since={since()} />
+        </Match>
+      </Switch>
     </div>
   );
 }

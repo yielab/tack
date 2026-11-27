@@ -204,23 +204,28 @@ Two-pane sprint planning. The tab and the words below follow your project's [voc
 
 ## Overview
 
-Read-only project statistics, in the sidebar.
+Read-only, per project, in the sidebar. It is where you read how the project is going, in three parts. A switch under the title chooses the part, and the address keeps the choice (`?part=agents` or `?part=autonomy`; **Progress** is the one it opens on). **Period** beside the switch, for the last two parts, reads them over all time or the last 7, 28 or 90 days.
 
-- Tiles for the total number of items, how many are completed, the completion rate and what was completed in the last 7 and 30 days. These and every count below cover work only; an item that holds work is not counted, its work is.
-- Once the project has run anything, a **Runs** row: a bar of the runs started in the last 7 days by outcome, with the count of each in words beside it; the number of items that need you now (a question to answer, or a run ready for review); and a link to **Factory metrics**. Each item counts once, by its latest run. **Tokens per team** is shown disabled, with the reason, because this page does not load the attempts the tokens are counted from.
-- When the project has items that hold work, a **Groups** panel lists each one that sits at the top, with its type, its title (a link to its page) and how far its work is (**3 of 7 done**, or points when the work has estimates, and **2 need you** when any of it waits for you). The ones that need you come first, then those with the least left to do.
-- A breakdown by workflow status, by priority and by item type, as bars.
-- Progress in story points (or your project's word for them), when items carry estimates.
+### Progress
+
+How far the work is.
+
+- When something waits for you, a line in amber comes first: how many items need you now (a question to answer, or a run ready for review), with a link to **Needs you**. When runs exist and none waits, it says so.
+- The **Completion Rate**, then tiles for the total number of items, how many are completed and what was completed in the last 7 and 30 days. These and every count below cover work only; an item that holds work is not counted, its work is.
+- Once the project has run anything, a **Runs** section: a bar of the runs started in the last 7 days by outcome, with the count of each in words beside it, and a link to **Agents' work**. Each item counts once, by its latest run. **Tokens per team** is shown disabled, with the reason: this part does not load the attempts the tokens are counted from, and **Agents' work** lists them by team.
+- When the project has items that hold work, a **Groups** section lists each one that sits at the top, with its type, its title (a link to its page) and how far its work is (**3 of 7 done**, or points when the work has estimates, and **2 need you** when any of it waits for you). The ones that need you come first, then those with the least left to do.
+- A **Breakdown** by workflow status, by priority and by item type, as bars, and progress in story points (or your project's word for them) when items carry estimates.
 - Everything is computed when you open the page, from the items and each item's latest run.
 
----
+### Agents' work
 
-## Factory metrics
+How well the agents' work is going on this project: how often a run needed a person, how long the person took, how many tokens verification used, how many changes were accepted and merged, and how many tokens the runs used. The figure that opens it is the time a decision waited for a person. A card with nothing to measure says **Not measured** and why, never `0`. Every figure is defined in [Agents' work](reviewing-runs.md#agents-work).
 
-Read-only, per project — **Factory metrics** in the sidebar. It answers how well agent work is
-going on this project: how often a run needed a person, how long the person took, how many tokens
-verification used, how many changes were accepted and merged, and how many tokens the runs used. A card with nothing to
-measure says **Not measured** and why, never `0`. Every card is defined in
-[Factory metrics](reviewing-runs.md#factory-metrics).
+### Autonomy by domain
 
-<img src="../screenshots/factory-metrics.png" width="98%" alt="The Factory metrics page: escalation rate 50% (1 decision / 2 attempts), human minutes per decision Not measured with its reason, decided alone 0%, human minutes per pack review, pack acceptance rate 100%, verification tax 4.2% in tokens with its inputs, the pull-request outcomes, and a Quality card that says the verifier is not installed.">
+What the project trusts Tack to merge alone, and how that went. It opens with the project's level (**L3**, **L4** or **L5**) in words, and how many changes Tack merged by itself and how many of them were undone. Under it:
+
+- **Domains**: each domain with its level, what Tack merged by itself in it and what was undone (reverted, or turned CI red). A project with none says so.
+- **How the work went**: the work's success, first-pass and revert rates **by domain** and **by level**, with the work that did not merge in its own row. A cut the board does not make is shown disabled with its reason (**Not measured yet: the board does not cut the work by level**).
+
+Read it to see which kinds of task are accepted alone, and where a level should go up or down. Levels and domains are set in **Settings → Automation → Merge** (see [Merging](merging.md)).

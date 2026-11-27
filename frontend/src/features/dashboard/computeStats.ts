@@ -118,7 +118,7 @@ export interface RunStats {
 
 /** Why the tokens-per-team tile is disabled. Read from the Overview's own loaded data, not from a request. */
 export const TOKENS_BY_TEAM_UNAVAILABLE =
-  'Tokens are counted per attempt, and this page does not load attempts, so they cannot be added up by team.';
+  "Tokens are counted per attempt, which this part does not load: Agents' work lists them by team.";
 
 /** The state of an item's latest run, in the board's own words; queued counts with running. */
 function outcomeOf(summary: ExecutionSummary | undefined, needsReview: boolean): RunOutcome | undefined {
