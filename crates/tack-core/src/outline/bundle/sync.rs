@@ -17,6 +17,7 @@ pub struct Three<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Prefer {
     File,
     Board,
@@ -24,6 +25,7 @@ pub enum Prefer {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Verb {
     Create,
     Update,
@@ -32,6 +34,7 @@ pub enum Verb {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FieldChange {
     pub path: String,
     pub from: Value,
@@ -39,6 +42,7 @@ pub struct FieldChange {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Change {
     pub section: &'static str,
     pub key: String,
@@ -49,6 +53,7 @@ pub struct Change {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Conflict {
     pub section: &'static str,
     pub key: String,

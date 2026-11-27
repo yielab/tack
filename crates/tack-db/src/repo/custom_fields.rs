@@ -394,10 +394,20 @@ pub async fn delete_field_value(
     item_id: Uuid,
     field_id: Uuid,
 ) -> Result<(), StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    delete_field_value_in(&mut conn, item_id, field_id).await
+}
+
+/// The value `DELETE` (see [`delete_field_value`]), on the caller's connection.
+pub(crate) async fn delete_field_value_in(
+    conn: &mut SqliteConnection,
+    item_id: Uuid,
+    field_id: Uuid,
+) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM custom_field_values WHERE item_id = ? AND field_id = ?")
         .bind(item_id.to_string())
         .bind(field_id.to_string())
-        .execute(repo.pool())
+        .execute(&mut *conn)
         .await?;
     Ok(())
 }

@@ -25,9 +25,9 @@ use crate::handlers::spa;
 use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, briefs,
     change_sets, comments, custom_fields, decisions, dependencies, digest, executions, export,
-    import_github, import_linear, item_types, items, local_runner, metrics, mrp, notifications,
-    outline, projects, roles, routing, runner_admin, runner_protocol, settings, sprints,
-    team_apply, teams, templates, threads, triggers, websocket,
+    folder, import_github, import_linear, item_types, items, local_runner, metrics, mrp,
+    notifications, outline, projects, roles, routing, runner_admin, runner_protocol, settings,
+    sprints, team_apply, teams, templates, threads, triggers, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, refuse_cross_site, require_host, require_token, set_session_cookie,
@@ -362,6 +362,18 @@ pub fn build_router(state: AppState) -> Router {
         .route("/projects/{id}", patch(projects::update_project))
         .route("/projects/{id}", delete(projects::delete_project))
         .route("/projects/{id}/export", get(export::export_project))
+        .route("/projects/{id}/folder", get(folder::export_folder))
+        .route("/projects/{id}/folder/status", get(folder::folder_status))
+        .route("/projects/{id}/folder/plan", post(folder::plan_folder))
+        .route("/projects/{id}/folder/apply", post(folder::apply_folder))
+        .route(
+            "/projects/{id}/folder/revisions",
+            get(folder::list_revisions),
+        )
+        .route(
+            "/projects/{id}/folder/revisions/{n}",
+            get(folder::get_revision),
+        )
         .route("/projects/import", post(export::import_project))
         .route(
             "/projects/outline",

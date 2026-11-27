@@ -178,6 +178,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("114_reviewer_verdicts", &MIGRATION_114[..]),
         ordinary("115_keys", &MIGRATION_115[..]),
         ordinary("116_waiting_max", &MIGRATION_116[..]),
+        ordinary("117_plan_revisions", &MIGRATION_117[..]),
     ]
 }
 
@@ -2381,3 +2382,15 @@ const MIGRATION_115: [&str; 10] = [
 // 116: a project may limit how many things wait for a person (`project_budgets.waiting_max`), beside the
 // limit on what waits in the queue; null is no limit, and every project starts with none.
 const MIGRATION_116: [&str; 1] = ["ALTER TABLE project_budgets ADD COLUMN waiting_max INTEGER"];
+
+// 117: every export and import of a project folder leaves a revision: the plan as the folder carries it
+// (canonical JSON), its hash, and who made it. The next import compares against the last one.
+const MIGRATION_117: [&str; 1] = ["CREATE TABLE project_plan_revisions (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        origin TEXT NOT NULL CHECK (origin IN ('board','file','revert')),
+        hash TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (project_id, number)
+    )"];

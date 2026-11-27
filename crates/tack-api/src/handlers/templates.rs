@@ -3,10 +3,8 @@ use axum::response::IntoResponse;
 use axum::{extract::State, http::StatusCode};
 use serde::Deserialize;
 use tack_core::models::*;
-use tack_core::outline::bundle::{Parts, ProfileRow, to_bundle};
 use tack_core::outline::{
-    BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain, BundleField, BundleStatus,
-    BundleType, BundleWorkflow, Outline, OutlineProject,
+    BundleField, BundleStatus, BundleType, BundleWorkflow, Outline, OutlineProject,
 };
 use tack_core::workflow::{StatusCategory, StatusDef};
 use tack_db::repo;
@@ -16,6 +14,7 @@ use validator::Validate;
 
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};
+use crate::handlers::export::bundle_of;
 use crate::handlers::outline::create_from_bundle;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -371,81 +370,12 @@ pub async fn save_project_as_template(
         })
         .collect();
 
-    // Snapshot boards — columns are derived from workflow statuses
-    // The project's roles, the profiles they use and its automation settings,
-    // written the way an export writes them.
-    let profiles: Vec<ProfileRow> = state
-        .repo
-        .list_agent_profile_rows()
-        .await
-        .map_err(read_failed(project_id))?;
-    let roles = state
-        .repo
-        .list_roles(project_id)
-        .await
-        .map_err(read_failed(project_id))?;
-    let sprints = state
-        .repo
-        .list_sprints(project_id)
-        .await
-        .map_err(read_failed(project_id))?;
-    let fleets = state
-        .repo
-        .fleet_names()
-        .await
-        .map_err(read_failed(project_id))?;
-    let autonomy =
-        tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string())
-            .await
-            .map_err(read_failed(project_id))?
-            .map(|s| BundleAutonomy {
-                level: Some(s.level.to_string()),
-                domains: s
-                    .domains
-                    .into_iter()
-                    .map(|d| BundleDomain {
-                        name: d.name,
-                        paths: d.path_globs,
-                        item_types: d.item_types,
-                        level: d.level.to_string(),
-                    })
-                    .collect(),
-                verify_require: Some(s.verify_require),
-                verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
-                budgets: Some(BundleBudgets {
-                    tokens_per_day: s.budgets.tokens_per_day,
-                    auto_merges_per_day: s.budgets.auto_merges_per_day,
-                    queue_items_max: s.budgets.queue_items_max,
-                    waiting_max: s.budgets.waiting_max,
-                }),
-                merge_on_done: Some(s.merge_on_done),
-            });
-    let reported_teams = crate::handlers::teams::reported_bundle_teams(&state)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, project_id = %project_id, "Failed to read the reported teams");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let bundle = to_bundle(&Parts {
-        project: &project,
-        fields: &[],
-        profiles: &profiles,
-        roles: &roles,
-        sprints: &sprints,
-        autonomy,
-        auto_start: BundleAutoStart::from_project(
-            project.auto_start_enabled,
-            project.auto_start_status.clone(),
-            project.auto_start_max_open,
-        ),
-        items: &[],
-        briefs: &[],
-        item_roles: &[],
-        item_fields: &[],
-        dependencies: &[],
-        fleets: &fleets,
-        reported_teams: &reported_teams,
-    });
+    // The project's roles, the profiles they use and its automation settings, written the way an
+    // export writes them.
+    let bundle = bundle_of(&state, &project, &[]).await.map_err(|e| {
+        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let template_data = CreateProjectTemplate {
         item_types: Some(project.item_types.clone()),
@@ -472,12 +402,4 @@ pub async fn save_project_as_template(
             tracing::error!(error = %e, project_id = %project_id, "Failed to save project as template");
             StatusCode::INTERNAL_SERVER_ERROR
         })
-}
-
-/// Logs a failed read of the project for a template and answers 500.
-fn read_failed<E: std::fmt::Display>(project_id: Uuid) -> impl Fn(E) -> StatusCode {
-    move |e| {
-        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
-        StatusCode::INTERNAL_SERVER_ERROR
-    }
 }

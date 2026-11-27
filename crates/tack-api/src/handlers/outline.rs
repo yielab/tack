@@ -134,7 +134,7 @@ async fn missing_of(state: &AppState, outline: &Outline) -> ApiResult<Vec<Missin
     Ok(missing(outline, &teams, &harnesses))
 }
 
-fn refused(e: OutlineError) -> ApiError {
+pub(crate) fn refused(e: OutlineError) -> ApiError {
     ApiError::BadRequest(e.to_string())
 }
 
@@ -505,11 +505,11 @@ async fn into_existing_project(
 /// What a project's file is checked against, owning what [`Board`] borrows.
 pub(crate) struct OwnedBoard {
     workflow: tack_core::workflow::WorkflowConfig,
-    fields: Vec<tack_core::models::CustomFieldDefinition>,
-    profiles: Vec<ProfileRow>,
-    roles: Vec<Named>,
-    sprints: Vec<Named>,
-    items: Vec<Item>,
+    pub(crate) fields: Vec<tack_core::models::CustomFieldDefinition>,
+    pub(crate) profiles: Vec<ProfileRow>,
+    pub(crate) roles: Vec<Named>,
+    pub(crate) sprints: Vec<Named>,
+    pub(crate) items: Vec<Item>,
     fleets: Vec<(String, String)>,
     level: Level,
     auto_start: bool,
@@ -533,6 +533,25 @@ impl OwnedBoard {
             new_project: false,
         }
     }
+}
+
+/// Every visible item of the project, page by page.
+pub(crate) async fn visible_items(state: &AppState, project_id: Uuid) -> ApiResult<Vec<Item>> {
+    let mut items = Vec::new();
+    for page in 1.. {
+        let filter = ItemFilter {
+            page: Some(page),
+            per_page: Some(ItemFilter::MAX_PER_PAGE),
+            ..Default::default()
+        };
+        let cards = state.repo.list_items(project_id, &filter).await?;
+        let last = cards.len() < ItemFilter::MAX_PER_PAGE as usize;
+        items.extend(cards.into_iter().map(|card| card.item));
+        if last {
+            break;
+        }
+    }
+    Ok(items)
 }
 
 /// What a file is checked against for this project: what its board has today.
@@ -560,20 +579,7 @@ pub(crate) async fn board_of(state: &AppState, project: &Project) -> ApiResult<O
             name: s.name,
         })
         .collect();
-    let mut items = Vec::new();
-    for page in 1.. {
-        let filter = ItemFilter {
-            page: Some(page),
-            per_page: Some(ItemFilter::MAX_PER_PAGE),
-            ..Default::default()
-        };
-        let cards = state.repo.list_items(project.id, &filter).await?;
-        let last = cards.len() < ItemFilter::MAX_PER_PAGE as usize;
-        items.extend(cards.into_iter().map(|card| card.item));
-        if last {
-            break;
-        }
-    }
+    let items = visible_items(state, project.id).await?;
     let profiles = state.repo.list_agent_profile_rows().await?;
     let fleets = state.repo.fleet_names().await?;
     let level = queries::autonomy::project_settings(&state.repo, &project.id.to_string())
@@ -617,7 +623,7 @@ fn uuid_of(id: &str) -> ApiResult<Uuid> {
 }
 
 /// What a write that failed answers: the section the store failed in, or the board's own rule.
-fn failed(failure: WriteError) -> ApiError {
+pub(crate) fn failed(failure: WriteError) -> ApiError {
     match failure {
         WriteError::Section { section, source } => ApiError::SectionFailed { section, source },
         WriteError::Refused(rule) => ApiError::Core(rule),
@@ -790,7 +796,7 @@ fn automation_of(
 /// workflow (a new project only), types, fields, profiles, roles, sprints, automation, then
 /// the items with their roles and field values. `current` is the project's autonomy settings
 /// today, which the file's overlay.
-fn to_write(
+pub(crate) fn to_write(
     target: Target,
     board: &Board<'_>,
     mut plan: Plan,
@@ -931,6 +937,8 @@ fn to_write(
                 .map(|s| Ok((s.name.trim().to_string(), uuid_of(&s.id)?)))
                 .collect::<ApiResult<_>>()?,
         ),
+        removals: Default::default(),
+        revisions: None,
     })
 }
 
@@ -971,6 +979,26 @@ fn item_write(update: PlannedUpdate, board: &Board<'_>) -> ApiResult<ItemWrite> 
     })
 }
 
+/// The autonomy settings a plan overlays: the project's today when the plan asks for any.
+pub(crate) async fn current_settings(
+    state: &AppState,
+    target: &Target,
+    plan: &Plan,
+) -> ApiResult<Settings> {
+    let asks_autonomy = plan
+        .automation
+        .as_ref()
+        .is_some_and(|auto| auto.autonomy.is_some());
+    Ok(match target {
+        Target::Existing(id) if asks_autonomy => {
+            queries::autonomy::project_settings(&state.repo, &id.to_string())
+                .await?
+                .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
+        }
+        _ => Settings::default(),
+    })
+}
+
 /// Write a checked plan: one call to the store, which writes every section or none. The new
 /// project's id (or the existing one's) comes back with what the answer reports.
 async fn write(
@@ -995,18 +1023,7 @@ async fn write(
     let mut warnings = read.warnings;
     warnings.extend(std::mem::take(&mut plan.warnings));
     let new_types = std::mem::take(&mut plan.new_types);
-    let asks_autonomy = plan
-        .automation
-        .as_ref()
-        .is_some_and(|auto| auto.autonomy.is_some());
-    let current = match &target {
-        Target::Existing(id) if asks_autonomy => {
-            queries::autonomy::project_settings(&state.repo, &id.to_string())
-                .await?
-                .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
-        }
-        _ => Settings::default(),
-    };
+    let current = current_settings(state, &target, &plan).await?;
 
     let written = state
         .repo

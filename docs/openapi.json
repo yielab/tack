@@ -4431,6 +4431,395 @@
         }
       }
     },
+    "/api/projects/{id}/folder": {
+      "get": {
+        "tags": [
+          "folder"
+        ],
+        "summary": "GET /api/projects/{id}/folder",
+        "operationId": "export_folder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project folder as the board has it; a revision when the board changed since the last",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/folder/apply": {
+      "post": {
+        "tags": [
+          "folder"
+        ],
+        "summary": "POST /api/projects/{id}/folder/apply",
+        "operationId": "apply_folder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "description": "Go back to this revision instead of reading a folder from the body.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "prefer",
+            "in": "query",
+            "description": "Settle every conflict with the folder's side or the board's.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Prefer"
+            }
+          },
+          {
+            "name": "plan_hash",
+            "in": "query",
+            "description": "The hash the preview answered; an apply needs it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The project folder's files; none with `revision`",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Folder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The plan was written, in one transaction, and left a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderApplied"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The folder was refused, or a conflict has no side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent may preview the project folder; a person applies it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or revision not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The project changed since the preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/folder/plan": {
+      "post": {
+        "tags": [
+          "folder"
+        ],
+        "summary": "POST /api/projects/{id}/folder/plan",
+        "operationId": "plan_folder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "description": "Go back to this revision instead of reading a folder from the body.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "prefer",
+            "in": "query",
+            "description": "Settle every conflict with the folder's side or the board's.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Prefer"
+            }
+          },
+          {
+            "name": "plan_hash",
+            "in": "query",
+            "description": "The hash the preview answered; an apply needs it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The project folder's files; none with `revision`",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Folder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What an apply would do; nothing is written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The folder was refused; the message lists every problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or revision not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/folder/revisions": {
+      "get": {
+        "tags": [
+          "folder"
+        ],
+        "summary": "GET /api/projects/{id}/folder/revisions",
+        "operationId": "list_revisions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revisions, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RevisionSummary"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/folder/revisions/{n}": {
+      "get": {
+        "tags": [
+          "folder"
+        ],
+        "summary": "GET /api/projects/{id}/folder/revisions/{n}",
+        "operationId": "get_revision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "n",
+            "in": "path",
+            "description": "The revision's number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project folder as that revision had it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or revision not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/folder/status": {
+      "get": {
+        "tags": [
+          "folder"
+        ],
+        "summary": "GET /api/projects/{id}/folder/status",
+        "operationId": "folder_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the board changed since the last revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{id}/import-csv": {
       "post": {
         "tags": [
@@ -11006,6 +11395,42 @@
           "converse"
         ]
       },
+      "Change": {
+        "type": "object",
+        "required": [
+          "section",
+          "key",
+          "name",
+          "verb",
+          "fields"
+        ],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            }
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "section": {
+            "type": "string"
+          },
+          "verb": {
+            "$ref": "#/components/schemas/Verb"
+          }
+        }
+      },
       "ChangeOp": {
         "type": "object",
         "description": "An operation with its state.",
@@ -11211,6 +11636,35 @@
           "edit",
           "system"
         ]
+      },
+      "Conflict": {
+        "type": "object",
+        "required": [
+          "section",
+          "key",
+          "name",
+          "path",
+          "base",
+          "board",
+          "file"
+        ],
+        "properties": {
+          "base": {},
+          "board": {},
+          "file": {},
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        }
       },
       "Constraint": {
         "oneOf": [
@@ -13537,6 +13991,21 @@
           }
         }
       },
+      "FieldChange": {
+        "type": "object",
+        "required": [
+          "path",
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {},
+          "path": {
+            "type": "string"
+          },
+          "to": {}
+        }
+      },
       "Filter": {
         "type": "object",
         "description": "What narrows an event trigger. Every field that is set must match.",
@@ -13705,6 +14174,49 @@
           }
         }
       },
+      "Folder": {
+        "type": "object",
+        "description": "The project folder as one object: each path relative to `.tack/` and its text.",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FolderApplied": {
+        "type": "object",
+        "required": [
+          "revision",
+          "changes",
+          "removals"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "removals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Removal"
+            }
+          },
+          "revision": {
+            "$ref": "#/components/schemas/RevisionSummary"
+          }
+        }
+      },
       "FolderCheck": {
         "type": "object",
         "description": "What the folder check found at a path.",
@@ -13766,6 +14278,91 @@
         "properties": {
           "path": {
             "type": "string"
+          }
+        }
+      },
+      "FolderPlan": {
+        "type": "object",
+        "description": "What an apply would do; nothing is written.",
+        "required": [
+          "plan_hash",
+          "changes",
+          "conflicts",
+          "removals",
+          "warnings",
+          "applies"
+        ],
+        "properties": {
+          "applies": {
+            "type": "boolean",
+            "description": "False while a conflict has no side to take."
+          },
+          "base": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RevisionSummary",
+                "description": "The last revision, which the board and the folder are compared with."
+              }
+            ]
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conflict"
+            }
+          },
+          "plan_hash": {
+            "type": "string"
+          },
+          "removals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Removal"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FolderStatus": {
+        "type": "object",
+        "description": "What the board changed since the project folder's last revision.",
+        "required": [
+          "board_hash",
+          "changes"
+        ],
+        "properties": {
+          "board_hash": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "last_revision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RevisionSummary"
+              }
+            ]
           }
         }
       },
@@ -15915,6 +16512,13 @@
           }
         }
       },
+      "Prefer": {
+        "type": "string",
+        "enum": [
+          "file",
+          "board"
+        ]
+      },
       "Priority": {
         "type": "string",
         "enum": [
@@ -16661,6 +17265,33 @@
           }
         }
       },
+      "Removal": {
+        "type": "object",
+        "description": "A removal and what it deletes with it, one line each.",
+        "required": [
+          "section",
+          "key",
+          "name",
+          "cost"
+        ],
+        "properties": {
+          "cost": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        }
+      },
       "RepositoryQuality": {
         "type": "object",
         "description": "One repository's figures from the verifier's store.",
@@ -16798,6 +17429,32 @@
           "verdict": {
             "type": "string",
             "description": "`accepted` or `rejected`."
+          }
+        }
+      },
+      "RevisionSummary": {
+        "type": "object",
+        "description": "One revision of a project's plan, without its body.",
+        "required": [
+          "number",
+          "origin",
+          "hash",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "origin": {
+            "type": "string",
+            "description": "`board` (an export), `file` (an import) or `revert`."
           }
         }
       },
@@ -20627,6 +21284,15 @@
           }
         }
       },
+      "Verb": {
+        "type": "string",
+        "enum": [
+          "create",
+          "update",
+          "remove",
+          "keep"
+        ]
+      },
       "VerificationTax": {
         "type": "object",
         "required": [
@@ -21158,6 +21824,10 @@
     {
       "name": "export",
       "description": "Project export to JSON / YAML / CSV."
+    },
+    {
+      "name": "folder",
+      "description": "The project folder: a project's plan kept in the repository, with its plan, apply and revisions."
     },
     {
       "name": "search",
