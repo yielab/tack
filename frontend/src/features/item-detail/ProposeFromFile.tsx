@@ -134,7 +134,7 @@ const ProposeFromFile: Component<ProposeFromFileProps> = (props) => {
       >
         <label class="block text-sm" style={{ color: 'var(--color-text-secondary)' }}>
           <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Propose items from a file</span>
-          <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          <span class="block text-small" style={{ color: 'var(--color-text-tertiary)' }}>
             Choose a tack-plan.json, or drop one here. Nothing is created until you confirm the items below.
           </span>
           <input

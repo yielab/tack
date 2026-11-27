@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import ActivityTab from './ActivityTab';
+import ActivitySection from './ActivitySection';
 import { flush } from '../../../test/flush';
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
@@ -19,7 +19,7 @@ const existing = [
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <ActivityTab itemId="i1" />, container);
+  const dispose = render(() => <ActivitySection itemId="i1" />, container);
   return { container, dispose };
 }
 
@@ -28,7 +28,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('ActivityTab', () => {
+describe('ActivitySection', () => {
   beforeEach(() => {
     fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input);

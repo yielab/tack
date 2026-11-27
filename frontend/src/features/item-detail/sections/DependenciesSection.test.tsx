@@ -3,7 +3,7 @@ import { createResource } from 'solid-js';
 import { render } from 'solid-js/web';
 import { api } from '../../../shared/api';
 import { MemoryRouter, Route } from '@solidjs/router';
-import DependenciesTab from './DependenciesTab';
+import DependenciesSection from './DependenciesSection';
 import type { Item } from '../../../shared/types';
 import { flush } from '../../../test/flush';
 
@@ -53,7 +53,7 @@ beforeEach(() => {
 /** Loads the edges as the item screen does and hands them to the tab. */
 function Host() {
   const [dependencies, { refetch }] = createResource(() => api.dependencies.list(ITEM.id));
-  return <DependenciesTab item={ITEM} dependencies={dependencies} refetch={refetch} />;
+  return <DependenciesSection item={ITEM} dependencies={dependencies} refetch={refetch} />;
 }
 
 function mount() {
@@ -70,7 +70,7 @@ function mount() {
   return { container, dispose };
 }
 
-describe('DependenciesTab', () => {
+describe('DependenciesSection', () => {
   it('renders blocks and blocked-by directions', async () => {
     const { container } = mount();
     await flush();

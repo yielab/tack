@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import FilesTab from './FilesTab';
+import FilesSection from './FilesSection';
 import { flush } from '../../../test/flush';
 
 const attachment = {
@@ -33,7 +33,7 @@ beforeEach(() => {
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <FilesTab itemId="i1" />, container);
+  const dispose = render(() => <FilesSection itemId="i1" />, container);
   return { container, dispose };
 }
 
@@ -42,7 +42,7 @@ function setFiles(input: HTMLInputElement, files: File[]) {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-describe('FilesTab', () => {
+describe('FilesSection', () => {
   it('lists attachment metadata with a download link', async () => {
     const { container } = mount();
     await flush();

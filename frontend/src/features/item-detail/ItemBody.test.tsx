@@ -58,6 +58,8 @@ let projectItems: unknown[] = [];
 let autoStart = false;
 /** Why auto-start has not started the item, as the server answers it; null lists nothing. */
 let oneRunner = false;
+/** What `GET /projects/p1/folder/status` answers; null is a project with no folder (404). */
+let folderStatus: unknown = null;
 let waitingReason: { code: string; text: string } | null = null;
 
 function jsonOf(url: string): unknown {
@@ -65,6 +67,7 @@ function jsonOf(url: string): unknown {
   if (url.includes('/parents?')) return parentOptions;
   if (/\/projects\/p1\/items\?.*under=/.test(url)) return { data: underItems, total: underItems.length, page: 1, per_page: 200 };
   if (/\/projects\/p1\/items\?/.test(url)) return { data: projectItems, total: projectItems.length, page: 1, per_page: 200 };
+  if (url.includes('/folder/status')) return folderStatus;
   if (url.includes('/dependencies')) return [];
   if (url.includes('/sprints')) return [];
   if (url.includes('/agent-profiles')) return { protocol_version: 1, data: [PROFILE] };
@@ -83,6 +86,7 @@ function jsonOf(url: string): unknown {
 beforeEach(() => {
   runs = [];
   projectItems = [];
+  folderStatus = null;
   underItems = [];
   parentOptions = [];
   writes = [];
@@ -91,6 +95,7 @@ beforeEach(() => {
     const method = init?.method ?? 'GET';
     const body = method === 'GET' ? null : JSON.parse(String(init?.body ?? 'null'));
     if (method !== 'GET') writes.push({ method, url: String(input), body });
+    if (String(input).includes('/folder/status') && folderStatus === null) return Promise.resolve(new Response('{"error":{"status":404,"message":"no folder"}}', { status: 404 }));
     const answer = method === 'PATCH' ? { ...ITEM, ...body } : method === 'POST' ? { id: 'made', project_id: 'p1' } : jsonOf(String(input));
     return Promise.resolve(
       new Response(JSON.stringify(answer), {
@@ -131,26 +136,104 @@ async function mount(layout: 'drawer' | 'page') {
     ),
     container,
   );
-  for (let i = 0; i < 8; i++) await flush();
+  for (let i = 0; i < 12; i++) await flush();
   return { container, dispose };
 }
 
 const labels = (c: Element, sel: string) => [...c.querySelectorAll(sel)].map((e) => e.textContent?.trim());
 
 describe('ItemBody', () => {
-  it('leads with the header, then the Now panel, then the tabs, then the Details fold', async () => {
+  it('reads top down: the title, the next step, the description, Done when, For the agent, the runs, the activity, then the Properties fold', async () => {
     const { container, dispose } = await mount('drawer');
     const order = [
       container.querySelector('[aria-label="Item title"]'),
       container.querySelector('[data-testid="now-panel"]'),
-      container.querySelector('[role="tablist"]'),
+      container.querySelector('#item-description'),
+      container.querySelector('#item-done-when'),
+      container.querySelector('[data-fold="for-the-agent"]'),
+      container.querySelector('[data-fold="runs"]'),
+      container.querySelector('#item-activity'),
       container.querySelector('[data-fold="details"]'),
     ] as Element[];
     expect(order.every(Boolean)).toBe(true);
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
-    expect(labels(container, '[role="tab"]')).toEqual(['Overview', 'Execution', 'Activity', 'Dependencies0', 'Files', 'Fields']);
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    dispose();
+  });
+
+  it('the drawer says what is open about the item in chips under its title: the status, the priority and who has it', async () => {
+    const { container, dispose } = await mount('drawer');
+    const chips = container.querySelector('[data-testid="item-chips"]')!;
+    expect(chips.querySelector('[data-testid="item-status"]')?.textContent).toBe('todo');
+    expect(chips.querySelector('[data-testid="item-priority"]')?.textContent).toBe('High');
+    expect(chips.querySelector('[data-testid="item-assignee"]')?.textContent).toBe('Ana');
+    dispose();
+  });
+
+  it('the drawer folds For the agent to one line that opens it; the page shows it open in its own panel', async () => {
+    const drawer = await mount('drawer');
+    const head = drawer.container.querySelector<HTMLButtonElement>('[data-fold="for-the-agent"] > button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(head.textContent).toContain('For the agent');
+    head.click();
+    await flush();
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    drawer.dispose();
+    const page = await mount('page');
+    const panel = page.container.querySelector('section[aria-labelledby="item-for-the-agent"]')!;
+    expect(panel.textContent).toContain('Preview everything the agent will read');
+    expect(page.container.querySelector('[data-fold="for-the-agent"]')).toBeNull();
+    page.dispose();
+  });
+
+  it('says Not ready in the next step when the project list sends why, as given, and nothing when it does not', async () => {
+    projectItems = [{ ...ITEM, brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'Not ready: no Done when' } }];
+    const ready = await mount('page');
+    expect(ready.container.querySelector('[data-testid="now-panel"] [data-testid="not-ready"]')?.textContent).toBe('Not ready: no Done when');
+    ready.dispose();
+    projectItems = [{ ...ITEM, brief_summary: { done_when: true, checks: 1, risk: 'low', not_ready: null } }];
+    const fine = await mount('page');
+    expect(fine.container.querySelector('[data-testid="not-ready"]')).toBeNull();
+    fine.dispose();
+    projectItems = [ITEM];
+    const none = await mount('page');
+    expect(none.container.querySelector('[data-testid="not-ready"]')).toBeNull();
+    none.dispose();
+  });
+
+  it('in a project with a revision the plan fields say so, and a field the board changed says the next export writes it', async () => {
+    Object.assign(ITEM, { key: 'my-item' });
+    folderStatus = { last_revision: { number: 7, origin: 'board', hash: 'h', created_at: '2026-11-01T00:00:00Z' }, board_hash: 'b', changes: [] };
+    try {
+      const held = await mount('page');
+      const marks = [...held.container.querySelectorAll('[data-testid="folder-mark"]')];
+      expect(marks.length).toBeGreaterThan(0);
+      expect(marks.every((m) => m.textContent === 'In the project folder')).toBe(true);
+      expect(held.container.querySelector('#item-description')!.closest('section')!.textContent).toContain('In the project folder');
+      held.dispose();
+
+      folderStatus = {
+        last_revision: { number: 7, origin: 'board', hash: 'h', created_at: '2026-11-01T00:00:00Z' },
+        board_hash: 'b',
+        changes: [{ section: 'items', key: 'my-item', name: 'My item', verb: 'update', fields: [{ path: 'description', from: 'a', to: 'b' }] }],
+      };
+      const changed = await mount('page');
+      const section = changed.container.querySelector('#item-description')!.closest('section')!;
+      expect(section.querySelector('[data-testid="folder-mark"]')!.textContent).toBe('Changed on the board since revision #7: the next export writes it');
+      // The title is untouched: it still only says it is in the folder.
+      expect(changed.container.querySelector('[aria-label="Item title"]')!.closest('div')!.parentElement!.querySelector('[data-testid="folder-mark"]')!.textContent).toBe('In the project folder');
+      changed.dispose();
+    } finally {
+      delete (ITEM as Record<string, unknown>).key;
+    }
+  });
+
+  it('a project with no folder says nothing about one', async () => {
+    const { container, dispose } = await mount('page');
+    expect(container.querySelector('[data-testid="folder-mark"]')).toBeNull();
+    expect(container.querySelector('[data-testid="board-mark"]')).toBeNull();
     dispose();
   });
 
@@ -264,25 +347,40 @@ describe('ItemBody', () => {
     dispose();
   });
 
-  it('the Details fold is shut with the priority, assignee and due date in its header, and the Automation line is shut with its sentence', async () => {
+  it('the Properties fold is shut with the priority, assignee and due date in its header, and the Automation line is shut with its sentence', async () => {
     const { container, dispose } = await mount('drawer');
     const details = container.querySelector<HTMLButtonElement>('[data-fold="details"] > button')!;
     expect(details.getAttribute('aria-expanded')).toBe('false');
-    expect(details.textContent).toContain('Details');
+    expect(details.textContent).toContain('Properties');
     expect(details.textContent).toContain('High · Ana');
+    details.click();
+    await flush();
+    expect(container.querySelector('[data-fold="details"] section[aria-label="Properties"]')).not.toBeNull();
+    expect(container.querySelector('[data-fold="details"] section[aria-label="Related"]')).not.toBeNull();
     const automation = container.querySelector<HTMLButtonElement>('[data-fold="automation"] > button')!;
     expect(automation.getAttribute('aria-expanded')).toBe('false');
     expect(automation.textContent).toContain("By hand: this project doesn't start tasks by itself");
     dispose();
   });
 
-  it('the Execution tab carries the latest run state as a dot with a label, and no Run again is offered beside a live run', async () => {
+  it('the Runs section carries the latest run state as a dot with a label, and no Run again is offered beside a live run', async () => {
     runs = [RUN];
     const { container, dispose } = await mount('drawer');
-    const tab = [...container.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.startsWith('Execution'))!;
-    expect(tab.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Running');
+    const head = container.querySelector('[data-fold="runs"] > button')!;
+    expect(head.textContent).toContain('Runs');
+    expect(head.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Running');
     expect([...container.querySelectorAll('button')].filter((b) => b.textContent === 'Run again')).toHaveLength(0);
     dispose();
+  });
+
+  it('the Runs section is shut until a person opens it', async () => {
+    const shut = await mount('drawer');
+    const head = shut.container.querySelector<HTMLButtonElement>('[data-fold="runs"] > button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    head.click();
+    await flush();
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    shut.dispose();
   });
 
   it('the Automation line is the Now panel\'s footer, not a property', async () => {
@@ -338,7 +436,7 @@ describe('ItemBody', () => {
     }
   });
 
-  it('Propose items from a file is in the ⋯ menu, not on the screen until chosen, and opens on the Execution tab', async () => {
+  it('Propose items from a file is in the ⋯ menu, not on the screen until chosen, and opens the Runs section', async () => {
     const { container, dispose } = await mount('drawer');
     expect(container.querySelector('section[aria-label="Propose items from a file"]')).toBeNull();
     container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click();
@@ -347,7 +445,8 @@ describe('ItemBody', () => {
     entry.click();
     await flush();
     expect(container.querySelector('[role="menu"]')).toBeNull();
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Execution');
+    await flush();
+    expect(container.querySelector('[data-fold="runs"] > button')!.getAttribute('aria-expanded')).toBe('true');
     const section = container.querySelector('section[aria-label="Propose items from a file"]')!;
     expect(section.querySelector('input[type="file"]')).not.toBeNull();
     [...section.querySelectorAll('button')].find((b) => b.textContent === 'Close')!.click();
@@ -356,11 +455,13 @@ describe('ItemBody', () => {
     dispose();
   });
 
-  it('the page keeps its side column of properties, with no Details fold', async () => {
+  it('the page keeps its side column of properties and what the item is related to, with no Properties fold', async () => {
     const { container, dispose } = await mount('page');
     expect(container.querySelector('[data-fold="details"]')).toBeNull();
     const properties = container.querySelector('aside section[aria-label="Properties"]')!;
     expect(properties.textContent).toContain('Priority');
+    expect(properties.textContent).toContain('Status');
+    expect(container.querySelector('aside section[aria-label="Related"]')!.textContent).toContain('Parent');
     expect(container.querySelector('[data-testid="now-panel"]')!.closest('aside')).toBeNull();
     dispose();
   });

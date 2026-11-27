@@ -1,8 +1,8 @@
 # Working with Items
 
-This page is for anyone who works on individual tasks. After reading it you can open a task, edit its header and details, say what "done" means for it in a form an agent can check, make it repeat, give it a role, and use its tabs for runs, dependencies, files and comments.
+This page is for anyone who works on individual tasks. After reading it you can open a task, edit its title and properties, say what "done" means for it in a form an agent can check, make it repeat, give it a role, and use its sections for runs, dependencies, files and comments.
 
-Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**: an editable header with the item's **Status**, a **Now** panel that says what the agents are doing and what to do next, and tabs for Overview, Execution, Activity, Dependencies, Files and Fields.
+Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, or on a page of its own. Either reads top down: what the task is (its title), what to do next (the **next step**, or **Needs you** when a run waits for an answer), then the description, **Done when**, **For the agent**, the **Runs** and the **Activity**, with the task's properties and what it is related to apart from them.
 
 ---
 
@@ -17,31 +17,38 @@ Because the open item is part of the address, an item link can be shared — pas
 
 At the top of the drawer, the **header** shows:
 
-- A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order") and the item's **short id** — the first six characters of the id, uppercased.
-- The editable **title**. Edit it in place; the change is saved when you leave the field or press `Enter`.
-- The item's **Status**: its current status, with the colour dot its board column has and its name beside it. The **Change status** button next to it opens a short menu of the project's statuses in the workflow's order, the current one marked **Current**; any status can be picked from any other, with the arrow keys or the mouse, and `Esc` closes the menu and returns to the button. The status is yours to set: a run never changes it. The workflow checks the move (allowed moves and WIP limits); if it is refused, the item stays where it was and an error appears.
-- The date the item was created.
-- Above the type, the **path**: the items this one sits under as links, outermost first (**Checkout › Payments**). An item at the top has none. It only locates the item: press a name to open it.
+- A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order"), the item's **short id** — the first six characters of the id, uppercased — and the date it was created.
+- The editable **title**, the largest text on the screen. Edit it in place; the change is saved when you leave the field or press `Enter`. Under it is the item's **key**, the name the project folder knows it by.
+- In the drawer, three chips under the title: the **Status**, the **Priority** and who has it. The status chip shows the current status with the colour dot its board column has; it opens a short menu of the project's statuses in the workflow's order, the current one marked **Current**, and the priority chip opens the five priorities. Pick one with the arrow keys or the mouse; `Esc` closes the menu and returns to the button. On the page the same status and priority are in the **Properties** column. The status is yours to set: a run never changes it. The workflow checks the move (allowed moves and WIP limits); if it is refused, the item stays where it was and an error appears.
+- Above the title, the **path**: the items this one sits under as links, outermost first (**Checkout › Payments**). An item at the top has none. It only locates the item: press a name to open it.
 
 An item that holds work, such as an epic, a building or a course, leads with a **Progress** fold, open until you shut it. It shows the bar and the sentence for how far the work under it is (**3 of 7 done**, **12 of 20 points**, **2 need you**), the teams that have it, and the work itself under the words of the **Work** column (**Needs you**, **Ready for review**, **Failed**, **Running**, **Queued**, **Finished**, then work with no run yet), each a link to its page with its status. **Add item** adds an item under it, and **Plan with agent** asks an agent for a plan (see [Running Agents on Tasks](running-agents.md)); an item that holds work is planned, not run. It only reports: the item's own status stays yours to set, and when the last open run among the work under it ends, an information notification tells you so.
 
-A task that was split into items has no such fold, but says **Split into 3 items** above its **Work** panel, and its panel reads like an epic's: it offers **Plan with agent**, and **Plan again** once it has a run.
+A task that was split into items has no such fold, but says **Split into 3 items** above its next step, and the next step reads like an epic's: it offers **Plan with agent**, and **Plan again** once it has a run.
 
-Under the header, the **Now** panel comes next. It shows the item's latest run as one state, with an icon and a word (Queued, Running, Needs you, Ready for review, Finished, Failed or Cancelled), one sentence about it, a bar for the tokens it has used against its limit, and the one filled button for what comes next: **Run with agent** for an item that never ran (with a line under it saying which agent and team would take it), **Answer the question** when the agent is waiting for you, **Review and merge** when the run is ready, **See why it failed** when it failed, and **Run again** once it is finished. Stopping a run and following it live are quieter buttons beside it, and starting another run is always one press away. At the foot of the panel, the **Automation** fold says in one muted line what happens to the item without you; opened, it holds the full line, its help and **Who does it** (see [Roles and the Automation row](#roles-and-the-automation-row)). On the Overview tab, **For the agent** and **GitHub issue** are folds too.
+Under the title comes the **next step**. It shows the item's latest run as one state, with an icon and a word (Queued, Running, Needs you, Ready for review, Finished, Failed or Cancelled), one sentence about it, a bar for the tokens it has used against its limit, and the one filled button for what comes next: **Run with agent** for an item that never ran (with a line under it saying which agent and team would take it), **Answer the question** when the agent is waiting for you, **Review and merge** when the run is ready, **See why it failed** when it failed, and **Run again** once it is finished. Stopping a run and following it live are quieter buttons beside it, and starting another run is always one press away. When the project can say that the task cannot be verified yet, the next step of an item that never ran also carries a line in amber, such as **Not ready: no Done when**; it is a warning, never a block, and you can still run the task. At the foot of the panel, the **Automation** fold says in one muted line what happens to the item without you; opened, it holds the full line, its help and **Who does it** (see [Roles and the Automation row](#roles-and-the-automation-row)).
 
-Every part of the drawer that is history, or that you rarely change, is a fold: a header with a chevron that you press to open, and that says in one line what is inside while it is shut ("Details · High · Ana", "Automation · By hand: this project doesn't start tasks by itself", "GitHub issue · no GitHub issue linked"). The folds are **Details**, **Automation**, **For the agent** and **GitHub issue** on the item, and **Steps**, **Activity**, **Files from this run**, **Usage** and **Technical** on a run. What needs a decision stays open: the status, the Work panel and the Done when list. A fold whose content needs you says so in its header ("Automation · needs you: the role Content has no profile") and opens by itself. The browser remembers whether you opened or shut each kind of fold, and your choice wins over the default.
+Then, in this order:
 
-Below the tabs, the **Details** fold holds the properties: **Priority**, **Due date**, **Assignee**, **Estimate**, **Sprint**, **Repeats**, the **last update**, **Tags** (type a tag and press `Enter` to add; click the `×` on a tag to remove it) and what the item **blocks**, each with its name on the left and its value on the right. Shut, the fold still says the priority, the assignee and the due date. Every one but the last update and what the item blocks can be edited in place.
+1. The **Description**, at reading size, with **Edit**.
+2. **Done when**, with how many lines are ticked ("0 of 2") and a bar for it.
+3. **For the agent**, in a soft teal panel of its own: what the agent reads apart from the description. In the drawer it is one line that opens it (**2 checks · 1 limit · risk low**).
+4. **Runs**, a fold that opens the history of every run (see [Runs](#runs)).
+5. **Activity**: the comments (see [Activity](#activity)).
 
-The **⋯** button at the top right of the header holds actions that are not what to do next. **Move under…** is there: a field lists exactly the items this one may go under, with **No parent** to take it out of its group (see [Moving an item under another](#moving-an-item-under-another)). **Propose items from a file** is there too: choose a `tack-plan.json` and the proposal opens for you to accept; see [Reviewing a Run](reviewing-runs.md).
+Every part of the screen that is history, or that you rarely change, is a fold: a header with a chevron that you press to open, and that says in one line what is inside while it is shut ("Properties · High · Ana", "Automation · By hand: this project doesn't start tasks by itself", "GitHub issue · no GitHub issue linked", "Depends on · blocked by 1 · blocks 1"). The folds are **Properties** (in the drawer), **Automation**, **For the agent** (in the drawer), **Runs**, **Depends on**, **Files**, **GitHub issue** and **Custom fields and roles** on the item, and **Steps**, **Activity**, **Files from this run**, **Usage** and **Technical** on a run. What needs a decision stays open: the next step and the Done when list. A fold whose content needs you says so in its header ("Automation · needs you: the role Content has no profile") and opens by itself. The browser remembers whether you opened or shut each kind of fold, and your choice wins over the default.
+
+The **Properties** hold the **Status** (on the page), **Priority**, **Assignee**, **Sprint**, **Due date**, **Tags** (type a tag and press `Enter` to add; click the `×` on a tag to remove it), **Estimate**, **Repeats** and the **last update**, each with its name on the left and its value on the right. Under them, **Related** holds the **Parent**, what the item **depends on** (what blocks it and what it blocks), its **Files**, its **GitHub issue** and its **Custom fields and roles**, each a fold that says in one line what is inside. In the drawer both sit in the **Properties** fold at the end; shut, it still says the priority, the assignee and the due date. Every property but the last update can be edited in place.
+
+In a project that has a project folder with at least one revision (see [the project folder](import-export.md#the-project-file)), the screen says which fields the folder holds. The fields the folder holds (title, type, parent, description, what blocks it, roles, custom fields and the brief) carry a small **In the project folder**; **Status**, **Assignee**, **Priority**, **Sprint** and **Due date** read **The board's**. A field the board changed since the folder's last revision says **Changed on the board since revision #7: the next export writes it**. A project with no folder shows none of this.
+
+The **⋯** button at the top right holds actions that are not what to do next. **Move under…** is there: a field lists exactly the items this one may go under, with **No parent** to take it out of its group (see [Moving an item under another](#moving-an-item-under-another)). **Propose items from a file** is there too: choose a `tack-plan.json` and the proposal opens for you to accept; see [Reviewing a Run](reviewing-runs.md).
 
 All edits save at once.
 
 ### The item's page
 
-**Expand** in the drawer's top bar opens the same item on a page of its own, at `/projects/<project>/items/<id>`, and closes the drawer. The page has a breadcrumb (Projects, the project, Items, the item), the Work panel and the tabs in a main column, and the properties list in a column at the side, with no Details fold. **Copy link** at the top right copies the page's address; the open tab is part of it, so a link opens on the same tab. A tab shows a number beside its name when it is already known, as Dependencies does.
-
-<img src="../screenshots/item-page.png" width="98%" alt="An item on its page: the breadcrumb Projects, Product Launch, Items and the item's short id, Copy link at the top right, the title and its status In Progress, the Work panel reading Ready for review with Review and merge and Run again and the Automation line, the tabs Overview, Execution, Activity, Dependencies, Files and Fields over the description, the Done when list and the For the agent and GitHub issue folds, and the properties in a column at the side.">
+**Expand** in the drawer's top bar opens the same item on a page of its own, at `/projects/<project>/items/<id>`, and closes the drawer. The page has a breadcrumb (Projects, the project, Items, the item). The task reads in a white main column, and the **Properties** and what the item is **Related** to stand in a column at the side, with no Properties fold. **Copy link** at the top right copies the page's address; when the **Runs** are open, so is the run in the address (`?tab=execution&run=…`), so a link opens on the same run.
 
 ---
 
@@ -59,21 +66,18 @@ A move that breaks the rule is refused with the sentence above and changes nothi
 
 ---
 
-## Overview tab
+## The task itself
 
-The Overview tab is the task itself, top to bottom: its **description**, its **Done when** list, what the agent gets beyond
-it (**For the agent**), and a linked **GitHub issue**.
+The task is its **description**, its **Done when** list and what the agent gets beyond them (**For the agent**); a linked **GitHub issue** is one of the things it is related to.
 
 The description is edited in place: it reads as text, and clicking it (or **Click to edit**,
 when it is empty) opens the rich-text editor; **Done** closes it. Edits **autosave** a moment (about half a second) after you stop typing. There is no save button.
 
-Assignee, priority, estimate, sprint, due date and tags are in the Details fold (see [Opening an item](#opening-an-item)), so they are one press away whichever tab is open.
+Assignee, priority, estimate, sprint, due date and tags are in the **Properties** (see [Opening an item](#opening-an-item)), one press away in the drawer and always in view on the page.
 
-**GitHub issue.** The **GitHub issue** fold links the task to an issue. Type `owner/repo#42` and press **Link**; **Unlink**
+**GitHub issue.** The **GitHub issue** fold, under **Related**, links the task to an issue. Type `owner/repo#42` and press **Link**; **Unlink**
 removes the link. A linked task can open its pull request and, with a GitHub token on the board, stays in
 step with the issue; see [Keeping GitHub issues in sync](import-export.md#keeping-github-issues-in-sync).
-
-<img src="../screenshots/brief.png" width="50%" alt="An item in the drawer: its status, the Work panel saying nothing has run yet with a Run with agent button, the tabs, the description, a Done when list with one check to tick and Add check, a collapsed For the agent fold summarised as 3 checks, 3 limits and risk noted, a collapsed GitHub issue fold saying none is linked, and the Details fold.">
 
 ---
 
@@ -83,13 +87,12 @@ Together these say what "done" means for the item, in a form a person or a progr
 The agent receives them with the title and description, and every run keeps a copy.
 
 **Done when** is a checklist: one line per thing a person checks before calling the item
-done. Tick a line when you have checked it; the header counts them ("1 of 3"). **Add check**
-adds a line, **Up** and **Down** reorder, **Remove** deletes; each line saves when you leave it,
+done. Tick a line when you have checked it; the heading counts them ("1 of 3") and a bar shows how far. **Add check**
+adds a line; the **⋯** at the end of a line holds **Move up**, **Move down** and **Remove**; each line saves when you leave it,
 and a tick saves at once. The tick is for people: the agent is not told which lines are ticked,
 and no automatic check reads it.
 
-**For the agent** is optional and collapsed by default; its summary line says what it holds
-(for example *3 checks · 3 limits · risk noted*). **Save for the agent** writes all three parts:
+**For the agent** is optional. On the page it is a panel that reads as a table: **Checks a machine runs**, the **Constraints**, the **Risk** and the run's **Token limit**, with **Preview everything the agent will read** to see the text the agent is given. In the drawer it is folded to one line that says what it holds (for example *3 checks · 3 limits · risk medium*). **Edit** opens the form, and **Save for the agent** writes all three parts:
 
 - **Checks a machine runs.** Each has a title and one of five kinds:
   - **Command** — a shell command and the exit code it must return (0 by default), with an optional working directory.
@@ -111,9 +114,9 @@ appears next to the part it concerns.
 
 ---
 
-## Fields tab (custom fields)
+## Custom fields
 
-Custom fields capture project-specific data that the built-in fields don't cover — a vendor name, a budget figure, a compliance flag, and so on. They are **defined per project** (in **Settings → Fields**, or with `tack field create`); the Fields tab shows every field defined for the item's project, plus its [roles](#roles-and-the-automation-row).
+Custom fields capture project-specific data that the built-in fields don't cover — a vendor name, a budget figure, a compliance flag, and so on. They are **defined per project** (in **Settings → Fields**, or with `tack field create`); the **Custom fields and roles** fold, under **Related**, shows every field defined for the item's project, plus its [roles](#roles-and-the-automation-row).
 
 Set a value by typing or selecting in the control next to the field name. Each change is saved as you commit it; clearing a text field removes its value. A value that does not fit the field's type is refused with an error message and not stored.
 
@@ -139,7 +142,7 @@ A field definition may also carry extra **validation rules** on top of the type:
 
 ## Repeating a task
 
-A task that happens every week, month or quarter can repeat by itself. Set **Repeats** in the task's properties (the Details fold, or the side column on the item's page) to **Weekly**, **Monthly** or **Quarterly**; **Never** turns it off. A task that repeats carries a **Repeats** badge on the board and in the list.
+A task that happens every week, month or quarter can repeat by itself. Set **Repeats** in the task's properties (the **Properties** fold, or the side column on the item's page) to **Weekly**, **Monthly** or **Quarterly**; **Never** turns it off. A task that repeats carries a **Repeats** badge on the board and in the list.
 
 You can also set it when you create a task from the command line:
 
@@ -164,23 +167,23 @@ The closed task's activity says "Created the next one, due 2026-11-30" with the 
 
 ## Roles and the Automation row
 
-A **role** says what kind of work a task is for, such as Content or Developer. A project's roles are created under **Settings → Roles**, and each role can be given an agent profile in [Automation](automation.md#teams). On a task, the **Fields** tab lists the project's roles with a checkbox for each; ticking one gives the task that role. A task with no role is never started by itself, but you can always run it by hand.
+A **role** says what kind of work a task is for, such as Content or Developer. A project's roles are created under **Settings → Roles**, and each role can be given an agent profile in [Automation](automation.md#teams). On a task, the **Custom fields and roles** fold lists the project's roles with a checkbox for each; ticking one gives the task that role. A task with no role is never started by itself, but you can always run it by hand.
 
-The **Automation** line at the foot of the Work panel says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board and the list. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
+The **Automation** line at the foot of the next step says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board and the list. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
 
 ---
 
-## Execution tab
+## Runs
 
-The record of every time an agent was handed this item. Its tab carries the latest run's state as a small icon. The **Now** panel, under the header in the drawer and on the item's page, shows the state of the latest run and the button for what comes next:
+The record of every time an agent was handed this item. The **Runs** fold carries the latest run's state as a small icon, and it opens by itself when you press **Review and merge**, start a run or follow a link to a run. The next step, under the title in the drawer and on the item's page, shows the state of the latest run and the button for what comes next:
 
 - **Running** shows the team's steps when it reports them, the agent's last steps, the tokens it has used against its limit, **Follow live**
   and **Stop**.
 - **Ready for review** shows the opening of the agent's report, how long it took, how many steps
   it took and how many files it changed, with **Review and merge** as the filled button, which opens the
-  Execution tab. When the run left no merge-readiness pack, the panel also holds **Accept** and **Reject…**
-  (which asks for an optional reason); when it left one, the verdict and its reason are given only on the
-  Execution tab, together with the pack's review. A run that changed no file shows the agent's answer as what it
+  **Runs**. When the run left no merge-readiness pack, the panel also holds **Accept** and **Reject…**
+  (which asks for an optional reason); when it left one, the verdict and its reason are given only in the
+  **Runs**, together with the pack's review. A run that changed no file shows the agent's answer as what it
   delivered and offers **Accept**, not **Merge**.
 - **Needs you** puts the question first, with its answers already open: choose one and press
   **Send answer** without leaving the panel, or press **Answer the question**. A question the agent asks after the page was opened appears
@@ -196,7 +199,7 @@ in plain words, such as "No branch was pushed". The board card carries the same 
 
 Everything that waits on you is in one place. **Waiting for you** is always in the sidebar, and the top bar shows the same count; with nothing to do it reads 0. The count covers every project, and under its name the sidebar spells it out in the same words as the board's **Work** row ("All projects: 1 needs you, 1 ready for review"). So a project's row can read 0 **Needs you** while the sidebar counts a run ready for review.
 
-Press either to open the list, in three groups: **Questions to answer**, **Ready for review**, and **Failed since you last looked** (runs that ended in failure after the last time you opened the list in this browser). Each row has the run's state, the item's title, its project and how long ago it happened, and one button for what to do next: **Answer the question**, **Review and merge** or **See why it failed**. The button opens that run on its Execution tab, over the page you are on. A card on the board whose run is asking opens that run the same way.
+Press either to open the list, in three groups: **Questions to answer**, **Ready for review**, and **Failed since you last looked** (runs that ended in failure after the last time you opened the list in this browser). Each row has the run's state, the item's title, its project and how long ago it happened, and one button for what to do next: **Answer the question**, **Review and merge** or **See why it failed**. The button opens that run in the item's **Runs**, over the page you are on. A card on the board whose run is asking opens that run the same way.
 
 The first time you answer a question in a browser session, Tack asks for the **decision token**, a secret your administrator sets; see [Asking before acting](running-agents.md#asking-before-acting).
 
@@ -214,14 +217,14 @@ Once a day Tack also compares how often each profile's and each agent's runs suc
 While a run is going, the item reads itself again each time the run changes state, so whatever changed on it
 shows without a reload. It stops once every run has ended.
 
-On the tab, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest first, each with a dot in
+In the **Runs**, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest first, each with a dot in
 the colour of its state, and the latest is shown until you pick another. The address names the run you
 picked (`?tab=execution&run=…` on the item's own page), so a run can be linked to and opened again. **Run
 again** starts a new run of the same task. A run that had several attempts has a second row of chips for
-them. The tab shows only the run you picked and reads it from the top down: the verdict, the question it
+them. The fold shows only the run you picked and reads it from the top down: the verdict, the question it
 waits on, the checks, the changes, the steps, the files and the technical detail. [Reviewing a
 Run](reviewing-runs.md#what-happens-when-a-run-finishes) explains each part. An item that was never run shows
-an empty tab, not a hidden one.
+an empty fold, not a hidden one.
 
 How to start a run is in [Running Agents on Tasks](running-agents.md), and how to judge one is in
 [Reviewing a Run](reviewing-runs.md). The item's [acceptance criteria](#acceptance-criteria-and-for-the-agent)
@@ -229,14 +232,14 @@ are what the agent is given as the definition of done.
 
 ---
 
-## Dependencies tab
+## Dependencies
 
-Use this tab to record how an item relates to others in the same project. Two directions are supported:
+The **Depends on** fold, under **Related**, records how an item relates to others in the same project. Two directions are supported:
 
 - **Blocks** — this item must be done before the linked item can proceed.
 - **Blocked by** — the linked item must be done before this one can proceed.
 
-The tab lists current **Blocks** and **Blocked by** links. Click a linked item's title to open *its* page, which is a link you can also open in a new tab. Click the `×` to remove a link.
+The fold says in one line how many items block this one and how many it blocks (**blocked by 1 · blocks 1**), and lists the current **Blocks** and **Blocked by** links. Click a linked item's title to open *its* page, which is a link you can also open in a new tab. Click the `×` to remove a link.
 
 To add a dependency, pick a **direction**, choose the other **item** from the picker, and select **Add**.
 
@@ -247,17 +250,17 @@ Dependencies cannot form a loop, so:
 
 ---
 
-## Activity tab
+## Activity
 
-The Activity tab is the item's **comment timeline**. Each entry shows its author ("Anonymous" when none is recorded; "Tack" for the notes Tack writes when it acts, such as "Started by itself") and how long ago it was written.
+The **Activity** section is the item's **comment timeline**, oldest first. Each entry shows its author ("Anonymous" when none is recorded; "Tack" for the notes Tack writes when it acts, such as "Started by itself") and how long ago it was written.
 
 To add a comment, type in the box at the bottom and select **Comment**. It appears at once and is taken back with an error message if it could not be saved.
 
 ---
 
-## Files tab (attachments)
+## Files (attachments)
 
-Attach files to an item from the Files tab:
+Attach files to an item from the **Files** fold, under **Related**:
 
 - **Drag and drop** files onto the drop zone, or **click it to browse**. Multiple files at once are supported.
 - The **maximum file size is 50 MB** per file. A larger file is skipped with an error toast and the rest continue uploading.

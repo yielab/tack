@@ -15,9 +15,9 @@ const ItemDetailDrawer: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const itemId = () => (searchParams.item as string | undefined) || undefined;
 
-  // Defaults to `details`, but a `?tab=` alongside `?item=` (the attempt-state
+  // Defaults to `details`, but a `?tab=execution` alongside `?item=` (the attempt-state
   // chip on a Board card, or `onCreated` switching this same drawer to
-  // `execution` after a fresh run) opens straight to that tab instead.
+  // `execution` after a fresh run) opens the run history straight away instead.
   //
   // Tracks `itemId()` only, a one-shot-per-open pattern — NOT
   // `searchParams.tab` itself, and the param is read `untrack`ed and
@@ -27,12 +27,12 @@ const ItemDetailDrawer: Component = () => {
   // `setSearchParams({ item: id })` with no `tab` key, and `setSearchParams`
   // merges rather than replaces — so without the clear, a `tab=execution`
   // left over from one chip click would silently redirect every
-  // subsequently opened item to the Execution tab. The one known gap this
+  // subsequently opened item to the run history. The one known gap this
   // leaves: re-clicking the chip for the item ALREADY open (itemId
   // unchanged) does not re-apply the tab — a narrower, and much less
   // surprising, edge case than the leak this avoids.
   const [activeTab, setActiveTab] = createSignal(tabFromSearchParam(untrack(() => searchParams.tab)));
-  // `?run=` is read and cleared the same way: it names the run the Execution tab opens on.
+  // `?run=` is read and cleared the same way: it names the run the run history opens on.
   const [activeRun, setActiveRun] = createSignal<string | undefined>(undefined);
   createEffect(() => {
     const id = itemId();

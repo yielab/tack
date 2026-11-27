@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import FieldsTab from './FieldsTab';
+import FieldsSection from './FieldsSection';
 import type { Item } from '../../../shared/types';
 import { flush } from '../../../test/flush';
 
@@ -34,11 +34,11 @@ beforeEach(() => {
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <FieldsTab item={ITEM} />, container);
+  const dispose = render(() => <FieldsSection item={ITEM} />, container);
   return { container, dispose };
 }
 
-describe('FieldsTab', () => {
+describe('FieldsSection', () => {
   it('renders one input per field definition', async () => {
     const { container } = mount();
     await flush();

@@ -1,10 +1,10 @@
 import { type Component, createResource, createSignal, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button, EmptyState, Icons } from '../../../shared/ui';
+import { Button } from '../../../shared/ui';
 import type { Comment } from '../../../shared/types';
 
-export interface ActivityTabProps {
+export interface ActivitySectionProps {
   itemId: string;
 }
 
@@ -23,8 +23,8 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-/** Comments for an item, newest-last, with optimistic posting. */
-const ActivityTab: Component<ActivityTabProps> = (props) => {
+/** The item's comments, oldest first, and the field that adds one (posted at once, rolled back on a failure). */
+const ActivitySection: Component<ActivitySectionProps> = (props) => {
   const [comments, { mutate }] = createResource(
     () => props.itemId,
     (id) => api.comments.list(id),
@@ -60,33 +60,41 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
     }
   };
 
+  const who = (c: Comment) => c.author || (c.comment_type === 'system' ? 'Tack' : 'Anonymous');
+
   return (
-    <div class="space-y-4 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <div class="space-y-4">
       <Show
         when={(comments() ?? []).length > 0}
         fallback={
-          <EmptyState
-            icon={<Icons.IconComment size={28} />}
-            title="No comments yet"
-            description="Start the discussion below."
-          />
+          <p data-testid="no-comments" class="text-body" style={{ color: 'var(--color-text-secondary)' }}>
+            No comments yet. Start the discussion below.
+          </p>
         }
       >
-        <ul class="space-y-2">
+        <ol class="space-y-3.5">
           <For each={comments()}>
             {(c) => (
-              <li class="rounded-lg px-4 py-3" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
-                <div class="mb-1 flex items-center justify-between text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                  <span class="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c.author || (c.comment_type === 'system' ? 'Tack' : 'Anonymous')}</span>
-                  <span>{relativeTime(c.created_at)}</span>
+              <li class="flex items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  class="mt-0.5 grid h-7 w-7 flex-none place-items-center rounded-full text-micro font-bold"
+                  style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+                >
+                  {who(c).slice(0, 2).toUpperCase()}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+                    <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{who(c)}</span> · {relativeTime(c.created_at)}
+                  </p>
+                  <p class="whitespace-pre-wrap text-body" style={{ color: 'var(--color-text-primary)' }}>
+                    {c.content}
+                  </p>
                 </div>
-                <p class="whitespace-pre-wrap text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                  {c.content}
-                </p>
               </li>
             )}
           </For>
-        </ul>
+        </ol>
       </Show>
 
       <form
@@ -100,10 +108,10 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
           aria-label="Comment"
           value={content()}
           onInput={(e) => setContent(e.currentTarget.value)}
-          placeholder="Write a comment…"
+          placeholder="Leave a comment…"
           rows={3}
           disabled={posting()}
-          class="w-full resize-none rounded-md border px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+          class="w-full resize-none rounded-md border px-3.5 py-3 text-lead transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',
@@ -112,7 +120,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
           }}
         />
         <div class="flex justify-end">
-          <Button type="submit" size="sm" loading={posting()} disabled={posting() || !content().trim()}>
+          <Button type="submit" variant="secondary" size="sm" loading={posting()} disabled={posting() || !content().trim()}>
             Comment
           </Button>
         </div>
@@ -121,4 +129,4 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
   );
 };
 
-export default ActivityTab;
+export default ActivitySection;
