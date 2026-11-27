@@ -1,7 +1,7 @@
 # ADR 0033: the screen says what needs you first, and a project shows its teams at work
 
 **Status: ACCEPTED 2026-11-01** (proposed and accepted the same day). Executed by Phase 84
-(`docs/closed-cycles/plans/phase-84.md`). Keeps ADR 0032's rule: nothing on the screen names a harness; a team, its
+(`docs/closed-cycles/plans/phase-84.md`). Amended 2026-11-26, proposed: decisions 6 to 12 below. Keeps ADR 0032's rule: nothing on the screen names a harness; a team, its
 members and its steps are what any agent reported, and what it did not report is shown as not reported.
 
 **The rule behind every decision.** Every control, setting and fact on screen today stays. What changes
@@ -32,6 +32,75 @@ Execution tab at a time.
 **If you do nothing.** A person running several teams reads every card's pills to find what needs
 them, opens runs one by one to learn where each stands, and cannot see which tasks no team will take
 until auto-start fails to start them.
+
+## Amendment of 2026-11-26: the work surface is cut by what a person must do (proposed)
+
+**Decide:** the project's destinations are cut by the question each one answers, now that what is
+scarce is a person's time to specify, decide and verify, not the hours of writing code. Two
+destinations that answer the same question become one, with no ability lost; what waits for a
+person is counted and can be limited; and a task that cannot be verified says so before anyone
+runs it. Board, List, Orchestration, Sprint and Threads stay. This serves delegation (Level 3) and
+the factory (Levels 4 and 5); live supervision of an agent's session is not Tack's.
+
+| # | Decision | What a person sees |
+|---|---|---|
+| 6 | **Needs you comes first and takes in Change sets.** One project destination lists every wait for a person in this project: questions, runs ready for review, failures not yet looked at, change sets to apply and thread turns that wait, oldest first, each with its item and how long it has waited. A filter shows what was decided (applied, turned down, answered), which is today's Change sets page. The sidebar's **Waiting for you** stays as the same list for every project | The day starts on one page that holds only exceptions. `/change-sets` opens Needs you filtered to change sets |
+| 7 | **Calendar becomes a layout of the Timeline.** One destination, **Timeline**, with **Bars** (today's Timeline) and **Month** (today's Calendar, with its tray and its drag to a day). Both are kept | Nine destinations instead of eleven with decision 8. `/calendar` opens the Month layout |
+| 8 | **Factory metrics become part of the Overview.** The Overview has three parts: **Progress** (today's Overview), **Agents' work** (today's Factory metrics) and **Autonomy by domain** (each domain's level, what merged by itself and what was undone, read from the ladder). It is the retrospective: what kinds of task are accepted alone, and where a level should go up or down | `/factory` opens the Overview on Agents' work |
+| 9 | **What waits for a person is the work in progress.** The Board's row and Needs you count the waits, and a project may set **At most N waiting for a person**. At the limit, auto-start starts nothing new, and the board says why. A column's WIP limit stays as it is | "4 of 5 waiting for you: auto-start is paused until one is decided" |
+| 10 | **A task says whether it can be verified.** A task with no Done when, or with neither a Done when nor a check a machine runs, reads **Not ready** on its card, its List row and its page, with what is missing. The run dialog shows the same line and still lets the person run it. Its risk shows as a chip when it is medium or high. The List can filter **Not ready**: that filter is refinement | "Not ready: no Done when" on a card. "Risk: high" beside the type |
+| 11 | **A sprint shows the decisions it will ask for.** Each lane says, beside its points, how many of its items wait for a person and the median minutes a decision has taken. Sprints and continuous flow stay side by side; nothing ends a sprint by itself | "12 of 20 points · 3 waiting for you · a decision takes 14 min" |
+| 12 | **The item page says which fields are the plan's.** In a project with a revision, the fields the project folder holds (title, description, type, parent, blockers, roles, fields, the brief) carry a small "In the project folder" mark. Status, assignee, priority, sprint and due date read "The board's". A plan field changed on the board since the last revision says the next export writes it | "Changed on the board since revision #7: the next export writes it" |
+
+**If you do nothing:** a person still reads three places (the inbox, Change sets, Threads) to learn
+what waits for them, two pages that both lay work out by date and two that both count it, and a
+task without a way to verify it looks like any other until its run fails.
+
+**The maintainer's questions, with the default proposed.** (1) The name **Needs you** for the
+destination, the words the card's work line already uses. (2) Auto-start pauses at the waiting
+limit (decision 9); the other choice is to show the limit and start anyway. (3) **Not ready** stays
+a warning that never blocks a run (decision 10).
+
+### What each destination answers, and why the others stay
+
+| Destination | The question | Verdict |
+|---|---|---|
+| Board | Where is each task in my workflow, and what is its work doing | Stays. Its lanes are by parent, priority or assignee; the team's own steps are Orchestration's |
+| Orchestration | Which team has it, at which of that team's steps, and why that team | Stays. Its lanes are teams and their reported steps, never a column of the workflow |
+| List | The whole tree, sorted, filtered, edited in place | Stays, and gains the **Not ready** filter |
+| Timeline (+ Month) | When work is due and how long it spans | Decision 7 |
+| Sprint | What this cycle commits to, and what it will ask of a person | Stays, decision 11 |
+| Needs you | What waits for me | Decision 6 |
+| Threads | Where intention comes in, as a conversation with a manager | Stays: it is the door, not a queue. A turn that waits for a person is listed in Needs you too |
+| Overview | How the plan is going and how well the agents' work is going | Decision 8 |
+| Project settings | How the project is set up | Stays |
+
+### Evidence for the amendment
+
+- 11 project destinations today (`frontend/src/shared/ui/destinations.ts`): Board,
+  Orchestration, List, Calendar, Timeline, Sprint, Change sets, Threads, Overview, Factory
+  metrics, Project settings, plus the Inbox drawer.
+- The user guide describes the Calendar as "Monthly grid positioned by due date" and the
+  Timeline with "Week, Month and Quarter" zooms over the same due dates (`views.md`).
+- The Overview already links to Factory metrics and already counts "the items that need you now"
+  (`views.md`, Overview).
+- "Where they wait for you": change sets that wait appear in **Waiting for you** and on the
+  **Change sets** page at once (`reviewing-runs.md`).
+- `Item` carries no brief, Done when or risk (`docs/openapi.json`, schema `Item`), so no card can
+  say it cannot be verified today. The risk exists only in the brief.
+- `/autonomy` already serves `merged` and `undone` per domain; `work_quality` already serves
+  `revert_after_merge` and `verifier_agreement`; `human_minutes_per_decision` is a factory figure.
+
+### Not adopted in the amendment
+
+- **Board lanes by team in place of Orchestration's Flow.** The Board's columns are the person's
+  workflow and the Flow's stations are a team's reported steps; one view cannot be both.
+- **Ending sprints.** Most teams still plan in sprints, and the formal process is the last thing
+  to change. The sprint gains its decision load instead (decision 11).
+- **Threads inside Needs you.** A thread is where a person says what they want; only a turn that
+  waits is a wait.
+- **Roles named Lead, Implementer and Reviewer on screen.** A team's methods are what it reports
+  (ADR 0036); no view assumes a fixed set of roles.
 
 ## Evidence
 

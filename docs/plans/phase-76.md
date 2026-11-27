@@ -481,11 +481,41 @@ Owned by the frontend session; this session does not edit it. Two parts:
    reason; **Apply** sends the plan's hash and turns a 409 into **Preview again**. The keys in grey
    under names in Roles, Fields, the profile list, and under the title on the item page. The routes
    and types are in "Decided"; until task S lands, the screens are built against them with the
-   API mocked.
-2. **The views, redefined.** What the session decides about the work surface (Board, List,
-   Calendar, Timeline, Sprint, Orchestration, Overview, Factory metrics, Change sets, Threads, the
-   Inbox), written here with the ADR it amends (ADR 0033 owns "the screen says what needs you
-   first"; a new ADR only for a decision with no home).
+   API mocked. **Built** (`f9fbf5f1`): `frontend/src/features/settings/panels/projectFolder/`, the
+   types by hand in `frontend/src/shared/api/folder.ts` until S regenerates the schema. Export
+   writes a folder only where the browser can (the File System Access API); elsewhere it is shown
+   disabled with "run `tack folder export` in the repository".
+2. **The views, redefined.** **Proposed 2026-11-26, waiting for the maintainer** as ADR 0033's
+   amendment of that date (decisions 6 to 12), which holds the decisions and what a person sees.
+   In short: 11 project destinations become 9 and no ability goes. **Needs you** is first and
+   takes in Change sets. Calendar becomes a layout of the Timeline, and Factory metrics a part
+   of the Overview, beside the plan's progress and the ladder by domain. Board, List,
+   Orchestration, Sprint and Threads stay, each answering a question no other answers. A task
+   without what makes it done reads **Not ready** wherever it is shown, and its risk shows when it
+   is not low. "Work in progress" counts what waits for a person, against an optional limit. A
+   sprint shows its decision load beside its estimate. The item page says which of its fields are
+   the project folder's and which are the board's. Nothing is rebuilt before the maintainer
+   answers.
+
+   **What these screens ask of the API** (one line each, sent to this session the same day):
+
+   - The Board, the List and the item page need, per item in the project's item list, a summary
+     of its brief: whether it has a Done when, how many checks a machine runs, and its risk. Today
+     `Item` carries none of these, and reading every brief for one board is a call per item.
+   - **Needs you** needs, for one project, every wait for a person in one list: a question, a
+     run ready for review, a failure not yet looked at, a change set to apply, a thread turn that
+     waits, each with its item, its kind and when it started. If the inbox (`/notifications`) can
+     be filtered to one project and carries these, that route is the answer.
+   - The limit on what waits for a person needs a project setting (`waiting_max`, `null` is no
+     limit) on the answer that holds the project's budgets, and a decision on whether auto-start
+     stops starting runs while the limit is reached (it is the board's version of a WIP limit).
+   - A sprint lane needs, per sprint, how many of its items wait for a person and the median
+     human minutes per decision of its items: a cut `sprint` on the factory metrics' figures.
+   - The Overview's ladder needs `work_quality.cuts` cut by `domain` and by `level` (the level the
+     change merged under), so the rate a level got wrong in a domain can be read. `merged` and
+     `undone` per domain are already served by `/autonomy`.
+   - Served already, no ask: which item fields differ from the last revision (`/folder/status`
+     changes by item key), a team's steps and methods (`/api/teams`), the run's state per item.
 
 ## How it went
 
