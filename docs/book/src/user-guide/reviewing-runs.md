@@ -139,10 +139,14 @@ your choice, under [Agents on the board](#how-far-an-agent-may-go).
 
 #### One panel for every change set
 
-Every change set opens in the same panel, whoever proposed it. New items are a tree, with one row per item
-and a line that counts them: items, sub-items and dependencies. An item that belongs under another is nested
-beneath it, and it is unticked when its parent is unticked. Every other change is a line in a list under the
-tree, with the item it is about named by its title. Each row has a checkbox, and each can be edited:
+Every change set opens in the same panel, whoever proposed it. Its header says **Change set · from** who
+proposed it, then how many items or changes are proposed ("3 items proposed"), the reason the proposer gave,
+where it came from and when. Under it a line counts the changes: items, sub-items and dependencies. New items
+are a list with one row per item: a checkbox, its title, and a line saying what it is, who does it and how many
+Done when lines it has. An item with no Done when line says **No Done when yet** in red; it can still be created.
+An item that belongs under another is indented beneath it, and it is unticked when its parent is unticked. Every
+other change is a row in a list under the items, with the item it is about named by its title. Each row has a
+checkbox and an **Edit** button that opens its fields:
 
 - An item's **Title**, **Description**, **Done when** lines (one per line, and they become the item's Done when
   checks), its **Type** and **Role**, and **Who does it**, which names the team that will do it once it exists;
@@ -152,10 +156,12 @@ tree, with the item it is about named by its title. Each row has a checkbox, and
 - A change of who does an item, its role and team; a priority; the status to move to; the text of a
   comment; a due date. A dependency has nothing to edit: untick it to leave it out.
 
-**Select all** and **Select none** tick every change that still waits. Then choose:
+**Select all** and **Select none** tick every change that still waits. The foot of the panel says how many are
+selected ("2 of 3 selected"). Then choose:
 
-- **Apply 3 changes** applies the ticked ones, with your edits. **Apply all** applies everything that waits.
-- **Reject…** asks why and turns down what still waits. The proposer can read the reason.
+- The solid button applies the ticked ones, with your edits. It reads **Create 2 items** when everything ticked
+  makes an item, and **Apply 3 changes** otherwise. **Apply all** applies everything that waits.
+- **Turn down all** asks why and turns down what still waits. The proposer can read the reason.
 - **Save edits** keeps your edits without applying, to come back to them.
 
 A change set applies as one: if the board cannot take it, nothing is applied, and the panel lists every

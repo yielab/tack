@@ -1,8 +1,7 @@
-import { type Accessor, type Component, type JSX, For, Show, createResource, createSignal } from 'solid-js';
+import { type Accessor, type Component, type JSX, For, Show, createResource, createSignal, createUniqueId } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
 import { Button, Field, FieldShell, HelpHint, Select, Badge, Switch } from '../ui';
-import { IconBranch, IconChecks, IconFolder, IconGlobe, IconPackage, IconShield, IconWho } from './runDialogIcons';
 import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
@@ -80,6 +79,8 @@ export interface RunFlowProps {
   profileSource?: Accessor<string | null | undefined>;
   /** Why a profile may not run this item, by profile id (`GET /items/{id}/run-options`). */
   refused?: Accessor<ReadonlyMap<string, string>>;
+  /** Why the task cannot be verified yet, as the API wrote it; never blocks the run. */
+  notReady?: Accessor<string | null | undefined>;
   /** The item holds work and is planned, not run: the primary button says so. */
   planning?: Accessor<boolean>;
   /** The ancestor the shown profile came from, while it is still the server's choice. */
@@ -112,9 +113,9 @@ export interface RunFlowProps {
   onClose: () => void;
 }
 
-const PILL = { 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)' };
+const RULE = { 'border-bottom': '1px solid var(--color-border-light)' };
 const LINK = { color: 'var(--color-accent-ink)' };
-const SUMMARY_CLASS = 'cursor-pointer font-heading text-lg';
+const SUMMARY_CLASS = 'cursor-pointer text-lead font-semibold';
 /** The dialog's sentence for the server's `profile_source`. */
 function describeProfileSource(source: string | null | undefined, from?: string | null): string | null {
   const said = sourceWords(source);
@@ -136,13 +137,14 @@ function sourceWords(source: string | null | undefined): string | null {
 /** The home prefix of an absolute path, shown as `~`. */
 const tilde = (path: string) => path.replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/, '~');
 
-/** One line of "What will happen": an icon, the word for it for a screen reader, then the fact. */
-const SummaryLine: Component<{ icon: JSX.Element; label: string; children: JSX.Element }> = (props) => (
-  <li class="flex min-w-0 items-start gap-2">
-    <span class="mt-0.5 flex-none" style={{ color: 'var(--color-text-tertiary)' }}>{props.icon}</span>
-    <span class="sr-only">{props.label}: </span>
-    <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>{props.children}</span>
-  </li>
+/** One row of "What will happen": the word for it, the fact, and the control that changes it. */
+const Row: Component<{ label: string; action?: JSX.Element; help?: JSX.Element; children: JSX.Element }> = (props) => (
+  <div class="flex min-w-0 items-center gap-3 py-3" style={RULE}>
+    <span class="w-24 flex-none text-small" style={{ color: 'var(--color-text-secondary)' }}>{props.label}</span>
+    <div class="min-w-0 flex-1 space-y-1 text-body" style={{ 'overflow-wrap': 'anywhere' }}>{props.children}</div>
+    {props.help}
+    {props.action}
+  </div>
 );
 
 /** The dialog as a pre-flight: what will run and where, with everything optional folded away. */
@@ -207,69 +209,54 @@ const RunFlow: Component<RunFlowProps> = (props) => {
   const modelBlocked = () => models().requiresModel && !props.gate().allowed;
   const modelReason = () => models().requiresModelReason ?? props.gate().reason;
 
+  const [pickerOpen, setPickerOpen] = createSignal(false);
+  const [whyOpen, setWhyOpen] = createSignal(false);
+  const [previewOpen, setPreviewOpen] = createSignal(false);
+  const pickerId = createUniqueId();
+  const whyId = createUniqueId();
+  const previewId = createUniqueId();
+  const agentLine = () => [selectedProfileTeam(), props.harnessLabel(), props.modelLabel()].filter(Boolean).join(' · ');
+  const selectedProfileTeam = () => {
+    const team = teamOf(selectedProfile());
+    return team ? `team ${team}` : null;
+  };
+  /** The agents and profiles the picker lists as unavailable, each with the reason it gives. */
+  const notOffered = (): Array<{ name: string; reason: string }> => [
+    ...props.agentChoices().filter((a) => a.disabled && a.reason).map((a) => ({ name: a.label, reason: a.reason! })),
+    ...props.profiles().flatMap((p) => {
+      const reason = props.refused?.().get(p.agent_profile_id);
+      return reason ? [{ name: p.name, reason }] : [];
+    }),
+  ];
+  const whereText = () => {
+    const text = where();
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  };
+
   return (
-    <>
+    <div class="space-y-8">
+      <Show when={props.notReady?.()}>
+        {(text) => (
+          <p data-testid="run-not-ready" class="rounded-md px-3 py-2 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}>
+            {text()}
+          </p>
+        )}
+      </Show>
       <Show when={props.silentTarget()}>
         {(text) => (
-          <div data-testid="run-target-silent" role="alert" class="rounded-lg px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+          <div data-testid="run-target-silent" role="alert" class="rounded-lg px-4 py-3 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
             <p class="font-semibold">Agents offline</p>
             <p>{text()}</p>
             <A href="/agents" class="font-semibold underline">Turn on agent execution →</A>
           </div>
         )}
       </Show>
-      <Show
-        when={props.fixedTarget() || props.silentTarget()}
-        fallback={
-        <Select
-          label="Machine or group"
-          value={props.target()}
-          onInput={(e) => props.onTarget(e.currentTarget.value)}
-          options={[
-            { value: '', label: props.runnersLoading() ? 'Loading…' : 'Select where this runs' },
-            ...props.targetOptions(),
-          ]}
-        />
-        }
-      >
-        <Show when={props.fixedTarget()}>
-          {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
-        </Show>
-      </Show>
 
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
-        <p data-testid="no-tools" class="rounded-lg px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+        <p data-testid="no-tools" class="rounded-lg px-4 py-3 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           {profileName()} gives {props.harnessLabel()} no tools, so it can only answer in text: it cannot read or change files.{' '}
-          <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Advanced.
+          <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Options.
         </p>
-      </Show>
-
-      <Show
-        when={props.profilesLoading() || props.profiles().length > 0}
-        fallback={
-          <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3" style={PILL}>
-            <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No agent profile exists yet.</p>
-            <Button size="sm" variant="secondary" loading={props.creatingProfile()} onClick={props.createDefaultProfile}>
-              Create default profile
-            </Button>
-          </div>
-        }
-      >
-        <FieldShell label="Who does it" help={HELP.profile}>
-          <ProfilePicker
-            label="Who does it"
-            withNobody={false}
-            value={props.form.agentProfileId || null}
-            profiles={props.profiles()}
-            reports={props.agentReports()}
-            agents={props.agentChoices()}
-            agent={props.form.harnessKind}
-            onAgent={props.onAgent}
-            choiceNote={describeProfileSource(props.profileSource?.(), props.profileFrom?.())}
-            refused={props.refused?.()}
-            onChange={(p) => { if (!p) return; props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
-          />
-        </FieldShell>
       </Show>
       <Show when={props.rows.profile() === 'missing'}>
         <Prerequisite state="missing" label="An agent profile exists" href="/agents" fixLabel="Add an agent profile" />
@@ -280,24 +267,153 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <Show when={props.checkedCard?.() === false}>
         <Prerequisite state="notice" label="This card has no acceptance check: nothing tests what the agent delivers, so a person reviews it" />
       </Show>
-      <section data-testid="run-will-happen" class="space-y-2 rounded-lg px-4 py-3" style={PILL}>
-        <h3 class="font-heading text-lg">What will happen</h3>
-        <ul data-testid="run-summary" class="space-y-1.5 text-sm">
-          <SummaryLine icon={<IconWho />} label="Runs">
-            <A href={automation()} class="font-semibold hover:underline" style={LINK}>{profileName()}</A>
-            {' · '}
-            <A href={automation()} class="hover:underline" style={LINK}>{props.modelLabel()}</A>
-          </SummaryLine>
-          <Show when={props.project()?.repository || worksInFolder()}>
-            <SummaryLine icon={worksInFolder() ? <IconFolder /> : <IconBranch />} label="Works">
-              <A href={automation()} class="hover:underline" style={LINK}>{where()}</A>
-            </SummaryLine>
+
+      <section data-testid="run-will-happen" aria-labelledby={`${pickerId}-h`}>
+        <h3 id={`${pickerId}-h`} class="mb-2 text-lead font-semibold">What will happen</h3>
+        <div data-testid="run-summary">
+          <Row
+            label="Agent"
+            action={
+              <Show when={props.profilesLoading() || props.profiles().length > 0}>
+                <Button type="button" variant="ghost" size="sm" aria-expanded={pickerOpen()} aria-controls={pickerId} onClick={() => setPickerOpen(!pickerOpen())}>
+                  Change…
+                </Button>
+              </Show>
+            }
+          >
+            <span class="font-semibold" data-testid="run-agent-name">{profileName()}</span>
+            <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{agentLine() ? ` · ${agentLine()}` : ''}</span>
+          </Row>
+
+          <Show when={!props.profilesLoading() && props.profiles().length === 0}>
+            <div class="flex flex-wrap items-center justify-between gap-3 py-3" style={RULE}>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>No agent profile exists yet.</p>
+              <Button size="sm" variant="secondary" loading={props.creatingProfile()} onClick={props.createDefaultProfile}>
+                Create default profile
+              </Button>
+            </div>
           </Show>
+
+          <div id={pickerId} hidden={!pickerOpen()} class="space-y-3 py-3" style={RULE}>
+            <FieldShell label="Who does it" help={HELP.profile}>
+              <ProfilePicker
+                label="Who does it"
+                withNobody={false}
+                value={props.form.agentProfileId || null}
+                profiles={props.profiles()}
+                reports={props.agentReports()}
+                agents={props.agentChoices()}
+                agent={props.form.harnessKind}
+                onAgent={props.onAgent}
+                choiceNote={describeProfileSource(props.profileSource?.(), props.profileFrom?.())}
+                refused={props.refused?.()}
+                onChange={(p) => { if (!p) return; props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
+              />
+            </FieldShell>
+            <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+              Only agents that can run this task can be chosen.
+              <Show when={notOffered().length > 0}>
+                {' '}
+                <button
+                  type="button"
+                  class="font-semibold hover:underline focus:outline-none focus-visible:ring-2"
+                  style={{ ...LINK, '--tw-ring-color': 'var(--color-focus-ring)' }}
+                  aria-expanded={whyOpen()}
+                  aria-controls={whyId}
+                  onClick={() => setWhyOpen(!whyOpen())}
+                >
+                  Why not the others?
+                </button>
+              </Show>
+            </p>
+            <Show when={whyOpen()}>
+              <ul id={whyId} data-testid="run-why-not" class="space-y-1 text-small" style={{ color: 'var(--color-text-secondary)' }}>
+                <For each={notOffered()}>{(n) => <li><span class="font-semibold">{n.name}</span>: {n.reason}</li>}</For>
+              </ul>
+            </Show>
+          </div>
+
+          <Row label="Where">
+            <Show when={props.project()?.repository || worksInFolder()}>
+              <A href={automation()} class="hover:underline" style={LINK}>{whereText()}</A>
+            </Show>
+            <Show
+              when={props.fixedTarget() || props.silentTarget()}
+              fallback={
+                <Select
+                  label="Machine or group"
+                  value={props.target()}
+                  onInput={(e) => props.onTarget(e.currentTarget.value)}
+                  options={[
+                    { value: '', label: props.runnersLoading() ? 'Loading…' : 'Select where this runs' },
+                    ...props.targetOptions(),
+                  ]}
+                />
+              }
+            >
+              <Show when={props.fixedTarget()}>
+                {(line) => <p data-testid="run-target-fixed" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
+              </Show>
+            </Show>
+          </Row>
+
+          <Row label="Checked by">
+            <span data-testid="run-dialog-checks">{checksText()}</span>
+          </Row>
+
+          <Row label="Ask first" help={<HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />}>
+            <Switch
+              name="approvals"
+              class="cursor-pointer"
+              checked={props.form.approvals === 'ask'}
+              disabled={!props.decisionsAttested()}
+              onChange={(checked) => { props.onApprovals(); props.setForm('approvals', checked ? 'ask' : 'auto'); }}
+            >
+              Ask me before each action
+            </Switch>
+            <Show when={!props.decisionsAttested()}>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>This agent can't pause to ask — it always decides on its own.</p>
+            </Show>
+            <Show when={props.form.approvals === 'ask' ? props.untrustedReason?.() : null}>
+              {(reason) => <p class="text-small" data-testid="untrusted-reason" style={{ color: 'var(--color-text-secondary)' }}>{reason()}</p>}
+            </Show>
+          </Row>
+
+          <Row label="Network" help={<HelpHint label="Web tools" help={HELP.webTools} />}>
+            <Switch
+              class="cursor-pointer"
+              checked={props.form.allowNetwork}
+              disabled={props.networkLocked() !== null}
+              onChange={(checked) => { props.onNetwork(); props.setForm('allowNetwork', checked); }}
+            >
+              Let the agent use web tools
+            </Switch>
+            <Show when={props.networkLocked()}>
+              {(reason) => <p class="text-small" data-testid="web-tools-locked" style={{ color: 'var(--color-text-secondary)' }}>Web tools stay on: {reason()}.</p>}
+            </Show>
+            <Show when={webAccess()}>
+              {(access) => (
+                <span class="inline-flex flex-wrap items-center gap-x-2 text-small" data-testid="run-dialog-web-access" style={{ color: 'var(--color-text-secondary)' }}>
+                  <span>{access()}</span>
+                  <HelpHint label="Web access" help={egressHelp(egressEnforced(props.harnessReports()))} />
+                </span>
+              )}
+            </Show>
+          </Row>
+        </div>
+      </section>
+
+      <details open={advanced() || modelBlocked()} onToggle={(e) => setAdvanced(e.currentTarget.open)} data-testid="run-options">
+        <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>
+          Options
+          <span class="font-normal" style={{ color: 'var(--color-text-secondary)' }}> · model, branch, tools, token limit</span>
+        </summary>
+        <div class="mt-4 space-y-4">
           <Show when={props.project()}>
             {(project) => {
               const line = () => installLine(project().prepare_command, folderCheck(), selectedProfile()?.runs_commands, worksInFolder());
               return (
-                <SummaryLine icon={<IconPackage />} label="Prepares">
+                <Row label="Prepares">
                   <Show when={line()} fallback={<span data-testid="run-dialog-nothing-installed">Nothing is installed</span>}>
                     {(text) => <span data-testid="run-dialog-install">{text()}</span>}
                   </Show>
@@ -310,14 +426,11 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                       </span>
                     )}
                   </Show>
-                </SummaryLine>
+                </Row>
               );
             }}
           </Show>
-          <SummaryLine icon={<IconChecks />} label="Checks">
-            <span data-testid="run-dialog-checks">{checksText()}</span>
-          </SummaryLine>
-          <SummaryLine icon={<IconShield />} label="Sandbox">
+          <Row label="Sandbox">
             <Show when={props.sandboxLine()} fallback={<span>Not reported by the agent</span>}>
               {(line) => (
                 <span class="inline-flex flex-wrap items-center gap-x-2" data-testid="sandbox-line">
@@ -327,67 +440,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               )}
             </Show>
             <ParityRules reports={props.harnessReports()} />
-          </SummaryLine>
-          <SummaryLine icon={<IconGlobe />} label="Network">
-            <span data-testid="run-dialog-network">{props.form.allowNetwork ? 'Web tools on: the agent may reach the network' : 'Web tools off: the agent has no network'}</span>
-            <Show when={webAccess()}>
-              {(access) => (
-                <span class="inline-flex flex-wrap items-center gap-x-2" data-testid="run-dialog-web-access">
-                  {' · '}
-                  <span>{access()}</span>
-                  <HelpHint label="Web access" help={egressHelp(egressEnforced(props.harnessReports()))} />
-                </span>
-              )}
-            </Show>
-          </SummaryLine>
-        </ul>
-      </section>
-
-      <div class="space-y-2">
-        <div class="flex items-center gap-2">
-        <Switch
-          name="approvals"
-          class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
-          style={PILL}
-          checked={props.form.approvals === 'ask'}
-          disabled={!props.decisionsAttested()}
-          onChange={(checked) => { props.onApprovals(); props.setForm('approvals', checked ? 'ask' : 'auto'); }}
-        >
-          Ask before each action
-        </Switch>
-        <HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />
-        </div>
-        <Show when={!props.decisionsAttested()}>
-          <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
-        </Show>
-        <Show when={props.form.approvals === 'ask' ? props.untrustedReason?.() : null}>
-          {(reason) => <p class="pl-4 text-xs" data-testid="untrusted-reason" style={{ color: 'var(--color-text-tertiary)' }}>{reason()}</p>}
-        </Show>
-        <div class="flex items-center gap-2">
-        <Switch
-          class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
-          style={PILL}
-          checked={props.form.allowNetwork}
-          disabled={props.networkLocked() !== null}
-          onChange={(checked) => { props.onNetwork(); props.setForm('allowNetwork', checked); }}
-        >
-          Web tools
-        </Switch>
-        <HelpHint label="Web tools" help={HELP.webTools} />
-        </div>
-        <Show when={props.networkLocked()}>
-          {(reason) => <p class="pl-4 text-xs" data-testid="web-tools-locked" style={{ color: 'var(--color-text-tertiary)' }}>Web tools stay on: {reason()}.</p>}
-        </Show>
-      </div>
-
-      <details>
-        <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
-        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
-      </details>
-
-      <details open={advanced() || modelBlocked()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
-        <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>Advanced for this run</summary>
-        <div class="mt-3 space-y-3">
+          </Row>
           <ModelField
             agentLabel={props.harnessLabel()}
             reports={props.harnessReports()}
@@ -397,7 +450,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           />
           <Show when={props.form.model.trim() === '' ? props.projectDefaultLabel() : null}>
             {(label) => (
-              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Project default — {label()}</p>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>Project default — {label()}</p>
             )}
           </Show>
           <ModelGateNote gate={props.gate()} />
@@ -409,7 +462,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             hint="Leave blank to use the project's."
           />
           <Show when={props.form.harnessKind === 'claude-code'}>
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3" role="group" aria-label="Suggested tools">
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-small sm:grid-cols-3" role="group" aria-label="Suggested tools">
               <For each={CLAUDE_CODE_TOOLS}>
                 {(name) => (
                   <label class="flex items-center gap-1.5">
@@ -442,7 +495,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           />
           <Show when={props.limitSentence?.()}>
             {(sentence) => (
-              <p data-testid="run-dialog-limit" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              <p data-testid="run-dialog-limit" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 {sentence()}
               </p>
             )}
@@ -476,11 +529,15 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         </div>
       </details>
 
+      <Show when={previewOpen()}>
+        <section id={previewId} data-testid="run-preview" aria-label="What the agent reads">
+          <h3 class="mb-4 text-lead font-semibold">What the agent reads</h3>
+          <pre class="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-small" style={{ 'background-color': 'var(--color-accent-soft)', color: 'var(--color-text-primary)' }}>{props.agentContext() ?? 'Not available.'}</pre>
+        </section>
+      </Show>
+
       <Show when={props.errors().length > 0}>
-        <ul
-          class="space-y-1 rounded-lg px-4 py-3 text-xs font-medium"
-          style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
-        >
+        <ul class="space-y-1 text-small font-medium" style={{ color: 'var(--color-danger-700)' }}>
           <For each={props.errors()}>{(msg) => <li>{msg}</li>}</For>
         </ul>
       </Show>
@@ -498,11 +555,21 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           'z-index': 1,
         }}
       >
+        <button
+          type="button"
+          class="mr-auto text-small font-semibold hover:underline focus:outline-none focus-visible:ring-2"
+          style={{ ...LINK, '--tw-ring-color': 'var(--color-focus-ring)' }}
+          aria-expanded={previewOpen()}
+          aria-controls={previewId}
+          onClick={() => setPreviewOpen(!previewOpen())}
+        >
+          Preview what the agent reads
+        </button>
         <Show when={props.limitSentence?.() ?? limitText()}>
           {(text) => (
             <span
               data-testid="run-footer-limit"
-              class="mr-auto min-w-0 text-small"
+              class="min-w-0 basis-full text-small"
               style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
               title={props.limitSentence?.()}
             >
@@ -553,24 +620,24 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           }
         >
           {(b) => (
-            <A href={b().href} class="text-sm font-semibold hover:underline" style={LINK}>{b().text}</A>
+            <A href={b().href} class="text-small font-semibold hover:underline" style={LINK}>{b().text}</A>
           )}
         </Show>
       </div>
-    </>
+    </div>
   );
 };
 
 const ModelGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelSelection> }> = (props) => (
   <div class="space-y-1.5">
-    <p class="flex items-start gap-2 text-xs" style={{ color: props.gate.allowed ? 'var(--color-success-700)' : 'var(--color-danger-600)' }}>
+    <p class="flex items-start gap-2 text-small" style={{ color: props.gate.allowed ? 'var(--color-success-700)' : 'var(--color-danger-600)' }}>
       <Show when={!props.gate.allowed}><Badge tone="danger">Unsupported</Badge></Show>
       <Show when={props.gate.allowed}><Badge tone="success">Supported</Badge></Show>
       <span class="pt-0.5">{props.gate.reason}</span>
     </p>
     <Show when={props.gate.fix}>
       {(fix) => (
-        <A href={fix().href} class="inline-flex items-center gap-1 text-xs font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
+        <A href={fix().href} class="inline-flex items-center gap-1 text-small font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
           {fix().label}
         </A>
       )}

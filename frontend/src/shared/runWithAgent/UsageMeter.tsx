@@ -35,7 +35,7 @@ const UsageMeter: Component<UsageMeterProps> = (props) => {
           }}
         />
       </div>
-      <span aria-hidden="true" class="flex-none text-xs tabular-nums" style={{ color: near() ? 'var(--color-warning-600)' : 'var(--color-text-secondary)' }}>
+      <span aria-hidden="true" class="flex-none text-small tabular-nums" style={{ color: near() ? 'var(--color-warning-600)' : 'var(--color-text-secondary)' }}>
         {spaced(props.used)} / {spaced(props.limit)}
       </span>
     </div>

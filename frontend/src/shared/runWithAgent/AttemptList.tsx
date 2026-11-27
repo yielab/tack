@@ -110,13 +110,13 @@ const AgentRead: Component<{ requestId: string }> = (props) => {
   );
   return (
     <>
-      <Show when={read.loading}><p class="text-xs">Loading the prompt…</p></Show>
+      <Show when={read.loading}><p class="text-small">Loading the prompt…</p></Show>
       <Show when={read.error}>
         <LoadError what="what the agent read" error={read.error} onRetry={() => void refetchRead()} />
       </Show>
       <Show when={!read.error && read()?.sha}>
         {(sha) => (
-          <p data-testid="agent-read-fingerprint" class="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          <p data-testid="agent-read-fingerprint" class="mt-1 text-small" style={{ color: 'var(--color-text-secondary)' }}>
             Prompt fingerprint{' '}
             <span title={sha()} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{sha().slice(0, 8)}</span>
             <HelpHint label="Prompt fingerprint" help={HELP.promptFingerprint} />
@@ -125,8 +125,8 @@ const AgentRead: Component<{ requestId: string }> = (props) => {
       </Show>
       <Show when={!read.error && read()?.instructions}>
         {(text) => (
-          <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-xs"
-            style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
+          <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-small"
+            style={{ 'background-color': 'var(--color-accent-soft)', color: 'var(--color-text-primary)' }}>{text()}</pre>
         )}
       </Show>
     </>
@@ -140,7 +140,7 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
   const names = () => props.attempt.environment_names ?? [];
   return (
     <section data-testid="agent-got" class="space-y-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-      <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent got</h4>
+      <h4 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent got</h4>
       <p data-testid="agent-got-sandbox">{sandbox() ?? 'The runner did not say whether the agent was sandboxed'}</p>
       <Show when={names().length > 0}>
         <p data-testid="agent-got-env" class="break-all">
@@ -164,7 +164,7 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
 /** One id the support or a bug report asks for, with a button that copies it. */
 const IdRow: Component<{ label: string; value: string }> = (props) => (
   <div class="flex items-center gap-2">
-    <dt class="w-14 flex-none" style={{ color: 'var(--color-text-tertiary)' }}>{props.label}</dt>
+    <dt class="w-14 flex-none" style={{ color: 'var(--color-text-secondary)' }}>{props.label}</dt>
     <dd class="m-0 flex min-w-0 flex-1 items-center gap-2">
       <span class="min-w-0 flex-1 truncate" title={props.value} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
         {truncateMiddle(props.value)}
@@ -172,7 +172,7 @@ const IdRow: Component<{ label: string; value: string }> = (props) => (
       <button
         type="button"
         aria-label={`Copy the ${props.label.toLowerCase()} id`}
-        class="min-h-6 min-w-6 flex-none px-1 text-xs font-semibold hover:underline"
+        class="min-h-6 min-w-6 flex-none px-1 text-small font-semibold hover:underline"
         style={{ color: 'var(--color-accent-ink)' }}
         onClick={() => void copyText(props.value, `${props.label} id`)}
       >
@@ -400,13 +400,13 @@ const AttemptRow: Component<{
         <div class="flex flex-wrap items-center gap-2">
           {/* A run with one attempt shows its status in the run's own heading. */}
           <Show when={props.numbered}>
-            <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
+            <span class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
               Attempt {props.attempt.attempt_number}
             </span>
             <Badge tone={status().tone}>{status().label}</Badge>
           </Show>
           <Show when={!stateInfo().known}>
-            <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               (unrecognised state)
             </span>
           </Show>
@@ -420,7 +420,7 @@ const AttemptRow: Component<{
                   rel="noopener noreferrer"
                   class="flex items-center gap-2"
                 >
-                  <span class="text-xs" style={{ color: 'var(--color-primary-600)' }}>
+                  <span class="text-small" style={{ color: 'var(--color-primary-600)' }}>
                     PR #{pr().number}
                   </span>
                   <Badge tone={prState().tone}>{prState().label}</Badge>
@@ -428,7 +428,7 @@ const AttemptRow: Component<{
               );
             }}
           </Show>
-          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
             started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
           </span>
@@ -443,7 +443,7 @@ const AttemptRow: Component<{
         </Show>
         <Show when={outcome().badge?.detail}>
           {(detail) => (
-            <p class="text-xs" title={outcome().badge?.raw} style={{ color: 'var(--color-text-secondary)' }}>
+            <p class="text-small" title={outcome().badge?.raw} style={{ color: 'var(--color-text-secondary)' }}>
               {detail()}
             </p>
           )}
@@ -452,7 +452,7 @@ const AttemptRow: Component<{
         <Show when={mrp.pack()}>{(pack) => <MrpVerdict pack={pack()} />}</Show>
 
         <Show when={terminal() && !neverStarted(props.attempt)}>
-          <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
               when={props.limit?.tokens != null && counted() !== null && !dupe()}
               fallback={<span data-testid="verdict-tokens">{tokensText()}</span>}
@@ -478,7 +478,7 @@ const AttemptRow: Component<{
               </Show>
               <Show when={showMerge()}>
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>Not merged</span>
+                  <span class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>Not merged</span>
                   <MergeButton
                     attemptId={props.attempt.attempt_id}
                     merge={merge()!}
@@ -509,7 +509,7 @@ const AttemptRow: Component<{
           >
             <Show when={!review()}>
               <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
-              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 Accept it, or reject it. When you reject, say why.
               </p>
             </Show>
@@ -666,7 +666,7 @@ const AttemptRow: Component<{
       </RunSection>
 
       <RunSection id="files" title="Files from this run" fold defaultOpen={!terminal()} summary={`${listed().length} ${listed().length === 1 ? 'file' : 'files'}.`}>
-        <Show when={!artifacts.loading} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Loading the files…</p>}>
+        <Show when={!artifacts.loading} fallback={<p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>Loading the files…</p>}>
           <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} artifacts={listed()} />
         </Show>
       </RunSection>
@@ -680,8 +680,8 @@ const AttemptRow: Component<{
                 <UsagePanel attempt={props.attempt} />
               </Fold>
             </Show>
-            <section data-testid="attempt-ids" class="space-y-1.5 text-xs">
-              <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Ids</h4>
+            <section data-testid="attempt-ids" class="space-y-1.5 text-small">
+              <h4 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>Ids</h4>
               <dl class="space-y-1">
                 <IdRow label="Request" value={props.requestId} />
                 <IdRow label="Attempt" value={props.attempt.attempt_id} />
@@ -764,7 +764,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
               </span>
               <span
                 data-testid="usage-in-out"
-                class="ml-2 text-xs font-normal"
+                class="ml-2 text-small font-normal"
                 title={`${exact(usage().tokensIn)} tokens in (cache reads included), ${exact(usage().tokensOut)} out`}
                 style={{ color: 'var(--color-text-secondary)' }}
               >
@@ -775,9 +775,9 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
         </Show>
       </div>
       <Show when={cacheLine()}>
-        {(line) => <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
+        {(line) => <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
       </Show>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-small" style={{ color: 'var(--color-text-secondary)' }}>
         <Show
           when={provenance().tone !== 'warning' && usage().models.length > 0}
           fallback={

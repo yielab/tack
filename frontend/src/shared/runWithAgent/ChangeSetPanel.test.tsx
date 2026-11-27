@@ -104,7 +104,9 @@ describe('ChangeSetPanel', () => {
     const c = mount(setOf());
     await settle();
 
-    expect(c.querySelector('h4')!.textContent).toBe('Planner credential proposes 8 changes');
+    expect(c.querySelector('h4')!.textContent).toBe('8 changes proposed');
+    expect(c.querySelector('[data-testid="change-set-panel"] header p')!.textContent).toBe('Change set · from Planner credential');
+    expect(c.querySelector('[data-testid="change-set-selected"]')!.textContent).toBe('8 of 8 selected');
     expect(c.querySelector('[data-testid="change-set-reason"]')!.textContent).toBe('Billing blocks the launch, so it goes first');
     expect(c.querySelector('[data-testid="change-set-origin"]')!.textContent).toContain('Through the MCP server');
     expect(c.querySelector('[data-testid="change-set-origin"]')!.textContent).toContain('Planner credential');
@@ -215,13 +217,40 @@ describe('ChangeSetPanel', () => {
     expect(refusalReasons('Boom')).toEqual(['Boom']);
   });
 
+  it('says_how_many_are_selected_and_names_the_solid_button_for_what_it_makes', async () => {
+    const creates = OPS.filter((op) => op.op === 'create');
+    routeFetch([], () => jsonResponse({}));
+    const c = mount({ ...setOf(), ops: creates.map((operation) => ({ operation, state: 'waiting' as const })) });
+    await settle();
+    expect(c.querySelector('h4')!.textContent).toBe('2 items proposed');
+    expect(c.querySelector('[data-testid="change-set-selected"]')!.textContent).toBe('2 of 2 selected');
+    expect(button(c, 'Create 2 items')).toBeDefined();
+    c.querySelector<HTMLInputElement>('input[aria-label="Create Set up billing"]')!.click();
+    await settle();
+    expect(c.querySelector('[data-testid="change-set-selected"]')!.textContent).toBe('0 of 2 selected');
+    expect(button(c, 'Create 0 items').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('opens_the_fields_of_another_kind_of_change_with_Edit', async () => {
+    routeFetch([], () => jsonResponse({}));
+    const c = mount(setOf());
+    await settle();
+    const row = c.querySelector<HTMLElement>('[data-testid="change-op"]')!;
+    const edit = row.querySelector<HTMLButtonElement>('button[aria-controls]')!;
+    const editor = document.getElementById(edit.getAttribute('aria-controls')!)!;
+    expect(editor.hidden).toBe(true);
+    edit.click();
+    await settle();
+    expect(editor.hidden).toBe(false);
+  });
+
   it('rejects_the_waiting_operations_with_a_reason', async () => {
     const calls: Call[] = [];
     routeFetch(calls, () => jsonResponse(setOf({ status: 'rejected', rejection: 'Not before the launch', decided_at: new Date().toISOString(), decided_by: 'operator:local' }, OPS.map(() => 'rejected'))));
     const c = mount(setOf());
     await settle();
 
-    button(c, 'Reject…').click();
+    button(c, 'Turn down all').click();
     await settle();
     const confirm = c.querySelector<HTMLButtonElement>('[data-testid="change-set-reject-confirm"]')!;
     expect(confirm.disabled).toBe(true);

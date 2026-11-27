@@ -37,7 +37,7 @@ const RerunAtL3: Component<RerunAtL3Props> = (props) => {
           Run again at L3
         </Button>
       </div>
-      <p data-testid="rerun-l3-meaning" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <p data-testid="rerun-l3-meaning" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         {LEVEL_MEANING.L3}
       </p>
       <Show when={enabled()}>

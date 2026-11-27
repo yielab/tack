@@ -47,7 +47,7 @@ export const AgentConcluded: Component<{
   return (
     <Show when={props.result}>
       <section data-testid="agent-concluded">
-        <h4 class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent concluded</h4>
+        <h4 class="mb-1.5 text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent concluded</h4>
         <div
           data-testid="agent-result"
           class="relative rounded-lg px-4 py-3"
@@ -61,17 +61,17 @@ export const AgentConcluded: Component<{
         </div>
         <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
           <Show when={long()}>
-            <button type="button" aria-expanded={full()} class="text-xs font-semibold hover:underline" style={linkStyle} onClick={() => setFull((v) => !v)}>
+            <button type="button" aria-expanded={full()} class="text-small font-semibold hover:underline" style={linkStyle} onClick={() => setFull((v) => !v)}>
               {full() ? 'Show less' : 'Read full report'}
             </button>
           </Show>
           <Show when={props.report && props.requestId !== undefined && props.attemptNumber !== undefined}>
-            <button type="button" data-testid="open-report" class="text-xs font-semibold hover:underline" style={linkStyle} onClick={() => setOpen(true)}>
+            <button type="button" data-testid="open-report" class="text-small font-semibold hover:underline" style={linkStyle} onClick={() => setOpen(true)}>
               Open report
             </button>
           </Show>
           <Show when={long()}>
-            <button type="button" data-testid="download-report" class="text-xs font-semibold hover:underline" style={linkStyle}
+            <button type="button" data-testid="download-report" class="text-small font-semibold hover:underline" style={linkStyle}
               onClick={() => saveTextAs(props.report?.name || 'report.md', props.result ?? '')}>
               Download {props.report?.name || 'report.md'}
             </button>
@@ -97,7 +97,7 @@ const ToolGroupRow: Component<{ group: ToolGroup; workspace: string | null }> = 
     <li data-testid="tool-group" class="space-y-1.5">
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{props.group.tool}</span>
-        <span data-testid="tool-count" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <span data-testid="tool-count" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           {props.group.count} {props.group.count === 1 ? 'call' : 'calls'}
         </span>
         <Show when={props.group.failed > 0}>
@@ -113,7 +113,7 @@ const ToolGroupRow: Component<{ group: ToolGroup; workspace: string | null }> = 
                 <li
                   data-testid="tool-target"
                   title={`${shown()}${t.failed ? ' (failed)' : ''}`}
-                  class="max-w-full break-all rounded-full px-2.5 py-0.5 text-micro"
+                  class="max-w-full break-all rounded-sm px-2.5 py-0.5 text-micro"
                   style={{
                     'font-family': 'var(--font-mono)',
                     'background-color': t.failed ? 'var(--color-danger-100)' : 'var(--color-bg-subtle)',
@@ -128,7 +128,7 @@ const ToolGroupRow: Component<{ group: ToolGroup; workspace: string | null }> = 
           </For>
         </ul>
         <Show when={hidden() > 0}>
-          <button type="button" class="text-xs font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} aria-expanded={all()} onClick={() => setAll((v) => !v)}>
+          <button type="button" class="text-small font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} aria-expanded={all()} onClick={() => setAll((v) => !v)}>
             {all() ? 'Show fewer' : `+${hidden()} more`}
           </button>
         </Show>
@@ -168,7 +168,7 @@ export const AgentDid: Component<{
       disabled={disabled}
       title={disabled ? reason : undefined}
       onClick={() => setView(id)}
-      class="rounded-full px-3 py-1 text-xs font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+      class="rounded-md px-3 py-1 text-small font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
       style={{
         'background-color': shown() === id ? 'var(--color-bg-app)' : 'transparent',
         color: shown() === id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
@@ -186,16 +186,16 @@ export const AgentDid: Component<{
         </p>
       </Show>
       <div class="flex flex-wrap items-center gap-3">
-        <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent did</h4>
-        <div role="group" aria-label="How to show what the agent did" class="inline-flex gap-0.5 rounded-full p-0.5" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
+        <h4 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent did</h4>
+        <div role="group" aria-label="How to show what the agent did" class="inline-flex gap-0.5 rounded-md p-0.5" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
           {segment('tool', 'By tool', !hasSteps(), whyNoSteps())}
           {segment('timeline', 'Timeline')}
         </div>
       </div>
       <Show when={!hasSteps() && !props.reading && props.terminal}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{whyNoSteps()}.</p>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{whyNoSteps()}.</p>
       </Show>
-      <Show when={!(props.terminal && props.reading)} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Reading the run log…</p>}>
+      <Show when={!(props.terminal && props.reading)} fallback={<p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>Reading the run log…</p>}>
       <Show
         when={shown() === 'tool'}
         fallback={
@@ -261,11 +261,11 @@ const PromptChip: Component<{ prompt: RunStepPrompt }> = (props) => {
         title={`${layer()} prompt, ${scopeWords(props.prompt.scope)}, fingerprint ${print()}`}
         disabled={!props.prompt.sha256}
         onClick={() => copyWhole(props.prompt.sha256)}
-        class="max-w-full break-all rounded-full px-2.5 py-0.5 text-left text-micro disabled:cursor-default"
+        class="max-w-full break-all rounded-sm px-2.5 py-0.5 text-left text-micro disabled:cursor-default"
         style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
       >
         <span style={{ 'font-family': 'var(--font-mono)' }}>{label()}</span>{' '}
-        <span style={{ color: 'var(--color-text-tertiary)' }}>{scopeWords(props.prompt.scope)}</span>
+        <span style={{ color: 'var(--color-text-secondary)' }}>{scopeWords(props.prompt.scope)}</span>
       </button>
     </li>
   );
@@ -322,9 +322,9 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
   const list = (title: string, items: string[], note?: string) => (
     <Show when={items.length > 0}>
       <div class="space-y-1">
-        <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h5>
+        <h5 class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h5>
         <Show when={note}>
-          <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{note}</p>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{note}</p>
         </Show>
         <ul class="list-disc space-y-0.5 pl-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
           <For each={items}>
@@ -345,7 +345,7 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
           <Show when={props.group.count > 1}> ×{props.group.count}</Show>
         </span>
         <Show when={model()}>
-          {(m) => <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{m()}</span>}
+          {(m) => <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{m()}</span>}
         </Show>
         {/* A budget hop's own report is unfinished work, not a result: it never carries a verdict here,
             even when the wire still has one — the step's stop is said by "Report before it stopped" below. */}
@@ -356,13 +356,13 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
           }}
         </Show>
         <Show when={hopDurationText(props.group.lasted)}>
-          {(text) => <span data-testid="step-duration" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{text()}</span>}
+          {(text) => <span data-testid="step-duration" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{text()}</span>}
         </Show>
       </div>
       <Show when={step().report && step().summary}>
         {(summary) => (
           <div data-testid="step-report" class="space-y-1">
-            <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>Report before it stopped</h5>
+            <h5 class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>Report before it stopped</h5>
             <p class="whitespace-pre-wrap text-sm" style={{ color: 'var(--color-text-secondary)' }}>{summary()}</p>
           </div>
         )}
@@ -371,7 +371,7 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
       {list('The agent asked', step().questions, 'Tack cannot send an answer to these: put it in the task, then run it again.')}
       <Show when={step().prompts.length > 0}>
         <details data-testid="step-prompts-disclosure">
-          <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Prompts used</summary>
+          <summary class="cursor-pointer text-small font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Prompts used</summary>
           <ul data-testid="step-prompts" class="mt-1.5 flex flex-wrap gap-1.5">
             <For each={step().prompts}>{(p) => <PromptChip prompt={p} />}</For>
           </ul>
@@ -384,7 +384,7 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
 /** What each step ran: one row per hop of a docket task, in order; hops alike in a row are one. */
 export const StepsRan: Component<{ steps: RunStep[] }> = (props) => (
   <section data-testid="run-steps" class="space-y-2">
-    <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What each step ran</h4>
+    <h4 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>What each step ran</h4>
     <ol class="space-y-2">
       <For each={groupSteps(props.steps)}>{(group) => <StepRow group={group} />}</For>
     </ol>
@@ -402,16 +402,16 @@ const cellText = (value: unknown): string => {
  *  start with an underscore are the team's bookkeeping and are not shown. */
 export const TeamRecords: Component<{ sets: RunRecordSet[] }> = (props) => (
   <section data-testid="team-records" class="space-y-3">
-    <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the team recorded</h4>
+    <h4 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the team recorded</h4>
     <For each={props.sets.filter((s) => s.rows.length > 0)}>
       {(set) => {
         const columns = () => set.columns.filter((c) => !c.startsWith('_'));
         return (
           <div data-testid="record-set" class="space-y-1.5">
-            <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{set.set}</h5>
+            <h5 class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>{set.set}</h5>
             <div class="max-w-full overflow-x-auto rounded-md" tabindex="0" role="region" aria-label={`Rows of ${set.set}`} style={{ 'background-color': 'var(--color-bg-panel)' }}>
               {/* Columns keep a width a word fits in and the table scrolls sideways, rather than cutting words mid-way. */}
-              <table class="text-left text-xs" style={{ 'min-width': '100%', width: 'max-content', 'max-width': 'none' }}>
+              <table class="text-left text-small" style={{ 'min-width': '100%', width: 'max-content', 'max-width': 'none' }}>
                 <thead>
                   <tr>
                     <For each={columns()}>
@@ -437,7 +437,7 @@ export const TeamRecords: Component<{ sets: RunRecordSet[] }> = (props) => (
               </table>
             </div>
             <Show when={set.cut}>
-              <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>More rows are kept by the team in docket.</p>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>More rows are kept by the team in docket.</p>
             </Show>
           </div>
         );

@@ -39,29 +39,6 @@ export const IconBranch = glyph(() => (
 
 export const IconFolder = glyph(() => <path d="M2 4.5h4l1.5 1.5H14v6.5H2z" />);
 
-export const IconPackage = glyph(() => (
-  <>
-    <path d="M8 2l5.5 3v6L8 14l-5.5-3V5z" />
-    <path d="M2.5 5L8 8l5.5-3M8 8v6" />
-  </>
-));
-
-export const IconChecks = glyph(() => (
-  <>
-    <path d="M2.5 4.5l1.3 1.3 2.2-2.4M2.5 10.5l1.3 1.3 2.2-2.4" />
-    <path d="M8.5 5h5M8.5 11h5" />
-  </>
-));
-
-export const IconShield = glyph(() => <path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z" />);
-
-export const IconGlobe = glyph(() => (
-  <>
-    <circle cx="8" cy="8" r="6" />
-    <path d="M2 8h12M8 2c2.2 2.2 2.2 9.8 0 12M8 2c-2.2 2.2-2.2 9.8 0 12" />
-  </>
-));
-
 export const IconWho = glyph(() => (
   <>
     <circle cx="8" cy="5.5" r="2.5" />

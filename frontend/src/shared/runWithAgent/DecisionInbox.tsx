@@ -17,6 +17,7 @@ import DecisionTokenField from './DecisionTokenField';
 import AnswerBox from './AnswerBox';
 import { isTerminalAttemptState } from './attemptFormat';
 import { truncateMiddle } from '../ui/truncateMiddle';
+import { relativeTimeFromIso } from './shared';
 
 export interface DecisionInboxProps {
   requestId: string;
@@ -135,134 +136,141 @@ const DecisionRow: Component<{
   const send = (answer: DecisionAnswer) =>
     resolveAndNotify(props.attemptId, props.decision.decision_id, answer, props.onResolved);
 
+  const meta = () => `Asked by the agent · ${relativeTimeFromIso(props.decision.created_at)}`;
+
   return (
     <li
-      class="space-y-3 p-4"
+      class="min-w-0 overflow-hidden rounded-lg"
       style={{
-        'border-radius': isPending() ? '26px' : 'var(--radius-lg)',
-        'background-color': isPending() ? 'var(--color-accent-soft)' : 'var(--color-bg-panel)',
+        border: `1px solid ${isPending() ? 'color-mix(in srgb, var(--color-warning-600) 30%, transparent)' : 'var(--color-border-light)'}`,
+        'background-color': 'var(--color-bg-elevated)',
       }}
     >
-      <div class="flex flex-wrap items-center gap-2">
-        {/* Pending / expired / resolved are visually AND semantically
-            distinct — three different tones, three different labels, never
-            merged into one generic "decision" badge. */}
-        <Badge tone="neutral">{props.decision.kind}</Badge>
-        <Show when={part()}>{(words) => <Badge tone="neutral">{words()}</Badge>}</Show>
-        <Show when={isPending()}>
-          <Badge tone="info">Pending</Badge>
-        </Show>
-        <Show when={isExpired()}>
-          <Badge tone="neutral">Expired</Badge>
-        </Show>
-        <Show when={isResolved()}>
-          <Badge tone="success">Resolved</Badge>
-        </Show>
-        <Show when={isAnsweredElsewhere()}>
-          <Badge tone="success">Answered in {answeredIn()}</Badge>
-        </Show>
-        <Show when={!isPending() && !isExpired() && !isResolved() && !isAnsweredElsewhere()}>
-          <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
-        </Show>
-        <span class="ml-auto flex min-w-0 items-center gap-1.5 text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
-          <span data-testid="decision-id" title={props.decision.decision_id} style={{ 'font-family': 'var(--font-mono)' }}>
-            {truncateMiddle(props.decision.decision_id ?? '')}
+      <div
+        class="space-y-1 px-5 py-4"
+        style={{
+          'background-color': isPending() ? 'var(--color-warning-100)' : 'transparent',
+          'border-bottom': `1px solid ${isPending() ? 'var(--color-warning-100)' : 'var(--color-border-light)'}`,
+        }}
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <Show when={isPending()}>
+            <span data-testid="decision-needs-you" class="text-small font-bold" style={{ color: 'var(--color-warning-700)' }}>Needs you</span>
+          </Show>
+          {/* Expired / resolved / answered elsewhere are semantically distinct from a question that
+              waits: three different tones and labels, never one generic badge. */}
+          <Badge tone="neutral">{props.decision.kind}</Badge>
+          <Show when={part()}>{(words) => <Badge tone="neutral">{words()}</Badge>}</Show>
+          <Show when={isExpired()}>
+            <Badge tone="neutral">Expired</Badge>
+          </Show>
+          <Show when={isResolved()}>
+            <Badge tone="success">Resolved</Badge>
+          </Show>
+          <Show when={isAnsweredElsewhere()}>
+            <Badge tone="success">Answered in {answeredIn()}</Badge>
+          </Show>
+          <Show when={!isPending() && !isExpired() && !isResolved() && !isAnsweredElsewhere()}>
+            <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
+          </Show>
+          <span class="ml-auto flex min-w-0 items-center gap-1.5 text-micro" style={{ color: 'var(--color-text-secondary)' }}>
+            <span data-testid="decision-id" title={props.decision.decision_id} style={{ 'font-family': 'var(--font-mono)' }}>
+              {truncateMiddle(props.decision.decision_id ?? '')}
+            </span>
+            <button
+              type="button"
+              aria-label="Copy the decision id"
+              class="min-h-6 min-w-6 flex-none rounded-md px-1 font-semibold hover:underline"
+              style={{ color: 'var(--color-accent-ink)' }}
+              onClick={() => void copyId(props.decision.decision_id)}
+            >
+              Copy
+            </button>
           </span>
-          <button
-            type="button"
-            aria-label="Copy the decision id"
-            class="min-h-6 min-w-6 flex-none px-1 font-semibold hover:underline"
-            style={{ color: 'var(--color-accent-ink)' }}
-            onClick={() => void copyId(props.decision.decision_id)}
-          >
-            Copy
-          </button>
-        </span>
+        </div>
+        {/* The one question, in words: the title of the action that leaves the team, else the question itself. */}
+        <h4 data-testid="decision-headline" class="text-section font-semibold" style={{ color: isPending() ? 'var(--color-warning-700)' : 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+          <Show when={leaves()} fallback={headline()}>This action leaves the team</Show>
+        </h4>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{meta()}</p>
       </div>
 
-      <Show when={leaves()}>
-        <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
-          This action leaves the team
-        </h4>
-      </Show>
-      {/* What needs approving comes first: the action as it would be made, uncut (Tack keeps it only
-          while this question is open; it is erased when the question is answered or expires), or the
-          question itself. */}
-      <Show
-        when={isPending() && call()}
-        fallback={
-          <p data-testid="decision-headline" class="text-sm font-semibold" style={{ color: isPending() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>
-            {headline()}
+      <div class="space-y-3 px-5 py-4">
+        <Show when={leaves()}>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{headline()}</p>
+        </Show>
+        <Show when={isPending() && call()}>
+          <details data-testid="decision-raw" class="min-w-0">
+            <summary class="cursor-pointer text-small font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Show the raw call</summary>
+            <div class="mt-2 space-y-1">
+              {/* The action as it would be made, uncut. Tack keeps it only while this question is open; it is
+                  erased when the question is answered or expires. */}
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+                Exactly what happens if you approve:
+              </p>
+              <pre
+                data-testid="decision-call"
+                tabindex="0"
+                aria-label="The action that would leave the team"
+                class="overflow-auto whitespace-pre-wrap break-words rounded-lg p-3 text-small"
+                style={{
+                  'font-family': 'var(--font-mono)',
+                  'line-height': '1.5',
+                  // Twenty lines at a line height of 1.5 show at once; a longer action scrolls.
+                  'max-height': '30em',
+                  'background-color': 'var(--color-bg-panel)',
+                  color: 'var(--color-text-primary)',
+                }}
+              >
+                {call()}
+              </pre>
+            </div>
+          </details>
+        </Show>
+        <Show when={dispatch()}>
+          <details data-testid="decision-given" class="min-w-0">
+            <summary class="cursor-pointer text-small font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent was given</summary>
+            <pre
+              tabindex="0"
+              aria-label="What the agent was given"
+              class="mt-2 overflow-auto whitespace-pre-wrap break-words rounded-lg p-3 text-small"
+              style={{
+                'font-family': 'var(--font-mono)',
+                'line-height': '1.5',
+                'max-height': '20em',
+                'background-color': 'var(--color-bg-panel)',
+                color: 'var(--color-text-primary)',
+              }}
+            >
+              {prompt()}
+            </pre>
+          </details>
+        </Show>
+
+        <Show when={isResolved()}>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+            Answered: <span style={{ 'font-family': 'var(--font-mono)' }}>{props.decision.answer?.option_id}</span>
+            {props.decision.answer?.text ? ` — "${props.decision.answer.text}"` : ''}
           </p>
-        }
-      >
-        <div class="space-y-1">
-          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            Exactly what happens if you approve:
+        </Show>
+
+        <Show when={isAnsweredElsewhere()}>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+            This was answered in {answeredIn()}, not here — nothing is left to resolve.
           </p>
-          <pre
-            data-testid="decision-call"
-            tabindex="0"
-            aria-label="The action that would leave the team"
-            class="overflow-auto whitespace-pre-wrap break-words rounded-lg p-3 text-xs"
-            style={{
-              'font-family': 'var(--font-mono)',
-              'line-height': '1.5',
-              // Twenty lines at a line height of 1.5 show at once; a longer action scrolls.
-              'max-height': '30em',
-              'background-color': 'var(--color-bg-panel)',
-              color: 'var(--color-text-primary)',
-            }}
-          >
-            {call()}
-          </pre>
-        </div>
-      </Show>
-      <Show when={dispatch()}>
-        <details data-testid="decision-given" class="min-w-0">
-          <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent was given</summary>
-          <pre
-            tabindex="0"
-            aria-label="What the agent was given"
-            class="mt-2 overflow-auto whitespace-pre-wrap break-words rounded-lg p-3 text-xs"
-            style={{
-              'font-family': 'var(--font-mono)',
-              'line-height': '1.5',
-              'max-height': '20em',
-              'background-color': 'var(--color-bg-panel)',
-              color: 'var(--color-text-primary)',
-            }}
-          >
-            {prompt()}
-          </pre>
-        </details>
-      </Show>
+        </Show>
 
-      <Show when={isResolved()}>
-        <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          Answered: <span style={{ 'font-family': 'var(--font-mono)' }}>{props.decision.answer?.option_id}</span>
-          {props.decision.answer?.text ? ` — "${props.decision.answer.text}"` : ''}
-        </p>
-      </Show>
+        {/* Expired: nothing to press, and the reason is visible text, never a silently greyed-out button. */}
+        <Show when={isExpired()}>
+          <p class="text-small" style={{ color: 'var(--color-danger-700)' }}>
+            This decision expired without an answer — it can no longer be resolved.
+          </p>
+        </Show>
 
-      <Show when={isAnsweredElsewhere()}>
-        <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          This was answered in {answeredIn()}, not here — nothing is left to resolve.
-        </p>
-      </Show>
-
-      {/* Expired: the control is disabled and the reason is visible text
-          right next to it, never a silently-greyed-out button (acceptance
-          bar: "disabled controls name reason"). */}
-      <Show when={isExpired()}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          This decision expired without an answer — it can no longer be resolved.
-        </p>
-      </Show>
-
-      <Show when={isPending()}>
-        <AnswerBox decision={props.decision} onSend={send} />
-      </Show>
+        <Show when={isPending()}>
+          <AnswerBox decision={props.decision} onSend={send} />
+        </Show>
+      </div>
     </li>
   );
 };
@@ -338,7 +346,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   return (
     <div class="space-y-3">
       <Show when={firstLoad() && !props.pendingOnly && !props.settledOnly}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Loading decisions…
         </p>
       </Show>
@@ -349,12 +357,12 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         <EmptyState title="The agent has asked nothing yet" />
       </Show>
       <Show when={props.heading && shown().length > 0}>
-        <h5 ref={props.headingRef} tabIndex={-1} class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <h5 ref={props.headingRef} tabIndex={-1} class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           {props.heading}
         </h5>
       </Show>
       <Show when={props.settledOnly && askedNothing()}>
-        <p data-testid="asked-nothing" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p data-testid="asked-nothing" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           The agent has asked nothing yet
         </p>
       </Show>
@@ -369,12 +377,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
       </Show>
 
       <Show when={!props.settledOnly && (!props.pendingOnly || shown().length > 0)}>
-        <div
-          class="rounded-lg px-4 py-3"
-          style={{ 'background-color': 'var(--color-bg-panel)' }}
-        >
-          <DecisionTokenField />
-        </div>
+        <DecisionTokenField />
       </Show>
     </div>
   );

@@ -97,6 +97,21 @@ describe('RunWithAgentButton', () => {
     expect(c.querySelector('[aria-haspopup="menu"]')).toBeNull();
   });
 
+  it('a labeled trigger is named for the task and starts with the words on it', async () => {
+    const short = mount({ compact: false, label: 'Run' });
+    expect(short.querySelector('button')!.getAttribute('aria-label')).toBe('Run with agent: Fix login bug');
+    expect(short.querySelector('button')!.textContent).toBe('Run');
+    const full = mount({ compact: false });
+    expect(full.querySelector('button')!.getAttribute('aria-label')).toBe('Run with agent: Fix login bug');
+    const again = mount(
+      { compact: false },
+      { executions: [{ request_id: 'req-1', item_id: 'item-1', state: 'succeeded', cancellation_requested_at: null, created_at: '2026-01-01T00:00:00Z' }] },
+    );
+    await flush();
+    await flush();
+    expect(again.querySelector('button')!.getAttribute('aria-label')).toBe('Run again: Fix login bug');
+  });
+
   it('labeled mode renders a "Run with agent" button', () => {
     const c = mount({ compact: false });
     expect(c.textContent).toContain('Run with agent');
@@ -126,7 +141,8 @@ describe('RunWithAgentButton', () => {
     await flush();
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog).toBeTruthy();
-    expect(dialog?.textContent).toContain('Run with agent: Fix login bug');
+    expect(dialog?.getAttribute('aria-label')).toBe('Run with agent');
+    expect(dialog?.textContent).toContain('Fix login bug');
   });
 
   it('Cancel closes the modal', async () => {

@@ -59,7 +59,7 @@ const Prerequisite: Component<PrerequisiteProps> = (props) => (
           <Show when={props.state === 'missing' && props.href}>
             <A
               href={props.href!}
-              class="text-xs font-semibold hover:underline"
+              class="text-small font-semibold hover:underline"
               style={{ color: 'var(--color-accent-ink)' }}
             >
               {props.fixLabel ?? 'Set it up'}
@@ -72,7 +72,7 @@ const Prerequisite: Component<PrerequisiteProps> = (props) => (
         <input type="checkbox" class="h-4 w-4" disabled />
         {props.label}
       </label>
-      <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         {props.reason}
       </p>
     </Show>

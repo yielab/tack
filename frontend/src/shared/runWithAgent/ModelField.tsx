@@ -82,7 +82,7 @@ const ModelField: Component<ModelFieldProps> = (props) => {
           onChange={(e) => props.onChange(e.currentTarget.value)}
         />
       </Show>
-      <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }} data-testid="model-line">
+      <p class="text-small" style={{ color: 'var(--color-text-secondary)' }} data-testid="model-line">
         {line()}
         <Show when={models().docs}>
           {(docs) => (

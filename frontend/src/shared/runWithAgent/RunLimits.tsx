@@ -51,10 +51,10 @@ const RunLimits: Component<RunLimitsProps> = (props) => {
         <ul class="space-y-2">
           <For each={rows()}>
             {(row) => (
-              <li data-testid={`limit-${row.id}`} class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <li data-testid={`limit-${row.id}`} class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 <p class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{row.title}</p>
                 <For each={row.lines}>{(line) => <p>{line}</p>}</For>
-                <p data-testid={`limit-${row.id}-owner`} style={{ color: 'var(--color-text-tertiary)' }}>{row.owner}</p>
+                <p data-testid={`limit-${row.id}-owner`} style={{ color: 'var(--color-text-secondary)' }}>{row.owner}</p>
               </li>
             )}
           </For>
