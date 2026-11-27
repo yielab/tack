@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::Risk;
 use crate::outline::{BundleRole, BundleTeam};
 
 const MY_SAAS: &str = include_str!("../../../../../tack-api/tests/fixtures/bundles/my-saas.yaml");
@@ -403,7 +404,7 @@ fn a_file_that_renames_edits_and_drops_keeps_what_the_board_changed() {
 
 #[test]
 fn an_item_is_compared_by_its_plan_and_never_by_the_boards_keys() {
-    let base = yaml(MY_SAAS);
+    let mut base = yaml(MY_SAAS);
     let item = |outline: &mut Outline, title: &str| {
         outline
             .items
@@ -411,6 +412,9 @@ fn an_item_is_compared_by_its_plan_and_never_by_the_boards_keys() {
             .position(|i| i.title == title)
             .expect("the item is in the fixture")
     };
+    // The bug carries a brief; under its key a new title is a rename, not another item.
+    let bug = item(&mut base, "El PDF se corta al imprimir facturas largas");
+    base.items[bug].key = Some("pdf-largo".into());
     let mut board = base.clone();
     let s1 = item(&mut board, "Guía para crear tu primera factura");
     board.items[s1].description = Some("Escrito en el tablero.".into());
@@ -420,6 +424,12 @@ fn an_item_is_compared_by_its_plan_and_never_by_the_boards_keys() {
     file.items[d1].fields.insert("Plan".into(), "team".into());
     let d2 = item(&mut file, "Selector de plan en el onboarding");
     file.items[d2].status = Some("Hecho".into());
+    file.items[bug].title = "El PDF se corta con facturas largas".into();
+    file.items[bug]
+        .brief
+        .as_mut()
+        .expect("the fixture's brief")
+        .risk = Some(Risk::High);
     let r2 = item(&mut file, "Comparativa de proveedores de firma electrónica");
     file.items.remove(r2);
 
@@ -436,6 +446,7 @@ fn an_item_is_compared_by_its_plan_and_never_by_the_boards_keys() {
         [
             "update:vista-previa-de-la-factura-en-pdf:description,fields.Plan:".to_string(),
             "keep:selector-de-plan-en-el-onboarding:status:the board's".to_string(),
+            "update:pdf-largo:brief.risk,title:".to_string(),
             "remove:comparativa-de-proveedores-de-firma-electrónica::".to_string(),
         ]
     );
@@ -457,24 +468,12 @@ fn an_item_is_compared_by_its_plan_and_never_by_the_boards_keys() {
         find("Vista previa de la factura en PDF").fields["Plan"],
         "team"
     );
-
-    // The brief of ADR 0025 is not in the outline yet; its paths are dotted like any object's.
-    let (mut fields, mut found) = (Vec::new(), Vec::new());
-    let value = |risk: &str, done: &str| serde_json::json!({ "brief": { "risk": risk, "definition_of_done": done } });
-    let (base, board, file) = (value("low", "ok"), value("low", "ok"), value("high", "ok"));
-    let merged = diff_values(
-        Some(&base),
-        &board,
-        &file,
-        "",
-        None,
-        &mut fields,
-        &mut found,
+    let renamed = find("El PDF se corta con facturas largas");
+    assert_eq!(renamed.key.as_deref(), Some("pdf-largo"));
+    assert_eq!(
+        renamed.brief.as_ref().and_then(|b| b.risk.clone()),
+        Some(Risk::High)
     );
-    assert_eq!(merged, file);
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].path, "brief.risk");
-    assert!(found.is_empty());
 }
 
 #[test]

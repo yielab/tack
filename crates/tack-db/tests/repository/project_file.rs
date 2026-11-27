@@ -28,8 +28,12 @@ fn write_to(project: uuid::Uuid) -> ProjectWrite {
         items: ResolvedOutline {
             items: Vec::new(),
             blocks: Vec::new(),
+            existing_blocks: Vec::new(),
+            updates: Vec::new(),
             warnings: Vec::new(),
         },
+        updates: Vec::new(),
+        workflow: tack_core::workflow::scrum_workflow(),
         source: ItemSource::Outline,
         field_ids: HashMap::new(),
         role_ids: HashMap::new(),

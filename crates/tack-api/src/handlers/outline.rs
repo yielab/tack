@@ -20,21 +20,22 @@ use tack_core::autonomy::{Domain, Level};
 use tack_core::item_types::preset;
 use tack_core::models::{
     CreateCustomField, CreateProject, CreateRole, CreateSprint, CustomFieldType, EstimateUnit,
-    ItemSource, Project, ProjectType, UpdateCustomField, UpdateProject,
+    Item, ItemFilter, ItemSource, Project, ProjectType, UpdateCustomField, UpdateItem,
+    UpdateProject,
 };
 use tack_core::outline::bundle::{
     Board, Named, Plan, ProfileRow, SectionSummary, Upsert, check, workflow_of,
 };
 use tack_core::outline::missing::{Missing, missing};
 use tack_core::outline::{
-    BundleAutomation, BundleProfile, Outline, OutlineError, PlannedParent, items_from_csv,
-    parse_due_date, parse_project_type,
+    BundleAutomation, BundleProfile, Outline, OutlineError, PlannedParent, PlannedUpdate,
+    items_from_csv, parse_due_date, parse_project_type,
 };
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_db::queries;
 use tack_db::repo::autonomy::Settings;
 use tack_db::repo::project_file::{
-    FieldWrite, ProjectWrite, RoleWrite, SprintWrite, Target, WriteError,
+    FieldWrite, ItemWrite, ProjectWrite, RoleWrite, SprintWrite, Target, WriteError,
 };
 
 use crate::error::{ApiError, ApiResult};
@@ -374,6 +375,7 @@ async fn create_new(
         profiles: &profiles,
         roles: &[],
         sprints: &[],
+        items: &[],
         fleets: &fleets,
         harness_kinds: &HARNESS_KINDS,
         level: Level::L3,
@@ -507,6 +509,7 @@ pub(crate) struct OwnedBoard {
     profiles: Vec<ProfileRow>,
     roles: Vec<Named>,
     sprints: Vec<Named>,
+    items: Vec<Item>,
     fleets: Vec<(String, String)>,
     level: Level,
     auto_start: bool,
@@ -521,6 +524,7 @@ impl OwnedBoard {
             profiles: &self.profiles,
             roles: &self.roles,
             sprints: &self.sprints,
+            items: &self.items,
             fleets: &self.fleets,
             harness_kinds: &HARNESS_KINDS,
             level: self.level,
@@ -556,6 +560,20 @@ pub(crate) async fn board_of(state: &AppState, project: &Project) -> ApiResult<O
             name: s.name,
         })
         .collect();
+    let mut items = Vec::new();
+    for page in 1.. {
+        let filter = ItemFilter {
+            page: Some(page),
+            per_page: Some(ItemFilter::MAX_PER_PAGE),
+            ..Default::default()
+        };
+        let cards = state.repo.list_items(project.id, &filter).await?;
+        let last = cards.len() < ItemFilter::MAX_PER_PAGE as usize;
+        items.extend(cards.into_iter().map(|card| card.item));
+        if last {
+            break;
+        }
+    }
     let profiles = state.repo.list_agent_profile_rows().await?;
     let fleets = state.repo.fleet_names().await?;
     let level = queries::autonomy::project_settings(&state.repo, &project.id.to_string())
@@ -567,6 +585,7 @@ pub(crate) async fn board_of(state: &AppState, project: &Project) -> ApiResult<O
         profiles,
         roles,
         sprints,
+        items,
         fleets,
         level,
         auto_start: project.auto_start_enabled,
@@ -872,6 +891,10 @@ fn to_write(
     for planned in &mut plan.items.items {
         planned.input.estimate_unit = planned.estimate_unit.as_deref().map(unit_of);
     }
+    let updates = std::mem::take(&mut plan.items.updates)
+        .into_iter()
+        .map(|update| item_write(update, board))
+        .collect::<ApiResult<Vec<_>>>()?;
     let names = |rows: Vec<(String, Uuid)>| rows.into_iter().collect::<HashMap<_, _>>();
     Ok(ProjectWrite {
         target,
@@ -884,6 +907,8 @@ fn to_write(
         automation,
         autonomy,
         items: plan.items,
+        updates,
+        workflow: board.workflow.clone(),
         source,
         field_ids: names(
             board
@@ -906,6 +931,43 @@ fn to_write(
                 .map(|s| Ok((s.name.trim().to_string(), uuid_of(&s.id)?)))
                 .collect::<ApiResult<_>>()?,
         ),
+    })
+}
+
+/// An item of the board the file names by its key, as the write of what differs: only the plan
+/// fields the board's row has otherwise.
+fn item_write(update: PlannedUpdate, board: &Board<'_>) -> ApiResult<ItemWrite> {
+    let PlannedUpdate { id, item, blockers } = update;
+    let row = board
+        .items
+        .iter()
+        .find(|row| row.id == id)
+        .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("item {id} is not on the board")))?;
+    let input = item.input;
+    let unit = item
+        .estimate_unit
+        .as_deref()
+        .map_or(EstimateUnit::StoryPoints, unit_of);
+    let tags = input.tags.unwrap_or_default();
+    let change = UpdateItem {
+        title: (input.title != row.title).then_some(input.title),
+        description: (input.description != row.description).then_some(input.description),
+        item_type: input.item_type.filter(|word| *word != row.item_type),
+        estimate: (input.estimate != row.estimate).then_some(input.estimate),
+        estimate_unit: (unit != row.estimate_unit).then_some(Some(unit)),
+        tags: (tags != row.tags).then_some(tags),
+        recurrence: (input.recurrence != row.recurrence).then_some(input.recurrence),
+        ..Default::default()
+    };
+    Ok(ItemWrite {
+        id,
+        change,
+        parent: item.parent,
+        board_parent: row.parent_id,
+        blockers,
+        roles: item.roles,
+        fields: item.fields.into_iter().collect(),
+        brief: item.brief,
     })
 }
 

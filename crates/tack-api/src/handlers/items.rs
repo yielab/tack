@@ -10,13 +10,15 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::openapi::ItemWithBrief;
 use tack_app::change_sets::{self, Mode, Proposal};
 use tack_app::events::{DomainEvent, Fact};
 use tack_app::parents::{self, Subject};
+use tack_core::brief::readiness;
 use tack_core::change_set::{CreateOp, ItemRef, Operation, Origin};
 use tack_core::children;
 use tack_core::hierarchy::{Hierarchy, Node};
-use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, Progress, UpdateItem};
+use tack_core::models::{CreateItem, Item, ItemBrief, ItemCard, ItemFilter, Progress, UpdateItem};
 use tack_core::principal::Principal;
 use tack_db::queries;
 use tack_db::repo::items::{AtomicItemUpdateOutcome, ItemError};
@@ -44,6 +46,19 @@ impl From<ItemError> for ApiError {
 /// one's version counter.
 fn item_etag(id: Uuid, version: i64) -> String {
     format!("\"{id}-{version}\"")
+}
+
+/// An item as the screens read it: the card, with the summary of its brief (`brief_summary`, see
+/// [`readiness`]) beside it. The Done when the project has stands in for an item that has none.
+fn with_summary(
+    card: ItemCard,
+    brief: Option<&ItemBrief>,
+    project_done: Option<&str>,
+) -> ItemWithBrief {
+    ItemWithBrief {
+        brief_summary: readiness(brief, project_done),
+        card,
+    }
 }
 
 /// How far the work under each group is, by group, under the project's workflow. `groups` limits
@@ -202,6 +217,25 @@ pub async fn list_items(
         card.progress = progress.remove(&card.item.id);
     }
     let total = state.repo.count_items(project_id, &filter).await?;
+    let project_done = state
+        .repo
+        .get_project(project_id)
+        .await?
+        .and_then(|project| project.definition_of_done);
+    let briefs: HashMap<Uuid, ItemBrief> = state
+        .repo
+        .list_item_briefs_for_project(project_id)
+        .await?
+        .into_iter()
+        .map(|brief| (brief.item_id, brief))
+        .collect();
+    let items: Vec<ItemWithBrief> = items
+        .into_iter()
+        .map(|card| {
+            let brief = briefs.get(&card.item.id);
+            with_summary(card, brief, project_done.as_deref())
+        })
+        .collect();
     Ok(Json(serde_json::json!({
         "data": items,
         "total": total,
@@ -241,8 +275,14 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
     let roles = state.repo.get_roles_for_item(id).await?;
     let deps = state.repo.list_dependencies_for_item(id).await?;
 
+    let project_done = state
+        .repo
+        .get_project(snapshot.item.project_id)
+        .await?
+        .and_then(|project| project.definition_of_done);
+    let brief = state.repo.get_item_brief(id).await?;
     let mut response = Json(serde_json::json!({
-        "item": snapshot.item,
+        "item": with_summary(snapshot.item.clone(), brief.as_ref(), project_done.as_deref()),
         "roles": roles,
         "dependencies": deps,
     }))

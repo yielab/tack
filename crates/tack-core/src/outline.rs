@@ -21,7 +21,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::item_types::ItemTypeDef;
-use crate::models::{CreateItem, Priority, ProjectType};
+use crate::models::{
+    AcceptanceCriterion, Constraint, CreateItem, Item, Priority, ProjectType, Risk, UpsertItemBrief,
+};
 use crate::vocabulary::VocabularyMap;
 use crate::workflow::{Transition, WorkflowConfig};
 
@@ -437,8 +439,8 @@ pub struct OutlineProject {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct OutlineItem {
-    /// The item's key: its file name in the project folder; absent, the item is matched by
-    /// nothing and always added.
+    /// The item's key: its file name in the project folder. An item whose key the project has is
+    /// updated in its plan fields; absent, the item is matched by nothing and always added.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
     /// A name other items use in `parent` and `depends_on`. Any text or
@@ -483,8 +485,8 @@ pub struct OutlineItem {
     /// weekly, monthly or quarterly; absent: the task does not repeat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurrence: Option<String>,
-    /// Another item's `ref` or exact title; when adding to an existing
-    /// project, also the id of an item already in it.
+    /// Another item's `key`, `ref` or exact title; when adding to an existing
+    /// project, also the key or the id of an item already in it.
     #[serde(
         default,
         alias = "parent_id",
@@ -493,7 +495,8 @@ pub struct OutlineItem {
         skip_serializing_if = "Option::is_none"
     )]
     pub parent: Option<String>,
-    /// Items that must finish before this one, by `ref` or exact title.
+    /// Items that must finish before this one, by `key`, `ref` or exact title; one the project
+    /// already has is named by its key.
     #[serde(
         default,
         alias = "blocked_by",
@@ -521,16 +524,70 @@ pub struct OutlineItem {
     /// the CSV reader; an outline item is named by its position instead.
     #[serde(skip)]
     pub origin: Option<String>,
+    /// What makes the item done, in brief-v1's shape (`docs/contracts/brief-v1/`) without its
+    /// item. A brief with none of its four parts is no brief.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<OutlineBrief>,
+}
+
+/// An item's brief as a file writes it: brief-v1's four parts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OutlineBrief {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_of_done: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<Risk>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance: Vec<AcceptanceCriterion>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<Constraint>,
+}
+
+impl OutlineBrief {
+    /// Whether none of the four parts says anything.
+    pub fn is_empty(&self) -> bool {
+        trimmed(self.definition_of_done.as_deref()).is_none()
+            && self.risk.is_none()
+            && self.acceptance.is_empty()
+            && self.constraints.is_empty()
+    }
+
+    /// The brief as the Brief tab writes it.
+    pub fn input(&self) -> UpsertItemBrief {
+        UpsertItemBrief {
+            acceptance: self.acceptance.clone(),
+            constraints: self.constraints.clone(),
+            definition_of_done: trimmed(self.definition_of_done.as_deref()).map(str::to_owned),
+            risk: self.risk.clone(),
+        }
+    }
 }
 
 /// An outline checked against a workflow, in the order its rows can be
 /// written: every item comes after the item it names as parent.
 #[derive(Debug)]
 pub struct ResolvedOutline {
+    /// The items the file adds. An item whose key the board has is in `updates` instead.
     pub items: Vec<PlannedItem>,
     /// `(blocker, blocked)` pairs, as indexes into `items`.
     pub blocks: Vec<(usize, usize)>,
+    /// `(blocker, blocked)`: an item the board has blocks one of `items`, by index.
+    pub existing_blocks: Vec<(Uuid, usize)>,
+    /// The items the file names by a key the board has: the file's plan fields for each.
+    pub updates: Vec<PlannedUpdate>,
     pub warnings: Vec<String>,
+}
+
+/// An item of the board the file names by its key. `item` holds the plan fields as a new item's
+/// would be (its `parent` is already the one the file names); the board's own keys are never read.
+#[derive(Debug)]
+pub struct PlannedUpdate {
+    pub id: Uuid,
+    pub item: PlannedItem,
+    /// The items that must finish before this one.
+    pub blockers: Vec<PlannedParent>,
 }
 
 #[derive(Debug)]
@@ -546,6 +603,8 @@ pub struct PlannedItem {
     pub fields: BTreeMap<String, serde_json::Value>,
     /// The estimate's unit word, as written.
     pub estimate_unit: Option<String>,
+    /// The brief, checked; `None` when the file gives none.
+    pub brief: Option<UpsertItemBrief>,
     /// Everything but `parent_id`, which only exists once the parent's row
     /// does.
     pub input: CreateItem,
@@ -553,7 +612,7 @@ pub struct PlannedItem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlannedParent {
-    /// An earlier entry of [`ResolvedOutline::items`].
+    /// An entry of [`ResolvedOutline::items`]; for a new item, an earlier one.
     Planned(usize),
     /// An item that already exists; the caller checks it belongs to the
     /// project.
@@ -628,26 +687,34 @@ pub fn parse_due_date(text: &str) -> Option<DateTime<Utc>> {
 
 enum Lookup {
     Found(usize),
+    /// An item the board has and the file does not carry.
+    Existing(Uuid),
     Ambiguous(usize),
     Missing,
 }
 
 struct Index<'a> {
     by_ref: HashMap<&'a str, usize>,
+    by_key: HashMap<&'a str, usize>,
     by_title: HashMap<&'a str, Vec<usize>>,
+    /// `(key, id)` of the board's items.
+    board: &'a [(&'a str, Uuid)],
 }
 
 impl Index<'_> {
-    /// A `ref` wins over a title, so a writer can always disambiguate two
-    /// items with the same title by giving them refs.
-    fn find(&self, key: &str) -> Lookup {
-        if let Some(&i) = self.by_ref.get(key) {
+    /// A `ref` wins over a key and a key over a title, so a writer can always disambiguate two
+    /// items with the same title by giving them refs; the board's keys come last.
+    fn find(&self, name: &str) -> Lookup {
+        if let Some(&i) = self.by_ref.get(name).or_else(|| self.by_key.get(name)) {
             return Lookup::Found(i);
         }
-        match self.by_title.get(key).map(Vec::as_slice) {
+        match self.by_title.get(name).map(Vec::as_slice) {
             Some([i]) => Lookup::Found(*i),
             Some(many) => Lookup::Ambiguous(many.len()),
-            None => Lookup::Missing,
+            None => match self.board.iter().find(|(key, _)| *key == name) {
+                Some(&(_, id)) => Lookup::Existing(id),
+                None => Lookup::Missing,
+            },
         }
     }
 }
@@ -673,6 +740,21 @@ pub fn resolve(
     items: &[OutlineItem],
     workflow: &WorkflowConfig,
 ) -> Result<ResolvedOutline, OutlineError> {
+    resolve_among(items, workflow, &[])
+}
+
+/// [`resolve`] for a project that has items. An item of the outline with the key of one of
+/// `existing` is an update of that item, and `parent` and `depends_on` may name any of them.
+pub(crate) fn resolve_among(
+    items: &[OutlineItem],
+    workflow: &WorkflowConfig,
+    existing: &[Item],
+) -> Result<ResolvedOutline, OutlineError> {
+    let existing: Vec<(&str, Uuid)> = existing
+        .iter()
+        .filter(|row| !row.key.is_empty())
+        .map(|row| (row.key.as_str(), row.id))
+        .collect();
     if items.len() > MAX_OUTLINE_ITEMS {
         return Err(OutlineError::one(format!(
             "the outline has {} items; one request creates at most {MAX_OUTLINE_ITEMS}",
@@ -692,7 +774,9 @@ pub fn resolve(
 
     let mut index = Index {
         by_ref: HashMap::new(),
+        by_key: HashMap::new(),
         by_title: HashMap::new(),
+        board: &existing,
     };
     for (i, item) in items.iter().enumerate() {
         if let Some(reference) = trimmed(item.reference.as_deref()) {
@@ -706,37 +790,62 @@ pub fn resolve(
                 }
             }
         }
+        if let Some(key) = trimmed(item.key.as_deref()) {
+            match index.by_key.get(key) {
+                Some(&first) => problems.push(format!(
+                    "{} reuses key \"{key}\" of {}",
+                    labels[i], labels[first]
+                )),
+                None => {
+                    index.by_key.insert(key, i);
+                }
+            }
+        }
         let title = item.title.trim();
         if !title.is_empty() {
             index.by_title.entry(title).or_default().push(i);
         }
     }
+    let board_id: Vec<Option<Uuid>> = items
+        .iter()
+        .map(|item| {
+            let key = trimmed(item.key.as_deref())?;
+            existing.iter().find(|(k, _)| *k == key).map(|&(_, id)| id)
+        })
+        .collect();
 
     let mut parents: Vec<Option<PlannedParent>> = Vec::with_capacity(items.len());
     let mut blocks: Vec<(usize, usize)> = Vec::new();
-    let mut inputs: Vec<Option<(String, CreateItem)>> = Vec::with_capacity(items.len());
+    let mut board_blocks: Vec<(Uuid, usize)> = Vec::new();
+    let mut inputs: Vec<Option<(String, CreateItem, Option<UpsertItemBrief>)>> =
+        Vec::with_capacity(items.len());
 
     for (i, item) in items.iter().enumerate() {
         let at = &labels[i];
         parents.push(resolve_parent(item, i, at, &index, &mut problems));
-        for key in item
+        for name in item
             .depends_on
             .iter()
             .map(|k| k.trim())
             .filter(|k| !k.is_empty())
         {
-            match index.find(key) {
+            match index.find(name) {
                 Lookup::Found(j) if j == i => problems.push(format!("{at} depends on itself")),
                 Lookup::Found(j) => {
                     if !blocks.contains(&(j, i)) {
                         blocks.push((j, i));
                     }
                 }
+                Lookup::Existing(id) => {
+                    if !board_blocks.contains(&(id, i)) {
+                        board_blocks.push((id, i));
+                    }
+                }
                 Lookup::Ambiguous(n) => problems.push(format!(
-                    "{at} depends on \"{key}\", which is the title of {n} items; give them refs"
+                    "{at} depends on \"{name}\", which is the title of {n} items; give them refs"
                 )),
                 Lookup::Missing => problems.push(format!(
-                    "{at} depends on \"{key}\", which is no ref or title in the outline"
+                    "{at} depends on \"{name}\", which is no ref or title in the outline"
                 )),
             }
         }
@@ -748,6 +857,25 @@ pub fn resolve(
             &mut problems,
             &mut warnings,
         ));
+        if board_id[i].is_some() {
+            let given: Vec<&str> = [
+                ("status", item.status.is_some()),
+                ("priority", item.priority.is_some()),
+                ("assignee", item.assignee.is_some()),
+                ("sprint", item.sprint.is_some()),
+                ("due date", item.due_date.is_some()),
+            ]
+            .into_iter()
+            .filter_map(|(name, set)| set.then_some(name))
+            .collect();
+            if !given.is_empty() {
+                warnings.push(format!(
+                    "{at}: {} {} the board's: kept",
+                    given.join(", "),
+                    if given.len() == 1 { "is" } else { "are" }
+                ));
+            }
+        }
     }
 
     let parent_edges: Vec<(usize, usize)> = parents
@@ -776,18 +904,31 @@ pub fn resolve(
         return Err(OutlineError { problems });
     }
 
-    let mut position = vec![0usize; items.len()];
-    for (new, &old) in order.iter().enumerate() {
-        position[old] = new;
-    }
-    let mut planned = Vec::with_capacity(items.len());
+    // New items are written in `order`; one the board has is named by its id wherever another
+    // item points at it.
+    let mut added = vec![0usize; items.len()];
+    let mut made = 0;
     for &old in &order {
-        let (status, input) = inputs[old].take().expect("every item resolved");
-        planned.push(PlannedItem {
+        if board_id[old].is_none() {
+            added[old] = made;
+            made += 1;
+        }
+    }
+    let pointer = |old: usize| match board_id[old] {
+        Some(id) => PlannedParent::Existing(id),
+        None => PlannedParent::Planned(added[old]),
+    };
+    let mut created = Vec::new();
+    let mut updated = Vec::new();
+    let mut new_blocks = Vec::new();
+    let mut new_board_blocks = Vec::new();
+    for &old in &order {
+        let (status, input, brief) = inputs[old].take().expect("every item resolved");
+        let planned = PlannedItem {
             reference: trimmed(items[old].reference.as_deref()).map(str::to_string),
             status,
             parent: parents[old].map(|p| match p {
-                PlannedParent::Planned(j) => PlannedParent::Planned(position[j]),
+                PlannedParent::Planned(j) => pointer(j),
                 existing => existing,
             }),
             roles: items[old]
@@ -799,15 +940,47 @@ pub fn resolve(
             sprint: trimmed(items[old].sprint.as_deref()).map(str::to_string),
             fields: items[old].fields.clone(),
             estimate_unit: trimmed(items[old].estimate_unit.as_deref()).map(str::to_string),
+            brief,
             input,
-        });
+        };
+        match board_id[old] {
+            Some(id) => {
+                let mut blockers: Vec<PlannedParent> = blocks
+                    .iter()
+                    .filter(|&&(_, blocked)| blocked == old)
+                    .map(|&(blocker, _)| pointer(blocker))
+                    .collect();
+                blockers.extend(
+                    board_blocks
+                        .iter()
+                        .filter(|&&(_, blocked)| blocked == old)
+                        .map(|&(blocker, _)| PlannedParent::Existing(blocker)),
+                );
+                updated.push(PlannedUpdate {
+                    id,
+                    item: planned,
+                    blockers,
+                });
+            }
+            None => {
+                for &(blocker, blocked) in blocks.iter().filter(|&&(_, blocked)| blocked == old) {
+                    match pointer(blocker) {
+                        PlannedParent::Planned(a) => new_blocks.push((a, added[blocked])),
+                        PlannedParent::Existing(id) => new_board_blocks.push((id, added[blocked])),
+                    }
+                }
+                for &(blocker, blocked) in board_blocks.iter().filter(|&&(_, b)| b == old) {
+                    new_board_blocks.push((blocker, added[blocked]));
+                }
+                created.push(planned);
+            }
+        }
     }
     Ok(ResolvedOutline {
-        items: planned,
-        blocks: blocks
-            .into_iter()
-            .map(|(a, b)| (position[a], position[b]))
-            .collect(),
+        items: created,
+        blocks: new_blocks,
+        existing_blocks: new_board_blocks,
+        updates: updated,
         warnings,
     })
 }
@@ -819,24 +992,25 @@ fn resolve_parent(
     index: &Index<'_>,
     problems: &mut Vec<String>,
 ) -> Option<PlannedParent> {
-    let key = trimmed(item.parent.as_deref())?;
-    match index.find(key) {
+    let name = trimmed(item.parent.as_deref())?;
+    match index.find(name) {
         Lookup::Found(j) if j == i => {
             problems.push(format!("{at} is its own parent"));
             None
         }
         Lookup::Found(j) => Some(PlannedParent::Planned(j)),
+        Lookup::Existing(id) => Some(PlannedParent::Existing(id)),
         Lookup::Ambiguous(n) => {
             problems.push(format!(
-                "{at} names parent \"{key}\", which is the title of {n} items; give them refs"
+                "{at} names parent \"{name}\", which is the title of {n} items; give them refs"
             ));
             None
         }
-        Lookup::Missing => match Uuid::parse_str(key) {
+        Lookup::Missing => match Uuid::parse_str(name) {
             Ok(id) => Some(PlannedParent::Existing(id)),
             Err(_) => {
                 problems.push(format!(
-                    "{at} names parent \"{key}\", which is no ref or title in the outline"
+                    "{at} names parent \"{name}\", which is no ref or title in the outline"
                 ));
                 None
             }
@@ -851,7 +1025,7 @@ fn item_input(
     initial_status: &str,
     problems: &mut Vec<String>,
     warnings: &mut Vec<String>,
-) -> Option<(String, CreateItem)> {
+) -> Option<(String, CreateItem, Option<UpsertItemBrief>)> {
     let title = item.title.trim();
     if title.is_empty() {
         problems.push(format!("{at} has no title"));
@@ -915,7 +1089,7 @@ fn item_input(
         .map(str::to_string)
         .collect();
     let input = CreateItem {
-        key: None,
+        key: trimmed(item.key.as_deref()).map(str::to_string),
         title: title.to_string(),
         description: trimmed(item.description.as_deref()).map(str::to_string),
         item_type: trimmed(item.item_type.as_deref()).map(str::to_string),
@@ -935,7 +1109,18 @@ fn item_input(
         problems.push(format!("{at}: {e}"));
         return None;
     }
-    Some((status, input))
+    let brief = match item.brief.as_ref().filter(|brief| !brief.is_empty()) {
+        Some(brief) => {
+            let brief = brief.input();
+            if let Err(e) = brief.validate() {
+                problems.push(format!("{at}: brief: {e}"));
+                return None;
+            }
+            Some(brief)
+        }
+        None => None,
+    };
+    Some((status, input, brief))
 }
 
 /// Kahn's algorithm over `edges` (`(before, after)`), always taking the

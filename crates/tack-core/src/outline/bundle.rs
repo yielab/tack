@@ -14,15 +14,15 @@ use uuid::Uuid;
 use super::key::{is_key, key_of};
 use super::{
     BundleAutoStart, BundleAutomation, BundleAutonomy, BundleField, BundleProfile, BundleRole,
-    BundleSprint, BundleStatus, BundleTeam, BundleType, BundleWorkflow, Outline, OutlineError,
-    OutlineItem, OutlineProject, ResolvedOutline, TEAM_DELIVERS, TEAM_SHAPES, label,
-    parse_due_date, resolve, topological, trimmed,
+    BundleSprint, BundleStatus, BundleTeam, BundleType, BundleWorkflow, Outline, OutlineBrief,
+    OutlineError, OutlineItem, OutlineProject, ResolvedOutline, TEAM_DELIVERS, TEAM_SHAPES, label,
+    parse_due_date, resolve_among, topological, trimmed,
 };
 use crate::autonomy::Level;
 use crate::item_types::{self, ItemTypeDef, TypeColor};
 use crate::models::{
     CustomFieldDefinition, CustomFieldType, CustomFieldValue, Dependency, DependencyType,
-    EstimateUnit, Item, Priority, Project, ProjectType, Role, Sprint, SprintStatus,
+    EstimateUnit, Item, ItemBrief, Priority, Project, ProjectType, Role, Sprint, SprintStatus,
 };
 use crate::vocabulary::{self, VocabularyMap, vocabulary_for_type};
 use crate::workflow::{
@@ -65,6 +65,8 @@ pub struct Board<'a> {
     pub profiles: &'a [ProfileRow],
     pub roles: &'a [Named],
     pub sprints: &'a [Named],
+    /// The project's visible items: a file item with the key of one of these updates it.
+    pub items: &'a [Item],
     /// `(id, name)`
     pub fleets: &'a [(String, String)],
     pub harness_kinds: &'a [&'a str],
@@ -126,6 +128,8 @@ pub struct Parts<'a> {
     pub autonomy: Option<BundleAutonomy>,
     pub auto_start: BundleAutoStart,
     pub items: &'a [Item],
+    /// The brief of each item that has one.
+    pub briefs: &'a [ItemBrief],
     /// `(item, role)`
     pub item_roles: &'a [(Uuid, Uuid)],
     pub item_fields: &'a [CustomFieldValue],
@@ -459,7 +463,8 @@ fn check_types(
 /// word the catalog lacks is added to it as a work type. Returns the names added.
 fn name_types(resolved: &mut ResolvedOutline, catalog: &mut Catalog) -> Vec<String> {
     let mut added = Vec::new();
-    for planned in &mut resolved.items {
+    let updates = resolved.updates.iter_mut().map(|update| &mut update.item);
+    for planned in resolved.items.iter_mut().chain(updates) {
         let Some(word) = planned.input.item_type.take() else {
             continue;
         };
@@ -894,7 +899,7 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
     sprint_names.extend(board.sprints.iter().map(|r| r.name.trim()));
     let mut item_warnings = Vec::new();
     let mut resolved: Option<ResolvedOutline> = None;
-    match resolve(&outline.items, board.workflow) {
+    match resolve_among(&outline.items, board.workflow, board.items) {
         Ok(found) => {
             item_warnings.extend(found.warnings.iter().cloned());
             resolved = Some(found);
@@ -912,11 +917,11 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
             &mut item_warnings,
         );
     }
-    if !outline.items.is_empty() {
+    if let Some(found) = resolved.as_ref().filter(|_| !outline.items.is_empty()) {
         sections.push(SectionSummary {
             section: "items".into(),
-            created: outline.items.len(),
-            updated: 0,
+            created: found.items.len(),
+            updated: found.updates.len(),
             not_mentioned: 0,
             warnings: item_warnings.clone(),
         });
@@ -1319,11 +1324,20 @@ fn items_of(parts: &Parts<'_>) -> Vec<OutlineItem> {
             order.push(i);
         }
     }
+    // Items name each other by key; one the board has not given a key is named by its place.
     let reference: HashMap<Uuid, String> = order
         .iter()
         .enumerate()
-        .map(|(n, &i)| (parts.items[i].id, (n + 1).to_string()))
+        .map(|(n, &i)| {
+            let item = &parts.items[i];
+            let name = match item.key.is_empty() {
+                true => (n + 1).to_string(),
+                false => item.key.clone(),
+            };
+            (item.id, name)
+        })
         .collect();
+    let brief_of: HashMap<Uuid, &ItemBrief> = parts.briefs.iter().map(|b| (b.item_id, b)).collect();
     let role_name: HashMap<Uuid, &str> = parts
         .roles
         .iter()
@@ -1369,9 +1383,18 @@ fn items_of(parts: &Parts<'_>) -> Vec<OutlineItem> {
                 })
                 .filter_map(|d| reference.get(&d.source_item_id).cloned())
                 .collect();
+            let brief = brief_of
+                .get(&item.id)
+                .map(|b| OutlineBrief {
+                    definition_of_done: b.definition_of_done.clone(),
+                    risk: b.risk.clone(),
+                    acceptance: b.acceptance.clone(),
+                    constraints: b.constraints.clone(),
+                })
+                .filter(|b| !b.is_empty());
             OutlineItem {
-                key: None,
-                reference: reference.get(&item.id).cloned(),
+                key: (!item.key.is_empty()).then(|| item.key.clone()),
+                reference: item.key.is_empty().then(|| reference[&item.id].clone()),
                 title: item.title.clone(),
                 description: item.description.clone(),
                 item_type: Some(item.item_type.clone()),
@@ -1397,6 +1420,7 @@ fn items_of(parts: &Parts<'_>) -> Vec<OutlineItem> {
                     EstimateUnit::Custom(word) => Some(word.clone()),
                 },
                 origin: None,
+                brief,
             }
         })
         .collect()

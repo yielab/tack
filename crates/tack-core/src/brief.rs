@@ -53,6 +53,41 @@ pub fn validate(acceptance: &[AcceptanceCriterion]) -> Result<(), ValidationErro
     Ok(())
 }
 
+/// What a screen says of an item's brief, so none of them reads the rule: whether something says
+/// when the item is done, how many of its checks a machine runs, its risk, and, when it cannot be
+/// verified yet, why.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BriefSummary {
+    pub done_when: bool,
+    pub checks: u32,
+    pub risk: Option<Risk>,
+    pub not_ready: Option<String>,
+}
+
+/// The reason a task has neither a Done when nor a check a machine runs.
+const NOT_READY: &str = "No Done when and no check a machine runs";
+
+/// The summary of `brief`. The Done when is the item's, or the project's when the item has none (a
+/// run receives the project's). A check is a criterion a person does not tick (`manual` is the
+/// only kind a machine does not run).
+pub fn readiness(brief: Option<&ItemBrief>, project_done: Option<&str>) -> BriefSummary {
+    let said = |text: Option<&str>| text.is_some_and(|t| !t.trim().is_empty());
+    let done_when = said(brief.and_then(|b| b.definition_of_done.as_deref())) || said(project_done);
+    let checks = brief.map_or(0, |b| {
+        b.acceptance
+            .iter()
+            .filter(|c| !matches!(c, AcceptanceCriterion::Manual { .. }))
+            .count() as u32
+    });
+    BriefSummary {
+        done_when,
+        checks,
+        risk: brief.and_then(|b| b.risk.clone()),
+        not_ready: (!done_when && checks == 0).then(|| NOT_READY.to_owned()),
+    }
+}
+
 /// The brief as Markdown, for a pull-request body or a harness prompt: one
 /// heading per section, one line per criterion led by its id, and the
 /// `manual` criteria last under "Needs a human".

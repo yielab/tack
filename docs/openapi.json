@@ -10342,6 +10342,40 @@
           }
         }
       },
+      "BriefSummary": {
+        "type": "object",
+        "description": "What a screen says of an item's brief, so none of them reads the rule: whether something says\nwhen the item is done, how many of its checks a machine runs, its risk, and, when it cannot be\nverified yet, why.",
+        "required": [
+          "done_when",
+          "checks"
+        ],
+        "properties": {
+          "checks": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "done_when": {
+            "type": "boolean"
+          },
+          "not_ready": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "risk": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Risk"
+              }
+            ]
+          }
+        }
+      },
       "BudgetSettings": {
         "type": "object",
         "description": "The project's daily limits; `null` is no limit.",
@@ -14248,7 +14282,7 @@
             }
           },
           "item": {
-            "$ref": "#/components/schemas/ItemCard"
+            "$ref": "#/components/schemas/ItemWithBrief"
           },
           "roles": {
             "type": "array",
@@ -14391,6 +14425,25 @@
           }
         ],
         "description": "A type with how many items use it, as the types route lists it."
+      },
+      "ItemWithBrief": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ItemCard"
+          },
+          {
+            "type": "object",
+            "required": [
+              "brief_summary"
+            ],
+            "properties": {
+              "brief_summary": {
+                "$ref": "#/components/schemas/BriefSummary"
+              }
+            }
+          }
+        ],
+        "description": "An item as the list and the detail answer it: the card, and the summary of its brief beside it."
       },
       "Key": {
         "type": "string",
@@ -15381,6 +15434,41 @@
         },
         "additionalProperties": false
       },
+      "OutlineBrief": {
+        "type": "object",
+        "description": "An item's brief as a file writes it: brief-v1's four parts.",
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceCriterion"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Constraint"
+            }
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "risk": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Risk"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "OutlineItem": {
         "type": "object",
         "properties": {
@@ -15390,12 +15478,23 @@
               "null"
             ]
           },
+          "brief": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutlineBrief",
+                "description": "What makes the item done, in brief-v1's shape (`docs/contracts/brief-v1/`) without its\nitem. A brief with none of its four parts is no brief."
+              }
+            ]
+          },
           "depends_on": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Items that must finish before this one, by `ref` or exact title."
+            "description": "Items that must finish before this one, by `key`, `ref` or exact title; one the project\nalready has is named by its key."
           },
           "description": {
             "type": [
@@ -15437,14 +15536,14 @@
               "string",
               "null"
             ],
-            "description": "The item's key: its file name in the project folder; absent, the item is matched by\nnothing and always added."
+            "description": "The item's key: its file name in the project folder. An item whose key the project has is\nupdated in its plan fields; absent, the item is matched by nothing and always added."
           },
           "parent": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Another item's `ref` or exact title; when adding to an existing\nproject, also the id of an item already in it."
+            "description": "Another item's `key`, `ref` or exact title; when adding to an existing\nproject, also the key or the id of an item already in it."
           },
           "priority": {
             "type": [
@@ -15684,7 +15783,7 @@
           "data": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ItemCard"
+              "$ref": "#/components/schemas/ItemWithBrief"
             }
           },
           "page": {
