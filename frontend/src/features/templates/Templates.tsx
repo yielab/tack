@@ -292,7 +292,7 @@ export default function Templates() {
 
                   {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
                   <Show when={showPreview() && (columns().length > 0 || samples().length > 0 || roles().length > 0)}>
-                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-micro text-content-muted" data-testid="template-preview">
+                    <div class="flex flex-col gap-1.5 rounded-lg bg-app px-3 py-2.5 text-micro text-content-muted" data-testid="template-preview">
                       <Show when={columns().length > 0}>
                         <div class="flex flex-wrap items-center gap-1">
                           <For each={columns()}>
@@ -327,7 +327,7 @@ export default function Templates() {
                     </Button>
                     <Show when={!template.is_builtin}>
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         onClick={() => handleDeleteTemplate(template.id)}
                         title="Delete template"
                         aria-label="Delete template"
@@ -343,7 +343,7 @@ export default function Templates() {
         </div>
 
         <Show when={templates() && templates()!.length === 0}>
-          <div class="rounded-card border-2 border-dashed border-line px-6">
+          <div class="rounded-lg border-2 border-dashed border-line px-6">
             <EmptyState
               icon={<IconTemplates size={26} style={{ color: 'var(--color-accent2-ink)' }} />}
               title={selectedType() ? 'No templates found for this type' : 'No templates yet'}
@@ -364,7 +364,7 @@ export default function Templates() {
           size="sm"
         >
           <div
-            class="mb-4 rounded-item px-4 py-3"
+            class="mb-4 rounded-lg px-4 py-3"
             style={{ 'background-color': 'var(--color-accent-soft)' }}
           >
             <div class="text-xs" style={{ color: 'var(--color-accent-ink)' }}>
@@ -391,7 +391,7 @@ export default function Templates() {
                 onInput={(e) => setProjectDescription(e.currentTarget.value)}
                 rows={3}
                 placeholder="Optional description"
-                class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                class="w-full resize-none rounded-md border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{
                   'background-color': 'var(--color-bg-base)',
                   color: 'var(--color-text-primary)',
@@ -402,7 +402,7 @@ export default function Templates() {
             </FieldShell>
 
             <div
-              class="rounded-xl px-4 py-2.5 text-sm"
+              class="rounded-lg px-4 py-2.5 text-sm"
               style={{
                 'background-color': 'var(--color-info-50)',
                 color: 'var(--color-info-700)',

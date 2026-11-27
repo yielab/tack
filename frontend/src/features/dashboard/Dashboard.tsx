@@ -87,10 +87,10 @@ export default function Dashboard() {
       {/* Loading */}
       <Show when={items.loading && !items()}>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5" aria-hidden="true">
-          <For each={[1, 2, 3, 4]}>{() => <Skeleton height="90px" class="rounded-[24px]!" />}</For>
+          <For each={[1, 2, 3, 4]}>{() => <Skeleton height="90px" class="rounded-lg!" />}</For>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5" aria-hidden="true">
-          <For each={[1, 2]}>{() => <Skeleton height="180px" class="rounded-card!" />}</For>
+          <For each={[1, 2]}>{() => <Skeleton height="180px" class="rounded-lg!" />}</For>
         </div>
       </Show>
 
@@ -251,7 +251,7 @@ function RunsRow(props: { stats: RunStats; projectId: string }) {
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div
-          class="rounded-card px-5 py-4 flex flex-col gap-3 min-w-0 md:col-span-2 lg:col-span-2"
+          class="rounded-lg px-5 py-4 flex flex-col gap-3 min-w-0 md:col-span-2 lg:col-span-2"
           style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
         >
           <p class="text-xs font-bold" style={{ color: 'var(--color-text-secondary)' }}>
@@ -338,7 +338,7 @@ function StatTile(props: {
 }) {
   return (
     <div
-      class="rounded-card px-5 py-[18px] flex flex-col gap-1.5 min-w-0"
+      class="rounded-lg px-5 py-[18px] flex flex-col gap-1.5 min-w-0"
       role={props.unavailable ? 'group' : undefined}
       aria-label={props.unavailable ? props.label : undefined}
       aria-disabled={props.unavailable ? 'true' : undefined}

@@ -117,7 +117,7 @@ const ProposeFromFile: Component<ProposeFromFileProps> = (props) => {
       </Show>
       {/* The drop zone is the file button's box: a file dropped anywhere in it is read as if it were picked. */}
       <div
-        class="rounded-item p-2 text-sm"
+        class="rounded-md p-2 text-sm"
         style={{
           border: dragging() ? '1px dashed var(--color-accent-line)' : '1px dashed var(--color-border-light)',
           'background-color': dragging() ? 'var(--color-accent-soft)' : 'transparent',

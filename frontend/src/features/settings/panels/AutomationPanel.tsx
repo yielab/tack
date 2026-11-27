@@ -362,7 +362,7 @@ const AutomationPanel: Component = () => {
           rows={3}
           value={p()?.definition_of_done ?? ''}
           onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
-          class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
+          class="w-full resize-none rounded-md border px-3.5 py-2 text-sm"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',

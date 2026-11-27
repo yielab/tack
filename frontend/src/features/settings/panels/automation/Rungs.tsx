@@ -138,7 +138,7 @@ const Rungs: Component<{
                       data-level={l.value}
                       data-state={current() ? 'current' : held(l.value) ? 'held' : 'open'}
                       aria-current={current() ? 'step' : undefined}
-                      class={`relative flex min-w-0 flex-col gap-1 rounded-item border p-3 focus-within:ring-2 ${!current() && held(l.value) ? 'border-dashed' : ''}`}
+                      class={`relative flex min-w-0 flex-col gap-1 rounded-lg border p-3 focus-within:ring-2 ${!current() && held(l.value) ? 'border-dashed' : ''}`}
                       style={{
                         'background-color': current() ? 'var(--color-primary-600)' : 'var(--color-bg-base)',
                         'border-color': current() ? 'var(--color-primary-600)' : 'var(--color-border-medium)',

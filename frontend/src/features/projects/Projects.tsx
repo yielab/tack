@@ -96,7 +96,7 @@ const Projects: Component = () => {
               {(project) => (
                 <A
                   href={`/projects/${project.id}/board`}
-                  class="flex min-h-[170px] flex-col gap-2.5 rounded-card border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
+                  class="flex min-h-[170px] flex-col gap-2.5 rounded-lg border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
                 >
                   <div class="flex items-start gap-2.5">
                     <h3 class="min-w-0 text-[1.3125rem] leading-[1.15] text-content">

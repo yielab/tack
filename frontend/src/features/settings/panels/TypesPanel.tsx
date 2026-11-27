@@ -190,7 +190,7 @@ const TypeRow: Component<{
       ref={row}
       data-testid="type-row"
       data-key={u().key}
-      class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-item px-3 py-2"
+      class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md px-3 py-2"
       style={{ 'background-color': 'var(--color-bg-panel)' }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -213,7 +213,7 @@ const TypeRow: Component<{
           }
         }}
         onKeyDown={onHandleKey}
-        class="grid h-8 w-6 flex-none cursor-grab place-items-center rounded-item focus:outline-none focus-visible:ring-2"
+        class="grid h-8 w-6 flex-none cursor-grab place-items-center rounded-md focus:outline-none focus-visible:ring-2"
         style={{ background: 'none', border: 0, color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
       >
         <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
@@ -446,7 +446,7 @@ const RemoveType: Component<{
           <Button type="button" variant="secondary" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="danger" loading={busy()} disabled={busy() || stuck()}>
+          <Button type="submit" variant="destructive" loading={busy()} disabled={busy() || stuck()}>
             {n() > 0 ? 'Move and remove' : 'Remove'}
           </Button>
         </div>

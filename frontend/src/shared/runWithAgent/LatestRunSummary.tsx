@@ -363,7 +363,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     <section
       data-testid="now-panel"
       aria-labelledby={headingId}
-      class="min-w-0 space-y-3 rounded-item p-4"
+      class="min-w-0 space-y-3 rounded-lg p-4"
       style={{ 'background-color': 'var(--color-bg-panel)', 'box-shadow': 'var(--shadow-sm)' }}
     >
       <h2 id={headingId} class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Work</h2>

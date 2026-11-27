@@ -40,7 +40,7 @@ export default function WorkTabs() {
 
   return (
     <div
-      class="inline-flex items-center gap-[3px] p-[3px] rounded-full"
+      class="inline-flex items-center gap-[3px] p-[3px] rounded-lg"
       style={{ background: 'var(--color-bg-panel)' }}
     >
       <For each={TABS}>
@@ -52,7 +52,7 @@ export default function WorkTabs() {
                 data-testid={`tab-${tab.lens}-off`}
                 aria-disabled="true"
                 title={offReason(tab.lens) ?? undefined}
-                class="flex items-center px-3.5 rounded-full text-small"
+                class="flex items-center px-3.5 rounded-md text-small"
                 style={{ 'padding-block': '5px', color: 'var(--color-text-tertiary)', 'font-weight': 500, cursor: 'not-allowed' }}
               >
                 {tab.vocab ? t(tab.vocab) : tab.label}
@@ -63,7 +63,7 @@ export default function WorkTabs() {
           <A
             href={`/projects/${projectId()}/${tab.lens}`}
             onClick={() => setLastLens(tab.lens)}
-            class="flex items-center px-3.5 py-[5px] rounded-full text-small transition-all"
+            class="flex items-center px-3.5 py-[5px] rounded-md text-small transition-all"
             style={activeLens() === tab.lens
               ? {
                   background: 'var(--color-bg-app)',

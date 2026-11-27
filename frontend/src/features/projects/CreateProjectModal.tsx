@@ -239,7 +239,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     'box-shadow': 'var(--shadow-md)',
   };
   const cardClass =
-    'rounded-item border-2 p-3 text-left transition-[border-color,box-shadow,background-color] ' +
+    'rounded-lg border-2 p-3 text-left transition-[border-color,box-shadow,background-color] ' +
     'hover:border-[var(--color-primary-600)] focus:outline-none focus-visible:ring-2';
 
   const renderPreview = (t: ProjectTemplate) => {
@@ -247,7 +247,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     const samples = vocabSamples(t);
     return (
       <div
-        class="mt-2 flex flex-col gap-1.5 rounded-[14px] px-2.5 py-2 text-micro"
+        class="mt-2 flex flex-col gap-1.5 rounded-lg px-2.5 py-2 text-micro"
         style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }}
       >
         <Show when={columns.length > 0}>
@@ -283,7 +283,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       <form onSubmit={handleSubmit} class="space-y-4">
         <Show when={error()}>
           <div
-            class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+            class="rounded-lg px-4 py-2.5 text-sm font-semibold"
             style={{
               'background-color': 'var(--color-danger-100)',
               color: 'var(--color-danger-600)',
@@ -310,7 +310,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
             placeholder="A brief description of your project..."
             rows={2}
             disabled={loading()}
-            class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+            class="w-full resize-none rounded-md border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',

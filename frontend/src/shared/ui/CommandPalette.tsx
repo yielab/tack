@@ -132,7 +132,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
             style={{
               outline: 'none',
               width: '560px', 'max-width': '92vw', background: 'var(--color-bg-elevated)',
-              'border-radius': 'var(--radius-card)',
+              'border-radius': 'var(--radius-lg)',
               'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
               animation: 'tk-pal .16s cubic-bezier(.2,.7,.3,1)',
             }}

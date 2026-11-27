@@ -127,7 +127,7 @@ const StepNode: Component<{ step: TeamStep; last: boolean }> = (props) => {
   return (
     <li data-kind={props.step.kind} class="flex min-w-0 items-center gap-1.5">
       <span
-        class="flex min-w-0 flex-col rounded-item px-2.5 py-1.5 text-small"
+        class="flex min-w-0 flex-col rounded-md px-2.5 py-1.5 text-small"
         style={{
           border: `1px ${props.step.kind === 'wait' ? 'dashed' : 'solid'} var(--color-border-medium)`,
           'overflow-wrap': 'anywhere',
@@ -250,7 +250,7 @@ const TeamCard: Component<TeamCardProps> = (props) => {
   };
 
   return (
-    <li id={`team-${entry().name}`} class="flex min-w-0 flex-col gap-2.5 rounded-xl bg-app px-4 py-3.5" data-testid={`team-card-${entry().name}`}>
+    <li id={`team-${entry().name}`} class="flex min-w-0 flex-col gap-2.5 rounded-lg bg-app px-4 py-3.5" data-testid={`team-card-${entry().name}`}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="text-lead font-bold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
           {entry().name}

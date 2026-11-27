@@ -219,7 +219,7 @@ const ChangeSetPanel: Component<{ changeSet: ChangeSet; onChange?: (next: Change
       data-testid="change-set-panel"
       data-status={set().status}
       aria-label={title()}
-      class="min-w-0 space-y-3 rounded-item p-3"
+      class="min-w-0 space-y-3 rounded-lg p-3"
       style={{ border: '1px solid var(--color-border-light)' }}
     >
       <header class="min-w-0 space-y-1">
@@ -277,7 +277,7 @@ const ChangeSetPanel: Component<{ changeSet: ChangeSet; onChange?: (next: Change
               const op = () => ops()[pos];
               const locked = () => states()[pos] !== 'waiting';
               return (
-                <li data-testid="change-op" data-kind={op().op} class="min-w-0 space-y-2 rounded-item p-2" style={{ border: '1px solid var(--color-border-light)' }}>
+                <li data-testid="change-op" data-kind={op().op} class="min-w-0 space-y-2 rounded-lg p-2" style={{ border: '1px solid var(--color-border-light)' }}>
                   <label class="flex min-w-0 items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -324,14 +324,14 @@ const ChangeSetPanel: Component<{ changeSet: ChangeSet; onChange?: (next: Change
       <Show when={rejecting()}>
         <div class="flex min-w-0 flex-wrap items-center gap-2">
           <input
-            class="min-w-0 flex-1 rounded px-2 py-1 text-sm"
+            class="min-w-0 flex-1 rounded-sm px-2 py-1 text-sm"
             style={inputStyle}
             aria-label="Why you turn these changes down"
             placeholder="Why? The proposer reads this."
             value={rejectReason()}
             onInput={(e) => setRejectReason(e.currentTarget.value)}
           />
-          <Button size="sm" variant="danger" data-testid="change-set-reject-confirm" disabled={busy() || rejectReason().trim() === ''} onClick={() => void reject()}>
+          <Button size="sm" variant="destructive" data-testid="change-set-reject-confirm" disabled={busy() || rejectReason().trim() === ''} onClick={() => void reject()}>
             Reject {plural(waiting().length, 'change', 'changes')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>

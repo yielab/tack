@@ -9,7 +9,7 @@ export interface FieldsTabProps {
 }
 
 const controlClass =
-  'w-full rounded-full border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
+  'w-full rounded-md border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
 const controlStyle = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',
@@ -68,7 +68,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             rows={3}
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
-            class={controlClass.replace('rounded-full', 'rounded-item') + ' resize-none'}
+            class={controlClass + ' resize-none'}
             style={controlStyle}
           />
         );
@@ -101,7 +101,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             type="checkbox"
             checked={cur() === true}
             onChange={(e) => void setValue(def.id, e.currentTarget.checked)}
-            class="h-4 w-4 rounded"
+            class="h-4 w-4 rounded-sm"
             style={{ 'accent-color': 'var(--color-primary-600)' }}
           />
         );
@@ -150,7 +150,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Custom fields
         </h3>
@@ -168,7 +168,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Roles
         </h3>
@@ -188,7 +188,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
                     type="checkbox"
                     checked={assigned().has(role.id)}
                     onChange={() => void toggleRole(role.id)}
-                    class="h-4 w-4 rounded"
+                    class="h-4 w-4 rounded-sm"
                     style={{ 'accent-color': 'var(--color-primary-600)' }}
                   />
                   {role.name}

@@ -118,7 +118,7 @@ const Avatar: Component<AvatarProps> = (props) => {
       style={{
         width: `${px()}px`,
         height: `${px()}px`,
-        'border-radius': '99px',
+        'border-radius': 'var(--radius-lg)',
         background: `hsl(${hue()} ${AVATAR_SAT}% ${AVATAR_LIGHT}%)`,
         color: textColorForHue(hue()),
         display: 'inline-flex',
@@ -162,7 +162,7 @@ export const AvatarStack: Component<AvatarStackProps> = (props) => {
           style={{
             width: `${px()}px`,
             height: `${px()}px`,
-            'border-radius': '99px',
+            'border-radius': 'var(--radius-lg)',
             background: 'var(--color-chip)',
             color: 'var(--color-text-secondary)',
             display: 'inline-flex',

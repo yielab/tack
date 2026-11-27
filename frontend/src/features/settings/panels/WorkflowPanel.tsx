@@ -96,7 +96,7 @@ const WorkflowPanel: Component = () => {
       <div class="flex flex-col gap-2">
         <For each={rows()}>
           {(row, i) => (
-            <div class="flex flex-wrap items-center gap-2 rounded-xl bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
+            <div class="flex flex-wrap items-center gap-2 rounded-lg bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
               <input
                 type="text"
                 value={row.name}

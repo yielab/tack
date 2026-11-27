@@ -45,6 +45,36 @@ describe('Button', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it('has the control radius, and four variants that each read as their own kind', () => {
+    const cls = (variant: 'primary' | 'secondary' | 'ghost' | 'destructive') =>
+      mount(() => <Button variant={variant}>Go</Button>).querySelector('button')!.classList;
+    for (const v of ['primary', 'secondary', 'ghost', 'destructive'] as const) {
+      expect(cls(v).contains('rounded-md')).toBe(true);
+      expect(cls(v).contains('rounded-full')).toBe(false);
+    }
+    expect(cls('secondary').contains('border')).toBe(true);
+    expect(cls('ghost').contains('border')).toBe(false);
+    expect(cls('destructive').contains('border')).toBe(false);
+  });
+
+  it('fills only the primary one; the others are outlined, text, or red text on no fill', () => {
+    const style = (variant: 'primary' | 'secondary' | 'ghost' | 'destructive') =>
+      mount(() => <Button variant={variant}>Go</Button>).querySelector('button')!.getAttribute('style')!;
+    expect(style('primary')).toContain('background-color: var(--color-primary-600)');
+    for (const v of ['secondary', 'ghost', 'destructive'] as const) expect(style(v)).not.toContain('background-color');
+    expect(style('secondary')).toContain('--color-border-strong');
+    expect(style('ghost')).toContain('--color-accent-ink');
+    expect(style('destructive')).toContain('--color-danger-700');
+  });
+
+  it('is primary by default and 32, 36 or 44px tall by size', () => {
+    expect(mount(() => <Button>Go</Button>).querySelector('button')!.getAttribute('style')).toContain('--color-primary-600');
+    const h = (size: 'sm' | 'md' | 'lg') => mount(() => <Button size={size}>Go</Button>).querySelector('button')!.classList;
+    expect(h('sm').contains('h-8')).toBe(true);
+    expect(h('md').contains('h-9')).toBe(true);
+    expect(h('lg').contains('h-11')).toBe(true);
+  });
+
   it('is disabled and aria-busy while loading', () => {
     const c = mount(() => <Button loading>Save</Button>);
     const btn = c.querySelector('button')!;
@@ -114,6 +144,21 @@ describe('Badge / EmptyState / Field', () => {
   it('Badge renders its content', () => {
     const c = mount(() => <Badge tone="success">Active</Badge>);
     expect(c.textContent).toContain('Active');
+  });
+
+  it('Badge is a tag at the small radius, not a pill or a button', () => {
+    const el = mount(() => <Badge>wave-13</Badge>).querySelector('span')!;
+    expect(el.classList.contains('rounded-sm')).toBe(true);
+    expect(el.classList.contains('rounded-full')).toBe(false);
+    expect(el.classList.contains('border')).toBe(false);
+  });
+
+  it('Field and Select have the control radius and a border', () => {
+    const f = mount(() => <Field label="Name" />).querySelector('input')!;
+    expect(f.classList.contains('rounded-md')).toBe(true);
+    expect(f.classList.contains('border')).toBe(true);
+    const s = mount(() => <Select label="Kind" options={[{ value: 'a', label: 'A' }]} />).querySelector('select')!;
+    expect(s.classList.contains('rounded-md')).toBe(true);
   });
 
   it('EmptyState shows title, description and action', () => {
@@ -341,11 +386,12 @@ describe('Select', () => {
 });
 
 describe('Card', () => {
-  it('is the card radius on the panel surface, with the caller\'s classes and attributes added', () => {
+  it('is the panel radius on the white surface with a hairline, with the caller\'s classes and attributes added', () => {
     const c = mount(() => <Card class="px-5 py-4" role="status" data-testid="panel">Body</Card>);
     const el = c.querySelector('[data-testid="panel"]')!;
-    expect(el.classList.contains('rounded-card')).toBe(true);
-    expect(el.classList.contains('bg-panel')).toBe(true);
+    expect(el.classList.contains('rounded-lg')).toBe(true);
+    expect(el.classList.contains('bg-surface')).toBe(true);
+    expect(el.classList.contains('border-line')).toBe(true);
     expect(el.classList.contains('px-5')).toBe(true);
     expect(el.getAttribute('role')).toBe('status');
     expect(el.textContent).toBe('Body');

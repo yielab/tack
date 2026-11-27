@@ -36,7 +36,7 @@ function failedCommandOf(detail: string | undefined): string | null {
 
 /** A command to copy: its own block, scrolling sideways inside itself when long. */
 const CodeBlock: Component<{ children: string }> = (props) => (
-  <pre class="max-w-full overflow-x-auto rounded-item px-2.5 py-1.5" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
+  <pre class="max-w-full overflow-x-auto rounded-md px-2.5 py-1.5" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
     <code class="font-mono text-caption" style={{ color: 'var(--color-text-primary)' }}>{props.children}</code>
   </pre>
 );
@@ -48,7 +48,7 @@ const CodeBlock: Component<{ children: string }> = (props) => (
 const SignInStep: Component<SignInStepProps> = (props) => {
   const agents = () => installedAgents(props.thisMachineRunner);
   return (
-    <section class="flex flex-col gap-2.5 rounded-card bg-panel px-[22px] py-5">
+    <section class="flex flex-col gap-2.5 rounded-lg bg-panel px-[22px] py-5">
       <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Sign in
       </h2>
@@ -68,7 +68,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
             const cannotSay = () => signIn()?.state !== 'signed_in' && signIn()?.state !== 'signed_out';
             const failedCommand = () => failedCommandOf(signIn()?.detail);
             return (
-              <div class="flex min-w-0 flex-wrap items-center gap-3 rounded-xl bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
+              <div class="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
                 <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{label}</span>
                 <Show
                   when={signIn()?.state === 'signed_in'}

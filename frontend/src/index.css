@@ -117,13 +117,13 @@
 :root {
   color-scheme: light;
   /* — primitives — */
-  --color-bg-app: #f3f6f5;
+  --color-bg-app: #edf2f0;
   --color-bg-base: #ffffff;
   --color-bg-elevated: #ffffff;
   --color-bg-sidebar: #ebf0ee;
   --color-bg-subtle: #eef2f1;
 
-  --color-border-light: #e1e8e6;
+  --color-border-light: #dfe7e4;
   --color-border-subtle: #eef2f1;
 
   --color-text-primary: #152521;
@@ -278,13 +278,13 @@
  * ============================== */
 .dark {
   color-scheme: dark;
-  --color-bg-app: #0a1311;
+  --color-bg-app: #08100e;
   --color-bg-base: #101e1a;
   --color-bg-elevated: #152822;
   --color-bg-sidebar: #0b1815;
   --color-bg-subtle: #1b2a25;
 
-  --color-border-light: #1f322d;
+  --color-border-light: #243a34;
   --color-border-subtle: #172622;
 
   --color-text-primary: #e7f0ed;
@@ -327,13 +327,13 @@
  * ============================== */
 :root[data-palette="clay"] {
   color-scheme: light;
-  --color-bg-app: #faf6f1;
-  --color-bg-base: #fffdfb;
+  --color-bg-app: #f6efe7;
+  --color-bg-base: #ffffff;
   --color-bg-elevated: #ffffff;
   --color-bg-sidebar: #f3ebe1;
   --color-bg-subtle: #f4ece2;
 
-  --color-border-light: #ece0d3;
+  --color-border-light: #e8dccf;
   --color-border-subtle: #f4ece2;
 
   --color-text-primary: #241a12;
@@ -354,7 +354,7 @@
 
   /* darkened from #15803d (4.40:1 on --color-success-100, under AA) to clear
      WCAG AA 4.5:1 — see Badge.tsx `tone="success"`. */
-  --color-success-600: #147c3b;
+  --color-success-600: #137536;
   --color-success-100: #e7f3ea;
   /* darkened from #a16207 (4.22:1 on --color-warning-100, under AA) to clear
      WCAG AA 4.5:1 — see Badge.tsx `tone="warning"`. */
@@ -369,13 +369,13 @@
  * ============================== */
 :root[data-palette="graphite"] {
   color-scheme: light;
-  --color-bg-app: #f6f7f8;
+  --color-bg-app: #eceef1;
   --color-bg-base: #ffffff;
   --color-bg-elevated: #ffffff;
   --color-bg-sidebar: #eff1f3;
   --color-bg-subtle: #eef0f2;
 
-  --color-border-light: #e3e6ea;
+  --color-border-light: #dde1e6;
   --color-border-subtle: #eef0f2;
 
   --color-text-primary: #15181d;
@@ -386,7 +386,7 @@
   --color-on-accent: #ffffff;
   --color-accent-soft: #eef7dc;
   --color-accent-line: #d2e9a4;
-  --color-accent-ink: #4d7c0f;
+  --color-accent-ink: #447209;
   --color-accent2: #475569;
   --color-accent2-soft: #eceff3;
 
@@ -402,7 +402,7 @@
   --color-success-100: #e7f5ec;
   /* darkened from #d97706 (2.81:1 on --color-warning-100 — the worst offender
      of the badge tones) to clear WCAG AA 4.5:1 — see Badge.tsx `tone="warning"`. */
-  --color-warning-600: #a35a05;
+  --color-warning-600: #9a5404;
   --color-warning-100: #fcefdd;
   --color-danger-600: #b91c1c;
   --color-danger-100: #fbe9e9;
@@ -413,13 +413,13 @@
  * ============================== */
 .dark[data-palette="clay"] {
   color-scheme: dark;
-  --color-bg-app: #140f0a;
+  --color-bg-app: #100c08;
   --color-bg-base: #1d160f;
   --color-bg-elevated: #241b12;
   --color-bg-sidebar: #100b07;
   --color-bg-subtle: #251b12;
 
-  --color-border-light: #2e2317;
+  --color-border-light: #34281b;
   --color-border-subtle: #241a11;
 
   --color-text-primary: #f1e8db;
@@ -450,13 +450,13 @@
  * ============================== */
 .dark[data-palette="graphite"] {
   color-scheme: dark;
-  --color-bg-app: #0b0d10;
+  --color-bg-app: #090b0d;
   --color-bg-base: #14171b;
   --color-bg-elevated: #1a1e23;
   --color-bg-sidebar: #090b0e;
   --color-bg-subtle: #1c2127;
 
-  --color-border-light: #242a31;
+  --color-border-light: #2a3139;
   --color-border-subtle: #1b2026;
 
   --color-text-primary: #e8ebef;
@@ -491,14 +491,14 @@
    both meanings. Every text pairing clears WCAG AA 4.5:1. */
 :root[data-palette="harbor"] {
   color-scheme: light;
-  --color-bg-app: #eef0e8;
-  --color-bg-base: #f6f7f2;
-  --color-bg-elevated: #f6f7f2;
+  --color-bg-app: #e8ece3;
+  --color-bg-base: #ffffff;
+  --color-bg-elevated: #ffffff;
   --color-bg-sidebar: #dbe4dc;
   --color-bg-panel: #dbe4dc;
   --color-bg-subtle: #e3e9e3;
 
-  --color-border-light: #cbd5ce;
+  --color-border-light: #d5ded7;
   --color-border-subtle: #e3e9e3;
 
   --color-text-primary: #16222a;
@@ -547,14 +547,14 @@
  * ============================== */
 .dark[data-palette="harbor"] {
   color-scheme: dark;
-  --color-bg-app: #0f1a22;
+  --color-bg-app: #0b151c;
   --color-bg-base: #142129;
   --color-bg-elevated: #1a2a34;
   --color-bg-sidebar: #18262f;
   --color-bg-panel: #18262f;
   --color-bg-subtle: #1f2f39;
 
-  --color-border-light: #2a3b45;
+  --color-border-light: #30434e;
   --color-border-subtle: #1c2b34;
 
   --color-text-primary: #e8eef0;
@@ -595,27 +595,36 @@
 }
 
 /*
- * Radius and type tokens (static across themes). Radius: the shape language
- * is over-rounded: controls (buttons, inputs, tags, tabs) are pills, items
- * inside a container are rounded-item, the containers themselves rounded-card.
- * The rounded-sm/-md/-lg/-xl/-2xl utilities read the same names. Type: text
- * sizes in rem, so they follow the user's text size (display.ts).
- * `static` emits every name, so inline styles can read var(--radius-pill).
+ * Radius and type tokens (static across themes). Radius: four corners.
+ * rounded-sm (4px) is a tag or a chip, rounded-md (6px) a button, a field or a
+ * small control, rounded-lg (8px) a panel, a card, a dialog or a popover, and
+ * rounded-pill only what is round: an avatar, a dot, a switch, a progress track.
+ * Type: text sizes in rem, so they follow the user's text size (display.ts).
+ * text-title is the page title, text-step the key step, text-section a section
+ * heading, text-lead a subsection, text-reading and text-body running text,
+ * text-small, text-caption and text-micro meta. `static` emits every name, so
+ * inline styles can read var(--radius-pill).
  */
 @theme static {
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
-  --radius-2xl: 28px;
-  --radius-item: 20px;
-  --radius-card: 28px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-pill: 999px;
 
   --text-micro: 0.6875rem;
   --text-caption: 0.78125rem;
   --text-small: 0.8125rem;
   --text-lead: 0.9375rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-reading: 1.0625rem;
+  --text-reading--line-height: 1.55;
+  --text-section: 1.1875rem;
+  --text-section--line-height: 1.35;
+  --text-step: 1.3125rem;
+  --text-step--line-height: 1.3;
+  --text-title: 2.125rem;
+  --text-title--line-height: 1.2;
 }
 
 /*
@@ -709,12 +718,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
     color-scheme: dark;
-    --color-bg-app: #0a1311;
+    --color-bg-app: #08100e;
     --color-bg-base: #101e1a;
     --color-bg-elevated: #152822;
     --color-bg-sidebar: #0b1815;
     --color-bg-subtle: #1b2a25;
-    --color-border-light: #1f322d;
+    --color-border-light: #243a34;
     --color-border-subtle: #172622;
     --color-text-primary: #e7f0ed;
     --color-text-secondary: #94aaa4;
@@ -743,12 +752,12 @@
   }
   :root[data-palette="clay"]:not(.light):not(.dark) {
     color-scheme: dark;
-    --color-bg-app: #140f0a;
+    --color-bg-app: #100c08;
     --color-bg-base: #1d160f;
     --color-bg-elevated: #241b12;
     --color-bg-sidebar: #100b07;
     --color-bg-subtle: #251b12;
-    --color-border-light: #2e2317;
+    --color-border-light: #34281b;
     --color-border-subtle: #241a11;
     --color-text-primary: #f1e8db;
     --color-text-secondary: #b29b83;
@@ -769,12 +778,12 @@
   }
   :root[data-palette="graphite"]:not(.light):not(.dark) {
     color-scheme: dark;
-    --color-bg-app: #0b0d10;
+    --color-bg-app: #090b0d;
     --color-bg-base: #14171b;
     --color-bg-elevated: #1a1e23;
     --color-bg-sidebar: #090b0e;
     --color-bg-subtle: #1c2127;
-    --color-border-light: #242a31;
+    --color-border-light: #2a3139;
     --color-border-subtle: #1b2026;
     --color-text-primary: #e8ebef;
     --color-text-secondary: #99a2ac;
@@ -796,13 +805,13 @@
   /* keep in sync with .dark[data-palette="harbor"] above */
   :root[data-palette="harbor"]:not(.light):not(.dark) {
     color-scheme: dark;
-    --color-bg-app: #0f1a22;
+    --color-bg-app: #0b151c;
     --color-bg-base: #142129;
     --color-bg-elevated: #1a2a34;
     --color-bg-sidebar: #18262f;
     --color-bg-panel: #18262f;
     --color-bg-subtle: #1f2f39;
-    --color-border-light: #2a3b45;
+    --color-border-light: #30434e;
     --color-border-subtle: #1c2b34;
     --color-text-primary: #e8eef0;
     --color-text-secondary: #a0afb6;
@@ -860,6 +869,15 @@ body {
   .font-heading {
     font-weight: var(--font-heading-weight);
     letter-spacing: -0.01em;
+  }
+  /* The heading scale carries its weight: the title is bold, every lower level semibold. */
+  :is(h1, h2, h3, h4).text-title {
+    font-weight: 700;
+  }
+  :is(h1, h2, h3, h4).text-step,
+  :is(h1, h2, h3, h4).text-section,
+  :is(h1, h2, h3, h4).text-lead {
+    font-weight: 600;
   }
 }
 
@@ -991,8 +1009,8 @@ body {
 .markdown-body a { color: var(--color-accent-ink); text-decoration: underline; text-underline-offset: 2px; }
 .markdown-body blockquote { padding-left: 1em; border-left: 3px solid var(--color-border-light); color: var(--color-text-secondary); }
 .markdown-body hr { border: 0; border-top: 1px solid var(--color-border-light); margin: 1.5em 0; }
-.markdown-body code { font-family: var(--font-mono); font-size: 0.85em; padding: 0.1em 0.35em; border-radius: 4px; background: var(--color-bg-subtle); }
-.markdown-body pre { padding: 0.75em 1em; border-radius: 8px; background: var(--color-bg-subtle); overflow-x: auto; }
+.markdown-body code { font-family: var(--font-mono); font-size: 0.85em; padding: 0.1em 0.35em; border-radius: var(--radius-sm); background: var(--color-bg-subtle); }
+.markdown-body pre { padding: 0.75em 1em; border-radius: var(--radius-lg); background: var(--color-bg-subtle); overflow-x: auto; }
 .markdown-body pre code { padding: 0; background: none; }
 .markdown-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.875rem; }
 .markdown-body th, .markdown-body td { padding: 0.4em 0.75em; border: 1px solid var(--color-border-light); text-align: left; vertical-align: top; }

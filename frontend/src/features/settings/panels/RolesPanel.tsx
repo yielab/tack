@@ -76,7 +76,7 @@ const RolesPanel: Component = () => {
         </ul>
       </Show>
 
-      <form class="flex flex-col gap-2.5 rounded-[26px] bg-panel px-4 py-3.5" onSubmit={add}>
+      <form class="flex flex-col gap-2.5 rounded-lg bg-panel px-4 py-3.5" onSubmit={add}>
         <Field
           label="New role"
           value={name()}

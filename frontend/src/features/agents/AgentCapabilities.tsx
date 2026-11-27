@@ -88,7 +88,7 @@ const AgentCapabilities: Component<{ runners: readonly RunnerSummary[] }> = (pro
     return [...bySentence].map(([sentence, names]) => ({ sentence, names: names.join(', ') }));
   };
   return (
-    <section class="flex min-w-0 flex-col gap-3 rounded-card bg-panel px-5 py-5" data-testid="agent-capabilities">
+    <section class="flex min-w-0 flex-col gap-3 rounded-lg bg-panel px-5 py-5" data-testid="agent-capabilities">
       <div>
         <div class="flex items-center gap-2">
           <h2 class="text-lead font-bold leading-tight" style={{ color: 'var(--color-text-primary)' }}>

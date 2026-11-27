@@ -86,7 +86,7 @@ const Compare: Component<{ model: CompareModel }> = (props) => {
   const edges = useScrollEdges();
   return (
   <section
-    class="flex min-w-0 flex-col gap-3 rounded-card px-4 py-3"
+    class="flex min-w-0 flex-col gap-3 rounded-lg px-4 py-3"
     data-testid="compare"
     aria-labelledby="compare-title"
     style={{ 'background-color': 'var(--color-bg-panel)' }}

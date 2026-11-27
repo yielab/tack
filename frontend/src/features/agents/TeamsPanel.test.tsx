@@ -217,7 +217,7 @@ describe('TeamsPanel', () => {
     await flush();
     const members = row(card(c, 'saas-code'), 'members');
     const lead = members.querySelector<HTMLElement>('[data-testid="team-member-Lead"]')!;
-    expect(lead.querySelector('span.rounded-full')!.textContent).toBe('Lead');
+    expect(lead.querySelector('span.rounded-sm')!.textContent).toBe('Lead');
     expect(lead.querySelector('.font-mono')!.textContent).toBe('opus');
     expect(lead.querySelector('[data-mark="reads"]')!.getAttribute('title')).toBe('Reads only');
     expect(lead.querySelector('[data-mark="proposes"]')!.getAttribute('aria-label')).toBe('Can propose items');
@@ -233,7 +233,7 @@ describe('TeamsPanel', () => {
     await flush();
     await flush();
     const team = card(c, 'saas-code');
-    const shape = row(team, 'shape').querySelector('span.rounded-full')!;
+    const shape = row(team, 'shape').querySelector('span.rounded-sm')!;
     expect(shape.textContent).toBe('build');
     const worksIn = row(team, 'works-in');
     expect(worksIn.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
@@ -287,10 +287,10 @@ describe('TeamsPanel', () => {
     expect(counters).toEqual(['3waiting', '1running']);
     const sets = row(card(c, 'saas-code'), 'records').querySelectorAll('li');
     expect(sets).toHaveLength(2);
-    expect(sets[0].querySelector('span.rounded-full')!.textContent).toBe('2 rows');
+    expect(sets[0].querySelector('span.rounded-sm')!.textContent).toBe('2 rows');
     expect(sets[0].textContent).toContain('leads');
     expect(sets[0].textContent).toContain('People to write to');
-    expect(sets[1].querySelector('span.rounded-full')!.textContent).toBe('1 row');
+    expect(sets[1].querySelector('span.rounded-sm')!.textContent).toBe('1 row');
   });
 
   it('lists the profiles that use a team as links that open each one for editing', async () => {

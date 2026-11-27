@@ -1,12 +1,8 @@
 import { Show, createUniqueId, splitProps, type Component, type JSX } from 'solid-js';
 import clsx from 'clsx';
 
-export type ButtonVariant =
-  | 'primary'
-  | 'secondary'
-  | 'ghost'
-  | 'danger'
-  | 'success';
+/** primary: the one action of a place. secondary: outlined. ghost: text. destructive: red text, no fill. */
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps
@@ -19,34 +15,31 @@ export interface ButtonProps
 }
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: 'px-3 py-[5px] text-xs',
-  md: 'px-4 py-2 text-sm',
-  lg: 'px-5 py-2.5 text-lead',
+  sm: 'h-8 px-3 text-small',
+  md: 'h-9 px-4 text-sm',
+  lg: 'h-11 px-5 text-lead',
+};
+
+// Colours come only from tokens. Primary darkens its fill on hover and press; the other three have no
+// fill, so they tint the ground instead.
+const VARIANT: Record<ButtonVariant, string> = {
+  primary: 'enabled:hover:brightness-[.94] enabled:active:brightness-[.88]',
+  secondary: 'border enabled:hover:bg-hover enabled:active:bg-active',
+  ghost: 'enabled:hover:bg-hover enabled:active:bg-active',
+  destructive: 'enabled:hover:bg-danger-50 enabled:active:bg-danger-100',
 };
 
 function variantStyle(variant: ButtonVariant): JSX.CSSProperties {
   switch (variant) {
     case 'secondary':
       return {
-        'background-color': 'transparent',
         color: 'var(--color-text-primary)',
-        border: '1px solid var(--color-border-strong)',
+        'border-color': 'var(--color-border-strong)',
       };
     case 'ghost':
-      return {
-        'background-color': 'transparent',
-        color: 'var(--color-accent-ink)',
-      };
-    case 'danger':
-      return {
-        'background-color': 'var(--color-danger-600)',
-        color: 'var(--color-text-inverse)',
-      };
-    case 'success':
-      return {
-        'background-color': 'var(--color-success-600)',
-        color: 'var(--color-text-inverse)',
-      };
+      return { color: 'var(--color-accent-ink)' };
+    case 'destructive':
+      return { color: 'var(--color-danger-700)' };
     case 'primary':
     default:
       // on-accent (not text-inverse): palette-aware, so a future palette
@@ -59,9 +52,7 @@ function variantStyle(variant: ButtonVariant): JSX.CSSProperties {
   }
 }
 
-/** Token-driven pill button, set in the display face. Colors come only from
- *  CSS variables; hover/pressed darken the fill via `filter` so every variant
- *  and palette gets a themed state without its own hover token. */
+/** Token-driven button at the control radius, set in the display face. */
 const Button: Component<ButtonProps> = (props) => {
   const [local, rest] = splitProps(props, [
     'variant',
@@ -87,10 +78,10 @@ const Button: Component<ButtonProps> = (props) => {
       aria-busy={local.loading ? 'true' : undefined}
       aria-describedby={describedBy()}
       class={clsx(
-        'inline-flex items-center justify-center gap-1.5 rounded-full font-heading whitespace-nowrap transition-[filter,background-color]',
-        'hover:brightness-[.94] active:brightness-[.88]',
+        'inline-flex items-center justify-center gap-1.5 rounded-md font-heading whitespace-nowrap transition-[filter,background-color]',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
-        'disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:brightness-100',
+        'disabled:opacity-45 disabled:cursor-not-allowed',
+        VARIANT[local.variant ?? 'primary'],
         SIZE[local.size ?? 'md'],
         local.class
       )}

@@ -143,7 +143,7 @@ const ThreadPanel: Component<{
                   aria-describedby={composer().reason ? `composer-why-${props.threadId}` : undefined}
                   placeholder="Ask for something, or answer what it asked"
                   onInput={(e) => setDraft(e.currentTarget.value)}
-                  class="w-full rounded-item border p-2 text-sm"
+                  class="w-full rounded-md border p-2 text-sm"
                   style={{
                     'background-color': 'var(--color-bg-base)',
                     color: 'var(--color-text-primary)',

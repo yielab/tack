@@ -139,7 +139,7 @@ const DecisionRow: Component<{
     <li
       class="space-y-3 p-4"
       style={{
-        'border-radius': isPending() ? '26px' : 'var(--radius-item)',
+        'border-radius': isPending() ? '26px' : 'var(--radius-lg)',
         'background-color': isPending() ? 'var(--color-accent-soft)' : 'var(--color-bg-panel)',
       }}
     >
@@ -204,7 +204,7 @@ const DecisionRow: Component<{
             data-testid="decision-call"
             tabindex="0"
             aria-label="The action that would leave the team"
-            class="overflow-auto whitespace-pre-wrap break-words rounded-item p-3 text-xs"
+            class="overflow-auto whitespace-pre-wrap break-words rounded-lg p-3 text-xs"
             style={{
               'font-family': 'var(--font-mono)',
               'line-height': '1.5',
@@ -224,7 +224,7 @@ const DecisionRow: Component<{
           <pre
             tabindex="0"
             aria-label="What the agent was given"
-            class="mt-2 overflow-auto whitespace-pre-wrap break-words rounded-item p-3 text-xs"
+            class="mt-2 overflow-auto whitespace-pre-wrap break-words rounded-lg p-3 text-xs"
             style={{
               'font-family': 'var(--font-mono)',
               'line-height': '1.5',
@@ -370,7 +370,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
 
       <Show when={!props.settledOnly && (!props.pendingOnly || shown().length > 0)}>
         <div
-          class="rounded-item px-4 py-3"
+          class="rounded-lg px-4 py-3"
           style={{ 'background-color': 'var(--color-bg-panel)' }}
         >
           <DecisionTokenField />

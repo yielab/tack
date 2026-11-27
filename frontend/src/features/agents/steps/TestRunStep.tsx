@@ -59,7 +59,7 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
   };
 
   return (
-    <section class="flex flex-col gap-3 rounded-card bg-panel px-[22px] py-5">
+    <section class="flex flex-col gap-3 rounded-lg bg-panel px-[22px] py-5">
       <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Test run
       </h2>

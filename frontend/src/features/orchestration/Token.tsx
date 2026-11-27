@@ -54,7 +54,7 @@ const Token: Component<{ token: FlowToken; source: MoveSource }> = (props) => {
         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
       }}
       onDragEnd={() => ui.setDragged(null)}
-      class={`flex min-w-0 flex-col gap-1 rounded-item px-3 py-2 ${ui.arrived().has(t().id) ? 'flow-arrive' : ''}`}
+      class={`flex min-w-0 flex-col gap-1 rounded-md px-3 py-2 ${ui.arrived().has(t().id) ? 'flow-arrive' : ''}`}
       style={{
         'background-color': 'var(--color-bg-elevated)',
         'box-shadow': lit()

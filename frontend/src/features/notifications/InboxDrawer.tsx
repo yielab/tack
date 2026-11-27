@@ -49,12 +49,12 @@ const Row: Component<{ n: InboxNotification }> = (p) => {
     <li
       data-testid="inbox-row"
       data-level={p.n.level}
-      class="flex items-start gap-3 rounded-xl border px-3 py-2.5"
+      class="flex items-start gap-3 rounded-lg border px-3 py-2.5"
       style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-elevated)' }}
     >
       <div class="min-w-0 flex-1">
         <Show when={href()} fallback={<div>{body}</div>}>
-          <A href={href()!} onClick={follow} class="block rounded focus:outline-none focus-visible:ring-2" style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}>
+          <A href={href()!} onClick={follow} class="block rounded-sm focus:outline-none focus-visible:ring-2" style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}>
             {body}
           </A>
         </Show>

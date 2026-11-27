@@ -221,7 +221,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Error message */}
         <Show when={error()}>
           <div
-            class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+            class="rounded-lg px-4 py-2.5 text-sm font-semibold"
             style={{
               'background-color': 'var(--color-danger-100)',
               color: 'var(--color-danger-600)',
@@ -303,7 +303,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                     disabled={loading()}
                   >
                     <span
-                      class="h-2 w-2 shrink-0 rounded-[3px]"
+                      class="h-2 w-2 shrink-0 rounded-sm"
                       style={{ background: priorityColor(prio as Priority) }}
                       aria-hidden="true"
                     />

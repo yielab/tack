@@ -42,6 +42,9 @@ export type { DrawerProps } from './Drawer';
 export { default as Fold } from './Fold';
 export type { FoldProps } from './Fold';
 
+export { default as SectionHeading } from './SectionHeading';
+export type { SectionHeadingProps, SectionTone } from './SectionHeading';
+
 export { default as Tabs } from './Tabs';
 export type { TabsProps, TabItem } from './Tabs';
 

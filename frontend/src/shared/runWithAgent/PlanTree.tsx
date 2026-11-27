@@ -174,7 +174,7 @@ const PlanTree: Component<{
     const typeMissing = () => !!r().type && ctx().ready === true && !typeIn(ctx().types, r().type);
     const others = () => rows().map((_, j) => j).filter((j) => j !== i && !waitsOn(rows(), i).includes(j));
     return (
-      <div data-testid="plan-row" class="min-w-0 space-y-2 rounded-item p-2" style={{ border: '1px solid var(--color-border-light)' }}>
+      <div data-testid="plan-row" class="min-w-0 space-y-2 rounded-lg p-2" style={{ border: '1px solid var(--color-border-light)' }}>
         <div class="flex min-w-0 items-end gap-2 text-sm">
           <input
             type="checkbox"
@@ -187,7 +187,7 @@ const PlanTree: Component<{
           <Field id={fid('title')} label="Title" class="flex-1">
             <input
               id={fid('title')}
-              class="min-w-0 rounded px-2 py-1"
+              class="min-w-0 rounded-sm px-2 py-1"
               style={inputStyle}
               aria-label="Title"
               disabled={frozen()}
@@ -206,7 +206,7 @@ const PlanTree: Component<{
         <Field id={fid('description')} label="Description">
           <textarea
             id={fid('description')}
-            class="w-full min-w-0 rounded px-2 py-1 text-sm"
+            class="w-full min-w-0 rounded-sm px-2 py-1 text-sm"
             style={{ ...inputStyle, ...grow }}
             aria-label="Description"
             disabled={frozen()}
@@ -218,7 +218,7 @@ const PlanTree: Component<{
         <Field id={fid('done-when')} label="Done when (one line each)">
           <textarea
             id={fid('done-when')}
-            class="w-full min-w-0 rounded px-2 py-1 text-sm"
+            class="w-full min-w-0 rounded-sm px-2 py-1 text-sm"
             style={{ ...inputStyle, ...grow }}
             aria-label="Done when (one line each)"
             disabled={frozen()}
@@ -232,7 +232,7 @@ const PlanTree: Component<{
             <select
               id={fid('type')}
               aria-label="Type"
-              class="max-w-full rounded px-2 py-1 text-xs"
+              class="max-w-full rounded-sm px-2 py-1 text-xs"
               style={inputStyle}
               disabled={frozen()}
               onChange={(e) => patch(i, { type: e.currentTarget.value || null })}
@@ -253,7 +253,7 @@ const PlanTree: Component<{
             <select
               id={fid('role')}
               aria-label="Role"
-              class="max-w-full rounded px-2 py-1 text-xs"
+              class="max-w-full rounded-sm px-2 py-1 text-xs"
               style={inputStyle}
               disabled={frozen()}
               onChange={(e) => patch(i, { role: e.currentTarget.value || null })}
@@ -326,7 +326,7 @@ const PlanTree: Component<{
               <li>
                 <select
                   aria-label={`Add a wait for ${r().title.trim() || 'this item'}`}
-                  class="max-w-full rounded px-2 py-0.5 text-xs"
+                  class="max-w-full rounded-sm px-2 py-0.5 text-xs"
                   style={inputStyle}
                   onChange={(e) => {
                     // The menu is a way to add one more wait, so it goes back to its first line after each pick.

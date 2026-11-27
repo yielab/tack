@@ -28,7 +28,7 @@ const NobodyRow: Component<{ entry: NobodyEntry }> = (props) => {
         if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
       }}
       onDragEnd={() => ui.setDragged(null)}
-      class="flex min-w-0 flex-col gap-1.5 rounded-item px-3 py-2"
+      class="flex min-w-0 flex-col gap-1.5 rounded-md px-3 py-2"
       style={{ 'background-color': 'var(--color-bg-elevated)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)', cursor: 'grab' }}
     >
       <div class="flex min-w-0 items-start gap-2">
@@ -78,7 +78,7 @@ const NobodyLane: Component<{ entries: NobodyEntry[] }> = (props) => (
   <section
     data-testid="flow-nobody"
     aria-labelledby="flow-nobody-title"
-    class="flex min-w-0 flex-col gap-2 rounded-card px-4 py-3"
+    class="flex min-w-0 flex-col gap-2 rounded-lg px-4 py-3"
     style={{ 'background-color': 'var(--run-needs-soft)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)' }}
   >
     <h3 id="flow-nobody-title" class="text-lead font-bold" style={{ color: 'var(--run-needs-ink)' }}>
@@ -96,7 +96,7 @@ const NobodyLane: Component<{ entries: NobodyEntry[] }> = (props) => (
 
 /** Teams no profile of this project names: listed, each with "Make a profile for it" off and the reason. */
 const UnusedRow: Component<{ teams: UnusedTeam[] }> = (props) => (
-  <details data-testid="flow-unused" class="min-w-0 rounded-card px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+  <details data-testid="flow-unused" class="min-w-0 rounded-lg px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
     <summary class="cursor-pointer text-small font-bold" style={{ color: 'var(--color-text-primary)' }}>
       {`Teams not used here (${props.teams.length})`}
     </summary>

@@ -203,7 +203,7 @@ const Sidebar: Component = () => {
           padding: '8px 14px', 'border-radius': 'var(--radius-pill)',
           background: 'var(--color-bg-app)',
         }}>
-          <span style={{ width: '8px', height: '8px', 'border-radius': '99px', background: health() ? 'var(--color-success-600)' : 'var(--color-text-tertiary)', 'flex-shrink': 0 }} />
+          <span style={{ width: '8px', height: '8px', 'border-radius': 'var(--radius-lg)', background: health() ? 'var(--color-success-600)' : 'var(--color-text-tertiary)', 'flex-shrink': 0 }} />
           <span style={{ flex: 1, 'text-align': 'left', 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)' }}>Local workspace</span>
           <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>tack.db</span>
         </div>
@@ -306,7 +306,7 @@ const Sidebar: Component = () => {
             aria-label={isDarkActive() ? 'Switch to light theme' : 'Switch to dark theme'}
             title={isDarkActive() ? 'Switch to light theme' : 'Switch to dark theme'}
             style={{
-              width: '30px', height: '30px', 'border-radius': '99px', cursor: 'pointer',
+              width: '30px', height: '30px', 'border-radius': 'var(--radius-lg)', cursor: 'pointer',
               border: 'none', background: 'var(--color-bg-app)',
               display: 'flex', 'align-items': 'center', 'justify-content': 'center',
               color: 'var(--color-text-secondary)',
@@ -323,7 +323,7 @@ const Sidebar: Component = () => {
           </A>
         </div>
         <div style={{ display: 'flex', 'align-items': 'center', gap: '9px', padding: '2px' }}>
-          <span style={{ width: '28px', height: '28px', 'border-radius': '99px', background: 'var(--color-primary-600)', color: 'var(--color-on-accent)', display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '14px', 'flex-shrink': 0 }}>T</span>
+          <span style={{ width: '28px', height: '28px', 'border-radius': 'var(--radius-lg)', background: 'var(--color-primary-600)', color: 'var(--color-on-accent)', display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '14px', 'flex-shrink': 0 }}>T</span>
           <div style={{ flex: 1, 'line-height': '1.3', 'min-width': 0 }}>
             <div style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>Local</div>
             <div style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.625rem', color: 'var(--color-text-tertiary)' }}>{health() ? `v${health()!.version} · single token` : 'single token'}</div>

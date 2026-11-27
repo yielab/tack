@@ -159,7 +159,7 @@ const CONSTRAINT_LABEL: Record<ConstraintKind, string> = {
 };
 
 const controlClass =
-  'w-full min-h-9 rounded-full border px-3.5 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
+  'w-full min-h-9 rounded-md border px-3.5 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
 const controlStyle = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',
@@ -406,7 +406,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-card p-5" style={panelStyle}>
+      <section class="space-y-3 rounded-lg p-5" style={panelStyle}>
         <div class="flex items-center gap-2">
           <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
             Description
@@ -430,7 +430,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
               fallback={
                 <button
                   type="button"
-                  class="w-full rounded-item border border-dashed px-4 py-6 text-left text-sm"
+                  class="w-full rounded-lg border border-dashed px-4 py-6 text-left text-sm"
                   style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-tertiary)' }}
                   onClick={edit}
                 >
@@ -460,7 +460,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-card p-5" style={panelStyle}>
+      <section class="space-y-3 rounded-lg p-5" style={panelStyle}>
         <div class="flex items-center gap-2">
           <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
             Done when
@@ -537,7 +537,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         kind="for-the-agent"
         title={<span class="text-lg font-normal">For the agent</span>}
         summary={agentSummary() || undefined}
-        class="rounded-card p-5"
+        class="rounded-lg p-5"
         style={panelStyle}
       >
         <div class="space-y-4">
@@ -549,7 +549,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
             <For each={criteria}>
               {(c, i) => (
                 <div
-                  class="space-y-2 rounded-item border p-3"
+                  class="space-y-2 rounded-lg border p-3"
                   style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-app)' }}
                   data-testid="criterion"
                 >
@@ -666,7 +666,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         kind="github"
         title={<span class="text-lg font-normal">GitHub issue</span>}
         summary={link() ? `${link()!.repo}#${link()!.issue_number}` : 'no GitHub issue linked'}
-        class="rounded-card p-5"
+        class="rounded-lg p-5"
         style={panelStyle}
       >
       <Show
@@ -687,7 +687,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
           </div>
         }
       >
-        <div class="flex items-center justify-between gap-2 rounded-item py-2 pl-4 pr-2" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+        <div class="flex items-center justify-between gap-2 rounded-lg py-2 pl-4 pr-2" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
           <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>
             {link()!.repo}#{link()!.issue_number}
           </span>

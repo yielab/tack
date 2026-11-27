@@ -13,7 +13,7 @@ const Step: Component<{ n: number; title: string; description: string; action: J
 ) => (
   <div
     class="grid items-center gap-3.5 p-3.5 grid-cols-[44px_1fr] sm:grid-cols-[44px_1fr_auto]"
-    style={{ background: 'var(--color-bg-app)', 'border-radius': '24px' }}
+    style={{ background: 'var(--color-bg-app)', 'border-radius': 'var(--radius-lg)' }}
   >
     <div
       class="font-heading w-10 h-10 rounded-full grid place-items-center text-lg"
@@ -65,7 +65,7 @@ const EmptyProjectGuide: Component<Props> = (props) => {
 
       <div
         class="flex flex-col gap-1.5 p-2.5"
-        style={{ background: 'var(--color-bg-panel)', 'border-radius': '32px' }}
+        style={{ background: 'var(--color-bg-panel)', 'border-radius': 'var(--radius-lg)' }}
       >
         <Step
           n={1}

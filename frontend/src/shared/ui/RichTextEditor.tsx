@@ -135,7 +135,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <button
           type="button"
           onClick={() => execCommand('bold')}
-          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
+          class="p-2 rounded-sm hover:bg-sunken text-content-muted transition-colors"
           title="Bold (Ctrl+B)"
           aria-label="Bold"
           disabled={props.disabled}
@@ -145,7 +145,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <button
           type="button"
           onClick={() => execCommand('italic')}
-          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
+          class="p-2 rounded-sm hover:bg-sunken text-content-muted transition-colors"
           title="Italic (Ctrl+I)"
           aria-label="Italic"
           disabled={props.disabled}
@@ -156,7 +156,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <button
           type="button"
           onClick={() => execCommand('insertUnorderedList')}
-          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
+          class="p-2 rounded-sm hover:bg-sunken text-content-muted transition-colors"
           title="Bullet List"
           aria-label="Bullet list"
           disabled={props.disabled}
@@ -166,7 +166,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <button
           type="button"
           onClick={() => execCommand('insertOrderedList')}
-          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
+          class="p-2 rounded-sm hover:bg-sunken text-content-muted transition-colors"
           title="Numbered List"
           aria-label="Numbered list"
           disabled={props.disabled}
@@ -177,7 +177,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <select
           aria-label="Text style"
           onChange={(e) => execCommand('formatBlock', e.currentTarget.value)}
-          class="text-sm px-2 py-1 rounded border-0 bg-transparent text-content-muted focus:ring-2 focus:ring-brand-500"
+          class="text-sm px-2 py-1 rounded-sm border-0 bg-transparent text-content-muted focus:ring-2 focus:ring-brand-500"
           disabled={props.disabled}
         >
           <option value="p">Normal</option>

@@ -105,7 +105,7 @@ const ChangeSetsPage: Component = () => {
                       when={decided(cs) && cs.id !== opened()}
                       fallback={<ChangeSetPanel changeSet={cs} onChange={() => void refreshChangeSets()} />}
                     >
-                      <details class="min-w-0 rounded-item p-3" style={{ border: '1px solid var(--color-border-light)' }}>
+                      <details class="min-w-0 rounded-lg p-3" style={{ border: '1px solid var(--color-border-light)' }}>
                         <summary class="cursor-pointer text-sm" style={{ color: 'var(--color-text-primary)' }}>
                           {proposerName(cs)} · {cs.status === 'applied' ? 'Applied' : 'Turned down'} {relativeTimeFromIso(cs.decided_at ?? cs.created_at)} · {cs.reason}
                         </summary>
