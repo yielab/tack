@@ -2,7 +2,9 @@
 
 **Status: open 2026-11-26** (the maintainer: "abre la fase 76"). Serves ADR 0025 and its amendment
 of 2026-11-26 (`docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md`), decisions 1
-to 16 with the amendment's four defaults. Written against `develop` at `b62c8d00`; every path and
+to 16 with the amendment's four defaults, and ADR 0033's amendment of the same day (decisions 6 to
+12), which the screens' asks below serve. The maintainer accepted both and put the whole phase in
+the prepared release, `v0.2.0-beta.1` (2026-11-26: "todo esto va en la release programada"). Written against `develop` at `b62c8d00`; every path and
 line below was read that day. Re-run `rg -n` before trusting a line number. The earlier version of
 this plan (2026-10-18, configuration only) is in the history of this file.
 
@@ -39,6 +41,9 @@ fact the API does not serve asks for it (see "When the screens need the API").
 | The revisions | `tack_db::repo::project_file::{last_revision, record_revision_in, list_revisions, revision}` | — (new) |
 | The plan's hash | `handlers::folder::plan_hash` | — (new) |
 | The level of a change that touches `.tack/` | `tack_core::autonomy::level_for` (line 75) | — |
+| Whether a task can be verified ("Not ready" and why) | `tack_core::brief::readiness` | — (new); the screens read the answer, never the rule |
+| Whether auto-start may start one more run | `tack_core::auto_start` (its `Limits` and `Skip`, line 29 and 121) | — |
+| What waits for a person in a project | the inbox's open `needs_you` notifications (`tack_core::notification`, ADR 0035) | — |
 
 No task adds a layer, a trait, a loop, a table or a setting the task does not name. A new number
 is a named constant beside the code that reads it, never a config key.
@@ -49,7 +54,7 @@ Every row of ADR 0025's two tables and the amendment's four defaults, plus:
 
 | Question | Decision |
 |---|---|
-| Migrations | Two, in the style of the several-statement migrations (`apply_migrations` runs one name in one transaction, `migrations.rs` line 385). `115_keys`: for each of `roles`, `custom_field_definitions`, `sprints`, `agent_profiles`, `items`: `ADD COLUMN key TEXT NOT NULL DEFAULT ''`, then a partial unique index `CREATE UNIQUE INDEX idx_<table>_key ON <table>(project_id, key) WHERE key <> ''` (`agent_profiles(key)`, a profile is the board's). `116_plan_revisions`: the revisions table below. No key is computed in SQL: SQLite's `lower` is ASCII-only and it cannot apply `key_of`. |
+| Migrations | Three, in the style of the several-statement migrations (`apply_migrations` runs one name in one transaction, `migrations.rs` line 385). `115_keys`: for each of `roles`, `custom_field_definitions`, `sprints`, `agent_profiles`, `items`: `ADD COLUMN key TEXT NOT NULL DEFAULT ''`, then a partial unique index `CREATE UNIQUE INDEX idx_<table>_key ON <table>(project_id, key) WHERE key <> ''` (`agent_profiles(key)`, a profile is the board's). `116_waiting_max` (task N): `ALTER TABLE project_budgets ADD COLUMN waiting_max INTEGER` (null is no limit), beside `queue_items_max`. `117_plan_revisions` (task S): the revisions table below. No key is computed in SQL: SQLite's `lower` is ASCII-only and it cannot apply `key_of`. |
 | Filling the keys | `migrations::run_all` (line 184), after `apply_migrations`, calls `crate::repo::project_file::fill_missing_keys(pool)`: every row of the five tables whose `key` is `''`, except hidden items, gets `key_of(name or title)`, made unique within its project with `-2`, `-3`, …, in creation order, in one transaction. It is idempotent, so a second start finds nothing to do. Every create path writes a key: `create_role`, `create_field`, `create_sprint`, `write_agent_profile` (a new profile), and `insert_item` (`items.rs` line 678, the one insert of a visible item). The hidden items of threads (`threads.rs` line 128) and triggers (`triggers.rs` line 124) keep `''` and are never in a folder. |
 | The key | `key_of(text)`: trim; lowercase (Unicode); every run of characters that are not alphanumeric (`char::is_alphanumeric`) becomes one `-`; leading and trailing `-` removed; cut to 64 chars at a char boundary, then trailing `-` removed again; empty → `unnamed`. `is_key(text)`: non-empty, at most 64 chars, lowercase, only alphanumerics and `-`, no leading or trailing `-`. A key in a file that **creates** a row must pass `is_key` or the file is refused naming the entry; a key that names an existing row is matched as written. |
 | Matching | One rule in `match_rows`, for the five keyed kinds. File entry has `key` → the board row with that key; none → create with that key, unless a row of another name holds it (refused: `roles: key "dev" is already the key of "Dev Team"`); a row with the same name but another key → refused (`roles: "Dev" is "dev-team" on the board; write that key or drop the name`). File entry has no `key` → the row with that name (roles, fields, sprints, profiles) as today, else create with `key_of(name)`, refused if taken. **Items** without a key are always created, as ADR 0017 says; an item with a key the board has is **updated** in its plan fields (decision 9), never moved or removed by `tack import`. So a file exported and imported twice no longer doubles its items. |
@@ -78,15 +83,18 @@ Every row of ADR 0025's two tables and the amendment's four defaults, plus:
 
 ## Rounds
 
-At most two agents building cargo at once (`feedback_agent_load_caps`). Worktrees under
-`/var/tmp/tack-worktrees/p76-<id>` cut from `develop`, `CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>`.
-The frontend session works beside every round and never builds cargo.
+The maintainer asked for several Sonnet agents (2026-11-26), so up to three build cargo at once,
+every one of them Sonnet, all under the external `renice` keeper (`/var/tmp/tack-agent-keeper/keeper.sh`,
+`feedback_agent_load_caps`). Worktrees under `/var/tmp/tack-worktrees/p76-<id>` cut from `develop`,
+`CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/p76-<id>`, `CARGO_INCREMENTAL=0`. A target is
+deleted as soon as its branch merges. The frontend session works beside every round and never
+builds cargo.
 
 | Round | Tasks | Needs |
 |---|---|---|
-| 1 | M (the key and the comparison, pure), B (one write, one transaction) | — |
-| 2 | K (keys on the five tables), A (the `.tack/` level, Haiku) | B (K writes keys through B's `_in` functions) and M (`key_of`) |
-| 3 | I (items: matching by key, the brief in the file), F (the folder format, pure) | K; F only M |
+| 1 | M (the key and the comparison, pure), B (one write, one transaction), Q (the figures by sprint, domain and level) | — |
+| 2 | K (keys on the five tables), A (the `.tack/` level), N (what waits for a person, counted and limited) | B (K and N write through B's `_in` functions) and M (`key_of`) |
+| 3 | I (items: matching by key, the brief in the file and its summary), F (the folder format, pure) | K; F only M |
 | 4 | S (routes, revisions, plan, apply) | everything above |
 | 5 | C (CLI and MCP), then Z | S |
 
@@ -107,7 +115,7 @@ Add only the tests the task names, RED first. Prefer a row in an existing table 
 Do not add a type, trait, option, flag, loop or helper the task does not name.
 Never call a real model endpoint; never run docket or any CLI against the operator's own HOME, ~/.docket, ~/Sites or ~/.local/share/tack.
 Words in messages: key, revision, project folder, plan, kept, removed, conflict; never sync, merge, base, upsert, prune.
-Build and test with CARGO_TARGET_DIR=<given>, PATH=$HOME/.cargo/bin:$PATH, --build-jobs 4, --test-threads 4; only the crates you change while working.
+Work only inside your worktree <given path>. Build and test there with CARGO_TARGET_DIR=<given>, CARGO_INCREMENTAL=0, PATH=$HOME/.cargo/bin:$PATH, --build-jobs 4, --test-threads 4; only the crates you change while working. Confirm rustc --version prints the version rust-toolchain.toml pins. Never start a GUI, tack-desktop or a browser in headed mode.
 Finish by running PATH=$HOME/.cargo/bin:$PATH .githooks/pre-push once and reporting its real output. Do not commit.
 Report: what changed, per file, in one line each; what you measured; what you could not do; your tool-call count.
 ```
@@ -285,7 +293,7 @@ generated files.
 **Done when:** `cargo nextest run --workspace -E 'package(tack-core) + package(tack-db) + package(tack-api)'`,
 a clean `./scripts/regen-generated.sh` after staging, and the gate are green.
 
-### A — a change under `.tack/` is merged by a person (Haiku, one layer, pure)
+### A — a change under `.tack/` is merged by a person (Sonnet, one layer, pure)
 
 **Files:** `crates/tack-core/src/autonomy.rs` (`level_for`, the constant) and its tests.
 
@@ -300,7 +308,9 @@ and the path `.tack/project.yaml` → L3; `src/.tack-notes` → the domains as b
 
 ### I — items in the file: matched by key, with their brief (Sonnet, two layers)
 
-**Files:** `crates/tack-core/src/outline.rs` (`OutlineItem.key`, `OutlineItem.brief`, a new
+**Files:** `crates/tack-core/src/brief.rs` (`BriefSummary`, `readiness`) and its `brief/tests.rs`;
+`crates/tack-api/src/handlers/items.rs` (`list_items`, the summary);
+`crates/tack-core/src/outline.rs` (`OutlineItem.key`, `OutlineItem.brief`, a new
 `OutlineBrief`); `crates/tack-core/src/outline/bundle.rs` (item matching in `check`, the item side
 of `to_bundle`, `Parts` gains the briefs) and its `tests.rs`; `crates/tack-db/src/repo/project_file.rs`
 (`ProjectWrite` gains item updates and briefs); `crates/tack-api/src/handlers/outline.rs` (`to_write`);
@@ -320,12 +330,25 @@ of `to_bundle`, `Parts` gains the briefs) and its `tests.rs`; `crates/tack-db/sr
   `upsert_item_brief_in`, in the same `ProjectWrite`.
 - `to_bundle`: items carry `key`, name parents and blockers by key, carry their brief, and never
   write `ref`.
+- **The brief's summary on the item list** (the screens' first ask). `tack_core::brief` gains
+  `pub struct BriefSummary { done_when: bool, checks: u32, risk: Option<Risk>, not_ready: Option<String> }`
+  and `pub fn readiness(brief: Option<&ItemBrief>, project_done: Option<&str>) -> BriefSummary`.
+  `done_when` is the item's definition of done, or the project's when the item has none (a run
+  receives the project's, `executions.rs` line 2062). `checks` counts the criteria that are not
+  `manual`. `not_ready` is `None` when there is a Done when or at least one machine check, else
+  `"No Done when and no check a machine runs"`. The items the project's list route answers
+  (`GET /api/projects/{project_id}/items`, `router.rs` line 388) carry `brief_summary` (`null` when the
+  item has no brief and the project no Done when), read with
+  one `list_item_briefs_for_project` per request, never one call per item.
 
-**Tests (RED first):** `bundle/tests.rs`: an item whose key the board has is an update with a
+**Tests (RED first):** `brief/tests.rs`: `readiness` rows for no brief, a manual criterion only,
+one command criterion, the project's Done when, and a risk. `bundle/tests.rs`: an item whose key the board has is an update with a
 warning for its `status`; a brief with two criteria of the same id is refused naming the item.
 `bundle.rs` (API): importing `my-saas.yaml` creates its two briefs (two `item_brief_versions`
 rows); exporting and importing the export into the same project adds no item and changes nothing;
-editing one item's title in the export and importing it renames the card.
+editing one item's title in the export and importing it renames the card. A handler test: the
+project's item list carries `brief_summary` for an item with a brief and `not_ready` for one
+without.
 
 **Done when:** the three crates' tests, a clean regen, and the gate are green.
 
@@ -355,7 +378,7 @@ it; `notes.txt` is refused; an item with no description writes no body; `write` 
 `crates/tack-api/src/openapi.rs` (the paths and `FolderStatus`, `FolderPlan`, `FolderApplied`,
 `RevisionSummary`, `Removal`, and `sync::{Change, Conflict, FieldChange, Verb, Prefer}`, which gain
 `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` in `sync.rs`, the one line this task
-may change there); `crates/tack-db/src/migrations.rs` (`MIGRATION_116`); `crates/tack-db/src/repo/project_file.rs`
+may change there); `crates/tack-db/src/migrations.rs` (`MIGRATION_117`); `crates/tack-db/src/repo/project_file.rs`
 (revisions, `usage_of`, removals in `ProjectWrite`); `crates/tack-api/src/handlers/export.rs`
 (`bundle_of`, the revision on export); `crates/tack-api/src/handlers/templates.rs`
 (`save_project_as_template` reads `bundle_of`); a new `crates/tack-api/tests/handlers/folder.rs`
@@ -410,6 +433,77 @@ generated files.
 **Done when:** `cargo nextest run --workspace -E 'package(tack-api) + package(tack-db)'`, a clean
 regen, and the gate are green.
 
+### N — what waits for a person, counted and limited (Sonnet, two layers)
+
+Serves ADR 0033 decisions 6 and 9 (the screens' second and third asks).
+
+**Files:** `crates/tack-core/src/notification.rs` (a new `Kind::Review`, its key, `notice` and the
+resolving facts) and its tests; `crates/tack-core/src/event.rs` (a new `Fact::RunReviewed { run }`);
+the places that accept, turn down or merge an attempt, which publish it (read
+`crates/tack-api/src/handlers/executions.rs` and `crates/tack-api/src/handlers/mrp.rs` first and
+touch only the publishing lines); `crates/tack-core/src/auto_start.rs` (`Limits`, `Skip`, the text,
+line 29 and 121) and its tests; `crates/tack-app/src/auto_start.rs` (reads the count);
+`crates/tack-api/src/handlers/auto_start.rs` (`WaitingReason` gains the new reason);
+`crates/tack-db/src/migrations.rs` (`MIGRATION_116`); `crates/tack-db/src/repo/budgets.rs` and
+`crates/tack-db/src/queries/budgets.rs` (`waiting_max` beside `queue_items_max`);
+`crates/tack-db/src/repo/notifications.rs` (a count of a project's open `needs_you`);
+`crates/tack-api/src/handlers/autonomy.rs` (the budgets on `GET`/`PUT /projects/{id}/autonomy`);
+`crates/tack-core/src/outline.rs` (`BundleBudgets.waiting_max`, line 329), and the budgets mapping
+in `crates/tack-api/src/handlers/outline.rs` (B's `to_write`), `export.rs` and `templates.rs` (both
+places until S makes them one); `crates/tack-cli/src/cmd/board.rs` (the budgets line, 286); the
+tests beside each; the generated files.
+
+**Do:**
+
+- A run that succeeded waits for a person until it is accepted, turned down or merged, or a new run
+  of its item starts: `Fact::RunFinished` opens a `review` notification at `needs_you` (key
+  `review:<request>`), replacing today's `info` one, and `RunReviewed` or `RunStarted` resolves it.
+  A merge at Level 4 or 5 publishes `RunReviewed` too, so the factory's own merges never wait.
+- Read whether a manager's thread turn that waits for a person reaches the inbox as a `decision`.
+  If it does, nothing changes; if it does not, stop and report it as a finding.
+- `waiting_max` (null: no limit) in the project's budgets, on the autonomy settings route and in the
+  project file (`automation.autonomy.budgets.waiting_max`). `Limits` gains `waiting_max:
+  Option<usize>` and `waiting_now: usize` (the project's open `needs_you` count); at the limit
+  auto-start starts nothing, and every task `GET /auto-start` lists as waiting carries the reason
+  `waiting_max` with the text "{n} of {max} waiting for you: auto-start is paused until one is
+  decided". A file may set the limit, since it only holds work back.
+
+**Tests (RED first):** `notification` rows: `RunFinished` opens `review` at `needs_you`;
+`RunReviewed` and `RunStarted` resolve it. `auto_start` rows: at `waiting_now == waiting_max`
+nothing starts and the reason says why; `waiting_max: None` starts as today. A handler test: the
+autonomy route round-trips `waiting_max`. A bundle row: `budgets.waiting_max: 2` round-trips.
+
+**Done when:** the crates' tests, a clean regen, and the gate are green.
+
+### Q — the figures by sprint, by domain and by level (Sonnet, two layers)
+
+Serves ADR 0033 decisions 8 and 11 (the screens' fourth and fifth asks).
+
+**Files:** `crates/tack-api/src/handlers/metrics.rs` (the answer `FactoryMetrics`);
+`crates/tack-db/src/repo/metrics.rs` and `crates/tack-db/src/queries/metrics.rs` (the decisions'
+minutes grouped by the item's sprint);
+`crates/tack-api/src/handlers/metrics_quality.rs` (two more cuts beside `profile`, line 420); the
+query that loads the attempts for the quality figures, which joins the merge rows (`MergeRow`
+carries `domain` and `level`, `repo/autonomy.rs` line 38); the tests beside each; the generated
+files.
+
+**Do:**
+
+- `FactoryMetrics` gains `human_minutes_by_sprint: Vec<{ sprint_id, minutes: HumanMinutes }>`: the
+  same human-minutes figure the answer already has, over the decisions of each sprint's items, one
+  row per sprint of the project that has any. The waits per sprint the screens count from what they
+  already read per item.
+- `work_quality.cuts` gains `domain` and `level`: an attempt that merged is cut by the domain and
+  level its merge row recorded; one that did not merge is "not merged". The revert rate of a row is
+  then the rate at which that level got it wrong in that domain.
+
+**Tests (RED first):** two sprints whose items had decisions of 10 and 30 minutes: each row of
+`human_minutes_by_sprint` carries its own median and an item with no sprint counts in none. A quality test: two merges at L4 in domain
+`docs`, one reverted, give the row `docs` and the row `L4` a revert rate of one half.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-api) + package(tack-db)'`, a clean
+regen, and the gate are green.
+
 ### C — `tack folder`, and the MCP tool (Sonnet, one layer)
 
 **Files:** `crates/tack-cli/src/main.rs` (`Commands::Folder { action: FolderAction }` beside
@@ -444,9 +538,11 @@ import` removes what the folder removed, when nothing happened to it, and shows 
 `docs/book/src/user-guide/cli.md` (`tack folder`), `docs/book/src/user-guide/merging.md` (a change
 to the project folder is merged by a person), `docs/book/src/developer/project-file.md` (`key` in
 every section, the item's plan and brief, the folder's layout, the comparison, the routes, the
-revisions), `docs/MCP.md` and `docs/book/src/developer/mcp.md` (`plan_folder`), `CHANGELOG.md`
-(`[Unreleased]`), `docs/book/src/roadmap.md` (Phase 76 delivered), `CLAUDE.md` ("What's next"),
-ADR 0025's status. The User and Administrator guides name no source path, test or phase.
+revisions), `docs/MCP.md` and `docs/book/src/developer/mcp.md` (`plan_folder`), `CHANGELOG.md`, `docs/book/src/roadmap.md` (Phase 76 delivered), `CLAUDE.md` ("What's next" and
+"Releases"), ADR 0025's status. **Phase 76 ships in `v0.2.0-beta.1`:** its lines go in the
+`[0.2.0-beta.1]` section, together with what `[Unreleased]` holds (that release is not tagged, so
+all of it ships there), `[Unreleased]` is left empty, and the section's opening, the roadmap's
+"The next release" line and `CLAUDE.md` say it carries Phase 76 too. The User and Administrator guides name no source path, test or phase.
 
 **Do:** merge the branches in round order with one gate run per round. After round 5, copy the
 maintainer's database (`~/.local/share/tack/tack.db`) to the scratchpad, start `tack serve` on the
@@ -466,6 +562,17 @@ session one message naming them. This session decides each one: a field on an ex
 joins the task that owns that answer, a new route becomes a task here, and a fact the board already
 serves is answered with its route. No screen computes a fact the API owns, and no API task is
 added for a screen without that line.
+
+**Decided 2026-11-26 on the five asks of "The screens" §2,** in the wire names the frontend session
+built against:
+
+| Ask | Answer |
+|---|---|
+| A summary of each item's brief on the item list | Task I: `brief_summary { done_when, checks, risk, not_ready } \| null` on `GET /projects/{id}/items`. The rule lives in `tack_core::brief::readiness`: `not_ready` says why when there is neither a Done when (the item's or the project's) nor a check a machine runs; the screens show it and never compute it. Not ready never blocks a run |
+| Every wait for a person in one project | Task N, no new route: the inbox's open `needs_you` notifications carry `project_id`, and a succeeded run becomes a `review` wait until it is accepted, turned down, merged or run again. A question, a failure and a change set already are waits; a thread turn that waits arrives as a question |
+| A limit on what waits | Task N: `waiting_max` in the project's budgets, beside `queue_items_max`, null is no limit; at the limit auto-start starts nothing and each waiting task gives the reason `waiting_max` |
+| A sprint's decision load | Task Q: `human_minutes_by_sprint` on the factory figures |
+| The ladder's error rate per domain and level | Task Q: `work_quality.cuts` gains `domain` and `level` |
 
 ## The screens (the frontend session)
 
