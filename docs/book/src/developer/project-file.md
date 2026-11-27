@@ -333,7 +333,7 @@ For an entry on one side only:
 
 ### The revisions
 
-Migration `117_plan_revisions` adds `project_plan_revisions (project_id, number, origin, hash, body, created_at)`, with `origin` one of `board`, `file` or `revert`. `body` is the outline the folder carries (the configuration plus each item's plan, no board keys) as canonical JSON, and `hash` is its SHA-256 in hex. `record_revision_in` writes one with the next number, and none when the last revision has the same hash. A revision is recorded by `GET …/folder` and `GET …/export?scope=bundle` when the live plan differs from the last (`scope=snapshot` and `format=csv` record none), and by an apply: a `board` revision first when the live plan differs from the last, then a `file` (or `revert`) revision whose body is the merged plan. Revisions are kept for ever.
+Migration `117_plan_revisions` adds `project_plan_revisions (project_id, number, origin, hash, body, created_at)`, with `origin` one of `board`, `file` or `revert`. `body` is the outline the folder carries (the configuration plus each item's plan, no board keys) as canonical JSON, and `hash` is its SHA-256 in hex. `record_revision_in` writes one with the next number, and none when the last revision has the same hash. A revision is recorded by `GET …/folder` and `GET …/export?scope=bundle` when the live plan differs from the last (`scope=snapshot` and `format=csv` record none), and by an apply: a `board` revision first when the live plan differs from the last, then, after the commit, a `file` (or `revert`) revision whose body is the board read back as an export reads it. It is not the folder's text: the board stores a description without its last newline and fills a type an item left out, so a body made from the folder would differ from the board at once. Revisions are kept for ever.
 
 ### The six routes
 
@@ -356,7 +356,7 @@ Reading routes and `plan` are open to any principal that may read the project. `
 
 ### The apply
 
-One `write_project_file` transaction, in this order: a `board` revision when the live plan's hash differs from the last revision's; the removals (profiles, then items, roles, fields, sprints); the creates and updates of the merged plan, sections in the file's order, items parents first; the briefs; the project's name, description and vocabulary; a `file` or `revert` revision; commit. Then `BoardConfigUpdated { project_id }` goes out on the board socket, and one `ItemCreated`, `ItemUpdated` or `ItemDeleted` per item touched. An updated item takes the file's roles, field values and blockers exactly: the ones the file drops are removed.
+One `write_project_file` transaction, in this order: a `board` revision when the live plan's hash differs from the last revision's; the removals (profiles, then items, roles, fields, sprints); the creates and updates of the merged plan, sections in the file's order, items parents first; the briefs; the project's name, description and vocabulary; commit. Then the `file` or `revert` revision, from the board read back, and `BoardConfigUpdated { project_id }` goes out on the board socket, and one `ItemCreated`, `ItemUpdated` or `ItemDeleted` per item touched. An updated item takes the file's roles, field values and blockers exactly: the ones the file drops are removed.
 
 ### A change under `.tack/`
 
