@@ -411,7 +411,19 @@ generated files.
   compares the hash (409), and makes one `write_project_file` call. `status` is
   `diff(last.body, board)`. `GET …/folder` answers `folder::write(bundle_of(…))` and records the
   revision.
-- After the commit: `BoardConfigUpdated` and the item events, as "Decided" says.
+- After the commit: `BoardConfigUpdated` and the item events, as "Decided" says. `Written` gains
+  the ids of the items it updated, so each gets its `ItemUpdated`.
+- **What tasks I and C left for this task** (read their notes in "How it went"):
+  - An updated item takes the file's roles, field values and blockers **exactly**: the ones the
+    file drops are removed. Add the `_in` twins this needs beside the ones B made
+    (`remove_role_from_item_in` in `roles.rs`, the dependency delete in `dependencies.rs`,
+    `delete_field_value_in` in `custom_fields.rs`) and call them from `write_in`.
+  - `bundle_of` reads **every** visible item. The default `ItemFilter` stops at 100, so today's
+    `GET …/export?scope=bundle` writes a truncated file for a bigger project; page through all of
+    them as `board_of` does.
+  - The agent-access classification of the six routes is already in `agent_access.rs` (plan is a
+    read, apply is a person's); the handler still checks the principal itself.
+  - `ProjectWrite` already has `updates` and `workflow`, and `write_in` takes the transaction.
 
 **Tests (RED first), on `bundle::app()`:**
 
@@ -687,6 +699,16 @@ Owned by the frontend session; this session does not edit it. Two parts:
   (`import-export.md`, `developer/project-file.md`). The integrator added two refusals: a folder
   without `project.yaml` (it would read as a project with nothing in it, and the plan would
   propose removing everything), and a `key` or `description` line in an item's YAML.
+- **I** (`0249d20e`): `resolve_among` beside `resolve` (changing `resolve` would have touched
+  files outside the task), `PlannedUpdate`, `ItemWrite`; `brief_summary` is never null (an item
+  with no brief and no project Done when reads `not_ready`). The integrator documented the answer
+  as `ItemWithBrief` (the card plus the summary, one type the handler returns and the schema
+  shows) and classified the folder routes for agents, because C's `plan_folder` had left the
+  MCP route test red on develop. Open for S: an import never removed an updated item's dropped
+  roles, values or blockers; the bundle export stops at 100 items; updated items sent no event.
+- **C** (`f8bcd56a`): `--prefer folder|board` on the CLI (the screen's words), sent as
+  `file|board`; `revert <project> <n>`, `status` and `history` take no folder. `plan_folder` is a
+  read tool. Its MCP guide row and the tool count were added by the integrator.
 - **K** (`32b8a687`): `NewAgentProfile` carries the key (clippy refused another argument). A saved
   template now carries keys, so applying it matches this board's rows by key, which is what a
   template saved from this board means. Built-in profiles were seeded after the fill and kept an
