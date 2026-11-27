@@ -27,11 +27,14 @@ export const VERB_LABEL: Record<Verb, string> = { create: 'New', update: 'Change
 /** The status line's verbs: what the board did since the last revision. */
 const DONE: Record<Verb, string> = { create: 'created', update: 'changed', remove: 'removed', keep: 'kept' };
 
-export const ORIGIN_LABEL: Record<RevisionOrigin, string> = {
+const ORIGIN_LABEL: Record<RevisionOrigin, string> = {
   board: 'an export of the board',
   file: 'an import of the folder',
   revert: 'a revert',
 };
+
+/** Where a revision came from, in words; an origin the screen does not know is named as the board sent it. */
+export const originLabel = (origin: string): string => ORIGIN_LABEL[origin as RevisionOrigin] ?? origin;
 
 /** A value of a field as one short line. */
 export function formatValue(value: unknown): string {
@@ -50,7 +53,7 @@ export function formatWhen(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export const revisionLine = (r: RevisionSummary) => `Revision #${r.number}, from ${ORIGIN_LABEL[r.origin]}, ${formatWhen(r.created_at)}`;
+export const revisionLine = (r: RevisionSummary) => `Revision #${r.number}, from ${originLabel(r.origin)}, ${formatWhen(r.created_at)}`;
 
 /**
  * The card's status line: where the folder stands against the board. "4 items created and 1 role

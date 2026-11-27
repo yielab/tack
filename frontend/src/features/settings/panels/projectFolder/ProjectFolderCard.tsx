@@ -7,7 +7,7 @@ import { Button, SectionHeading } from '../../../../shared/ui';
 import { toast } from '../../../../shared/ui/toast';
 import { directoryPicker, readPickedFolder, writeFolder } from './folderAccess';
 import PlanDialog from './PlanDialog';
-import { ORIGIN_LABEL, formatWhen, statusLine } from './planText';
+import { formatWhen, originLabel, statusLine } from './planText';
 
 const MUTED = { color: 'var(--color-text-secondary)' };
 const PRIMARY = { color: 'var(--color-text-primary)' };
@@ -133,7 +133,7 @@ const ProjectFolderCard: Component<{ projectId: string }> = (props) => {
                   {(revision, index) => (
                     <li data-testid="project-folder-revision" class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
                       <span class="font-semibold" style={PRIMARY}>#{revision.number}</span>
-                      <span style={MUTED}>from {ORIGIN_LABEL[revision.origin]} · {formatWhen(revision.created_at)}</span>
+                      <span style={MUTED}>from {originLabel(revision.origin)} · {formatWhen(revision.created_at)}</span>
                       <Show when={index() > 0} fallback={<span class="ml-auto text-caption" style={MUTED}>The latest</span>}>
                         <Button
                           size="sm"

@@ -1,86 +1,29 @@
 import { request } from './client';
+import type { components } from './schema.gen';
 
-// The types below are the ones the plan of Phase 76 decides for `/api/projects/{id}/folder/*`.
-// They are written by hand until the routes land and `schema.gen.ts` carries them; then each one
-// becomes `components['schemas'][...]` with the same name.
+type Schemas = components['schemas'];
 
 /** The project folder as one object: a path relative to `.tack/` and its text. */
 export type FolderFiles = Record<string, string>;
 
-/** Who made a revision: an export of the board, an import of the folder, or a revert. */
+export type RevisionSummary = Schemas['RevisionSummary'];
+/** The origins a revision has: an export of the board, an import of the folder, or a revert. */
 export type RevisionOrigin = 'board' | 'file' | 'revert';
-
-export interface RevisionSummary {
-  number: number;
-  origin: RevisionOrigin;
-  hash: string;
-  created_at: string;
-}
-
-export type Verb = 'create' | 'update' | 'remove' | 'keep';
-
-export interface FieldChange {
-  path: string;
-  from: unknown;
-  to: unknown;
-}
-
+export type Verb = Schemas['Verb'];
+export type FieldChange = Schemas['FieldChange'];
 /** One entry of one section and what an apply does to it. */
-export interface Change {
-  section: string;
-  key: string;
-  name: string;
-  verb: Verb;
-  fields: FieldChange[];
-  /** Why an entry is kept, when it is. */
-  reason?: string | null;
-}
-
+export type Change = Schemas['Change'];
 /** A field the folder and the board both changed since the last revision. */
-export interface Conflict {
-  section: string;
-  key: string;
-  name: string;
-  path: string;
-  base: unknown;
-  board: unknown;
-  file: unknown;
-}
-
+export type Conflict = Schemas['Conflict'];
 /** What a removal deletes with it, one line each. */
-export interface Removal {
-  section: string;
-  key: string;
-  name: string;
-  cost: string[];
-}
-
-export interface FolderStatus {
-  last_revision: RevisionSummary | null;
-  board_hash: string;
-  /** What the board changed since the last revision. */
-  changes: Change[];
-}
-
-export interface FolderPlan {
-  plan_hash: string;
-  base: RevisionSummary | null;
-  changes: Change[];
-  conflicts: Conflict[];
-  removals: Removal[];
-  warnings: string[];
-  /** False while a conflict waits for a side. */
-  applies: boolean;
-}
-
-export interface FolderApplied {
-  revision: RevisionSummary;
-  changes: Change[];
-  removals: Removal[];
-}
+export type Removal = Schemas['Removal'];
+export type FolderStatus = Schemas['FolderStatus'];
+/** What an apply would do; `applies` is false while a conflict has no side to take. */
+export type FolderPlan = Schemas['FolderPlan'];
+export type FolderApplied = Schemas['FolderApplied'];
 
 /** When both sides changed a field: ask (no side), or take one side for every conflict. */
-export type Prefer = 'file' | 'board';
+export type Prefer = Schemas['Prefer'];
 
 /** What a plan reads: the folder's files, or a revision to go back to. */
 export type PlanSource = { files: FolderFiles } | { revision: number };
