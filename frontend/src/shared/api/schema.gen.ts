@@ -4225,6 +4225,18 @@ export interface components {
             depth: number;
             status: string;
         };
+        /**
+         * @description What a screen says of an item's brief, so none of them reads the rule: whether something says
+         *     when the item is done, how many of its checks a machine runs, its risk, and, when it cannot be
+         *     verified yet, why.
+         */
+        BriefSummary: {
+            /** Format: int32 */
+            checks: number;
+            done_when: boolean;
+            not_ready?: string | null;
+            risk?: null | components["schemas"]["Risk"];
+        };
         /** @description The project's daily limits; `null` is no limit. */
         BudgetSettings: {
             /** Format: int64 */
@@ -5659,7 +5671,7 @@ export interface components {
          */
         ItemDetail: {
             dependencies: components["schemas"]["Dependency"][];
-            item: components["schemas"]["ItemCard"];
+            item: components["schemas"]["ItemWithBrief"];
             roles: components["schemas"]["Role"][];
         };
         /** @description An item of the tree, with how far the work under it is when it holds any. */
@@ -5706,6 +5718,10 @@ export interface components {
         ItemTypeUse: components["schemas"]["ItemTypeDef"] & {
             /** Format: int32 */
             items: number;
+        };
+        /** @description An item as the list and the detail answer it: the card, and the summary of its brief beside it. */
+        ItemWithBrief: components["schemas"]["ItemCard"] & {
+            brief_summary: components["schemas"]["BriefSummary"];
         };
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
@@ -6087,9 +6103,20 @@ export interface components {
              */
             types?: components["schemas"]["BundleType"][];
         };
+        /** @description An item's brief as a file writes it: brief-v1's four parts. */
+        OutlineBrief: {
+            acceptance?: components["schemas"]["AcceptanceCriterion"][];
+            constraints?: components["schemas"]["Constraint"][];
+            definition_of_done?: string | null;
+            risk?: null | components["schemas"]["Risk"];
+        };
         OutlineItem: {
             assignee?: string | null;
-            /** @description Items that must finish before this one, by `ref` or exact title. */
+            brief?: null | components["schemas"]["OutlineBrief"];
+            /**
+             * @description Items that must finish before this one, by `key`, `ref` or exact title; one the project
+             *     already has is named by its key.
+             */
             depends_on?: string[];
             description?: string | null;
             /** @description `YYYY-MM-DD` or an RFC 3339 timestamp. */
@@ -6103,13 +6130,13 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
-             * @description The item's key: its file name in the project folder; absent, the item is matched by
-             *     nothing and always added.
+             * @description The item's key: its file name in the project folder. An item whose key the project has is
+             *     updated in its plan fields; absent, the item is matched by nothing and always added.
              */
             key?: string | null;
             /**
-             * @description Another item's `ref` or exact title; when adding to an existing
-             *     project, also the id of an item already in it.
+             * @description Another item's `key`, `ref` or exact title; when adding to an existing
+             *     project, also the key or the id of an item already in it.
              */
             parent?: string | null;
             /** @description critical, high, medium (the default), low or none. */
@@ -6197,7 +6224,7 @@ export interface components {
          *     unpaginated match count so clients can render "N of M".
          */
         PaginatedItems: {
-            data: components["schemas"]["ItemCard"][];
+            data: components["schemas"]["ItemWithBrief"][];
             /** Format: int32 */
             page: number;
             /** Format: int32 */

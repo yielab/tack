@@ -150,3 +150,56 @@ All criteria met and approved by the team lead
 
 - `manual_review` Code reviewed by maintainer: A maintainer must review and approve the changes
 "#;
+
+#[test]
+fn readiness_says_why_a_task_cannot_be_verified() {
+    let manual = AcceptanceCriterion::Manual {
+        id: "look".into(),
+        title: "Look".into(),
+        text: "A person looks".into(),
+        checked: false,
+    };
+    let brief = |done: Option<&str>, acceptance: Vec<AcceptanceCriterion>, risk: Option<Risk>| {
+        let mut brief = example();
+        brief.definition_of_done = done.map(str::to_owned);
+        brief.acceptance = acceptance;
+        brief.risk = risk;
+        brief
+    };
+    let summary =
+        |done_when: bool, checks: u32, risk: Option<Risk>, not_ready: bool| BriefSummary {
+            done_when,
+            checks,
+            risk,
+            not_ready: not_ready.then(|| "No Done when and no check a machine runs".to_owned()),
+        };
+    let build = command("build", "cargo build".into());
+    let manual_only = brief(None, vec![manual], None);
+    let one_command = brief(None, vec![build], None);
+    let risky = brief(Some("It works"), vec![], Some(Risk::High));
+    assert_eq!(
+        readiness(None, None),
+        summary(false, 0, None, true),
+        "no brief"
+    );
+    assert_eq!(
+        readiness(None, Some("It ships")),
+        summary(true, 0, None, false),
+        "the project's Done when"
+    );
+    assert_eq!(
+        readiness(Some(&manual_only), None),
+        summary(false, 0, None, true),
+        "a manual criterion only"
+    );
+    assert_eq!(
+        readiness(Some(&one_command), None),
+        summary(false, 1, None, false),
+        "one command criterion"
+    );
+    assert_eq!(
+        readiness(Some(&risky), None),
+        summary(true, 0, Some(Risk::High), false),
+        "the item's Done when and a risk"
+    );
+}

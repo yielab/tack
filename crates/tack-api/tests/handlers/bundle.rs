@@ -218,6 +218,64 @@ async fn the_fixture_makes_a_whole_project() {
     let news = item("Newsletter semanal");
     assert_eq!(news["roles"], json!(["Contenido", "Crecimiento"]));
     assert_eq!(news["recurrence"], "weekly");
+
+    // The two briefs of the file are two brief versions, one per item, and the export carries them.
+    let listed = get(&app, &format!("/api/projects/{pid}/items")).await;
+    let mut versions = 0;
+    for card in listed["data"].as_array().unwrap() {
+        let uri = format!("/api/items/{}/brief/versions", card["id"].as_str().unwrap());
+        versions += get(&app, &uri).await.as_array().map_or(0, Vec::len);
+    }
+    assert_eq!(versions, 2);
+    let bug = item("El PDF se corta al imprimir facturas largas");
+    assert_eq!(bug["brief"]["risk"], "medium");
+    assert_eq!(bug["brief"]["acceptance"][0]["id"], "pdf-largo");
+    assert!(news["brief"].is_null(), "an item with no brief writes none");
+}
+
+#[tokio::test]
+async fn the_item_list_says_whether_a_task_can_be_verified() {
+    let app = app().await;
+    let (_, out) = import(&app, "/api/projects/outline", MY_SAAS).await;
+    let pid = out["project"]["id"].as_str().unwrap();
+    let listed = get(&app, &format!("/api/projects/{pid}/items")).await;
+    let card = |title: &str| {
+        listed["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["title"] == title)
+            .unwrap_or_else(|| panic!("no item {title}"))
+            .clone()
+    };
+    let bug = card("El PDF se corta al imprimir facturas largas");
+    assert_eq!(
+        bug["brief_summary"],
+        json!({"done_when": true, "checks": 1, "risk": "medium", "not_ready": null})
+    );
+    // An item with no brief has the project's Done when, which the file gives.
+    let news = card("Newsletter semanal");
+    assert_eq!(
+        news["brief_summary"],
+        json!({"done_when": true, "checks": 0, "risk": null, "not_ready": null})
+    );
+    // The run dialog reads the same summary from the one item.
+    let one = get(
+        &app,
+        &format!("/api/items/{}", news["id"].as_str().unwrap()),
+    )
+    .await;
+    assert_eq!(one["item"]["brief_summary"], news["brief_summary"]);
+
+    // A project with no Done when says why its bare task cannot be verified.
+    let tiny = "project: { name: Tiny }\nitems: [{ title: Sin criterios }]";
+    let (_, out) = import(&app, "/api/projects/outline", tiny).await;
+    let pid = out["project"]["id"].as_str().unwrap();
+    let listed = get(&app, &format!("/api/projects/{pid}/items")).await;
+    assert_eq!(
+        listed["data"][0]["brief_summary"]["not_ready"],
+        "No Done when and no check a machine runs"
+    );
 }
 
 #[tokio::test]
@@ -379,9 +437,32 @@ async fn the_export_is_the_import() {
     let (status, patched) = common::send(&app, "PATCH", &uri, on, &[]).await;
     assert_eq!(status, StatusCode::OK, "{patched}");
     assert_eq!(get(&app, &uri).await["auto_start_enabled"], true);
+    let items_uri = format!("/api/projects/{pid}/items");
+    let items_before = get(&app, &items_uri).await;
     let (status, again) = import(&app, &format!("/api/projects/{pid}/outline"), &first).await;
     assert_eq!(status, StatusCode::OK, "{again}");
     assert_eq!(get(&app, &uri).await["auto_start_enabled"], false);
+    // Its items carry their keys, so the same file adds none and changes none.
+    assert_eq!(section(&again, "items")["created"], 0);
+    assert_eq!(get(&app, &items_uri).await, items_before);
+
+    // A new title under the same key renames the card.
+    let edited = first.replace("Newsletter semanal", "Newsletter quincenal");
+    let (status, answer) = import(&app, &format!("/api/projects/{pid}/outline"), &edited).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(section(&answer, "items")["updated"], 20);
+    let titles = |list: &Value| -> Vec<String> {
+        list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["title"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let after = titles(&get(&app, &items_uri).await);
+    assert_eq!(after.len(), 20);
+    assert!(after.contains(&"Newsletter quincenal".to_string()));
+    assert!(!after.contains(&"Newsletter semanal".to_string()));
 
     let (status, copy) = import(&app, "/api/projects/outline", &first).await;
     assert_eq!(status, StatusCode::OK, "{copy}");
@@ -440,6 +521,10 @@ async fn the_export_is_the_import() {
         match value {
             Value::Object(map) => {
                 for (k, v) in map {
+                    // A brief's criteria have ids of their own; they are not the board's.
+                    if k == "brief" {
+                        continue;
+                    }
                     out.push(k.clone());
                     keys(v, out);
                 }

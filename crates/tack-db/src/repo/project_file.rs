@@ -3,28 +3,32 @@
 //! caller (`tack-api`'s outline handler) checked the file and mapped it to a [`ProjectWrite`]; this
 //! writes it, section by section, through the repositories' own connection-level functions.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::Utc;
-use sqlx::{SqliteConnection, SqlitePool};
+use sqlx::{Sqlite, SqliteConnection, SqlitePool, Transaction};
 use tack_core::CoreError;
 use tack_core::hierarchy::Hierarchy;
 use tack_core::item_types::ItemTypeDef;
 use tack_core::models::{
-    CreateCustomField, CreateProject, CreateRole, CreateSprint, Item, ItemSource, SprintStatus,
-    UpdateCustomField, UpdateProject, UpdateRole, UpdateSprint,
+    CreateCustomField, CreateProject, CreateRole, CreateSprint, DependencyType, Item, ItemSource,
+    SprintStatus, UpdateCustomField, UpdateItem, UpdateProject, UpdateRole, UpdateSprint,
+    UpsertItemBrief,
 };
-use tack_core::outline::ResolvedOutline;
 use tack_core::outline::bundle::ProfileRow;
 use tack_core::outline::key::key_of;
+use tack_core::outline::{PlannedParent, ResolvedOutline};
+use tack_core::workflow::WorkflowConfig;
 use uuid::Uuid;
 
 use super::Repository;
 use super::autonomy::{Settings, put_autonomy_settings_in};
+use super::briefs::upsert_brief_in;
 use super::custom_fields::{create_field_in, set_field_value_in, update_field_in};
+use super::dependencies::insert_dependency;
 use super::execution::write_agent_profile_in;
 use super::item_types::{CatalogError, set_item_types_in};
-use super::items::{ItemError, create_outline_items_in};
+use super::items::{AtomicItemUpdateOutcome, ItemError, create_outline_items_in, update_item_in};
 use super::projects::{create_project_in, update_project_in};
 use super::roles::{assign_role_to_item_in, create_role_in, update_role_in};
 use super::sprints::{create_sprint_in, get_sprint_in, update_sprint_in, update_sprint_status_in};
@@ -161,10 +165,31 @@ pub struct SprintWrite {
     pub close: bool,
 }
 
+/// An item the board has and the file names by its key: what the file's plan changes in the
+/// board's row, and the rest of the file's plan for it. What the file leaves as the board has it
+/// is not in `change`, so an item the file does not change is not written.
+pub struct ItemWrite {
+    pub id: Uuid,
+    /// The plan fields that differ from the board's row, but for the parent.
+    pub change: UpdateItem,
+    /// The parent the file names, `None` for a top-level item.
+    pub parent: Option<PlannedParent>,
+    /// The parent the board's row has.
+    pub board_parent: Option<Uuid>,
+    /// The items that must finish before this one; one the board lacks is added.
+    pub blockers: Vec<PlannedParent>,
+    /// Role names; a role the file adds is given, none is taken away.
+    pub roles: Vec<String>,
+    /// Field values by field name.
+    pub fields: BTreeMap<String, serde_json::Value>,
+    pub brief: Option<UpsertItemBrief>,
+}
+
 /// Everything one checked file writes, in the order it is written: the project, its settings,
 /// the type catalog, fields, profiles, roles, sprints, automation, then the items with their
-/// roles and field values. The three maps hold the board's own rows by name; the write adds
-/// what it creates, and the items name their sprint, roles and fields through them.
+/// roles, field values and briefs, then the items the board has. The three maps hold the board's
+/// own rows by name; the write adds what it creates, and the items name their sprint, roles and
+/// fields through them.
 pub struct ProjectWrite {
     pub target: Target,
     pub update: Option<UpdateProject>,
@@ -177,7 +202,11 @@ pub struct ProjectWrite {
     pub automation: Option<UpdateProject>,
     /// The autonomy settings the project ends with.
     pub autonomy: Option<Settings>,
+    /// The items the file adds; its `updates` are written from `updates` below.
     pub items: ResolvedOutline,
+    pub updates: Vec<ItemWrite>,
+    /// The project's workflow, which an update of a plan field never asks.
+    pub workflow: WorkflowConfig,
     pub source: ItemSource,
     pub field_ids: HashMap<String, Uuid>,
     pub role_ids: HashMap<String, Uuid>,
@@ -234,7 +263,10 @@ impl Repository {
     }
 }
 
-async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Written, WriteError> {
+async fn write_in(
+    tx: &mut Transaction<'_, Sqlite>,
+    write: ProjectWrite,
+) -> Result<Written, WriteError> {
     let ProjectWrite {
         target,
         update,
@@ -246,6 +278,8 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         automation,
         autonomy,
         mut items,
+        updates,
+        workflow,
         source,
         mut field_ids,
         mut role_ids,
@@ -256,7 +290,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
             workspace_id,
             project,
         } => {
-            create_project_in(conn, workspace_id, project)
+            create_project_in(tx, workspace_id, project)
                 .await
                 .map_err(at("project"))?
                 .id
@@ -264,13 +298,13 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         Target::Existing(id) => id,
     };
     if let Some(update) = update {
-        update_project_in(conn, project_id, update)
+        update_project_in(tx, project_id, update)
             .await
             .map_err(at("project"))?;
     }
 
     if let Some(types) = &types {
-        set_item_types_in(conn, project_id, types)
+        set_item_types_in(tx, project_id, types)
             .await
             .map_err(|failure| match failure {
                 CatalogError::Store(source) => at("types")(source),
@@ -282,13 +316,13 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         match row {
             FieldWrite::Create(field) => {
                 let name = field.name.trim().to_string();
-                let created = create_field_in(conn, project_id, field)
+                let created = create_field_in(tx, project_id, field)
                     .await
                     .map_err(at("fields"))?;
                 field_ids.insert(name, created.id);
             }
             FieldWrite::Update { id, change } => {
-                update_field_in(conn, id, change)
+                update_field_in(tx, id, change)
                     .await
                     .map_err(at("fields"))?;
             }
@@ -297,7 +331,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
 
     let now = Utc::now();
     for profile in &profiles {
-        write_agent_profile_in(conn, profile, now)
+        write_agent_profile_in(tx, profile, now)
             .await
             .map_err(at("profiles"))?;
     }
@@ -312,14 +346,12 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
                     icon: row.role.icon,
                     agent_profile_id: row.profile.map(Some),
                 };
-                update_role_in(conn, id, change)
-                    .await
-                    .map_err(at("roles"))?;
+                update_role_in(tx, id, change).await.map_err(at("roles"))?;
                 id
             }
             None => {
                 let created = create_role_in(
-                    conn,
+                    tx,
                     project_id,
                     CreateRole {
                         key: row.role.key,
@@ -337,7 +369,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
                         icon: None,
                         agent_profile_id: Some(row.profile),
                     };
-                    update_role_in(conn, created.id, change)
+                    update_role_in(tx, created.id, change)
                         .await
                         .map_err(at("roles"))?;
                 }
@@ -351,7 +383,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         let name = row.sprint.name.trim().to_string();
         let id = match row.existing {
             Some(id) => {
-                let old = get_sprint_in(conn, id).await.map_err(at("sprints"))?;
+                let old = get_sprint_in(tx, id).await.map_err(at("sprints"))?;
                 let change = UpdateSprint {
                     name: name.clone(),
                     goal: row
@@ -367,7 +399,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
                         .end_date
                         .or_else(|| old.as_ref().and_then(|o| o.end_date)),
                 };
-                update_sprint_in(conn, id, change)
+                update_sprint_in(tx, id, change)
                     .await
                     .map_err(at("sprints"))?;
                 id
@@ -377,14 +409,14 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
                     name: name.clone(),
                     ..row.sprint
                 };
-                create_sprint_in(conn, project_id, sprint)
+                create_sprint_in(tx, project_id, sprint)
                     .await
                     .map_err(at("sprints"))?
                     .id
             }
         };
         if row.close {
-            update_sprint_status_in(conn, id, SprintStatus::Closed)
+            update_sprint_status_in(tx, id, SprintStatus::Closed)
                 .await
                 .map_err(at("sprints"))?;
         }
@@ -392,12 +424,12 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
     }
 
     if let Some(automation) = automation {
-        update_project_in(conn, project_id, automation)
+        update_project_in(tx, project_id, automation)
             .await
             .map_err(at("automation"))?;
     }
     if let Some(settings) = &autonomy {
-        let found = put_autonomy_settings_in(conn, &project_id.to_string(), settings)
+        let found = put_autonomy_settings_in(tx, &project_id.to_string(), settings)
             .await
             .map_err(at("automation"))?;
         if !found {
@@ -410,29 +442,88 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         if let Some(sprint) = planned.sprint.as_deref() {
             planned.input.sprint_id = sprint_ids.get(sprint.trim()).copied();
         }
-        extras.push((planned.roles.clone(), planned.fields.clone()));
+        extras.push((
+            planned.roles.clone(),
+            planned.fields.clone(),
+            planned.brief.clone(),
+        ));
     }
+    let board_blocks = std::mem::take(&mut items.existing_blocks);
     let (created, dependencies) =
-        create_outline_items_in(conn, project_id, items, source, &Hierarchy)
+        create_outline_items_in(tx, project_id, items, source, &Hierarchy)
             .await
             .map_err(|failure| match failure {
                 ItemError::Store(source) => at("items")(source),
                 ItemError::Refused(rule) => WriteError::Refused(rule),
             })?;
-    for (item, (roles, fields)) in created.iter().zip(extras) {
-        for role in roles.iter().map(|r| r.trim()).filter(|r| !r.is_empty()) {
-            if let Some(&role_id) = role_ids.get(role) {
-                assign_role_to_item_in(conn, item.id, role_id)
-                    .await
-                    .map_err(at("roles"))?;
+    for &(blocker, blocked) in &board_blocks {
+        insert_dependency(
+            tx,
+            blocker,
+            created[blocked].id,
+            &DependencyType::Blocks,
+            None,
+        )
+        .await
+        .map_err(at("items"))?;
+    }
+    for (item, (roles, fields, brief)) in created.iter().zip(extras) {
+        give_roles_and_fields(tx, item.id, &roles, fields, &role_ids, &field_ids).await?;
+        if let Some(brief) = brief {
+            upsert_brief_in(tx, item.id, brief)
+                .await
+                .map_err(at("items"))?;
+        }
+    }
+
+    for update in updates {
+        let ItemWrite {
+            id,
+            mut change,
+            parent,
+            board_parent,
+            blockers,
+            roles,
+            fields,
+            brief,
+        } = update;
+        let named = |parent: &PlannedParent| match *parent {
+            PlannedParent::Planned(i) => created[i].id,
+            PlannedParent::Existing(id) => id,
+        };
+        let parent = parent.as_ref().map(named);
+        if parent != board_parent {
+            change.parent_id = Some(parent);
+        }
+        match update_item_in(tx, id, change, &workflow, &Hierarchy, None)
+            .await
+            .map_err(at("items"))?
+        {
+            AtomicItemUpdateOutcome::Updated { .. } => {}
+            AtomicItemUpdateOutcome::Rejected(rule) => return Err(WriteError::Refused(rule)),
+            AtomicItemUpdateOutcome::NotFound | AtomicItemUpdateOutcome::PreconditionFailed => {
+                return Err(at("items")(StoreError::not_found("item")));
             }
         }
-        for (name, value) in fields {
-            if let Some(&field_id) = field_ids.get(name.trim()) {
-                set_field_value_in(conn, item.id, field_id, value)
+        for blocker in blockers.iter().map(named) {
+            let held: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM dependencies \
+                 WHERE source_item_id = ? AND target_item_id = ? AND dependency_type = ?)",
+            )
+            .bind(blocker.to_string())
+            .bind(id.to_string())
+            .bind(DependencyType::Blocks.to_string())
+            .fetch_one(&mut **tx)
+            .await?;
+            if !held {
+                insert_dependency(tx, blocker, id, &DependencyType::Blocks, None)
                     .await
-                    .map_err(at("fields"))?;
+                    .map_err(at("items"))?;
             }
+        }
+        give_roles_and_fields(tx, id, &roles, fields, &role_ids, &field_ids).await?;
+        if let Some(brief) = brief {
+            upsert_brief_in(tx, id, brief).await.map_err(at("items"))?;
         }
     }
     Ok(Written {
@@ -440,4 +531,30 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         items: created,
         dependencies,
     })
+}
+
+/// Gives an item the roles and the field values the file names, by name.
+async fn give_roles_and_fields(
+    tx: &mut Transaction<'_, Sqlite>,
+    item: Uuid,
+    roles: &[String],
+    fields: BTreeMap<String, serde_json::Value>,
+    role_ids: &HashMap<String, Uuid>,
+    field_ids: &HashMap<String, Uuid>,
+) -> Result<(), WriteError> {
+    for role in roles.iter().map(|r| r.trim()).filter(|r| !r.is_empty()) {
+        if let Some(&role_id) = role_ids.get(role) {
+            assign_role_to_item_in(tx, item, role_id)
+                .await
+                .map_err(at("roles"))?;
+        }
+    }
+    for (name, value) in fields {
+        if let Some(&field_id) = field_ids.get(name.trim()) {
+            set_field_value_in(tx, item, field_id, value)
+                .await
+                .map_err(at("fields"))?;
+        }
+    }
+    Ok(())
 }

@@ -91,17 +91,25 @@ pub struct ErrorDetails {
 /// unpaginated match count so clients can render "N of M".
 #[derive(Serialize, ToSchema)]
 pub struct PaginatedItems {
-    pub data: Vec<ItemCard>,
+    pub data: Vec<ItemWithBrief>,
     pub total: i64,
     pub page: u32,
     pub per_page: u32,
+}
+
+/// An item as the list and the detail answer it: the card, and the summary of its brief beside it.
+#[derive(Serialize, ToSchema)]
+pub struct ItemWithBrief {
+    #[serde(flatten)]
+    pub card: ItemCard,
+    pub brief_summary: tack_core::brief::BriefSummary,
 }
 
 /// Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
 /// and dependency edges.
 #[derive(Serialize, ToSchema)]
 pub struct ItemDetail {
-    pub item: ItemCard,
+    pub item: ItemWithBrief,
     pub roles: Vec<Role>,
     pub dependencies: Vec<Dependency>,
 }
@@ -1247,6 +1255,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         ProjectType,
         Item,
         ItemCard,
+        ItemWithBrief,
+        tack_core::brief::BriefSummary,
         tack_core::item_types::ItemTypeDef,
         tack_core::item_types::ItemTypeUse,
         tack_core::item_types::CreateItemType,

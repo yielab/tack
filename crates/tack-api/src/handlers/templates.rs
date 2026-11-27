@@ -439,6 +439,7 @@ pub async fn save_project_as_template(
             project.auto_start_max_open,
         ),
         items: &[],
+        briefs: &[],
         item_roles: &[],
         item_fields: &[],
         dependencies: &[],

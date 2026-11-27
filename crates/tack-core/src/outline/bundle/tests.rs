@@ -1,6 +1,7 @@
 use super::*;
 use crate::item_types::preset;
 use crate::models::{CodeOrigin, ItemSource, WorkspaceMode};
+use crate::outline::PlannedParent;
 use crate::workflow::{kanban_workflow, scrum_workflow};
 
 const MY_SAAS: &str = include_str!("../../../../tack-api/tests/fixtures/bundles/my-saas.yaml");
@@ -29,6 +30,7 @@ struct Owned {
     profiles: Vec<ProfileRow>,
     roles: Vec<Named>,
     sprints: Vec<Named>,
+    items: Vec<Item>,
     fleets: Vec<(String, String)>,
     level: Level,
     auto_start: bool,
@@ -44,6 +46,7 @@ impl Owned {
             profiles: vec![profile_row("Planner", true)],
             roles: Vec::new(),
             sprints: Vec::new(),
+            items: Vec::new(),
             fleets: Vec::new(),
             level: Level::L3,
             auto_start: false,
@@ -61,6 +64,7 @@ impl Owned {
                 profiles: &self.profiles,
                 roles: &self.roles,
                 sprints: &self.sprints,
+                items: &self.items,
                 fleets: &self.fleets,
                 harness_kinds: &HARNESSES,
                 level: self.level,
@@ -82,11 +86,13 @@ enum Expect {
     Warning(&'static str),
     /// The file checks clean and its one role is the board's, under its new name.
     RenamesTheRole,
+    /// The file checks clean and adds nothing: its one item is the board's, updated.
+    UpdatesTheItem,
 }
 
 #[test]
 fn every_rule_of_the_check_speaks_in_its_own_section() {
-    use Expect::{Problem, RenamesTheRole, Warning};
+    use Expect::{Problem, RenamesTheRole, UpdatesTheItem, Warning};
     let rows: Vec<(&str, Expect)> = vec![
         (
             "project: { vocabulary: { nonsense: x } }",
@@ -279,8 +285,23 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             "fields: [{ name: Segmento, type: text, required: true }]\nitems: [{ title: A }]",
             Warning("item 1 (\"A\"): required field \"Segmento\" has no value"),
         ),
+        (
+            "items: [{ key: login, title: Sign in with GitHub, status: Hecho, priority: high }]",
+            Warning("item 1 (\"Sign in with GitHub\"): status, priority are the board's: kept"),
+        ),
+        (
+            "items: [{ key: login, title: Sign in with GitHub, description: New text }, { title: Logout, depends_on: [login], parent: login }]",
+            UpdatesTheItem,
+        ),
+        (
+            "items: [{ title: A, brief: { acceptance: [{ kind: manual, id: x, title: t, text: u }, { kind: manual, id: x, title: t, text: v }] } }]",
+            Problem("item 1 (\"A\"): brief:"),
+        ),
     ];
     let mut board = Owned::empty();
+    board
+        .items
+        .push(synthetic_item(&synthetic_project(), "Login", None));
     board.roles.push(Named {
         id: Uuid::new_v4().to_string(),
         key: "dev".into(),
@@ -296,6 +317,20 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             ),
             (RenamesTheRole, Err(e)) => {
                 panic!("{text}: wanted a rename, got problems {:?}", e.problems)
+            }
+            (UpdatesTheItem, Ok(plan)) => {
+                let items = &plan.items;
+                assert!(
+                    matches!(&items.updates[..], [u] if u.id == board.items[0].id)
+                        && items.items.len() == 1
+                        && items.items[0].parent
+                            == Some(PlannedParent::Existing(board.items[0].id))
+                        && items.existing_blocks == [(board.items[0].id, 0)],
+                    "{text}: wanted the board's item updated and one new item under it"
+                );
+            }
+            (UpdatesTheItem, Err(e)) => {
+                panic!("{text}: wanted an update, got problems {:?}", e.problems)
             }
             (Problem(wanted), Err(e)) => assert!(
                 e.problems.iter().any(|p| p.contains(wanted)),
@@ -454,6 +489,7 @@ fn the_export_writes_the_catalog_and_the_file_reads_it_back() {
         autonomy: None,
         auto_start: BundleAutoStart::default(),
         items: &[],
+        briefs: &[],
         item_roles: &[],
         item_fields: &[],
         dependencies: &[],
@@ -557,8 +593,20 @@ fn synthetic_item(project: &Project, title: &str, parent: Option<Uuid>) -> Item 
     }
 }
 
+fn brief_of(item: &Item, done: Option<&str>) -> ItemBrief {
+    ItemBrief {
+        item_id: item.id,
+        acceptance: Vec::new(),
+        constraints: Vec::new(),
+        definition_of_done: done.map(str::to_owned),
+        risk: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    }
+}
+
 #[test]
-fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
+fn the_export_names_items_by_key_parents_first_and_leaves_ids_and_dates_out() {
     let project = synthetic_project();
     // the child comes first in the slice; its parent must still be "1"
     let parent_id = Uuid::new_v4();
@@ -623,17 +671,50 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
         autonomy: None,
         auto_start: BundleAutoStart::default(),
         items: &items,
+        briefs: &[],
         item_roles: &item_roles,
         item_fields: &values,
         dependencies: &dependencies,
         fleets: &[],
         reported_teams: &[],
     });
-    assert_eq!(outline.items[0].reference.as_deref(), Some("1"));
+    assert_eq!(outline.items[0].key.as_deref(), Some("iniciativa"));
+    assert_eq!(
+        outline.items[0].reference, None,
+        "a key is the name; no ref is written"
+    );
     assert_eq!(outline.items[0].title, "Iniciativa");
-    assert_eq!(outline.items[1].reference.as_deref(), Some("2"));
-    assert_eq!(outline.items[1].parent.as_deref(), Some("1"));
-    assert_eq!(outline.items[1].depends_on, ["1"]);
+    assert_eq!(outline.items[1].key.as_deref(), Some("historia"));
+    assert_eq!(outline.items[1].parent.as_deref(), Some("iniciativa"));
+    assert_eq!(outline.items[1].depends_on, ["iniciativa"]);
+    let briefs = [brief_of(&child, Some("It works")), brief_of(&parent, None)];
+    let with_briefs = to_bundle(&Parts {
+        project: &project,
+        fields: &[],
+        profiles: &[],
+        roles: &[],
+        sprints: &[],
+        autonomy: None,
+        auto_start: BundleAutoStart::default(),
+        items: &items,
+        briefs: &briefs,
+        item_roles: &[],
+        item_fields: &[],
+        dependencies: &[],
+        fleets: &[],
+        reported_teams: &[],
+    });
+    let done = |i: usize| {
+        with_briefs.items[i]
+            .brief
+            .as_ref()
+            .map(|b| b.definition_of_done.clone())
+    };
+    assert_eq!(done(1), Some(Some("It works".to_string())));
+    assert!(
+        with_briefs.items[0].brief.is_none(),
+        "a brief with nothing in it is no brief"
+    );
     assert_eq!(outline.items[1].roles, ["Contenido"]);
     assert_eq!(outline.items[1].fields["Plan"], serde_json::json!("pro"));
 
@@ -704,6 +785,7 @@ fn the_export_writes_every_key() {
         autonomy: None,
         auto_start: BundleAutoStart::default(),
         items: &[],
+        briefs: &[],
         item_roles: &[],
         item_fields: &[],
         dependencies: &[],
@@ -748,6 +830,7 @@ fn the_install_setting_round_trips_through_the_file() {
             autonomy: None,
             auto_start: BundleAutoStart::default(),
             items: &[],
+            briefs: &[],
             item_roles: &[],
             item_fields: &[],
             dependencies: &[],
@@ -829,6 +912,7 @@ fn the_export_writes_the_teams_its_profiles_name_with_what_the_computers_report(
         autonomy: None,
         auto_start: BundleAutoStart::default(),
         items: &[],
+        briefs: &[],
         item_roles: &[],
         item_fields: &[],
         dependencies: &[],

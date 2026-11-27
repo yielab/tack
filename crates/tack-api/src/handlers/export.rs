@@ -194,6 +194,7 @@ async fn bundle_response(
     let item_roles = state.repo.item_roles_for_project(project_id).await?;
     let item_fields = state.repo.field_values_for_project(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
+    let briefs = state.repo.list_item_briefs_for_project(project_id).await?;
     let fleets = state.repo.fleet_names().await?;
     let settings =
         tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string()).await?;
@@ -233,6 +234,7 @@ async fn bundle_response(
             project.auto_start_max_open,
         ),
         items,
+        briefs: &briefs,
         item_roles: &item_roles,
         item_fields: &item_fields,
         dependencies: &dependencies,

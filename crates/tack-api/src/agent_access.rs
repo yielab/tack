@@ -76,7 +76,15 @@ pub fn classify(method: &Method, path: &str) -> Access {
             ],
             true,
         )
-        | (["projects", project, "items", "tree"], true) => {
+        | (["projects", project, "items", "tree"], true)
+        | (["projects", project, "folder"], true)
+        | (["projects", project, "folder", "status" | "revisions"], true)
+        | (["projects", project, "folder", "revisions", _], true) => {
+            id(project).map(|p| Access::Project(p, Read))
+        }
+        // An agent may preview the project folder; applying it is a person's (ADR 0025 decision
+        // 15), so `folder/apply` is left to the default below.
+        (["projects", project, "folder", "plan"], false) if method == Method::POST => {
             id(project).map(|p| Access::Project(p, Read))
         }
         (["projects", project, "items"], false) if method == Method::POST => {
