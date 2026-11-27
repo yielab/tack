@@ -1,11 +1,13 @@
 # ADR 0025: the project file is kept in sync, not only imported
 
-**Status: PROPOSED 2026-10-18; postponed 2026-10-27, future and not planned.** To be executed by Phase 76 (`docs/plans/phase-76.md`), which has no date. Amends ADR 0022
+**Status: ACCEPTED 2026-11-26 with its amendment and the amendment's four defaults (the maintainer:
+"abre la fase 76"); proposed 2026-10-18, postponed 2026-10-27.** Executed by Phase 76
+(`docs/plans/phase-76.md`), open. Amends ADR 0022
 decision 2 (an import never deletes), decision 6 (the export carries no ids) and its alternative
 "a bundle that deletes what it does not mention". Keeps ADR 0022 decision 4 (a file cannot raise
 autonomy or switch auto-start on) and ADR 0017 (items are always added, never matched).
 
-**Amended 2026-11-26 (proposed): the plan lives in the repository.** The section of that name at
+**Amended 2026-11-26 (accepted the same day): the plan lives in the repository.** The section of that name at
 the end widens what is kept from the configuration to the items and their briefs, in a `.tack/`
 folder beside the code with one file per item. Where each item is, who answers for it and
 everything a run leaves stay on the board. The amendment replaces decision 1, extends decisions 2,
@@ -93,7 +95,7 @@ Blocking: none.
 
 ---
 
-## Amendment of 2026-11-26: the plan lives in the repository (proposed)
+## Amendment of 2026-11-26: the plan lives in the repository (accepted)
 
 **Decide:** that the file kept beside the code holds the whole plan, not only the configuration.
 A project folder, `.tack/`, holds the configuration (`project.yaml`) and one file per item

@@ -26,9 +26,11 @@ every closed plan, board, handoff and audit in `docs/closed-cycles/` (frozen). A
 - **Open cards:** D1 to D4 from the recorded demo (a commit names its item; a failed docket gate
   says why; the jail and the verifier agree about localhost; a manager's turn reaches its team).
   Codex's eval baseline and `agents-flow.gif` are postponed by the maintainer.
-- **Future, not planned:** Phase 76 (`docs/plans/phase-76.md`, ADR 0025, proposed; re-read it
-  against the tree before opening it), status rules, and what Phase 94 left out. Until Phase 76
-  is opened the project file only creates and updates, never deletes.
+- **Phase 76 is open (2026-11-26):** the plan lives in the repository, a `.tack/` folder (ADR 0025
+  and its amendment, accepted). `docs/plans/phase-76.md` holds the API cards, integrated by the
+  session that wrote them; its last section, the Project folder card and the redefined views, is
+  the frontend session's. Until it lands the project file only creates and updates, never deletes.
+- **Future, not planned:** status rules, and what Phase 94 left out.
 - **The live suite** lives in the git-ignored `onboarding-lab/e2e/` (script names in
   `CLAUDE.local.md`; it also has a `--check` mode for drift against the fixtures), beside the
   `onboard-project` skill it exercises. It passed 35/35 against docket `3caccedd` (2026-11-08). CI

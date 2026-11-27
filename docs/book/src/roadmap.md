@@ -34,6 +34,29 @@ Everything built is under Delivered. What is left:
 - **`recovery-demo.gif`** is recorded from a released build, so it follows the tag. It is not shown in the
   README or the book.
 
+### Phase 76 — the plan lives in the repository (opened 2026-11-26)
+
+[ADR 0025](https://github.com/yielab/tack/blob/develop/docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md)
+and its amendment, accepted; the cards are in
+[`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md). A project's
+plan is kept in a `.tack/` folder beside its code: `project.yaml` for the configuration, and one file per
+item that says what the item is and what makes it done, its brief included. Where an item is, who answers
+for it and when, and everything a run leaves, stay on the board.
+
+- **Keys.** Every role, field, sprint, profile and item has a key that survives a rename; an item's key is
+  its file name. A file exported and imported again no longer doubles its items.
+- **Three-way comparison.** An import compares the folder, the board and the last revision: what only the
+  folder changed is applied, what only the board changed is kept, a field both changed is a conflict, and
+  what the folder removed goes, with its cost shown first, unless something happened to it (an item with a
+  run, a comment or children is kept, and the plan says why).
+- **One plan, one transaction, revisions.** The preview's hash travels to the apply; everything lands at
+  once or nothing does; every export and import leaves a revision you can go back to.
+- **A person applies.** `tack folder status | export | import | history | revert` beside the repository; an
+  agent may preview through MCP and never applies; a change under `.tack/` is merged by a person.
+- **The screens.** Settings → Data → Project folder, and the work surface (Board, List, Calendar, Timeline,
+  Sprint, Orchestration and the places that say what needs you) redefined around the board as the place
+  that says where each thing is and what waits for a person. That part is written in the plan's last section.
+
 ### Cards from the recorded demo (2026-11-14)
 
 A recorded run of the whole flow, from an empty board to a small web service running on the machine,
@@ -125,8 +148,8 @@ names. A profile picked in the dialog whose team no role names is read as a repo
 
 ## Future, not planned
 
-Phase 76, status rules and the evals leftovers are the only ones. They have no date, no owner and
-no card in progress; they stay written so they can be opened later.
+Status rules and the evals leftovers are the only ones. They have no date, no owner and no card in
+progress; they stay written so they can be opened later.
 
 **What Phase 94 left out.** A model judge that decides only once calibrated against human labels
 (TPR and TNR at or above 0.90 on a held-out set, abstaining otherwise); publishing each eval trial as an
@@ -134,41 +157,6 @@ OTel `gen_ai.evaluation.result` event on the run's trace; an adapter so Tack can
 external benchmark (Harbor, Terminal-Bench); a hash-chained log for merges, change sets and
 decisions; seccomp in the sandbox; a rate limit per agent credential. Each comes back as a card when a
 measurement asks for it.
-
-**[Phase 76](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md) — the project
-file is kept in sync.** ADR 0025 is proposed. Nothing is built, and the plan was written before
-Phases 79 to 81 moved the code. ADR 0025's amendment of 2026-11-26, also proposed, keeps the items and
-their briefs beside the code too: a `.tack/` folder with one file per item. Status, runs and
-decisions stay on the board. The amendment lists what the re-read of the plan found, and the plan is
-rewritten from the ADR when the phase is opened.
-
-The project file of Phase 73 is a one-way door: it creates and updates by name and never
-deletes, so a role renamed in the file becomes a second role, a role removed from it stays for
-ever, and a file imported twice doubles the items. Keeping a project beside its code, which is
-why the file exists, needs the board to follow the file. Drupal keeps configuration in a sync
-directory and content in the database; Tack's file already has the two halves. So:
-
-- **The configuration is everything in the file but the items**, and only it is kept in sync.
-  Items keep their additive import.
-- **Every role, field, sprint and profile has a key**, made from its name when it is created and
-  never changed, so a rename in the file is a rename on the board. A file without keys works as
-  today.
-- **An import compares three things:** the file, the board and the last revision. Changed only in
-  the file: applied. Changed only on the board: kept. Removed from the file and untouched on the
-  board: removed. Changed on both: a conflict, which stops the import unless you say which side
-  wins. With no revision yet nothing is removed.
-- **A removal shows its cost first:** how many cards lose the role, how many values go with the
-  field. A profile another project uses, or with a run open, is not removed.
-- **Every export and import leaves a revision**, shown in Settings → Data → History, and going
-  back to one is an import like any other.
-- **The preview and the apply are one plan:** the apply carries the preview's hash and is refused
-  if the board moved in between. Everything an import writes lands in one transaction — the
-  outline import too — so "import again to finish" goes away.
-- The file still cannot switch auto-start on, raise the autonomy level, change the workflow or
-  the project type, or change an item.
-
-Until it is opened, the project file stays what Phase 73 made it: an import that creates and
-updates by name and never deletes.
 
 **Status rules.** Optional, written in Phase 86's plan ("Considered and not adopted now"), no phase opened.
 One list of rules per project, each "when this happens, and this holds, propose these changes": a run starting
