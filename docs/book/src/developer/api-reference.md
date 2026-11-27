@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (127 paths, 169 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (133 paths, 175 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1582,6 +1582,105 @@ GET /api/projects/:id/export
 |---|---|---|
 | 200 | Export file (JSON, YAML, or CSV per the `format` query) | — |
 | 400 | Unsupported format | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
+
+---
+
+## Folder
+
+The project folder: a project's plan kept in the repository, with its plan, apply and revisions.
+
+#### `GET /api/projects/{id}/folder`
+
+GET /api/projects/{id}/folder
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The project folder as the board has it; a revision when the board changed since the last | `Folder` |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `POST /api/projects/{id}/folder/apply`
+
+POST /api/projects/{id}/folder/apply
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `revision` | query | `integer` | no | Go back to this revision instead of reading a folder from the body. |
+| `prefer` | query | `Prefer` | no | Settle every conflict with the folder's side or the board's. |
+| `plan_hash` | query | `string` | no | The hash the preview answered; an apply needs it. |
+
+**Request body:** `Folder`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The plan was written, in one transaction, and left a revision | `FolderApplied` |
+| 400 | The folder was refused, or a conflict has no side | `ErrorEnvelope` |
+| 403 | An agent may preview the project folder; a person applies it | `ErrorEnvelope` |
+| 404 | Project or revision not found | `ErrorEnvelope` |
+| 409 | The project changed since the preview | `ErrorEnvelope` |
+
+#### `POST /api/projects/{id}/folder/plan`
+
+POST /api/projects/{id}/folder/plan
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `revision` | query | `integer` | no | Go back to this revision instead of reading a folder from the body. |
+| `prefer` | query | `Prefer` | no | Settle every conflict with the folder's side or the board's. |
+| `plan_hash` | query | `string` | no | The hash the preview answered; an apply needs it. |
+
+**Request body:** `Folder`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | What an apply would do; nothing is written | `FolderPlan` |
+| 400 | The folder was refused; the message lists every problem | `ErrorEnvelope` |
+| 404 | Project or revision not found | `ErrorEnvelope` |
+
+#### `GET /api/projects/{id}/folder/revisions`
+
+GET /api/projects/{id}/folder/revisions
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The revisions, newest first | `RevisionSummary`[] |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `GET /api/projects/{id}/folder/revisions/{n}`
+
+GET /api/projects/{id}/folder/revisions/{n}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `n` | path | `integer` | yes | The revision's number |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The project folder as that revision had it | `Folder` |
+| 404 | Project or revision not found | `ErrorEnvelope` |
+
+#### `GET /api/projects/{id}/folder/status`
+
+GET /api/projects/{id}/folder/status
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | What the board changed since the last revision | `FolderStatus` |
 | 404 | Project not found | `ErrorEnvelope` |
 
 ---

@@ -83,15 +83,8 @@ impl Repository {
 
     #[instrument(skip(self))]
     pub async fn delete_dependency(&self, item_id: Uuid, id: Uuid) -> Result<bool, StoreError> {
-        let result = sqlx::query(
-            "DELETE FROM dependencies WHERE id = ? AND (source_item_id = ? OR target_item_id = ?)",
-        )
-        .bind(id.to_string())
-        .bind(item_id.to_string())
-        .bind(item_id.to_string())
-        .execute(self.pool())
-        .await?;
-        Ok(result.rows_affected() > 0)
+        let mut conn = self.pool().acquire().await?;
+        delete_dependency_in(&mut conn, item_id, id).await
     }
 
     #[instrument(skip(self))]
@@ -213,6 +206,24 @@ impl DepRow {
 
 fn parse_dep_type(s: &str) -> Result<DependencyType, StoreError> {
     decode::variant("dependencies", "dependency_type", s)
+}
+
+/// Whether a dependency of the item went (see [`Repository::delete_dependency`]), on the caller's
+/// connection.
+pub(crate) async fn delete_dependency_in(
+    conn: &mut SqliteConnection,
+    item_id: Uuid,
+    id: Uuid,
+) -> Result<bool, StoreError> {
+    let result = sqlx::query(
+        "DELETE FROM dependencies WHERE id = ? AND (source_item_id = ? OR target_item_id = ?)",
+    )
+    .bind(id.to_string())
+    .bind(item_id.to_string())
+    .bind(item_id.to_string())
+    .execute(&mut *conn)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// The dependency `INSERT`, with no cycle check: callers that cannot have

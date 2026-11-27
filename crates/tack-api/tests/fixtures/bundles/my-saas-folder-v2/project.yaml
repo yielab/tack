@@ -1,0 +1,262 @@
+project:
+  name: My SaaS
+  type: web
+  description: Invoicing and appointment booking for small agencies.
+  vocabulary:
+    assignee: Responsable
+    backlog: Ideas
+    blocker: Bloqueo
+    board: Tablero
+    deliverable: Entrega
+    milestone: Hito
+    phase: Fase
+    release: Publicación
+    sprint: Semana
+    story_points: Puntos
+  workflow:
+    statuses:
+    - name: Ideas
+      category: todo
+    - name: Por hacer
+      category: todo
+    - name: En curso
+      category: in_progress
+      wip_limit: 5
+    - name: En revisión
+      category: in_progress
+    - name: Hecho
+      category: done
+    transitions:
+    - from: Ideas
+      to: Por hacer
+    - from: Por hacer
+      to: En curso
+    - from: En curso
+      to: En revisión
+    - from: En revisión
+      to: En curso
+    - from: En revisión
+      to: Hecho
+    - from: Hecho
+      to: Por hacer
+fields:
+- key: canal
+  name: Canal
+  type: multi_select
+  options:
+  - app
+  - newsletter
+  - instagram
+  - tiktok
+- key: fuente
+  name: Fuente
+  type: url
+  description: Where the research or the asset came from
+- key: segmento
+  name: Segmento
+  type: select
+  options:
+  - autónomo
+  - pyme
+  - empresa
+profiles:
+- key: my-saas-content-writer
+  name: My SaaS content writer
+  kind: custom
+  instructions: |
+    Write and edit help-center articles, release notes and newsletter copy for the plan the task names. Keep every sentence plain enough for a customer to follow without asking support.
+  tool_policy:
+    agent: docket
+    docket:
+      pipeline_by_type:
+        feature: dual-review
+        task: single
+      team: saas-content
+    tools:
+      docket:
+      - "*"
+  limits:
+    budgets:
+      tokens: 300000
+    timeout_seconds: 1800
+  egress_mode: listed
+- key: my-saas-growth
+  name: My SaaS growth
+  kind: custom
+  instructions: Draft campaigns and measure them; never publish anything yourself.
+  tool_policy:
+    agent: docket
+    docket:
+      team: saas-growth
+    tools:
+      docket:
+      - "*"
+  egress_mode: listed
+- key: my-saas-implementer
+  name: My SaaS implementer
+  kind: implementer
+  instructions: Implement the change on a branch; run the project's checks before you finish.
+  tool_policy:
+    agent: docket
+    docket:
+      pipeline_by_type:
+        bug: tdd
+        feature: dual-review
+      team: saas-dev
+    tools:
+      docket:
+      - "*"
+  limits:
+    budgets:
+      tokens: 600000
+  egress_mode: listed
+- key: my-saas-research
+  name: My SaaS research
+  kind: researcher
+  instructions: Read, compare and summarise; write findings as a document with sources.
+  tool_policy:
+    agent: docket
+    docket:
+      team: saas-research
+    tools:
+      docket:
+      - read
+      - fetch
+      - write
+  egress_mode: open
+- key: my-saas-ops
+  name: My SaaS ops
+  kind: custom
+  instructions: >-
+    Deployments, backups and monitoring. Ask before anything that touches
+    production.
+  tool_policy:
+    agent: docket
+    docket:
+      team: saas-ops
+    tools:
+      docket:
+      - "*"
+  egress_mode: listed
+- key: security-review
+  name: Security review
+  kind: reviewer
+  instructions: Review for secrets, injection and permissions. You only read.
+  tool_policy:
+    agent: claude-code
+    tools:
+      claude-code:
+      - Read
+      - Grep
+      - Glob
+  egress_mode: closed
+roles:
+- key: contenido
+  name: Contenido editorial
+  color: "#f59e0b"
+  profile: My SaaS content writer
+- key: crecimiento
+  name: Crecimiento
+  color: "#10b981"
+  profile: My SaaS growth
+- key: desarrollo
+  name: Desarrollo
+  color: "#3b82f6"
+  profile: My SaaS implementer
+- key: investigación
+  name: Investigación
+  color: "#8b5cf6"
+  profile: My SaaS research
+- key: operaciones
+  name: Operaciones
+  color: "#6b7280"
+  profile: My SaaS ops
+- key: planificación
+  name: Planificación
+  color: "#0ea5e9"
+  profile: Planner
+- key: soporte
+  name: Soporte
+  color: "#14b8a6"
+- key: seguridad
+  name: Seguridad
+  color: "#ef4444"
+  profile: Security review
+sprints:
+- key: semana-43
+  name: Semana 43
+  goal: Newsletter y campaña de octubre
+  start: "2026-10-19"
+  end: "2026-10-25"
+automation:
+  code_origin: folder
+  repository: /home/person/Sites/my-saas
+  default_branch: main
+  workspace_mode: local_branch
+  push_after_run: true
+  default_harness: docket
+  default_profile: My SaaS implementer
+  definition_of_done: |
+    Every change passes `npm run check` (lint, types, tests) from the repository root. Content pieces carry their plan and segment fields and are proofread before they ship.
+  autonomy:
+    level: L3
+    domains:
+    - name: code
+      paths:
+      - src/**
+      - package.json
+      item_types: []
+      level: L3
+    - name: content
+      paths:
+      - content/**
+      - public/help/**
+      item_types:
+      - feature
+      - task
+      level: L3
+    verify_require:
+    - criteria
+    - suite
+    - anti_tautology
+    - static_analysis
+    verify_loop_max_attempts: 0
+    budgets:
+      tokens_per_day: 2000000
+      auto_merges_per_day: 10
+      queue_items_max: 8
+      waiting_max: 2
+    merge_on_done: true
+  auto_start:
+    enabled: false
+    status: Por hacer
+    max_open: 3
+teams:
+- name: saas-content
+- name: saas-dev
+- name: saas-growth
+- name: saas-ops
+- name: saas-research
+types:
+- key: epic
+  name: Iniciativa
+  level: group
+  color: accent
+- key: feature
+  name: Historia
+  level: work
+  color: success
+- key: task
+  name: Tarea
+  level: work
+  color: neutral
+  default: true
+- key: bug
+  name: Error
+  level: work
+  color: danger
+- key: requirement
+  name: Requisito
+  level: work
+  color: warning
+items: []

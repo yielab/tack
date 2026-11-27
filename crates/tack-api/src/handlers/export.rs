@@ -15,7 +15,7 @@ use tack_core::models::{
     Sprint, UpdateItem, UpdateProject, UpsertItemBrief,
 };
 use tack_core::outline::bundle::{Parts, to_bundle};
-use tack_core::outline::{BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain};
+use tack_core::outline::{BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain, Outline};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 
 use crate::error::ApiError;
@@ -80,13 +80,7 @@ pub async fn export_project(
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
 
     // The export carries the items themselves, not the run-history projections of their cards.
-    let items: Vec<Item> = state
-        .repo
-        .list_items(project_id, &Default::default())
-        .await?
-        .into_iter()
-        .map(|card| card.item)
-        .collect();
+    let items = crate::handlers::outline::visible_items(&state, project_id).await?;
     if bundle {
         return bundle_response(&state, &project, &items, &query.format).await;
     }
@@ -177,13 +171,14 @@ pub async fn export_project(
     }
 }
 
-/// The project as one project file (ADR 0022), written the way `import` reads it.
-async fn bundle_response(
+/// The project's plan as one project file (ADR 0022), written the way `import` reads it: the one
+/// place that reads a project's plan off the board. A project file read by the folder routes and
+/// by `export` is this; a template is this without items.
+pub(crate) async fn bundle_of(
     state: &AppState,
     project: &Project,
     items: &[Item],
-    format: &str,
-) -> Result<Response, ApiError> {
+) -> Result<Outline, ApiError> {
     let project_id = project.id;
     let fields = state.repo.list_fields_for_project(project_id).await?;
     let profiles = state.repo.list_agent_profile_rows().await?;
@@ -221,7 +216,7 @@ async fn bundle_response(
         merge_on_done: Some(s.merge_on_done),
     });
     let reported_teams = crate::handlers::teams::reported_bundle_teams(state).await?;
-    let outline = to_bundle(&Parts {
+    Ok(to_bundle(&Parts {
         project,
         fields: &fields,
         profiles: &profiles,
@@ -240,7 +235,18 @@ async fn bundle_response(
         dependencies: &dependencies,
         fleets: &fleets,
         reported_teams: &reported_teams,
-    });
+    }))
+}
+
+/// The project as one project file (ADR 0022); an export of it is a revision of the plan.
+async fn bundle_response(
+    state: &AppState,
+    project: &Project,
+    items: &[Item],
+    format: &str,
+) -> Result<Response, ApiError> {
+    let outline = bundle_of(state, project, items).await?;
+    crate::handlers::folder::record_board(state, project.id, &outline).await?;
     let name = project.name.replace(' ', "-");
     let (content_type, extension, text) = if format == "yaml" {
         (

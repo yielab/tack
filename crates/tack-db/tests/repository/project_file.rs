@@ -38,6 +38,8 @@ fn write_to(project: uuid::Uuid) -> ProjectWrite {
         field_ids: HashMap::new(),
         role_ids: HashMap::new(),
         sprint_ids: HashMap::new(),
+        removals: Default::default(),
+        revisions: None,
     }
 }
 

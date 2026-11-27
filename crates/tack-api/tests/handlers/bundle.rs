@@ -546,6 +546,23 @@ async fn the_export_is_the_import() {
     )
     .await;
     assert_eq!(csv.0, StatusCode::BAD_REQUEST);
+
+    // A project of 101 items exports every one, in the bundle and in the snapshot.
+    let big = common::create_project(&app, "Big", "software").await;
+    for number in 0..101 {
+        common::create_item(&app, big, &format!("Item {number}")).await;
+    }
+    let (_, bundle) = call(
+        &app,
+        Method::GET,
+        &format!("/api/projects/{big}/export?scope=bundle&format=json"),
+        "",
+    )
+    .await;
+    let bundle: Value = serde_json::from_str(&bundle).unwrap();
+    assert_eq!(bundle["items"].as_array().unwrap().len(), 101);
+    let snapshot = get(&app, &format!("/api/projects/{big}/export")).await;
+    assert_eq!(snapshot["items"].as_array().unwrap().len(), 101);
 }
 
 /// A runner that reports `claude-code` signed in, and nothing else.

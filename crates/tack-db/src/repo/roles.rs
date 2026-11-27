@@ -100,12 +100,8 @@ impl Repository {
         item_id: Uuid,
         role_id: Uuid,
     ) -> Result<(), StoreError> {
-        sqlx::query("DELETE FROM item_roles WHERE item_id = ? AND role_id = ?")
-            .bind(item_id.to_string())
-            .bind(role_id.to_string())
-            .execute(self.pool())
-            .await?;
-        Ok(())
+        let mut conn = self.pool().acquire().await?;
+        remove_role_from_item_in(&mut conn, item_id, role_id).await
     }
 
     #[instrument(skip(self))]
@@ -238,6 +234,21 @@ pub(crate) async fn assign_role_to_item_in(
         return Err(StoreError::not_found("role"));
     }
     sqlx::query("INSERT OR IGNORE INTO item_roles (item_id, role_id) VALUES (?, ?)")
+        .bind(item_id.to_string())
+        .bind(role_id.to_string())
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+/// Takes the role from the item (see [`Repository::remove_role_from_item`]), on the caller's
+/// connection.
+pub(crate) async fn remove_role_from_item_in(
+    conn: &mut SqliteConnection,
+    item_id: Uuid,
+    role_id: Uuid,
+) -> Result<(), StoreError> {
+    sqlx::query("DELETE FROM item_roles WHERE item_id = ? AND role_id = ?")
         .bind(item_id.to_string())
         .bind(role_id.to_string())
         .execute(&mut *conn)

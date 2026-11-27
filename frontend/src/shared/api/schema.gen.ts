@@ -1370,6 +1370,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{id}/folder */
+        get: operations["export_folder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/folder/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/projects/{id}/folder/apply */
+        post: operations["apply_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/folder/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/projects/{id}/folder/plan */
+        post: operations["plan_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/folder/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{id}/folder/revisions */
+        get: operations["list_revisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/folder/revisions/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{id}/folder/revisions/{n} */
+        get: operations["get_revision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/folder/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{id}/folder/status */
+        get: operations["folder_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{id}/import-csv": {
         parameters: {
             query?: never;
@@ -4449,6 +4551,14 @@ export interface components {
          * @enum {string}
          */
         Capability: "read" | "propose" | "act" | "converse";
+        Change: {
+            fields: components["schemas"]["FieldChange"][];
+            key: string;
+            name: string;
+            reason?: string | null;
+            section: string;
+            verb: components["schemas"]["Verb"];
+        };
         /** @description An operation with its state. */
         ChangeOp: {
             operation: components["schemas"]["Operation"];
@@ -4518,6 +4628,15 @@ export interface components {
         };
         /** @enum {string} */
         CommentType: "comment" | "status_change" | "edit" | "system";
+        Conflict: {
+            base: unknown;
+            board: unknown;
+            file: unknown;
+            key: string;
+            name: string;
+            path: string;
+            section: string;
+        };
         Constraint: {
             glob: string;
             /** @enum {string} */
@@ -5385,6 +5504,11 @@ export interface components {
             reason?: string | null;
             run: string;
         };
+        FieldChange: {
+            from: unknown;
+            path: string;
+            to: unknown;
+        };
         /** @description What narrows an event trigger. Every field that is set must match. */
         Filter: {
             /**
@@ -5442,6 +5566,17 @@ export interface components {
             fleet_id: string;
             name: string;
         };
+        /** @description The project folder as one object: each path relative to `.tack/` and its text. */
+        Folder: {
+            files: {
+                [key: string]: string;
+            };
+        };
+        FolderApplied: {
+            changes: components["schemas"]["Change"][];
+            removals: components["schemas"]["Removal"][];
+            revision: components["schemas"]["RevisionSummary"];
+        };
         /** @description What the folder check found at a path. */
         FolderCheck: {
             branch?: string | null;
@@ -5459,6 +5594,23 @@ export interface components {
         };
         FolderPath: {
             path: string;
+        };
+        /** @description What an apply would do; nothing is written. */
+        FolderPlan: {
+            /** @description False while a conflict has no side to take. */
+            applies: boolean;
+            base?: null | components["schemas"]["RevisionSummary"];
+            changes: components["schemas"]["Change"][];
+            conflicts: components["schemas"]["Conflict"][];
+            plan_hash: string;
+            removals: components["schemas"]["Removal"][];
+            warnings: string[];
+        };
+        /** @description What the board changed since the project folder's last revision. */
+        FolderStatus: {
+            board_hash: string;
+            changes: components["schemas"]["Change"][];
+            last_revision?: null | components["schemas"]["RevisionSummary"];
         };
         GitHubImportRequest: {
             /** @description Include closed issues (default: false — only open issues are imported). */
@@ -6271,6 +6423,8 @@ export interface components {
             turn?: null | components["schemas"]["Turn"];
         };
         /** @enum {string} */
+        Prefer: "file" | "board";
+        /** @enum {string} */
         Priority: "critical" | "high" | "medium" | "low" | "none";
         /** @description What a profile's last successful runs counted, and the limit proposed from them. */
         ProfileHistory: {
@@ -6547,6 +6701,13 @@ export interface components {
             /** @description Why the waiting operations are turned down. */
             reason: string;
         };
+        /** @description A removal and what it deletes with it, one line each. */
+        Removal: {
+            cost: string[];
+            key: string;
+            name: string;
+            section: string;
+        };
         /** @description One repository's figures from the verifier's store. */
         RepositoryQuality: {
             /** @description The verifier's `metrics/v1` document, as it printed it. */
@@ -6606,6 +6767,15 @@ export interface components {
             reason?: string | null;
             /** @description `accepted` or `rejected`. */
             verdict: string;
+        };
+        /** @description One revision of a project's plan, without its body. */
+        RevisionSummary: {
+            created_at: string;
+            hash: string;
+            /** Format: int64 */
+            number: number;
+            /** @description `board` (an export), `file` (an import) or `revert`. */
+            origin: string;
         };
         RevokeEnrollmentTokenResponse: {
             /** Format: int32 */
@@ -7978,6 +8148,8 @@ export interface components {
             definition_of_done?: string | null;
             risk?: null | components["schemas"]["Risk"];
         };
+        /** @enum {string} */
+        Verb: "create" | "update" | "remove" | "keep";
         VerificationTax: {
             /**
              * Format: int64
@@ -11334,6 +11506,260 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    export_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project folder as the board has it; a revision when the board changed since the last */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Folder"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    apply_folder: {
+        parameters: {
+            query?: {
+                /** @description Go back to this revision instead of reading a folder from the body. */
+                revision?: number;
+                /** @description Settle every conflict with the folder's side or the board's. */
+                prefer?: components["schemas"]["Prefer"];
+                /** @description The hash the preview answered; an apply needs it. */
+                plan_hash?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The project folder's files; none with `revision` */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Folder"];
+            };
+        };
+        responses: {
+            /** @description The plan was written, in one transaction, and left a revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderApplied"];
+                };
+            };
+            /** @description The folder was refused, or a conflict has no side */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An agent may preview the project folder; a person applies it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project or revision not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The project changed since the preview */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    plan_folder: {
+        parameters: {
+            query?: {
+                /** @description Go back to this revision instead of reading a folder from the body. */
+                revision?: number;
+                /** @description Settle every conflict with the folder's side or the board's. */
+                prefer?: components["schemas"]["Prefer"];
+                /** @description The hash the preview answered; an apply needs it. */
+                plan_hash?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The project folder's files; none with `revision` */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Folder"];
+            };
+        };
+        responses: {
+            /** @description What an apply would do; nothing is written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderPlan"];
+                };
+            };
+            /** @description The folder was refused; the message lists every problem */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project or revision not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_revisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The revisions, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionSummary"][];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_revision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+                /** @description The revision's number */
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project folder as that revision had it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Folder"];
+                };
+            };
+            /** @description Project or revision not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    folder_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the board changed since the last revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderStatus"];
                 };
             };
             /** @description Project not found */
