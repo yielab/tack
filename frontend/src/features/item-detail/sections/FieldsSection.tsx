@@ -4,7 +4,7 @@ import { toast } from '../../../shared/ui/toast';
 import { FieldShell, Select, EmptyState } from '../../../shared/ui';
 import type { Item, CustomField } from '../../../shared/types';
 
-export interface FieldsTabProps {
+export interface FieldsSectionProps {
   item: Item;
 }
 
@@ -18,7 +18,7 @@ const controlStyle = {
 } as const;
 
 /** Custom field values + role assignment for an item. */
-const FieldsTab: Component<FieldsTabProps> = (props) => {
+const FieldsSection: Component<FieldsSectionProps> = (props) => {
   const projectId = () => props.item.project_id;
 
   const [defs] = createResource(projectId, (id) => api.customFields.list(id));
@@ -149,9 +149,9 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
   };
 
   return (
-    <div class="space-y-4">
-      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="space-y-5">
+      <section class="space-y-3">
+        <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Custom fields
         </h3>
         <Show
@@ -168,8 +168,8 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+      <section class="space-y-3">
+        <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Roles
         </h3>
         <Show when={(roles() ?? []).length > 0} fallback={<EmptyState title="No roles defined" />}>
@@ -177,9 +177,9 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             <For each={roles()}>
               {(role) => (
                 <label
-                  class="flex cursor-pointer items-center gap-2 rounded-full border-2 px-3.5 py-1.5 text-sm font-medium"
+                  class="flex cursor-pointer items-center gap-2 rounded-md border-2 px-3 py-1 text-sm font-medium"
                   style={{
-                    'background-color': 'var(--color-bg-app)',
+                    'background-color': 'var(--color-bg-subtle)',
                     'border-color': assigned().has(role.id) ? 'var(--color-primary-600)' : 'transparent',
                     color: 'var(--color-text-primary)',
                   }}
@@ -202,4 +202,4 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
   );
 };
 
-export default FieldsTab;
+export default FieldsSection;

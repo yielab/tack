@@ -54,7 +54,7 @@ export function withProfile(settings: RunSettings | null | undefined, profileId:
   return Object.keys(next).length > 0 ? next : null;
 }
 
-/** What the Automation row and the idle Now panel both read for a task: the project, its roles, the
+/** What the Automation row and the idle next-step panel both read for a task: the project, its roles, the
  *  profiles, the merge level and the computers, loaded once and shared by whoever shows them. */
 export function useAutomation(item: () => Item) {
   const [resource, { refetch }] = createResource(
@@ -85,7 +85,7 @@ export function useAutomation(item: () => Item) {
     const from = onTask ? choiceSource({ onTask: true, role: null }) : choiceSource({ onTask: false, role: withRoleProfile?.name ?? null });
     return { d, profileId, profile, onTask, from };
   };
-  /** `whoShownAbove`: the idle Now panel already says who would do it ("Would go to …"), so the
+  /** `whoShownAbove`: the idle next-step panel already says who would do it ("Would go to …"), so the
    *  sentence leaves out who and the team and says each once. */
   const sentence = (whoShownAbove = false) => {
     const c = chosen();
@@ -108,7 +108,7 @@ export function useAutomation(item: () => Item) {
 
 export type Automation = ReturnType<typeof useAutomation>;
 
-/** Who would do a task that has not run, as the Now panel says it: the profile and its team, or why nobody is chosen. */
+/** Who would do a task that has not run, as the next-step panel says it: the profile and its team, or why nobody is chosen. */
 function whoWouldDoIt(automation: Automation): string | null {
   const c = automation.chosen();
   if (!c) return null;
@@ -122,14 +122,14 @@ export const WhoWouldDoIt: Component<{ automation: Automation }> = (props) => (
   <>
     <Show when={whoWouldDoIt(props.automation)}>
       {(text) => (
-        <p data-testid="now-who" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p data-testid="now-who" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           {text()}
         </p>
       )}
     </Show>
     <Show when={props.automation.waiting()}>
       {(text) => (
-        <p data-testid="now-waiting" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p data-testid="now-waiting" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Waiting to start: {text()}
         </p>
       )}
@@ -137,7 +137,7 @@ export const WhoWouldDoIt: Component<{ automation: Automation }> = (props) => (
   </>
 );
 
-/** What happens to this task without you: one muted line with its help, and the choice of who does it. It sits at the foot of the Now panel, under a hairline. */
+/** What happens to this task without you: one muted line with its help, and the choice of who does it. It sits at the foot of the next-step panel, under a hairline. */
 const AutomationRow: Component<{ item: Item; automation?: Automation; whoShownAbove?: () => boolean }> = (props) => {
   const automation = props.automation ?? useAutomation(() => props.item);
   const { resource, refetch, chosen, sentence } = automation;
@@ -174,7 +174,7 @@ const AutomationRow: Component<{ item: Item; automation?: Automation; whoShownAb
             class="border-t pt-2.5"
             style={{ color: 'var(--color-text-secondary)', 'border-color': 'var(--color-border-light)' }}
           >
-            <div class="flex min-w-0 flex-col gap-1.5 text-xs">
+            <div class="flex min-w-0 flex-col gap-1.5 text-small">
               <div class="flex min-w-0 items-center gap-1.5">
                 <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>{text()}</span>
                 <HelpHint label="Automation" help={HELP.automationRow} />

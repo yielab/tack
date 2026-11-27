@@ -126,7 +126,7 @@ const GroupProgress: Component<GroupProgressProps> = (props) => {
           <ProgressBar progress={progress()} pointsWord={pointsWord()} />
         </Show>
         <Show when={teams().length > 0}>
-          <p data-testid="progress-teams" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <p data-testid="progress-teams" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             Teams: {teams().join(', ')}
           </p>
         </Show>
@@ -134,7 +134,7 @@ const GroupProgress: Component<GroupProgressProps> = (props) => {
         <For each={sections()}>
           {(section) => (
             <section data-testid="progress-section" data-state={section.state ?? 'none'} class="min-w-0 space-y-1.5">
-              <h3 class="flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              <h3 class="flex items-center gap-2 text-small font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                 <Show when={section.state} fallback={<span>No run yet</span>}>
                   {(state) => <RunState state={state()} size="chip" />}
                 </Show>
@@ -151,7 +151,7 @@ const GroupProgress: Component<GroupProgressProps> = (props) => {
                       >
                         {item.title}
                       </A>
-                      <span class="flex-none text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{item.status}</span>
+                      <span class="flex-none text-small" style={{ color: 'var(--color-text-tertiary)' }}>{item.status}</span>
                     </li>
                   )}
                 </For>
@@ -187,7 +187,7 @@ const GroupProgress: Component<GroupProgressProps> = (props) => {
                   setAdding(false);
                 }
               }}
-              class="min-h-9 min-w-0 flex-1 rounded-full border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
+              class="min-h-9 min-w-0 flex-1 rounded-md border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
