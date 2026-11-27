@@ -541,7 +541,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
 
   return (
-    <Modal isOpen={props.isOpen} onClose={props.onClose} title={planning() ? 'Plan with agent' : 'Run with agent'} size="lg" help={BOOK.runDialog}>
+    <Modal isOpen={props.isOpen} onClose={props.onClose} title={planning() ? 'Plan with agent' : 'Run with agent'} subtitle={props.itemTitle} size="lg" help={BOOK.runDialog}>
       <Show
         when={!executionOff()}
         fallback={
@@ -564,9 +564,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
         }
       >
         <form class="space-y-8" onSubmit={submit}>
-          <p data-testid="run-task-title" class="-mt-2 truncate text-body" style={{ color: 'var(--color-text-secondary)' }} title={props.itemTitle}>
-            {props.itemTitle}
-          </p>
           <Show when={props.autonomy}>
             <p data-testid="run-autonomy-note" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               This run is attended ({props.autonomy}): where docket would have settled a question by itself, it asks you.{' '}

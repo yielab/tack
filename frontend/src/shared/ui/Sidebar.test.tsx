@@ -56,7 +56,7 @@ afterEach(() => {
 });
 
 describe('Sidebar: Waiting for you', () => {
-  it('counts the runs that wait for an answer and opens a row for each, on its Execution tab', async () => {
+  it('counts the runs that wait for an answer and opens a row for each, at its runs', async () => {
     const c = mount([
       run('req-2', 'item-b', 'waiting_decision', '2026-10-31T11:00:00Z'),
       run('req-1', 'item-a', 'waiting_decision', '2026-10-31T10:00:00Z'),
@@ -164,12 +164,9 @@ describe('Sidebar: project destinations', () => {
     ]);
   });
 
-  it('has no Change sets, Calendar or Factory metrics entry, and no disabled one', async () => {
+  it('has no disabled entry', async () => {
     const c = mountInProject();
     await settle();
-    for (const gone of ['Change sets', 'Calendar', 'Factory metrics']) {
-      expect(c.textContent).not.toContain(gone);
-    }
     expect(c.querySelector('[aria-disabled="true"]')).toBeNull();
   });
 

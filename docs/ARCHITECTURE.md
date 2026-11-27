@@ -136,7 +136,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly. Only `serve.rs` names `tack-db`, to build the `Repository` it hands to the server and the loops
 
-**frontend** (SolidJS + TypeScript): a responsive SPA on a two-axis design-token system (mode × palette; every colour is a `--color-*` token, never raw hex), WCAG AA and axe-gated in CI. Surfaces are the board (HTML5 drag and drop), the list (sorts, filters and edits in place), calendar, timeline, orchestration, sprints, the item page, the agents and settings pages, with live updates over the WebSocket, optimistic edits, a command palette (Ctrl+K) and global search (Ctrl+/). The structure, the module boundary and the token system are in [Frontend & Design System](book/src/developer/frontend.md).
+**frontend** (SolidJS + TypeScript): a responsive SPA on a two-axis design-token system (mode × palette; every colour is a `--color-*` token, never raw hex), WCAG AA and axe-gated in CI. Surfaces are the board (HTML5 drag and drop), the list (sorts, filters and edits in place), timeline, orchestration, sprints, the item page, the agents and settings pages, with live updates over the WebSocket, optimistic edits, a command palette (Ctrl+K) and global search (Ctrl+/). The structure, the module boundary and the token system are in [Frontend & Design System](book/src/developer/frontend.md).
 
 ## Implementation rules
 

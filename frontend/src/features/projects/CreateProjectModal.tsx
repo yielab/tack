@@ -41,7 +41,7 @@ const DOMAINS: { type: ProjectType; label: string }[] = [
   { type: 'custom', label: 'Custom' },
 ];
 
-/** Small type-hue dot (replaces the old decorative domain emoji). */
+/** Small type-hue dot. */
 const TypeDot = (props: { type: string }) => (
   <span
     class="inline-block h-2 w-2 shrink-0 rounded-full"

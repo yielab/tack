@@ -10,7 +10,7 @@ A run that left changes marks the task **Needs your review**. This is a flag on 
 board columns. The board and the list show it. It clears when you press **Accept** or **Reject** on the
 attempt. The task's status does not change: its column is yours, and you move the card when you want to.
 
-Open the task and go to its **Execution** tab. Chips pick the run, each with its state; the run you picked
+Open the task and open its **Runs** fold. Chips pick the run, each with its state; the run you picked
 reads from the top down, in the same order every time: the verdict first, then why, then the raw detail.
 
 1. **The verdict.** The run's state, the verifier's recommendation and risk as two chips when a verifier
@@ -38,7 +38,7 @@ reads from the top down, in the same order every time: the verdict first, then w
      model and verdict of the role that did it. A step sent back shows as *Running* again and the steps after
      it wait again. A step that no one on the team does (a command, a question, a wait) is listed in its
      place with no mark, because nothing in the run says where it stands. When the team or its agent reports
-     no steps, the tab says "`<Agent>` does not report its steps in advance" and the track is made of the
+     no steps, the run says "`<Agent>` does not report its steps in advance" and the track is made of the
      steps the run took.
    - **What each step ran** lists each step in order: who did it (Lead, Implementer, Reviewer, or the name of
      a role your team gave), the model it used (with "a small model" or "a strong model" when the team said
@@ -66,7 +66,7 @@ reads from the top down, in the same order every time: the verdict first, then w
    worked, and the exact prompt it read), the **Usage** in full (see [Usage](#usage)), the
    **Raw log** and whether the verifier signed its pack. On the item's own page these sit in a side column.
 
-Every path on the tab is relative to the project, not to the working folder the agent was given on the
+Every path in the run is relative to the project, not to the working folder the agent was given on the
 computer that ran it.
 
 Sections 5 to 7 are folds: a header you press (with a chevron) that says in one line what is inside while it
@@ -116,7 +116,7 @@ badges and shows the run's state in its own column.
 
 | Badge | Meaning |
 |---|---|
-| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled, Not started) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
+| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled, Not started) | Where the latest run is. Press it to open the task's **Runs**; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
 | **Ready for review** | The latest run left changes and nobody has accepted or rejected them. When the verifier recommends rejecting them the chip says so, **Ready for review · verifier says reject**; the decision is still yours |
 | **Waiting for CI to merge**, **Not merged: …** | Tack tried to merge the change and could not. Press the badge for the reason and what to do |
 | **Started by itself** | The project started the run, not a person |

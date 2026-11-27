@@ -11,7 +11,7 @@ import Drawer from './Drawer';
 import Tabs from './Tabs';
 import RouteBoundary from './RouteBoundary';
 import LoadError from './LoadError';
-import Card from './Card';
+import { Card } from './index';
 import Switch from './Switch';
 import { createConfirm } from './ConfirmDialog';
 import { IconList } from './icons';
@@ -256,6 +256,33 @@ describe('Modal', () => {
     const link = document.querySelector('[role="dialog"] a[target="_blank"]') as HTMLAnchorElement | null;
     expect(link?.textContent).toBe('Help');
     expect(link?.href).toBe('https://example.test/book/dialog.html');
+  });
+});
+
+describe('Modal subtitle', () => {
+  it('puts one line under the title, in the secondary colour, with the dialog still named by the title', async () => {
+    mount(() => (
+      <Modal isOpen onClose={() => {}} title="Run with agent" subtitle="Fix login bug">
+        <p>Body</p>
+      </Modal>
+    ));
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const line = dialog.querySelector<HTMLElement>('[data-testid="modal-subtitle"]')!;
+    expect(line.textContent).toBe('Fix login bug');
+    expect(line.style.color).toBe('var(--color-text-secondary)');
+    expect(dialog.getAttribute('aria-label')).toBe('Run with agent');
+    expect(dialog.querySelector('h2')!.nextElementSibling).toBe(line);
+  });
+
+  it('shows no line when it is not given one', async () => {
+    mount(() => (
+      <Modal isOpen onClose={() => {}} title="Edit">
+        <p>Body</p>
+      </Modal>
+    ));
+    await flush();
+    expect(document.querySelector('[data-testid="modal-subtitle"]')).toBeNull();
   });
 });
 

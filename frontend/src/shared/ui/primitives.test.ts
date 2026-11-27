@@ -48,7 +48,7 @@ describe('priorityColor / priorityLabel', () => {
     expect(priorityColor('high')).toContain('warning');
     expect(priorityColor('medium')).toContain('accent2');
     // -secondary, not -tertiary: this value also gets used as a solid fill
-    // behind `--color-text-inverse` text (Calendar/Timeline priority chips),
+    // behind `--color-text-inverse` text (Timeline priority bars),
     // and -tertiary fails WCAG AA there in all three dark-mode palettes
     // (see src/shared/ui/PriorityDot.tsx).
     expect(priorityColor('low')).toContain('secondary');

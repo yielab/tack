@@ -11,7 +11,7 @@ The whole loop in one recording — a new project pointed at a folder, a task wi
 criteria, a Claude Code run tracked from the card, the finished run reviewed and accepted, and
 the files it changed (the wait for the agent is shortened):
 
-<img src="../screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project 'Docs Site' created with an existing folder on this computer as its code; a task 'Add a changelog page' added on the board with two acceptance criteria; Run with agent with Claude Code; the card's chip and the Execution tab following the run until it reads 'Finished — needs your review'; Accept; what the agent did; the files from the run; and the board again.">
+<img src="../screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project 'Docs Site' created with an existing folder on this computer as its code; a task 'Add a changelog page' added on the board with two acceptance criteria; Run with agent with Claude Code; the card's chip and the task's Runs following the run until it reads 'Finished — needs your review'; Accept; what the agent did; the files from the run; and the board again.">
 
 This page walks **one** path: the release binary and the web UI. The
 [Quick Start](quick-start.md) covers the alternatives — the desktop app, Docker, building from
@@ -83,13 +83,13 @@ its items with an agent; this tutorial gets there in step 6:
 
 ## 5. Say what "done" means
 
-Click the task to open its drawer. Its **Overview** tab is the task itself: its description, its
+Click the task to open its drawer. The task reads top down: its description, its
 **Done when** list and a collapsed **For the agent** block. **Done when** is a checklist, one line per
 thing a person checks before calling the task done (these are the task's *acceptance criteria*).
 **Add check** adds a line, and each line saves when you leave it. For this task, add three checks:
 *About 400 words*, *Ends with a call to action* and *A post the team can publish on launch day*.
 
-<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' on its Overview tab: the status Backlog, the Work panel saying nothing has run yet with a Run with agent button, the tabs, the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day — each with Up, Down and Remove, an Add check button, and the For the agent, GitHub issue and Details folds closed.">
+<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' with the status Backlog, the next step saying nothing has run yet with a Run with agent button, the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day — each with Up, Down and Remove, an Add check button, and the For the agent, Runs and Properties folds closed.">
 
 **For the agent** holds what only the agent needs: checks a machine runs, limits on what it may
 touch, and the risk you see. This announcement needs none of it. The agent receives the criteria
@@ -169,26 +169,26 @@ part of the dialog does, and where its defaults come from, is in
 
 Click **Start run**. The request queues, the runner picks it up and the agent starts. The board says
 so without being asked: the card carries a live status chip, here still **Queued**. Clicking the
-chip opens the task's **Execution** tab:
+chip opens the task's **Runs**:
 
 <img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the strip counts 1 Queued, and the 'Draft the launch announcement' card carries a live 'Queued' chip.">
 
-The drawer follows the run as it happens. The **Now** panel under the header reads **Running**
-(*The agent is working on it*) with **Follow live** and **Stop**, and the Execution tab shows **Run 1**
+The drawer follows the run as it happens. The **next step** under the title reads **Running**
+(*The agent is working on it*) with **Follow live** and **Stop**, and the **Runs** fold shows **Run 1**
 with the runner that took it. What the agent did, and the tokens it used, appear when it finishes:
 
-<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Work panel at the top of the drawer reads Running, 'The agent is working on it', 0 of 2 000 000 tokens against the provisional limit, with Follow live and Stop buttons; Run 1 below says its steps appear as it takes them.">
+<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the next step at the top of the drawer reads Running, 'The agent is working on it', 0 of 2 000 000 tokens against the provisional limit, with Follow live and Stop buttons; Run 1 below says its steps appear as it takes them.">
 
 ## 10. See the result
 
-When the run finishes, the same tab is the record of what happened: one run card with its status,
+When the run finishes, the same **Runs** fold is the record of what happened: one run card with its status,
 the verdict it waits for (**Accept** or **Reject…**), what the agent concluded, what it did and what
-it got, and its usage (tokens counted against the limit, folded under **Usage**). The **Now** panel
-under the header gives the same in short. This agent only wrote text and its profile allows only
+it got, and its usage (tokens counted against the limit, folded under **Usage**). The **next step**
+under the title gives the same in short. This agent only wrote text and its profile allows only
 read tools, so no change was expected: the run reads **Finished — no changes recorded**, and **What
 the agent concluded** is the announcement itself:
 
-<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the Execution tab: Run 1 by Claude Code, 'The agent ended without changing any files. What it said is below.', about 3 800 tokens counted, not merged because no branch was pushed, a 'This run is waiting for your verdict' box with Accept and Reject…, What the agent concluded showing the opening of the announcement with Read full report and Download report.md, three Done when checks waiting for a person, Changes saying no files changed, and the Steps, Files from this run, Technical and Details folds; the board card behind carries a Finished chip.">
+<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the task's Runs: Run 1 by Claude Code, 'The agent ended without changing any files. What it said is below.', about 3 800 tokens counted, not merged because no branch was pushed, a 'This run is waiting for your verdict' box with Accept and Reject…, What the agent concluded showing the opening of the announcement with Read full report and Download report.md, three Done when checks waiting for a person, Changes saying no files changed, and the Steps, Files from this run, Technical and Details folds; the board card behind carries a Finished chip.">
 
 **Files from this run** lists what the run produced, each file one click from viewing or downloading:
 the agent's own run log (the announcement is in it), `changes.patch` (empty here, because this agent

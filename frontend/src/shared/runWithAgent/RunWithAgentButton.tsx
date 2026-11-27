@@ -61,12 +61,12 @@ export interface RunWithAgentButtonProps {
    *  execution request state — registers this item with the shared
    *  store's batched fetch (`store.ts#watchItem`) rather than issuing a
    *  fetch of its own. Off by default; only the Board card mounts it
-   *  today. Clicking it opens the item to its Execution tab
+   *  today. Clicking it opens the item to its runs
    *  (`?item=<id>&tab=execution`), the same tab a successful create
    *  switches item-detail to via `onCreated`. */
   showStateChip?: boolean;
   onCreated?: (requestId: string) => void;
-  /** How the labelled trigger is drawn; the item's Now panel makes it the one filled button only
+  /** How the labelled trigger is drawn; the item's next-step panel makes it the one filled button only
    *  when starting a run is what to do next. */
   variant?: ButtonVariant;
   /** The labelled trigger's words, when "Run with agent" is not what the host offers (a group is planned, not run). */
@@ -139,8 +139,8 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
         {(state) => (
           <button
             type="button"
-            aria-label={`Open the Execution tab for ${props.itemTitle}`}
-            title={asking() ? 'Open the question' : 'Open the Execution tab'}
+            aria-label={`Open the runs of ${props.itemTitle}`}
+            title={asking() ? 'Open the question' : 'Open the runs'}
             onClick={openExecutionTab}
             class="rounded-sm focus:outline-none focus-visible:ring-2"
             style={{ ...chipStyle(state().tone, state().raw), border: 'none', cursor: 'pointer' }}

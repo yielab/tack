@@ -42,7 +42,7 @@ This page is for people who use Tack every day and hit something unexpected. Eac
 
 **Cause.** Everything after a succeeded run is optional and none of it changes the run's result. The run's timeline says which step was skipped and why: verification not set up, the branch not pushed, or a task that is not linked to a GitHub issue, which a pull request needs.
 
-**What to do.** Read the skipped step on the run's timeline. To open pull requests, link the task to its issue (in the **GitHub issue** section of its Overview tab: type `owner/repo#42` and press **Link**). Verification, pushing and the GitHub token are set up by whoever installed the runner; the steps are in the [Administrator Guide](../admin-guide/troubleshooting.md#a-succeeded-run-has-no-pull-request-pack-or-branch). Then run the task again.
+**What to do.** Read the skipped step on the run's timeline. To open pull requests, link the task to its issue (in the **GitHub issue** fold under **Related** on the task: type `owner/repo#42` and press **Link**). Verification, pushing and the GitHub token are set up by whoever installed the runner; the steps are in the [Administrator Guide](../admin-guide/troubleshooting.md#a-succeeded-run-has-no-pull-request-pack-or-branch). Then run the task again.
 
 ---
 

@@ -2,10 +2,9 @@ import { createResource, For, Show, createSignal, type Component } from 'solid-j
 import { A } from '@solidjs/router';
 import { api } from '../../shared/api';
 import CreateProjectModal from './CreateProjectModal';
-import { Button, Skeleton } from '../../shared/ui';
+import { Button, Skeleton, Card } from '../../shared/ui';
 import { IconBoard, IconPlus } from '../../shared/ui/icons';
 import { projectTypePillStyle } from '../../shared/ui/projectTypeTone';
-import Card from '../../shared/ui/Card';
 
 /** Six card-shaped placeholders in the loaded grid's container shape. */
 const ProjectsGridSkeleton: Component = () => (

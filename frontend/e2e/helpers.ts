@@ -1,4 +1,4 @@
-import { test as base, type Page, type APIRequestContext, expect } from '@playwright/test';
+import { test as base, type Page, type Locator, type APIRequestContext, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -34,6 +34,12 @@ export const API = `${API_ORIGIN}/api`;
  */
 export async function waitForApp(page: Page): Promise<void> {
   await page.waitForLoadState('domcontentloaded');
+}
+
+/** Opens the Runs fold of the task on screen (the drawer, or the page), unless it is already open. */
+export async function openRuns(scope: Page | Locator): Promise<void> {
+  const header = scope.getByRole('button', { name: /^Runs/ }).first();
+  if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
 }
 
 /**

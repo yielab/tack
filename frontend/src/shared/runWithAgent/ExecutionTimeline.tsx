@@ -28,7 +28,7 @@ export interface ExecutionTimelineProps {
   runId?: string;
   /** Called with the request id of the run a chip picks or a new run starts, so the address can name it. */
   onRunChange?: (requestId: string | undefined) => void;
-  /** The item's Now panel is on screen above this tab. It says the latest run's state, limit and token
+  /** The item's next-step panel is on screen above this list. It says the latest run's state, limit and token
    *  meter, so that run's section leaves them out and keeps only what Now does not say. */
   nowShown?: boolean;
 }
@@ -443,7 +443,7 @@ const RequestRow: Component<{
       </Show>
 
       <div class="flex flex-wrap items-center gap-2">
-        {/* The Now panel above already has Stop for the newest run: the same button twice would only compete. */}
+        {/* The next-step panel above already has Stop for the newest run: the same button twice would only compete. */}
         <Show when={canCancel() && !props.nowShown}>
           <Button size="sm" variant="secondary" onClick={cancel} disabled={busy()} loading={busy()}>
             Stop

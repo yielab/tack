@@ -84,8 +84,8 @@ describe('notificationHref', () => {
     expect(notificationHref(notice({ item_id: null }))).toBeNull();
   });
 
-  it('sends a fall in quality to the Overview and a team memory to the team', () => {
-    expect(notificationHref(notice({ kind: 'quality_trend', key: 'trend:p1:profile:Coder', item_id: null }))).toBe('/projects/p1/overview');
+  it('sends a fall in quality to the Agents\' work part of the Overview and a team memory to the team', () => {
+    expect(notificationHref(notice({ kind: 'quality_trend', key: 'trend:p1:profile:Coder', item_id: null }))).toBe('/projects/p1/overview?part=agents');
     expect(
       notificationHref(notice({ kind: 'memory', key: 'memory:11111111-1111-1111-1111-111111111111:saas-dev:mem-1', item_id: null })),
     ).toBe('/agents#team-saas-dev');

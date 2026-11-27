@@ -3,7 +3,7 @@ import { ForById } from '../../shared/ui/ForById';
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
-import { Button, Field, FieldShell, Badge, Modal, EmptyState } from '../../shared/ui';
+import { Button, Field, FieldShell, Badge, Modal, EmptyState, Card } from '../../shared/ui';
 import { IconSprint } from '../../shared/ui/icons';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
@@ -14,7 +14,6 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import type { Sprint, Item } from '../../shared/types';
-import Card from '../../shared/ui/Card';
 import GroupHeader from '../../shared/ui/GroupHeader';
 import { ancestorsOf, treeRows } from '../../shared/tree';
 

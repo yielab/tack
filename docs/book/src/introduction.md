@@ -6,7 +6,7 @@
 Codex, opencode, or docket — and track the run as part of the item's history.** Self-hosted, one binary,
 no cloud account.
 
-<img src="screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two acceptance criteria, Run with agent with Claude Code, the card's chip and the Execution tab following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run">
+<img src="screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two acceptance criteria, Run with agent with Claude Code, the card's chip and the task's Runs following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run">
 
 Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
 maintenance schedule — through configurable vocabulary and workflow columns, and can hand any

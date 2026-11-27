@@ -157,7 +157,7 @@ describe('Needs you', () => {
     expect(second.classList.contains('border')).toBe(true);
   });
 
-  it('opens the run on the task\'s Execution tab from a question, a review or a failure', async () => {
+  it('opens the run on the task\'s Runs from a question, a review or a failure', async () => {
     wait('w1', 'decision');
     const { container, history } = mount();
     await settle();

@@ -18,8 +18,7 @@ import {
 import { api } from '../../shared/api';
 import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
-import { Button, Field, Badge, SectionHeading, createConfirm } from '../../shared/ui';
-import Card from '../../shared/ui/Card';
+import { Button, Field, Badge, SectionHeading, createConfirm, Card } from '../../shared/ui';
 import { IconChevronDown, IconChevronRight } from '../../shared/ui/icons';
 import DisplaySettings from './DisplaySettings';
 import CredentialsSettings from './CredentialsSettings';

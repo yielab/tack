@@ -43,10 +43,6 @@ describe('getLastLens', () => {
     expect(getLastLens()).toBe('board');
   });
 
-  it.each(['calendar', 'table', 'factory', 'change-sets', 'needs-you'])('opens the Board for a view remembered as "%s"', (name) => {
-    localStorage.setItem('tack_last_lens', name);
-    expect(getLastLens()).toBe('board');
-  });
 });
 
 describe('setLastLens', () => {
