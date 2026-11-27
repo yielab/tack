@@ -192,6 +192,22 @@ describe('ProjectFolderCard', () => {
     expect(planned.body).toBeUndefined();
   });
 
+  it('names the revision as the other side when going back to one, and a conflict over a whole item', async () => {
+    const conflict = { section: 'items', key: 'a-new-one', name: 'A new one', path: '', base: { title: 'A new one' }, board: { title: 'A new one', type: 'task' }, file: null };
+    serve((c) => (c.url.includes('/folder/plan') ? json(plan({ conflicts: [conflict], removals: [], applies: false })) : undefined));
+    const container = await mount();
+    button('History')!.click();
+    await vi.waitFor(() => expect(button('Revert to this…')).toBeDefined());
+    button('Revert to this…')!.click();
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="plan-conflicts"]')).not.toBeNull());
+    const conflicts = document.querySelector('[data-testid="plan-conflicts"]')!;
+    expect(conflicts.textContent).toContain('Revision #7 and the board both changed these');
+    expect(conflicts.textContent).toContain('A new one · the whole item');
+    expect(conflicts.textContent).toContain("Revision #7's: —");
+    expect(Array.from(conflicts.querySelectorAll('label')).map((l) => l.textContent)).toContain('Prefer revision #7');
+    expect(container).toBeDefined();
+  });
+
   it('shows Export disabled with its reason where the browser cannot write a folder', async () => {
     serve(() => undefined);
     const container = await mount();

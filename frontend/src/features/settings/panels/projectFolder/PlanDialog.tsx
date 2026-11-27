@@ -8,11 +8,16 @@ import { VERB_LABEL, bySection, formatValue, revisionLine, sectionTitle } from '
 
 const VERB_TONE: Record<Verb, BadgeTone> = { create: 'success', update: 'info', remove: 'danger', keep: 'neutral' };
 
-const PREFER_OPTIONS: { value: Prefer | undefined; label: string }[] = [
+/** What the plan reads, in a person's words: the folder they picked, or the revision they go back to. */
+const sideOf = (source: PlanSource) => ('revision' in source ? `revision #${source.revision}` : 'the folder');
+
+const preferOptions = (source: PlanSource): { value: Prefer | undefined; label: string }[] => [
   { value: undefined, label: 'Ask' },
-  { value: 'file', label: 'Prefer the folder' },
+  { value: 'file', label: `Prefer ${sideOf(source)}` },
   { value: 'board', label: 'Prefer the board' },
 ];
+
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const H = 'text-base font-semibold';
 const MUTED = { color: 'var(--color-text-secondary)' };
@@ -143,24 +148,27 @@ const PlanDialog: Component<{
                   <h3 id="plan-conflicts" class={H} style={PRIMARY}>
                     Conflicts · {current().conflicts.length}
                   </h3>
-                  <p>The folder and the board both changed these since the last revision.</p>
+                  <p>{capital(sideOf(props.source))} and the board both changed these since the last revision.</p>
                   <ul class="flex flex-col gap-3">
                     <For each={current().conflicts}>
                       {(conflict) => (
                         <li data-testid="plan-conflict" class="flex flex-col gap-1">
                           <span style={PRIMARY}>
-                            <span class="font-semibold">{conflict.name}</span> · <span class="font-mono text-small">{conflict.path}</span>
+                            <span class="font-semibold">{conflict.name}</span> ·{' '}
+                            <Show when={conflict.path} fallback={<span>the whole {sectionTitle(conflict.section).toLowerCase().replace(/s$/, '')}</span>}>
+                              <span class="font-mono text-small">{conflict.path}</span>
+                            </Show>
                           </span>
                           <span>Last revision: {formatValue(conflict.base)}</span>
                           <span>The board's: {formatValue(conflict.board)}</span>
-                          <span>The folder's: {formatValue(conflict.file)}</span>
+                          <span>{capital(sideOf(props.source))}'s: {formatValue(conflict.file)}</span>
                         </li>
                       )}
                     </For>
                   </ul>
                   <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <legend class="mb-1 font-semibold" style={PRIMARY}>When both changed</legend>
-                    <For each={PREFER_OPTIONS}>
+                    <For each={preferOptions(props.source)}>
                       {(option) => (
                         <label class="inline-flex items-center gap-1.5" style={PRIMARY}>
                           <input
