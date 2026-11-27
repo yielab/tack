@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ExecutionSummary } from '../execution';
-import { waitingRows, type ItemInfo } from './waiting';
+import type { InboxNotification } from '../api/notifications';
+import { notificationHref, waitingRows, type ItemInfo } from './waiting';
 
 const run = (id: string, item: string, state: string, created: string): ExecutionSummary => ({
   request_id: id, item_id: item, state, cancellation_requested_at: null, created_at: created,
@@ -59,5 +60,40 @@ describe('waitingRows', () => {
     const [row] = waitingRows([run('r1', 'a', 'waiting_decision', t(1))], {}, {}, 0);
     expect(row.title).toBeNull();
     expect(row.projectId).toBeNull();
+  });
+});
+
+const notice = (over: Partial<InboxNotification>): InboxNotification => ({
+  id: 'n1',
+  project_id: 'p1',
+  kind: 'decision',
+  level: 'needs_you',
+  key: 'decision:d1',
+  item_id: 'item-1',
+  request_id: 'req-1',
+  title: 'A run is asking a question',
+  cause: 'agent',
+  created_at: '2026-11-03T10:00:00Z',
+  ...over,
+});
+
+describe('notificationHref', () => {
+  it('goes to the item, on the run when it has one, and nowhere when it names no item', () => {
+    expect(notificationHref(notice({ kind: 'run_failed', request_id: 'r 1' }))).toBe('/projects/p1/items/item-1?tab=execution&run=r%201');
+    expect(notificationHref(notice({ kind: 'due_soon', request_id: null }))).toBe('/projects/p1/items/item-1');
+    expect(notificationHref(notice({ item_id: null }))).toBeNull();
+  });
+
+  it('sends a fall in quality to the Overview and a team memory to the team', () => {
+    expect(notificationHref(notice({ kind: 'quality_trend', key: 'trend:p1:profile:Coder', item_id: null }))).toBe('/projects/p1/overview');
+    expect(
+      notificationHref(notice({ kind: 'memory', key: 'memory:11111111-1111-1111-1111-111111111111:saas-dev:mem-1', item_id: null })),
+    ).toBe('/agents#team-saas-dev');
+  });
+
+  it('sends a change set to its project\'s Needs you, open on that change set', () => {
+    expect(notificationHref(notice({ kind: 'change_set', key: 'change_set:cs-1', item_id: null, request_id: null }))).toBe(
+      '/projects/p1/needs-you?open=cs-1',
+    );
   });
 });

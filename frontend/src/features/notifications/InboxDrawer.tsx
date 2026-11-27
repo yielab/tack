@@ -4,6 +4,7 @@ import Drawer from '../../shared/ui/Drawer';
 import { Badge, Button } from '../../shared/ui';
 import { relativeTimeFromIso } from '../../shared/runWithAgent/shared';
 import type { InboxNotification } from '../../shared/api/notifications';
+import { notificationHref } from '../../shared/state/waiting';
 import {
   closeInbox,
   inboxOpen,
@@ -14,23 +15,6 @@ import {
   unreadCount,
 } from '../../shared/state/notifications';
 
-/** Where a notification leads: a change set to the panel that applies it, a team's memory to the team's sheet, a fall in quality to the project's metrics, anything else to its item (on the run, when it is about one). */
-export function notificationHref(n: InboxNotification): string | null {
-  if (n.kind === 'memory') {
-    // memory:<project>:<team>:<entry>
-    const team = n.key.split(':').slice(2, -1).join(':');
-    return `/agents#team-${encodeURIComponent(team)}`;
-  }
-  if (n.kind === 'quality_trend') return `/projects/${n.project_id}/factory`;
-  if (n.kind === 'change_set') {
-    const id = n.key.slice('change_set:'.length);
-    return `/projects/${n.project_id}/change-sets?open=${encodeURIComponent(id)}`;
-  }
-  if (!n.item_id) return null;
-  const query = n.request_id ? `?tab=execution&run=${encodeURIComponent(n.request_id)}` : '';
-  return `/projects/${n.project_id}/items/${n.item_id}${query}`;
-}
-
 const Row: Component<{ n: InboxNotification }> = (p) => {
   const href = () => notificationHref(p.n);
   const follow = () => {
@@ -39,8 +23,8 @@ const Row: Component<{ n: InboxNotification }> = (p) => {
   };
   const body = (
     <>
-      <span class="block text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{p.n.title}</span>
-      <span class="block text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <span class="block text-body font-medium" style={{ color: 'var(--color-text-primary)' }}>{p.n.title}</span>
+      <span class="block text-small" style={{ color: 'var(--color-text-secondary)' }}>
         {p.n.cause} · {relativeTimeFromIso(p.n.created_at)}
       </span>
     </>
@@ -49,12 +33,12 @@ const Row: Component<{ n: InboxNotification }> = (p) => {
     <li
       data-testid="inbox-row"
       data-level={p.n.level}
-      class="flex items-start gap-3 rounded-lg border px-3 py-2.5"
-      style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-elevated)' }}
+      class="flex items-start gap-3 py-3"
+      style={{ 'border-bottom': '1px solid var(--color-border-light)' }}
     >
       <div class="min-w-0 flex-1">
         <Show when={href()} fallback={<div>{body}</div>}>
-          <A href={href()!} onClick={follow} class="block rounded-sm focus:outline-none focus-visible:ring-2" style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}>
+          <A href={href()!} onClick={follow} class="block rounded-md focus:outline-none focus-visible:ring-2" style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}>
             {body}
           </A>
         </Show>
@@ -75,15 +59,15 @@ const Row: Component<{ n: InboxNotification }> = (p) => {
 };
 
 const Section: Component<{ id: string; heading: string; rows: InboxNotification[]; empty?: string }> = (p) => (
-  <section aria-labelledby={`inbox-${p.id}`} class="mb-5">
-    <h3 id={`inbox-${p.id}`} class="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
+  <section aria-labelledby={`inbox-${p.id}`} class="mb-8">
+    <h3 id={`inbox-${p.id}`} class="mb-4 text-lead" style={{ color: 'var(--color-text-primary)' }}>
       {p.heading}
     </h3>
     <Show
       when={p.rows.length > 0}
-      fallback={p.empty ? <p data-testid={`inbox-${p.id}-empty`} class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{p.empty}</p> : null}
+      fallback={p.empty ? <p data-testid={`inbox-${p.id}-empty`} class="text-body" style={{ color: 'var(--color-text-secondary)' }}>{p.empty}</p> : null}
     >
-      <ul class="flex flex-col gap-2">
+      <ul class="flex flex-col" style={{ 'border-top': '1px solid var(--color-border-light)' }}>
         <For each={p.rows}>{(n) => <Row n={n} />}</For>
       </ul>
     </Show>
@@ -93,7 +77,7 @@ const Section: Component<{ id: string; heading: string; rows: InboxNotification[
 /** What needs the person, then what happened lately, from the server's inbox. */
 const InboxDrawer: Component = () => (
   <Drawer isOpen={inboxOpen()} onClose={closeInbox} title="Inbox" width="md">
-    <div class="mb-4 flex items-center justify-end">
+    <div class="mb-8 flex items-center justify-end">
       <Button
         size="sm"
         variant="secondary"

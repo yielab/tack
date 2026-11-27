@@ -9,10 +9,10 @@ import { shortItemId } from '../shortItemId';
 // Work lenses (rendered under "Work"). `sprint` matches the singular `/sprint`
 // route and is relabelled via the project vocabulary.
 const LENS_LABELS: Record<string, string> = {
-  board: 'Board', orchestration: 'Orchestration', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprints',
+  board: 'Board', orchestration: 'Orchestration', list: 'List', timeline: 'Timeline', sprint: 'Sprints',
 };
 const DEST_LABELS: Record<string, string> = {
-  overview: 'Overview', 'change-sets': 'Change sets', threads: 'Threads', settings: 'Settings',
+  'needs-you': 'Needs you', overview: 'Overview', threads: 'Threads', settings: 'Settings',
 };
 
 export default function Breadcrumb() {
@@ -39,7 +39,7 @@ export default function Breadcrumb() {
   const itemId = (): string | undefined => location.pathname.match(/^\/projects\/[^/]+\/items\/([^/]+)/)?.[1];
 
   return (
-    <nav aria-label="Breadcrumb" class="flex items-center gap-1 text-sm min-w-0">
+    <nav aria-label="Breadcrumb" class="flex items-center gap-1 text-small min-w-0">
       <Show when={project()}>
         <A
           href="/projects"

@@ -13,19 +13,27 @@ import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from './destinations';
 import KbdHint from './KbdHint';
 import WaitingForYou from '../runWithAgent/WaitingForYou';
 import AgentsOffline from '../agents/AgentsOffline';
-import { sidebarRequests, waitingChangeSetsOf } from '../state/waiting';
-import { changeSetsOffReason } from '../state/changeSets';
+import { needsYouCountOf, sidebarRequests } from '../state/waiting';
 import { openInbox, openNotificationCount } from '../state/notifications';
 import { useVocab } from '../vocab/useVocab';
 
 type Glyph = Component<IconProps>;
 
-/** A nav row: icon + label, active = accent-soft pill. */
+// The same amber as "Needs you" on the board: one thing that waits on a person has one colour.
+const countPill = {
+  'min-width': '1.125rem', padding: '0 5px', 'border-radius': 'var(--radius-sm)', 'text-align': 'center' as const,
+  'font-size': 'var(--text-caption)', 'font-weight': 700,
+  background: 'var(--run-needs-soft)', color: 'var(--run-needs-ink)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)',
+};
+
+/** A nav row: icon + label (and a count when something waits), active = accent-soft. */
 const NavButton: Component<{
   href: string;
   icon: Glyph;
   label: string;
   end?: boolean;
+  /** What waits behind the row; nothing is drawn for 0. */
+  count?: number;
   onClick?: () => void;
 }> = (p) => {
   const location = useLocation();
@@ -40,8 +48,8 @@ const NavButton: Component<{
         'align-items': 'center',
         gap: '10px',
         padding: '7px 12px',
-        'border-radius': 'var(--radius-pill)',
-        'font-size': '0.875rem',
+        'border-radius': 'var(--radius-md)',
+        'font-size': 'var(--text-lead)',
         'font-weight': active() ? 600 : 500,
         'margin-bottom': '2px',
         background: active() ? 'var(--color-accent-soft)' : 'transparent',
@@ -52,50 +60,22 @@ const NavButton: Component<{
     >
       <p.icon size={16} />
       <span style={{ flex: 1, 'text-align': 'left' }}>{p.label}</span>
+      <Show when={(p.count ?? 0) > 0}>
+        <span data-testid="nav-count" aria-hidden="true" style={{ ...countPill }}>{p.count}</span>
+        <span class="sr-only">{`, ${p.count} waiting`}</span>
+      </Show>
     </A>
   );
 };
 
-/** A nav row that cannot be followed: it stays in the list and says why. */
-const OffRow: Component<{ icon: Glyph; label: string; reason: string; testid: string }> = (p) => (
-  <span
-    data-testid={p.testid}
-    aria-disabled="true"
-    title={p.reason}
-    style={{
-      width: '100%',
-      display: 'flex',
-      'align-items': 'center',
-      gap: '10px',
-      padding: '7px 12px',
-      'font-size': '0.875rem',
-      'font-weight': 500,
-      'margin-bottom': '2px',
-      cursor: 'not-allowed',
-      color: 'var(--color-text-tertiary)',
-    }}
-  >
-    <p.icon size={16} />
-    <span style={{ flex: 1, 'text-align': 'left' }}>{p.label}</span>
-    <span class="sr-only">{`. ${p.reason}`}</span>
-  </span>
-);
-
 const SectionLabel: Component<{ label: string }> = (p) => (
   <div style={{ padding: '6px 10px 4px' }}>
     <span style={{
-      'font-size': '0.625rem', 'font-weight': 700, 'letter-spacing': '.12em',
+      'font-size': 'var(--text-micro)', 'font-weight': 700, 'letter-spacing': '.12em',
       'text-transform': 'uppercase', color: 'var(--color-text-tertiary)',
     }}>{p.label}</span>
   </div>
 );
-
-// The same amber as "Needs you" on the board: one thing that waits on a person has one colour.
-const countPill = {
-  'min-width': '1.125rem', padding: '0 5px', 'border-radius': 'var(--radius-pill)', 'text-align': 'center' as const,
-  'font-size': '0.75rem', 'font-weight': 700,
-  background: 'var(--run-needs-soft)', color: 'var(--run-needs-ink)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)',
-};
 
 const Sidebar: Component = () => {
   const params = useParams();
@@ -174,8 +154,8 @@ const Sidebar: Component = () => {
       <div style={{ padding: '20px 20px 14px', display: 'flex', 'align-items': 'center', gap: '10px' }}>
         <BrandMark size={30} />
         <div style={{ display: 'flex', 'flex-direction': 'column', 'line-height': '1' }}>
-          <span style={{ 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '1.375rem', color: 'var(--color-text-primary)' }}>Tack</span>
-          <span style={{ 'font-size': '0.59375rem', 'font-weight': 700, 'letter-spacing': '.14em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)', 'margin-top': '3px' }}>self-hosted</span>
+          <span style={{ 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': 'var(--text-section)', color: 'var(--color-text-primary)' }}>Tack</span>
+          <span style={{ 'font-size': 'var(--text-micro)', 'font-weight': 700, 'letter-spacing': '.14em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)', 'margin-top': '3px' }}>self-hosted</span>
         </div>
         <button
           type="button"
@@ -185,7 +165,7 @@ const Sidebar: Component = () => {
           title="Inbox"
           style={{
             'margin-left': 'auto', display: 'flex', 'align-items': 'center', gap: '5px', height: '30px',
-            padding: openNotificationCount() > 0 ? '0 8px 0 9px' : '0 9px', 'border-radius': 'var(--radius-pill)', cursor: 'pointer',
+            padding: openNotificationCount() > 0 ? '0 8px 0 9px' : '0 9px', 'border-radius': 'var(--radius-md)', cursor: 'pointer',
             border: 'none', background: 'var(--color-bg-app)', color: 'var(--color-text-secondary)',
           }}
         >
@@ -196,16 +176,16 @@ const Sidebar: Component = () => {
         </button>
       </div>
 
-      {/* workspace pill */}
+      {/* workspace */}
       <div style={{ padding: '0 14px 10px' }}>
         <div style={{
           width: '100%', display: 'flex', 'align-items': 'center', gap: '8px',
-          padding: '8px 14px', 'border-radius': 'var(--radius-pill)',
+          padding: '8px 14px', 'border-radius': 'var(--radius-md)',
           background: 'var(--color-bg-app)',
         }}>
-          <span style={{ width: '8px', height: '8px', 'border-radius': 'var(--radius-lg)', background: health() ? 'var(--color-success-600)' : 'var(--color-text-tertiary)', 'flex-shrink': 0 }} />
-          <span style={{ flex: 1, 'text-align': 'left', 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)' }}>Local workspace</span>
-          <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>tack.db</span>
+          <span style={{ width: '8px', height: '8px', 'border-radius': 'var(--radius-pill)', background: health() ? 'var(--color-success-600)' : 'var(--color-text-tertiary)', 'flex-shrink': 0 }} />
+          <span style={{ flex: 1, 'text-align': 'left', 'font-size': 'var(--text-small)', 'font-weight': 600, color: 'var(--color-text-primary)' }}>Local workspace</span>
+          <span style={{ 'font-family': 'var(--font-mono)', 'font-size': 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>tack.db</span>
         </div>
       </div>
 
@@ -217,13 +197,13 @@ const Sidebar: Component = () => {
           onClick={() => { openPalette(); close(); }}
           style={{
             width: '100%', display: 'flex', 'align-items': 'center', gap: '8px',
-            padding: '8px 14px', 'border-radius': 'var(--radius-pill)', cursor: 'pointer',
+            padding: '8px 14px', 'border-radius': 'var(--radius-md)', cursor: 'pointer',
             border: '1px solid var(--color-border-strong)', background: 'transparent',
             'font-family': 'inherit', color: 'var(--color-text-secondary)',
           }}
         >
           <IconSearch size={15} />
-          <span style={{ flex: 1, 'text-align': 'left', 'font-size': '0.8125rem' }}>Search…</span>
+          <span style={{ flex: 1, 'text-align': 'left', 'font-size': 'var(--text-small)' }}>Search…</span>
           <KbdHint>⌃/</KbdHint>
         </button>
       </div>
@@ -235,7 +215,7 @@ const Sidebar: Component = () => {
         <Show when={currentProjectId()}>
           <SectionLabel label="Project" />
 
-          {/* project switcher pill */}
+          {/* project switcher */}
           <div style={{ padding: '0 0 6px' }}>
             <div style={{ position: 'relative' }}>
               <select
@@ -244,9 +224,9 @@ const Sidebar: Component = () => {
                 onChange={(e) => handleProjectSwitch(e.currentTarget.value)}
                 style={{
                   width: '100%', appearance: 'none', cursor: 'pointer',
-                  padding: '8px 32px 8px 14px', 'border-radius': 'var(--radius-pill)',
+                  padding: '8px 32px 8px 14px', 'border-radius': 'var(--radius-md)',
                   border: 'none', background: 'var(--color-bg-app)',
-                  'font-family': 'inherit', 'font-size': '0.875rem', 'font-weight': 600,
+                  'font-family': 'inherit', 'font-size': 'var(--text-lead)', 'font-weight': 600,
                   color: 'var(--color-text-primary)',
                 }}
               >
@@ -261,20 +241,15 @@ const Sidebar: Component = () => {
           </div>
 
           <For each={PROJECT_DESTINATIONS}>
-            {(d) => {
-              const off = () =>
-                d.id === 'change-sets'
-                  ? changeSetsOffReason(projects()?.find((x) => x.id === currentProjectId()), waitingChangeSetsOf(currentProjectId() ?? ''))
-                  : null;
-              return (
-                <Show
-                  when={!off()}
-                  fallback={<OffRow testid={`nav-${d.id}-off`} icon={d.icon} label={d.label(t)} reason={off()!} />}
-                >
-                  <NavButton href={d.path(currentProjectId() ?? '')} icon={d.icon} label={d.label(t)} onClick={close} />
-                </Show>
-              );
-            }}
+            {(d) => (
+              <NavButton
+                href={d.path(currentProjectId() ?? '')}
+                icon={d.icon}
+                label={d.label(t)}
+                count={d.id === 'needs-you' ? needsYouCountOf(currentProjectId() ?? '') : undefined}
+                onClick={close}
+              />
+            )}
           </For>
 
           <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '10px 10px' }} />
@@ -306,7 +281,7 @@ const Sidebar: Component = () => {
             aria-label={isDarkActive() ? 'Switch to light theme' : 'Switch to dark theme'}
             title={isDarkActive() ? 'Switch to light theme' : 'Switch to dark theme'}
             style={{
-              width: '30px', height: '30px', 'border-radius': 'var(--radius-lg)', cursor: 'pointer',
+              width: '30px', height: '30px', 'border-radius': 'var(--radius-md)', cursor: 'pointer',
               border: 'none', background: 'var(--color-bg-app)',
               display: 'flex', 'align-items': 'center', 'justify-content': 'center',
               color: 'var(--color-text-secondary)',
@@ -317,16 +292,16 @@ const Sidebar: Component = () => {
           <A
             href="/settings#display"
             onClick={close}
-            style={{ flex: 1, 'text-align': 'right', 'font-size': '0.75rem', color: 'var(--color-text-secondary)' }}
+            style={{ flex: 1, 'text-align': 'right', 'font-size': 'var(--text-caption)', color: 'var(--color-text-secondary)' }}
           >
             Display &amp; accessibility
           </A>
         </div>
         <div style={{ display: 'flex', 'align-items': 'center', gap: '9px', padding: '2px' }}>
-          <span style={{ width: '28px', height: '28px', 'border-radius': 'var(--radius-lg)', background: 'var(--color-primary-600)', color: 'var(--color-on-accent)', display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '14px', 'flex-shrink': 0 }}>T</span>
+          <span style={{ width: '28px', height: '28px', 'border-radius': 'var(--radius-pill)', background: 'var(--color-primary-600)', color: 'var(--color-on-accent)', display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '14px', 'flex-shrink': 0 }}>T</span>
           <div style={{ flex: 1, 'line-height': '1.3', 'min-width': 0 }}>
-            <div style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>Local</div>
-            <div style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.625rem', color: 'var(--color-text-tertiary)' }}>{health() ? `v${health()!.version} · single token` : 'single token'}</div>
+            <div style={{ 'font-size': 'var(--text-small)', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>Local</div>
+            <div style={{ 'font-family': 'var(--font-mono)', 'font-size': 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>{health() ? `v${health()!.version} · single token` : 'single token'}</div>
           </div>
         </div>
       </div>
@@ -342,9 +317,9 @@ const Sidebar: Component = () => {
       >
         <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
           <BrandMark size={24} />
-          <span style={{ 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '1.25rem', color: 'var(--color-text-primary)' }}>Tack</span>
+          <span style={{ 'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': 'var(--text-section)', color: 'var(--color-text-primary)' }}>Tack</span>
         </div>
-        <button type="button" onClick={() => setIsOpen(!isOpen())} class="p-2 rounded-lg" style={{ color: 'var(--color-text-secondary)' }} aria-label="Menu" aria-controls="sidebar" aria-expanded={isOpen() ? 'true' : 'false'}>
+        <button type="button" onClick={() => setIsOpen(!isOpen())} class="p-2 rounded-md" style={{ color: 'var(--color-text-secondary)' }} aria-label="Menu" aria-controls="sidebar" aria-expanded={isOpen() ? 'true' : 'false'}>
           <Show when={isOpen()} fallback={<IconList size={22} />}><IconChevronDown size={22} /></Show>
         </button>
       </div>

@@ -307,7 +307,7 @@ describe('Waiting for you', () => {
     expect(c.querySelector('input[type="password"]')).toBeNull();
   });
 
-  it('counts the change sets that wait with the runs, lists them in a fourth group and opens the change sets page', async () => {
+  it('counts the change sets that wait with the runs, lists them in a fourth group and opens Needs you', async () => {
     mockApi({
       runs: [{ id: 'q', item: 'a', state: 'waiting_decision', created: minutesAgo(3), title: 'Pick a chart library' }],
       changeSets: [
@@ -333,7 +333,10 @@ describe('Waiting for you', () => {
     expect(rows[0].querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('Needs you');
     const open = rows[0].querySelector('a')!;
     expect(open.textContent).toBe('Review the changes');
-    expect(open.getAttribute('href')).toBe('/projects/p1/change-sets?open=cs1');
+    expect(open.getAttribute('href')).toBe('/projects/p1/needs-you?open=cs1');
+    // Each project that has a wait links to its Needs you, with how many wait there.
+    const byProject = [...c.querySelectorAll('[data-testid="waiting-projects"] a')];
+    expect(byProject.map((a) => [a.getAttribute('href'), a.textContent])).toEqual([['/projects/p1/needs-you', 'My SaaS3']]);
   });
 
   it('shows no group for change sets when none wait', async () => {

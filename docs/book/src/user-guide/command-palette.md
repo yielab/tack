@@ -14,7 +14,7 @@ Press `Ctrl+K` (or `⌘K`) anywhere to open the command palette. It opens center
 focused, and ready for input.
 
 - **Type to filter.** Results are grouped into **Actions** (New Item, New Project), **Project**
-  (Board, Orchestration, List, Calendar, Timeline, Sprint, Change sets, Threads, Overview, Factory metrics, Project settings) and
+  (Needs you, Board, List, Timeline, Sprint, Orchestration, Threads, Overview, Project settings) and
   **Workspace** (All projects, Templates, Agents, Settings). The available commands depend on
   context — item and view commands appear only while you're inside a project.
 - **Items appear as you type.** Two or more letters also search the items of the project you are in

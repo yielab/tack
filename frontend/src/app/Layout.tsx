@@ -5,6 +5,7 @@ import SearchBar from '../shared/ui/SearchBar';
 import ToastContainer from '../shared/ui/ToastContainer';
 import SessionEndedBanner from '../shared/ui/SessionEndedBanner';
 import Breadcrumb from '../shared/ui/Breadcrumb';
+import Button from '../shared/ui/Button';
 import HelpButton from '../shared/ui/HelpButton';
 import { WaitingBadge } from '../shared/runWithAgent/WaitingForYou';
 import { ProjectProvider } from '../shared/state/projectContext';
@@ -29,8 +30,8 @@ interface LayoutProps {
 }
 
 const VIEW_LABELS: Record<string, string> = {
-  board: 'Board', orchestration: 'Orchestration', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
-  overview: 'Overview', factory: 'Factory metrics', 'change-sets': 'Change sets', threads: 'Threads', settings: 'Settings',
+  'needs-you': 'Needs you', board: 'Board', orchestration: 'Orchestration', list: 'List', timeline: 'Timeline', sprint: 'Sprint',
+  overview: 'Overview', threads: 'Threads', settings: 'Settings',
 };
 
 // Views whose document-title label comes from the project vocabulary.
@@ -113,7 +114,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
       <a
         href="#main"
         onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }}
-        class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[90] focus:rounded-full focus:px-4 focus:py-2 focus:text-sm focus:font-semibold"
+        class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[90] focus:rounded-md focus:px-4 focus:py-2 focus:text-small focus:font-semibold"
         style={{ 'background-color': 'var(--color-bg-elevated)', color: 'var(--color-text-primary)', 'box-shadow': 'var(--shadow-lg)' }}
       >
         Skip to content
@@ -141,19 +142,14 @@ const LayoutInner: Component<LayoutProps> = (props) => {
             <SearchBar projectId={projectId()} />
           </div>
 
-          {/* ＋ New — context-aware */}
-          <button
+          {/* New: an item inside a project, a project outside one */}
+          <Button
+            size="sm"
             onClick={() => projectId() ? setShowNewItem(true) : setShowNewProject(true)}
             title={projectId() ? 'New item' : 'New project'}
-            style={{
-              display: 'flex', 'align-items': 'center', gap: '6px',
-              padding: '7px 16px', 'border-radius': 'var(--radius-pill)', border: 'none', cursor: 'pointer',
-              background: 'var(--color-primary-600)', color: 'var(--color-on-accent)',
-              'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '0.875rem',
-            }}
           >
             <IconPlus size={14} /> New
-          </button>
+          </Button>
 
           <WaitingBadge />
 
@@ -167,9 +163,9 @@ const LayoutInner: Component<LayoutProps> = (props) => {
             title="Command palette"
             style={{
               display: 'flex', 'align-items': 'center', padding: '6px 10px',
-              'border-radius': 'var(--radius-pill)', cursor: 'pointer',
+              'border-radius': 'var(--radius-md)', cursor: 'pointer',
               border: '1px solid var(--color-border-light)', background: 'transparent',
-              color: 'var(--color-text-secondary)', 'font-family': 'var(--font-mono)', 'font-size': '0.6875rem',
+              color: 'var(--color-text-secondary)', 'font-family': 'var(--font-mono)', 'font-size': 'var(--text-micro)',
             }}
           >
             ⌃K

@@ -1,7 +1,7 @@
 import type { Component } from 'solid-js';
 import {
-  IconBoard, IconOrchestration, IconList, IconCalendar, IconTimeline, IconSprint,
-  IconOverview, IconChangeSet, IconThread, IconProjects, IconTemplates, IconAgent, IconSettings, type IconProps,
+  IconBoard, IconOrchestration, IconList, IconTimeline, IconSprint, IconClock,
+  IconOverview, IconThread, IconProjects, IconTemplates, IconAgent, IconSettings, type IconProps,
 } from './icons';
 
 export type DestinationIcon = Component<IconProps>;
@@ -23,16 +23,14 @@ export interface Destination {
 
 /** The views of one project, in sidebar order. */
 export const PROJECT_DESTINATIONS: Destination[] = [
+  { id: 'needs-you', label: () => 'Needs you', icon: IconClock, path: (p) => `/projects/${p}/needs-you` },
   { id: 'board', label: () => 'Board', icon: IconBoard, path: (p) => `/projects/${p}/board` },
-  { id: 'orchestration', label: (t) => t('orchestration'), icon: IconOrchestration, path: (p) => `/projects/${p}/orchestration` },
   { id: 'list', label: () => 'List', icon: IconList, path: (p) => `/projects/${p}/list` },
-  { id: 'calendar', label: () => 'Calendar', icon: IconCalendar, path: (p) => `/projects/${p}/calendar` },
   { id: 'timeline', label: () => 'Timeline', icon: IconTimeline, path: (p) => `/projects/${p}/timeline` },
   { id: 'sprint', label: (t) => t('sprint'), icon: IconSprint, path: (p) => `/projects/${p}/sprint` },
-  { id: 'change-sets', label: () => 'Change sets', icon: IconChangeSet, path: (p) => `/projects/${p}/change-sets` },
+  { id: 'orchestration', label: (t) => t('orchestration'), icon: IconOrchestration, path: (p) => `/projects/${p}/orchestration` },
   { id: 'threads', label: () => 'Threads', icon: IconThread, path: (p) => `/projects/${p}/threads` },
   { id: 'overview', label: () => 'Overview', icon: IconOverview, path: (p) => `/projects/${p}/overview` },
-  { id: 'factory', label: () => 'Factory metrics', icon: IconOverview, path: (p) => `/projects/${p}/factory` },
   { id: 'project-settings', label: () => 'Project settings', icon: IconSettings, path: (p) => `/projects/${p}/settings` },
 ];
 

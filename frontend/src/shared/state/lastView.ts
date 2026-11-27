@@ -1,5 +1,5 @@
 const KEY = 'tack_last_lens';
-const LENSES = ['board', 'orchestration', 'list', 'calendar', 'timeline', 'sprint'] as const;
+const LENSES = ['board', 'orchestration', 'list', 'timeline', 'sprint'] as const;
 export type Lens = typeof LENSES[number];
 
 export function getLastLens(): Lens {
