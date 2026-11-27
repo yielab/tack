@@ -677,6 +677,242 @@ async fn template_save_posts_to_save_as_template() {
     );
 }
 
+// ── folder (the project folder under /api/projects/{id}/folder) ──────────────
+
+/// A plan that removes one sprint and says what it costs.
+fn plan_with_a_removal() -> serde_json::Value {
+    serde_json::json!({
+        "plan_hash": "abc123",
+        "base": null,
+        "changes": [{
+            "section": "roles", "key": "dev", "name": "Dev", "verb": "update",
+            "fields": [{ "path": "name", "from": "Dev", "to": "Developer" }], "reason": null
+        }],
+        "conflicts": [],
+        "removals": [{
+            "section": "sprints", "key": "s3", "name": "Sprint 3",
+            "cost": ["4 items leave the sprint"]
+        }],
+        "warnings": [],
+        "applies": true
+    })
+}
+
+/// Runs `tack folder <args>` against the mock server, with an empty home.
+async fn tack_folder(uri: &str, args: &[&str]) -> std::process::Output {
+    let uri = uri.to_owned();
+    let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    run_blocking(move || {
+        let home = tempfile::tempdir().unwrap();
+        std::process::Command::new(env!("CARGO_BIN_EXE_tack"))
+            .arg("folder")
+            .args(&args)
+            .env("HOME", home.path())
+            .env("XDG_DATA_HOME", home.path().join("data"))
+            .env("TACK_API_URL", uri)
+            .env_remove("TACK_API_TOKEN")
+            .output()
+            .unwrap()
+    })
+    .await
+}
+
+fn a_folder() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("items")).unwrap();
+    std::fs::write(dir.path().join("project.yaml"), "name: My SaaS\n").unwrap();
+    std::fs::write(dir.path().join("items/login.md"), "# Login\n").unwrap();
+    dir
+}
+
+#[tokio::test]
+async fn folder_import_dry_run_posts_the_files_to_plan_and_prints_the_cost() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/plan"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "files": { "project.yaml": "name: My SaaS\n", "items/login.md": "# Login\n" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(plan_with_a_removal()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/apply"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let dir = a_folder();
+    let out = tack_folder(
+        &server.uri(),
+        &["import", "p1", dir.path().to_str().unwrap(), "--dry-run"],
+    )
+    .await;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("4 items leave the sprint"), "{stdout}");
+    assert!(
+        stdout.contains("update roles Dev: name \"Dev\" → \"Developer\""),
+        "{stdout}"
+    );
+}
+
+#[tokio::test]
+async fn folder_import_with_a_removal_and_no_yes_exits_1_without_applying() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/plan"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(plan_with_a_removal()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/apply"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let dir = a_folder();
+    let out = tack_folder(
+        &server.uri(),
+        &["import", "p1", dir.path().to_str().unwrap()],
+    )
+    .await;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("add --yes to apply the 1 removals"),
+        "{stderr}"
+    );
+}
+
+#[tokio::test]
+async fn folder_import_with_yes_applies_the_plans_hash() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/plan"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(plan_with_a_removal()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/apply"))
+        .and(query_param("plan_hash", "abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revision": { "number": 4, "origin": "file", "hash": "h", "created_at": "t" },
+            "changes": [], "removals": []
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let dir = a_folder();
+    let out = tack_folder(
+        &server.uri(),
+        &["import", "p1", dir.path().to_str().unwrap(), "--yes"],
+    )
+    .await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Applied revision #4"));
+}
+
+#[tokio::test]
+async fn folder_export_leaves_only_the_files_the_board_answered() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p1/folder"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "files": { "project.yaml": "name: My SaaS\n", "items/login.md": "# Login\n" }
+        })))
+        .mount(&server)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("items")).unwrap();
+    std::fs::write(dir.path().join("items/old.md"), "# Old\n").unwrap();
+    let out = tack_folder(
+        &server.uri(),
+        &["export", "p1", dir.path().to_str().unwrap()],
+    )
+    .await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!dir.path().join("items/old.md").exists());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("items/login.md")).unwrap(),
+        "# Login\n"
+    );
+    assert!(dir.path().join("project.yaml").exists());
+}
+
+#[tokio::test]
+async fn folder_revert_posts_the_revision_to_plan() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/plan"))
+        .and(query_param("revision", "3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(plan_with_a_removal()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let out = tack_folder(&server.uri(), &["revert", "p1", "3", "--dry-run"]).await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+// ── plan_folder (the MCP tool previews, never applies) ───────────────────────
+
+#[tokio::test]
+async fn plan_folder_refuses_files_with_a_revision_and_never_applies() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::path_regex("^/api/projects/p1/folder/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(plan_with_a_removal()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/folder/apply"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let (both, planned) = run_blocking(move || {
+        let client = TackClient::new(&make_config(&uri)).unwrap();
+        let tool = tack_cli::mcp::tool::find("plan_folder").unwrap();
+        let both = (tool.handler)(
+            &client,
+            &serde_json::json!({ "project_id": "p1", "files": {}, "revision": 3 }),
+        );
+        let planned = (tool.handler)(
+            &client,
+            &serde_json::json!({ "project_id": "p1", "files": { "project.yaml": "name: x\n" } }),
+        );
+        (both, planned)
+    })
+    .await;
+    assert!(both.unwrap_err().contains("not both"));
+    assert_eq!(planned.unwrap()["plan_hash"], "abc123");
+}
+
 // ── `tack serve` says when the database it uses is not the one in the data folder ──
 
 #[test]

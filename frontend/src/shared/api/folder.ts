@@ -114,10 +114,9 @@ export const folder = {
     request<{ files: FolderFiles }>(`/projects/${projectId}/folder/revisions/${n}`),
 };
 
-/** A row's key, when the board sent one. Roles, fields, sprints, profiles and items carry it. */
-export function keyOf(row: object): string | undefined {
-  const key = (row as { key?: unknown }).key;
-  return typeof key === 'string' && key !== '' ? key : undefined;
+/** A row's key, or nothing for one that has none (a thread's or a trigger's hidden item has ""). */
+export function keyOf(row: { key?: string | null }): string | undefined {
+  return row.key ? row.key : undefined;
 }
 
 /**

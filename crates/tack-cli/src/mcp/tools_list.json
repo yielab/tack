@@ -159,7 +159,7 @@
     "name": "create_project"
   },
   {
-    "description": "Create many items in one call, with their hierarchy and dependencies: in a new project (pass project) or an existing one (pass project_id). Every item is checked before anything is written, and every problem is reported at once; nothing is written unless all of it can be. Give an item a ref and name it from other items' parent or depends_on (an exact title works too). Order does not matter. Use dry_run first to see what would be created and any warnings. The file may also carry fields, profiles, roles, sprints and automation, as in Tack's project file (Settings → Data → File format). With an agent credential this proposes a change set: pass project_id, and no assignee, estimate or tags, project file parts or dry_run. A reason may be given.",
+    "description": "Create many items in one call, with their hierarchy and dependencies: in a new project (pass project) or an existing one (pass project_id). Every item is checked before anything is written, and every problem is reported at once; nothing is written unless all of it can be. Give an item a ref and name it from other items' parent or depends_on (an exact title works too). Order does not matter. Use dry_run first to see what would be created and any warnings. The file may also carry fields, profiles, roles, sprints and automation, as in Tack's project file (Settings → Data → File format). With an agent credential this proposes a change set: pass project_id, and no assignee, estimate or tags, project file parts or dry_run. A reason may be given. It never removes anything; a person keeps the plan in the repository with `tack folder`.",
     "inputSchema": {
       "properties": {
         "automation": {
@@ -283,6 +283,34 @@
       "type": "object"
     },
     "name": "create_outline"
+  },
+  {
+    "description": "Preview what a project folder would change on the board: pass the folder's files, or a revision number to go back to. Returns the plan: changes, kept rows with their reason, conflicts, removals with their cost and warnings. It never applies the plan; a person applies it with `tack folder`.",
+    "inputSchema": {
+      "properties": {
+        "files": {
+          "description": "The folder's files: each path relative to .tack/ and its text (not with revision)",
+          "type": "object"
+        },
+        "prefer": {
+          "description": "file or board: whose value wins a conflict",
+          "type": "string"
+        },
+        "project_id": {
+          "description": "Project UUID",
+          "type": "string"
+        },
+        "revision": {
+          "description": "A revision number to plan going back to (not with files)",
+          "type": "number"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "type": "object"
+    },
+    "name": "plan_folder"
   },
   {
     "description": "Update fields on an item. Status changes are validated against the workflow. who_does_it (an agent profile id) and depends_on (ids of items that must finish first) propose a change set, and so does every change with an agent credential, which cannot change title, description or assignee. parent_id puts the item under another one by the tree rule, or at the top when empty.",

@@ -87,11 +87,11 @@ fn mcp_tool_names() -> Vec<String> {
 }
 
 #[test]
-fn tools_list_advertises_all_twenty_five() {
+fn tools_list_advertises_all_twenty_six() {
     // 10 item/project tools, 6 execution/fleet/profile tools, get_autonomy, the six that read
-    // the board as a whole or propose a change set, and the two of a thread.
+    // the board as a whole or propose a change set, the two of a thread, and plan_folder.
     let names = mcp_tool_names();
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 26);
     for expected in [
         "list_projects",
         "create_project",

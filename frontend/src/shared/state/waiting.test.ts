@@ -91,6 +91,11 @@ describe('notificationHref', () => {
     ).toBe('/agents#team-saas-dev');
   });
 
+  it('sends a question asked in a thread to that thread, not to its hidden item', () => {
+    expect(notificationHref(notice({ kind: 'decision', thread_id: 'th 1', item_id: 'anchor-1', request_id: 'r1' }))).toBe('/projects/p1/threads?open=th%201');
+    expect(notificationHref(notice({ kind: 'decision', thread_id: null, request_id: 'r1' }))).toBe('/projects/p1/items/item-1?tab=execution&run=r1');
+  });
+
   it('sends a change set to its project\'s Needs you, open on that change set', () => {
     expect(notificationHref(notice({ kind: 'change_set', key: 'change_set:cs-1', item_id: null, request_id: null }))).toBe(
       '/projects/p1/needs-you?open=cs-1',

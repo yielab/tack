@@ -375,6 +375,8 @@ export type EgressMode = 'closed' | 'listed' | 'open';
 export interface AgentProfileSummary {
   agent_profile_id: string;
   name: string;
+  /** Its key in the project folder; a rename keeps it. */
+  key?: string;
   instructions: string;
   tool_policy: unknown;
   limits: unknown;

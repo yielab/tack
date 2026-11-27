@@ -587,6 +587,14 @@ edit an item's brief and drop an item with a run, plan, read the costs and the k
 read the history and revert. Write what was seen in "How it went". Never against the real database
 or the running service.
 
+**Also for the roadmap, from the docket session (2026-11-27), not Phase 76's to build:** D1's ask of
+docket is done on docket's develop (the subject comes from `task.objective`, `pod-dispatch`
+13.1.0), so D1 keeps only the runner's own commit for local agents; D3 is a declared limit in
+docket (under Landlock a bind to 127.0.0.1 is refused, a Unix socket works, the Docker backend has
+its loopback) with no `features` entry, so the dialog's sentence stays (the frontend session's).
+The frontend session's third finding becomes a card asked of docket: a decision's metadata lists
+what the approval changes, so the approval can show it.
+
 **Done when:** the gate is green on `develop`, `mdbook build docs/book` is clean, and the roadmap's
 Phase 76 section says what shipped.
 
@@ -679,6 +687,14 @@ Owned by the frontend session; this session does not edit it. Two parts:
   (`import-export.md`, `developer/project-file.md`). The integrator added two refusals: a folder
   without `project.yaml` (it would read as a project with nothing in it, and the plan would
   propose removing everything), and a `key` or `description` line in an item's YAML.
+- **K** (`32b8a687`): `NewAgentProfile` carries the key (clippy refused another argument). A saved
+  template now carries keys, so applying it matches this board's rows by key, which is what a
+  template saved from this board means. Built-in profiles were seeded after the fill and kept an
+  empty key until the next start; the integrator made the seed end with the fill (`446b1f6d`).
+  Merging develop into K met only the migration list (115 then 116); 1541 tests passed on the
+  combined tree.
+- **T** (`02a566fb`): `thread_id` is a scalar subquery in one constant shared by the insert's
+  `RETURNING` and the list queries (SQLite's `RETURNING` cannot join).
 - **N** (`a8a1c441`): `RunStarted` under a new request closes the old `review` through the
   reconcile, within about 30 seconds. The integrator removed the agent's seven-day window on
   waiting reviews: a run waits however old it is. `waiting_max: 0` pauses auto-start for good. The

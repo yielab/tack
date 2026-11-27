@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use super::changes;
 use super::projection::{project_list, project_summary};
-use super::tool::{Kind, Spec, Tool, call, opt_str, require_id, require_str};
+use super::tool::{Kind, Spec, Tool, call, opt_str, require_id, require_str, require_u64};
 use crate::client::TackClient;
 
 pub static LIST_PROJECTS: Tool = Tool {
@@ -93,7 +93,8 @@ pub static CREATE_OUTLINE: Tool = Tool {
              The file may also carry fields, profiles, roles, sprints and \
              automation, as in Tack's project file (Settings → Data → File format). With \
              an agent credential this proposes a change set: pass project_id, and no \
-             assignee, estimate or tags, project file parts or dry_run. A reason may be given.",
+             assignee, estimate or tags, project file parts or dry_run. A reason may be given. \
+             It never removes anything; a person keeps the plan in the repository with `tack folder`.",
         input_schema: || {
             json!({
                 "type": "object",
@@ -186,4 +187,56 @@ fn create_outline(client: &TackClient, args: &Value) -> Result<Value, String> {
         }
         result
     })
+}
+
+pub static PLAN_FOLDER: Tool = Tool {
+    name: "plan_folder",
+    spec: Spec {
+        description: "Preview what a project folder would change on the board: pass the folder's files, or a revision number to go back to. \
+             Returns the plan: changes, kept rows with their reason, conflicts, removals with their cost and warnings. \
+             It never applies the plan; a person applies it with `tack folder`.",
+        input_schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "Project UUID" },
+                    "files": { "type": "object", "description": "The folder's files: each path relative to .tack/ and its text (not with revision)" },
+                    "revision": { "type": "number", "description": "A revision number to plan going back to (not with files)" },
+                    "prefer": { "type": "string", "description": "file or board: whose value wins a conflict" }
+                },
+                "required": ["project_id"]
+            })
+        },
+    },
+    kind: Kind::Read,
+    handler: plan_folder,
+};
+
+fn plan_folder(client: &TackClient, args: &Value) -> Result<Value, String> {
+    let project_id = require_id(args, "project_id")?;
+    let mut query: Vec<(&str, String)> = Vec::new();
+    if let Some(prefer) = opt_str(args, "prefer") {
+        if prefer != "file" && prefer != "board" {
+            return Err("prefer must be file or board".into());
+        }
+        query.push(("prefer", prefer));
+    }
+    let body = match (args.get("files"), args.get("revision")) {
+        (Some(_), Some(_)) => return Err("plan_folder: pass files or revision, not both".into()),
+        (Some(files), None) if files.is_object() => json!({ "files": files }).to_string(),
+        (None, Some(_)) => {
+            query.push(("revision", require_u64(args, "revision")?.to_string()));
+            String::new()
+        }
+        _ => {
+            return Err("plan_folder: pass files (an object of path to text) or revision".into());
+        }
+    };
+    let query: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    call(client.post_text(
+        &format!("/projects/{project_id}/folder/plan"),
+        &query,
+        "application/json",
+        body,
+    ))
 }

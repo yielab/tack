@@ -157,7 +157,7 @@ export const needsYouCountOf = (projectId: string): number => projectWaits(proje
 export const changeSetIdOf = (n: InboxNotification): string => n.key.slice('change_set:'.length);
 
 /**
- * Where a notification leads: a change set to its project's Needs you, a team's memory to the team's
+ * Where a notification leads: a question asked in a thread to that thread, a change set to its project's Needs you, a team's memory to the team's
  * sheet, a fall in quality to the Agents' work part of the project's Overview, anything else to its item (on the run, when it is about one).
  */
 export function notificationHref(n: InboxNotification): string | null {
@@ -167,6 +167,7 @@ export function notificationHref(n: InboxNotification): string | null {
     return `/agents#team-${encodeURIComponent(team)}`;
   }
   if (n.kind === 'quality_trend') return `/projects/${n.project_id}/overview?part=agents`;
+  if (n.thread_id) return `/projects/${n.project_id}/threads?open=${encodeURIComponent(n.thread_id)}`;
   if (n.kind === 'change_set') return `/projects/${n.project_id}/needs-you?open=${encodeURIComponent(changeSetIdOf(n))}`;
   if (!n.item_id) return null;
   const query = n.request_id ? `?tab=execution&run=${encodeURIComponent(n.request_id)}` : '';

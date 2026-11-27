@@ -57,6 +57,7 @@ pub static TOOLS: &[&Tool] = &[
     &items::CREATE_ITEM,
     &projects::CREATE_PROJECT,
     &projects::CREATE_OUTLINE,
+    &projects::PLAN_FOLDER,
     &items::UPDATE_ITEM,
     &items::MOVE_ITEM,
     &items::ADD_COMMENT,
