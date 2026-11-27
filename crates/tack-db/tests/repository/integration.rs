@@ -9,6 +9,7 @@ use tack_protocol::Clock;
 /// struct-update syntax (`CreateItem { priority: ..., ..item_input("x") }`).
 fn item_input(title: &str) -> CreateItem {
     CreateItem {
+        key: None,
         recurrence: None,
         recurrence_of: None,
         title: title.into(),
@@ -66,6 +67,7 @@ fn template_input(
 /// A minimal text field, for tests that only need *a* custom field to exist.
 fn text_field(name: &str) -> CreateCustomField {
     CreateCustomField {
+        key: None,
         name: name.into(),
         field_type: CustomFieldType::Text,
         description: None,
@@ -101,6 +103,7 @@ async fn item_now(repo: &tack_db::Repository, id: uuid::Uuid) -> Item {
 /// A `CreateSprint` with no goal or dates set.
 fn sprint_input(name: &str) -> CreateSprint {
     CreateSprint {
+        key: None,
         name: name.into(),
         goal: None,
         start_date: None,
@@ -402,6 +405,7 @@ async fn sprint_lifecycle() {
         .create_sprint(
             project.id,
             CreateSprint {
+                key: None,
                 name: "Sprint 1".into(),
                 goal: Some("Ship MVP".into()),
                 start_date: None,
@@ -438,6 +442,7 @@ async fn roles_and_assignment() {
         .create_role(
             project.id,
             CreateRole {
+                key: None,
                 name: "Electrician".into(),
                 color: Some("#f59e0b".into()),
                 icon: None,
@@ -881,6 +886,7 @@ async fn foreign_key_rejects_orphan_item() {
             bogus_project,
             "Backlog",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "orphan".into(),
@@ -1004,6 +1010,7 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
         .create_role(
             project.id,
             CreateRole {
+                key: None,
                 name: "Content".into(),
                 color: None,
                 icon: None,
@@ -1015,6 +1022,7 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
         .create_field(
             project.id,
             CreateCustomField {
+                key: None,
                 name: "Region".into(),
                 field_type: CustomFieldType::Text,
                 description: None,
@@ -1058,6 +1066,7 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
     );
 
     let mut row = ProfileRow {
+        key: String::new(),
         id: "ap_mine".into(),
         name: "First".into(),
         kind: "custom".into(),

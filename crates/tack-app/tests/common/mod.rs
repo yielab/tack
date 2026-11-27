@@ -77,6 +77,7 @@ pub async fn world() -> World {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: PROFILE_ID,
             name: "Use case profile",
             instructions: "work safely",

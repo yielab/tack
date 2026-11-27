@@ -3,6 +3,7 @@ import { render } from 'solid-js/web';
 import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
 import { applyNotificationMessage } from '../../shared/state/notifications';
+import type { InboxNotification } from '../../shared/api/notifications';
 import { flush } from '../../test/flush';
 import NeedsYou from './NeedsYou';
 import { waitedFor, wordsOf } from './words';
@@ -49,6 +50,11 @@ function mount(served: Served = {}, at = '/projects/p1/needs-you') {
       ];
       return json({ data, total: data.length, page: 1, per_page: 200 });
     }
+    if (url.includes('/notifications?')) {
+      const project = new URL(url, 'http://x').searchParams.get('project');
+      const mine = notices.filter((n) => n.project_id === project);
+      return json({ notifications: mine, open: mine.length });
+    }
     if (url.endsWith('/projects/p1/autonomy')) return json({ level: 'L3', domains: [], budgets: { waiting_max: served.waitingMax ?? null } });
     if (url.includes('/projects/p1/change-sets')) return json(served.decided ?? []);
     if (url.endsWith('/change-sets/cs1')) return json(changeSet());
@@ -83,13 +89,11 @@ function mount(served: Served = {}, at = '/projects/p1/needs-you') {
   return { container, history };
 }
 
-const IDS = ['w1', 'w2', 'w3', 'w4'];
 type Kind = 'decision' | 'review' | 'run_failed' | 'change_set';
-let opened = 0;
+let notices: InboxNotification[] = [];
+/** A wait the project's notifications answer with; the page reads them for its own project. */
 const wait = (id: string, kind: Kind, over: { project?: string; at?: string; item?: string | null } = {}) => {
-  opened += 1;
-  applyNotificationMessage({
-    type: 'opened',
+  notices.push({
     id,
     project_id: over.project ?? 'p1',
     kind: kind as never,
@@ -100,17 +104,15 @@ const wait = (id: string, kind: Kind, over: { project?: string; at?: string; ite
     title: 'A run is asking a question',
     cause: 'Implementer',
     created_at: over.at ?? minutesAgo(5),
-    open: opened,
-  });
+  } as unknown as InboxNotification);
 };
 
 beforeEach(() => {
-  opened = 0;
+  notices = [];
 });
 
 afterEach(() => {
   while (disposers.length) disposers.pop()!();
-  for (const id of IDS) applyNotificationMessage({ type: 'closed', id, key: id, open: 0 });
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   document.body.innerHTML = '';
@@ -125,6 +127,28 @@ describe('Needs you', () => {
     expect(container.querySelector('h1')!.textContent).toBe('Needs you');
     expect(container.querySelector('[data-testid="needs-you-empty"]')!.textContent).toBe('Nothing waits for you in this project.');
     expect(container.querySelector('[data-testid="needs-you-count"]')).toBeNull();
+  });
+
+  it("asks the board for this project's open notices, not the newest of every project", async () => {
+    mount();
+    await settle();
+    const asked = fetched.find((u) => u.includes('/notifications?'))!;
+    const query = new URL(asked, 'http://x').searchParams;
+    expect([query.get('state'), query.get('project'), query.get('limit')]).toEqual(['open', 'p1', '500']);
+  });
+
+  it('reads the list again when the inbox changes', async () => {
+    const { container } = mount();
+    await settle();
+    expect(rows(container)).toHaveLength(0);
+    wait('w1', 'decision');
+    applyNotificationMessage({
+      type: 'opened', id: 'w1', project_id: 'p1', kind: 'decision', level: 'needs_you', key: 'decision:w1',
+      item_id: 'item-a', request_id: 'req-w1', title: 'A run is asking a question', cause: 'Implementer', created_at: minutesAgo(1), open: 1,
+    } as never);
+    await settle();
+    expect(rows(container)).toHaveLength(1);
+    applyNotificationMessage({ type: 'closed', id: 'w1', key: 'decision:w1', open: 0 });
   });
 
   it('lists the waits of this project oldest first, each with its task, kind in words, time waited and one action', async () => {

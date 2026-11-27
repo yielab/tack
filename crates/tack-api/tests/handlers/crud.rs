@@ -904,6 +904,20 @@ async fn create_and_list_roles() {
     .await;
     assert_eq!(roles.as_array().unwrap().len(), 1);
     assert_eq!(roles[0]["name"], "Backend Dev");
+
+    let uri = format!("/api/projects/{pid}/roles");
+    let (status, made) = common::send(&app, "POST", &uri, json!({"name": "Dev Team"}), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    assert_eq!(made["key"], "dev-team");
+    let (status, _) = common::send(
+        &app,
+        "POST",
+        &uri,
+        json!({"name": "Other", "key": "dev-team"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }
 
 #[tokio::test]
@@ -2036,6 +2050,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
             project.id,
             &initial_status,
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Fix the thing".into(),
@@ -2220,6 +2235,7 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
             project.id,
             &initial_status,
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Fix the thing".into(),
@@ -2328,6 +2344,7 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
             project.id,
             &initial_status,
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Fix the thing".into(),
@@ -2475,6 +2492,7 @@ async fn pull_request_poll_state_and_item(gh_uri: String) -> (tack_api::AppState
             project.id,
             &project.workflow.initial_status().unwrap(),
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Fix the thing".into(),

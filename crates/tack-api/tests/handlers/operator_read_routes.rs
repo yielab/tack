@@ -56,6 +56,7 @@ async fn setup() -> (axum::Router, Repository, String) {
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Prove the new read routes".into(),

@@ -39,11 +39,6 @@ const STATUS_TONE = {
   closed: 'neutral',
 } as const;
 
-/** What the factory figures say about each sprint's decisions; the API serves a row only for a sprint that had some. */
-type FactoryByDecision = Awaited<ReturnType<typeof api.metrics.factoryMetrics>> & {
-  human_minutes_by_sprint?: { sprint_id: string; minutes: { median_minutes?: number | null } }[];
-};
-
 /** The median minutes a decision took, in words: "14 min", or "under 1 min" for a quick one. */
 const minutesWords = (minutes: number) => (minutes < 1 ? 'under 1 min' : `${Math.round(minutes)} min`);
 
@@ -133,8 +128,8 @@ export default function Sprints() {
       const state = runOf(item)?.state;
       return state === 'needs' || state === 'review' || state === 'failed';
     }).length;
-    const median = (factory() as FactoryByDecision | null | undefined)?.human_minutes_by_sprint
-      ?.find((row) => row.sprint_id === sprintId)?.minutes.median_minutes;
+    const median = factory()?.human_minutes_by_sprint
+      .find((row) => row.sprint_id === sprintId)?.minutes.median_minutes;
     return { waiting, median: median ?? null };
   };
 

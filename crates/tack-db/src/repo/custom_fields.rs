@@ -1,4 +1,5 @@
 use crate::Repository;
+use crate::repo::project_file::{key_conflict, key_for};
 use crate::{StoreError, decode};
 use sqlx::{FromRow, SqliteConnection};
 use tack_core::models::*;
@@ -9,6 +10,7 @@ use uuid::Uuid;
 struct CustomFieldRow {
     id: String,
     project_id: Option<String>,
+    key: String,
     name: String,
     field_type: String,
     description: Option<String>,
@@ -26,6 +28,7 @@ impl CustomFieldRow {
         Ok(CustomFieldDefinition {
             id: decode::uuid(TABLE, "id", &self.id)?,
             project_id: decode::optional_uuid(TABLE, "project_id", self.project_id.as_deref())?,
+            key: self.key,
             name: self.name,
             field_type: decode::variant(TABLE, "field_type", &self.field_type)?,
             description: self.description,
@@ -105,14 +108,23 @@ pub(crate) async fn create_field_in(
         .map(|opts| decode::to_json(&opts))
         .transpose()?;
     let validation = data.validation.map(|v| v.to_string());
+    let key = key_for(
+        conn,
+        "custom_field_definitions",
+        Some(&project_id.to_string()),
+        data.key.as_deref(),
+        &data.name,
+    )
+    .await?;
 
     sqlx::query(
         "INSERT INTO custom_field_definitions
-         (id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         (id, project_id, key, name, field_type, description, required, default_value, options, validation, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(id.to_string())
     .bind(project_id.to_string())
+    .bind(&key)
     .bind(&data.name)
     .bind(field_type_str)
     .bind(&data.description)
@@ -123,7 +135,8 @@ pub(crate) async fn create_field_in(
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .map_err(key_conflict)?;
 
     get_field_in(conn, id).await
 }
@@ -140,7 +153,7 @@ async fn get_field_in(
     id: Uuid,
 ) -> Result<CustomFieldDefinition, StoreError> {
     let row = sqlx::query_as::<_, CustomFieldRow>(
-        "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
+        "SELECT id, project_id, key, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
          WHERE id = ?"
     )
@@ -159,7 +172,7 @@ pub async fn list_fields_for_project(
     project_id: Uuid,
 ) -> Result<Vec<CustomFieldDefinition>, StoreError> {
     let rows = sqlx::query_as::<_, CustomFieldRow>(
-        "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
+        "SELECT id, project_id, key, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
          WHERE project_id = ?
          ORDER BY name ASC"

@@ -91,6 +91,7 @@ pub(crate) async fn setup_with_bus(
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Review the merge-readiness pack".into(),

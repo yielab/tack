@@ -38,6 +38,7 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
             project.id,
             &status,
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Scheduling fixture item".into(),
@@ -60,6 +61,7 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-1",
             name: "profile-1",
             instructions: "work safely",

@@ -635,7 +635,7 @@ const Board: Component = () => {
   const waitingOf = (item: Item): WaitingReason | null => autoStart.waiting(item.id);
   // The project's limit on what waits for a person; a project whose settings cannot be read has none to show.
   const [autonomy] = createResource(projectId, (id) => (id ? api.autonomy.get(id).catch(() => null) : null));
-  const waitingMax = (): number | null => (autonomy()?.budgets as { waiting_max?: number | null } | undefined)?.waiting_max ?? null;
+  const waitingMax = (): number | null => autonomy()?.budgets?.waiting_max ?? null;
 
   const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
   const toggleRunFilter = (filter: RunFilter) =>

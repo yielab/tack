@@ -176,6 +176,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("112_drop_rate_card", &MIGRATION_112[..]),
         ordinary("113_default_expiry", &MIGRATION_113[..]),
         ordinary("114_reviewer_verdicts", &MIGRATION_114[..]),
+        ordinary("115_keys", &MIGRATION_115[..]),
         ordinary("116_waiting_max", &MIGRATION_116[..]),
     ]
 }
@@ -189,6 +190,7 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     verify_applied_migration_invariant(pool, &migrations).await?;
     create_pre_upgrade_backup_if_needed(pool, &migrations).await?;
     apply_migrations(pool, &migrations).await?;
+    crate::repo::project_file::fill_missing_keys(pool).await?;
     info!("All migrations applied");
     Ok(())
 }
@@ -2356,6 +2358,24 @@ const MIGRATION_114: [&str; 2] = [
         SET instructions = 'Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first. End the result with one line, `Verdict: merge` when the work meets the criteria, `Verdict: reject` when it does not, or `Verdict: review` when a person has to decide.'
       WHERE builtin = 1 AND kind = 'reviewer'
         AND instructions = 'Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first.'",
+];
+
+// 115: a role, a field, a sprint, a profile and an item each have a key, the name a project folder and the
+// board use to say they mean the same row. The column starts empty; `fill_missing_keys` writes the keys on
+// start, because SQLite cannot apply the rule that makes one. An empty key is no key, so any number of rows
+// may have it, and a hidden item (a thread's or a trigger's) keeps it. A profile belongs to the board, not
+// to a project, so its key is unique on its own.
+const MIGRATION_115: [&str; 10] = [
+    "ALTER TABLE roles ADD COLUMN key TEXT NOT NULL DEFAULT ''",
+    "CREATE UNIQUE INDEX idx_roles_key ON roles(project_id, key) WHERE key <> ''",
+    "ALTER TABLE custom_field_definitions ADD COLUMN key TEXT NOT NULL DEFAULT ''",
+    "CREATE UNIQUE INDEX idx_custom_field_definitions_key ON custom_field_definitions(project_id, key) WHERE key <> ''",
+    "ALTER TABLE sprints ADD COLUMN key TEXT NOT NULL DEFAULT ''",
+    "CREATE UNIQUE INDEX idx_sprints_key ON sprints(project_id, key) WHERE key <> ''",
+    "ALTER TABLE agent_profiles ADD COLUMN key TEXT NOT NULL DEFAULT ''",
+    "CREATE UNIQUE INDEX idx_agent_profiles_key ON agent_profiles(key) WHERE key <> ''",
+    "ALTER TABLE items ADD COLUMN key TEXT NOT NULL DEFAULT ''",
+    "CREATE UNIQUE INDEX idx_items_key ON items(project_id, key) WHERE key <> ''",
 ];
 
 // 116: a project may limit how many things wait for a person (`project_budgets.waiting_max`), beside the

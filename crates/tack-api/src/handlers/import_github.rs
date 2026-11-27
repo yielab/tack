@@ -224,6 +224,7 @@ pub async fn import_github(
             let tags: Vec<String> = issue.labels.iter().map(|l| l.name.clone()).collect();
 
             let data = CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: format!("[#{num}] {title}", num = issue.number, title = issue.title),

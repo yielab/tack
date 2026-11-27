@@ -23,7 +23,7 @@ use tack_core::models::{
     ItemSource, Project, ProjectType, UpdateCustomField, UpdateProject,
 };
 use tack_core::outline::bundle::{
-    Board, Plan, ProfileRow, SectionSummary, Upsert, check, workflow_of,
+    Board, Named, Plan, ProfileRow, SectionSummary, Upsert, check, workflow_of,
 };
 use tack_core::outline::missing::{Missing, missing};
 use tack_core::outline::{
@@ -505,8 +505,8 @@ pub(crate) struct OwnedBoard {
     workflow: tack_core::workflow::WorkflowConfig,
     fields: Vec<tack_core::models::CustomFieldDefinition>,
     profiles: Vec<ProfileRow>,
-    roles: Vec<(Uuid, String)>,
-    sprints: Vec<(Uuid, String)>,
+    roles: Vec<Named>,
+    sprints: Vec<Named>,
     fleets: Vec<(String, String)>,
     level: Level,
     auto_start: bool,
@@ -539,14 +539,22 @@ pub(crate) async fn board_of(state: &AppState, project: &Project) -> ApiResult<O
         .list_roles(project.id)
         .await?
         .into_iter()
-        .map(|r| (r.id, r.name))
+        .map(|r| Named {
+            id: r.id.to_string(),
+            key: r.key,
+            name: r.name,
+        })
         .collect();
     let sprints = state
         .repo
         .list_sprints(project.id)
         .await?
         .into_iter()
-        .map(|s| (s.id, s.name))
+        .map(|s| Named {
+            id: s.id.to_string(),
+            key: s.key,
+            name: s.name,
+        })
         .collect();
     let profiles = state.repo.list_agent_profile_rows().await?;
     let fleets = state.repo.fleet_names().await?;
@@ -611,13 +619,15 @@ fn profiles_of(
         .collect();
     let mut written = Vec::with_capacity(rows.len());
     for row in rows {
-        let (id, value, old) = match row {
-            Upsert::Create(value) => (format!("ap_{}", Uuid::new_v4()), value, None),
-            Upsert::Update { id, value } => (
-                id.clone(),
-                value,
-                board.profiles.iter().find(|p| &p.id == id),
-            ),
+        let (id, key, value, old) = match row {
+            Upsert::Create { key, value } => {
+                (format!("ap_{}", Uuid::new_v4()), key.clone(), value, None)
+            }
+            Upsert::Update { id, value } => {
+                let old = board.profiles.iter().find(|p| &p.id == id);
+                let key = old.map(|o| o.key.clone()).unwrap_or_default();
+                (id.clone(), key, value, old)
+            }
         };
         let empty = |v: &Value| v.as_object().is_some_and(serde_json::Map::is_empty);
         let kind = value
@@ -628,6 +638,7 @@ fn profiles_of(
             .unwrap_or_else(|| "custom".into());
         let profile = ProfileRow {
             id: id.clone(),
+            key,
             name: value.name.trim().to_string(),
             kind: kind.clone(),
             instructions: match old {
@@ -783,7 +794,8 @@ fn to_write(
     let mut fields = Vec::with_capacity(plan.fields.len());
     for row in &plan.fields {
         fields.push(match row {
-            Upsert::Create(f) => FieldWrite::Create(CreateCustomField {
+            Upsert::Create { key, value: f } => FieldWrite::Create(CreateCustomField {
+                key: Some(key.clone()),
                 name: f.name.trim().to_string(),
                 field_type: parsed::<CustomFieldType>(&f.field_type)?,
                 description: f.description.clone(),
@@ -795,7 +807,7 @@ fn to_write(
             Upsert::Update { id, value } => FieldWrite::Update {
                 id: uuid_of(id)?,
                 change: UpdateCustomField {
-                    name: None,
+                    name: Some(value.name.trim().to_string()),
                     description: value.description.clone(),
                     required: Some(value.required),
                     default_value: value.default.clone(),
@@ -810,13 +822,14 @@ fn to_write(
 
     let mut roles = Vec::with_capacity(plan.roles.len());
     for row in &plan.roles {
-        let (value, existing) = match row {
-            Upsert::Create(value) => (value, None),
-            Upsert::Update { id, value } => (value, Some(uuid_of(id)?)),
+        let (key, value, existing) = match row {
+            Upsert::Create { key, value } => (Some(key.clone()), value, None),
+            Upsert::Update { id, value } => (None, value, Some(uuid_of(id)?)),
         };
         roles.push(RoleWrite {
             existing,
             role: CreateRole {
+                key,
                 name: value.name.trim().to_string(),
                 color: value.color.clone(),
                 icon: value.icon.clone(),
@@ -831,13 +844,14 @@ fn to_write(
 
     let mut sprints = Vec::with_capacity(plan.sprints.len());
     for row in &plan.sprints {
-        let (value, existing) = match row {
-            Upsert::Create(value) => (value, None),
-            Upsert::Update { id, value } => (value, Some(uuid_of(id)?)),
+        let (key, value, existing) = match row {
+            Upsert::Create { key, value } => (Some(key.clone()), value, None),
+            Upsert::Update { id, value } => (None, value, Some(uuid_of(id)?)),
         };
         sprints.push(SprintWrite {
             existing,
             sprint: CreateSprint {
+                key,
                 name: value.name.trim().to_string(),
                 goal: value.goal.clone(),
                 start_date: value.start.as_deref().and_then(parse_due_date),
@@ -882,15 +896,15 @@ fn to_write(
             board
                 .roles
                 .iter()
-                .map(|(id, n)| (n.trim().to_string(), *id))
-                .collect(),
+                .map(|r| Ok((r.name.trim().to_string(), uuid_of(&r.id)?)))
+                .collect::<ApiResult<_>>()?,
         ),
         sprint_ids: names(
             board
                 .sprints
                 .iter()
-                .map(|(id, n)| (n.trim().to_string(), *id))
-                .collect(),
+                .map(|s| Ok((s.name.trim().to_string(), uuid_of(&s.id)?)))
+                .collect::<ApiResult<_>>()?,
         ),
     })
 }

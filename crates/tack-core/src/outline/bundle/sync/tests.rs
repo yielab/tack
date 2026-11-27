@@ -17,6 +17,7 @@ fn roles(list: &[(&str, &str)]) -> Outline {
         roles: list
             .iter()
             .map(|(name, color)| BundleRole {
+                key: None,
                 name: (*name).into(),
                 color: Some((*color).into()),
                 icon: None,
@@ -344,6 +345,7 @@ fn a_file_that_renames_edits_and_drops_keeps_what_the_board_changed() {
     let mut board = base.clone();
     board.roles[0].color = Some("#000000".into());
     board.roles.push(BundleRole {
+        key: None,
         name: "Ops".into(),
         color: None,
         icon: None,
@@ -356,7 +358,8 @@ fn a_file_that_renames_edits_and_drops_keeps_what_the_board_changed() {
         methods: Vec::new(),
     });
     let mut file = base.clone();
-    file.roles[0].icon = Some("pen".into());
+    file.roles[0].key = Some("contenido".into());
+    file.roles[0].name = "Content".into();
     file.sprints.truncate(1);
     file.automation.as_mut().expect("automation").default_branch = Some("trunk".into());
     file.project.as_mut().expect("project").project_type = Some("software".into());
@@ -373,7 +376,7 @@ fn a_file_that_renames_edits_and_drops_keeps_what_the_board_changed() {
         shown(&merged),
         [
             "keep:project:type:the board's".to_string(),
-            "update:contenido:icon:".to_string(),
+            "update:contenido:name:".to_string(),
             format!("keep:ops::{CREATED}"),
             "remove:semana-43::".to_string(),
             "update:automation:default_branch:".to_string(),
@@ -382,7 +385,7 @@ fn a_file_that_renames_edits_and_drops_keeps_what_the_board_changed() {
     assert!(merged.conflicts.is_empty());
     let out = &merged.outline;
     assert_eq!(out.roles[0].color.as_deref(), Some("#000000"));
-    assert_eq!(out.roles[0].icon.as_deref(), Some("pen"));
+    assert_eq!(out.roles[0].name, "Content");
     assert_eq!(out.roles.last().map(|r| r.name.as_str()), Some("Ops"));
     assert_eq!(out.sprints.len(), 1);
     assert_eq!(

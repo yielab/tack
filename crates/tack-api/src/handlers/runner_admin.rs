@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_core::outline::bundle::PROFILE_KINDS;
+use tack_core::outline::key::is_key;
 use tack_db::queries::{agent_fleets, agent_profiles};
 use tack_db::repo::execution::{
     AddFleetMemberOutcome, EnrollmentToken, NewAgentProfile, NewRunner,
@@ -74,6 +75,9 @@ pub struct CreateFleet {
 }
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProfile {
+    /// The key the profile gets; `key_of` its name, made unique, when absent.
+    #[serde(default)]
+    pub key: Option<String>,
     pub name: String,
     pub instructions: String,
     #[serde(default = "empty")]
@@ -230,6 +234,7 @@ pub struct CreateProfileResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AgentProfileSummary {
     pub agent_profile_id: String,
+    pub key: String,
     pub name: String,
     pub instructions: String,
     pub tool_policy: Value,
@@ -953,6 +958,16 @@ pub async fn create_profile(
     )
     .await?;
     check_limits(&input.limits)?;
+    if let Some(key) = input.key.as_deref().filter(|k| !is_key(k)) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &format!(
+                "key \"{key}\" must be 1-64 lowercase letters, digits or dashes, with no dash at either end"
+            ),
+            json!({"field": "key"}),
+        ));
+    }
     let id = format!("ap_{}", Uuid::new_v4());
     let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|failure| {
         tracing::warn!(error = %failure, "tool_policy cannot be serialized");
@@ -991,6 +1006,7 @@ pub async fn create_profile(
         .create_agent_profile_placed(
             NewAgentProfile {
                 id: &id,
+                key: input.key.as_deref(),
                 name: &input.name,
                 instructions: &input.instructions,
                 tool_policy: &tool_policy,
@@ -1011,10 +1027,14 @@ pub async fn create_profile(
             kind: kind.unwrap_or("custom").to_owned(),
             warnings,
         })),
-        Err(StoreError::Conflict(_)) => Err(error(
+        Err(StoreError::Conflict(reason)) => Err(error(
             StatusCode::CONFLICT,
             StableErrorCode::Conflict,
-            "Agent profile name already exists",
+            if reason == "profile_key_taken" {
+                "Agent profile key already exists"
+            } else {
+                "Agent profile name already exists"
+            },
             json!({}),
         )),
         Err(_) => Err(error(
@@ -1085,6 +1105,7 @@ fn profile_from_row(
         .collect();
     Ok(AgentProfileSummary {
         agent_profile_id: r.id,
+        key: r.key,
         name: r.name,
         instructions: r.instructions,
         tool_policy,

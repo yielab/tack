@@ -673,6 +673,12 @@ Owned by the frontend session; this session does not edit it. Two parts:
   the project id; `put_project_budgets_in` joined the twins so the limits land in the same
   transaction; `upsert_brief_in` keeps its name. The autonomy overlay is read before the
   transaction opens.
+- **F** (`e1d43b58`): `OutlineItem.key` landed with F (task I uses it). An item's `key:` used to be
+  read as its `ref`; it is now the item's key, so a hand-written outline that used `key:` as a
+  local name must say `ref:`. **Z writes this in the changelog and in both guides' `ref` rows**
+  (`import-export.md`, `developer/project-file.md`). The integrator added two refusals: a folder
+  without `project.yaml` (it would read as a project with nothing in it, and the plan would
+  propose removing everything), and a `key` or `description` line in an item's YAML.
 - **N** (`a8a1c441`): `RunStarted` under a new request closes the old `review` through the
   reconcile, within about 30 seconds. The integrator removed the agent's seven-day window on
   waiting reviews: a run waits however old it is. `waiting_max: 0` pauses auto-start for good. The

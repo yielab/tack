@@ -93,6 +93,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
             project.id,
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "I".into(),
@@ -116,6 +117,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-f2",
             name: "F2 Profile",
             instructions: "work safely",
@@ -334,6 +336,7 @@ async fn ready_running_attempt(
     tack_test_support::seed::create_agent_profile(
         repo,
         NewAgentProfile {
+            key: None,
             id: &format!("profile-{label}"),
             name: "F2 Profile",
             instructions: "work safely",

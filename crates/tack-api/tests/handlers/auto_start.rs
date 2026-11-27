@@ -79,6 +79,7 @@ async fn board() -> Board {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-1",
             name: "Writer",
             instructions: "work safely",
@@ -118,6 +119,7 @@ impl Board {
             .create_role(
                 self.project,
                 CreateRole {
+                    key: None,
                     name: format!("Role of {title}"),
                     color: None,
                     icon: None,
