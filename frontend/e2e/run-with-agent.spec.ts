@@ -13,8 +13,7 @@ import {
   createAgentProfile,
   setProjectDefaultModel,
   enrollRunner,
-  waitForApp,
-} from './helpers';
+  waitForApp, openWhoDoesIt, openRunOptions } from './helpers';
 
 // "Run with agent" — item/sprint execution UI, built for zero hand-typed
 // identifiers wherever the API can supply a real one instead. This feature
@@ -78,7 +77,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   await expect(trigger).toBeVisible();
   await trigger.click();
 
-  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(dialog).toBeVisible();
 
   // Nothing is filled in yet — there is no Run button at all, one sentence
@@ -87,6 +86,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   await expect(dialog.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('link', { name: "Choose where this project's code is →" })).toBeVisible();
   await expect(dialog.getByText('Select where this runs.')).toBeVisible();
+  await openWhoDoesIt(dialog);
   await expect(dialog.getByRole('radio', { name: 'Implementer', checked: true })).toBeVisible();
   await expect(dialog.getByText('Choose a profile.')).toHaveCount(0);
 
@@ -113,7 +113,7 @@ test('Board: the run dialog stays open while the board takes in other changes', 
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /^Run with agent:/ }).first().click();
-  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(dialog).toBeVisible();
 
   const other = `RWA live other ${Date.now()}`;
@@ -161,15 +161,16 @@ test('item-detail: submitting a run creates the request and it appears in the Ru
   await expect(drawer).toBeVisible();
 
   await drawer.getByRole('button', { name: 'Run with agent' }).click();
-  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const modal = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(modal).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
+  await openWhoDoesIt(modal);
   await modal.getByRole('radio', { name: profileName, exact: true }).check();
 
   // An explicit model choice, typed by hand: the fixture's codex needs a model
   // named and lists none, so "Another model…" is the way to name one.
-  await modal.getByText('Advanced for this run').click();
+  await openRunOptions(modal);
   await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
   await modal.getByLabel('Model name').fill('opaque/model-alpha');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
@@ -199,7 +200,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ru
 
   // The queued run's card offers the same dialog to send it somewhere else.
   await drawer.getByRole('button', { name: 'Run on another computer' }).click();
-  await expect(page.getByRole('dialog', { name: /^Run with agent:/ })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Run with agent', exact: true })).toBeVisible();
 });
 
 test('the run form submits the project\'s configured model default, byte for byte, with zero hand-typed identifiers', async ({
@@ -237,7 +238,7 @@ test('the run form submits the project\'s configured model default, byte for byt
 
   const drawer = page.getByRole('dialog');
   await drawer.getByRole('button', { name: 'Run with agent' }).click();
-  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const modal = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(modal).toBeVisible();
 
   // The project's real model default is shown and selected without
@@ -246,10 +247,11 @@ test('the run form submits the project\'s configured model default, byte for byt
   // runners mean the picker shows (`selectTargetIfPickerShows`'s own
   // comment); either way `selector_kind`/`selector_id` below prove it
   // resolved to this test's own runner, by name, never a free-typed id.
-  await modal.getByText('Advanced for this run').click();
+  await openRunOptions(modal);
   await expect(modal.getByText('Project default — opaque/model-alpha')).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
+  await openWhoDoesIt(modal);
   await modal.getByRole('radio', { name: profileName, exact: true }).check();
 
   await modal.getByRole('button', { name: 'Start run', exact: true }).click();
@@ -277,7 +279,7 @@ test('Sprint: the per-item "Run with agent" trigger is present and opens the sam
   await expect(trigger).toBeVisible();
   await trigger.click();
 
-  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(dialog).toBeVisible();
   // Opening the per-item trigger must not also open the item-detail drawer —
   // its click handler stops propagation — so the sprint board itself, not a
@@ -306,16 +308,17 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     await page.getByRole('dialog').getByRole('button', { name: 'Run with agent' }).click();
-    const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+    const modal = page.getByRole('dialog', { name: 'Run with agent', exact: true });
     await expect(modal).toBeVisible();
     await selectTargetIfPickerShows(modal, runnerName);
+    await openWhoDoesIt(modal);
     await modal.getByRole('radio', { name: profileName, exact: true }).check();
     return modal;
   };
 
   let modal = await openModal();
   await expect(modal.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
-  // The row that replaces Run says why, and "Advanced for this run" opens on the model.
+  // The row that replaces Run says why, and "Options" opens on the model.
   await expect(modal.locator('[data-prerequisite="missing"]')).toContainText('needs a model');
   await modal.getByRole('link', { name: 'Set a default model for this project' }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings\\?tab=automation`));
@@ -349,7 +352,8 @@ test('Board: the run dialog opens with the role\'s profile on an item with a rol
   await waitForApp(page);
   await page.getByRole('dialog').getByRole('button', { name: 'Run with agent' }).click();
 
-  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const modal = page.getByRole('dialog', { name: 'Run with agent', exact: true });
+  await openWhoDoesIt(modal);
   await expect(modal.getByRole('radio', { name: profileName, exact: true })).toBeChecked();
   await expect(modal.getByTestId('profile-source')).toHaveText('Chosen by the role Content');
 });

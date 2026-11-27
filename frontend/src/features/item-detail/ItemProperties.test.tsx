@@ -118,10 +118,10 @@ describe('ItemProperties', () => {
     const onPatch = vi.fn();
     const page = mount(onPatch, {}, true);
     expect([...page.container.querySelectorAll('dt')].map((t) => t.textContent?.trim())[0]).toBe('Status');
-    expect(page.container.querySelector('button[aria-label="Change status"]')).not.toBeNull();
+    expect(page.container.querySelector('button[aria-label$="Change status"]')).not.toBeNull();
     page.dispose();
     const drawer = mount(onPatch, {}, false);
-    expect(drawer.container.querySelector('button[aria-label="Change status"]')).toBeNull();
+    expect(drawer.container.querySelector('button[aria-label$="Change status"]')).toBeNull();
     drawer.dispose();
   });
 

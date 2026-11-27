@@ -51,7 +51,7 @@ test('Run dialog: the footer is the last row and no field shows beneath it', asy
   await waitForApp(page);
 
   await page.getByRole('button', { name: /^Run with agent:/ }).first().click();
-  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(dialog).toBeVisible();
   // Open every section so the form is taller than the window and has to scroll.
   for (const summary of await dialog.locator('details > summary').all()) {

@@ -201,7 +201,7 @@ describe('ItemBody', () => {
     // The project's list is older than the item, and still says why: the item's own summary wins.
     projectItems = [{ ...ITEM, brief_summary: itemSummary }];
     const view = await mount('page');
-    expect(view.container.querySelector('[data-testid="not-ready"]')?.textContent).toBe('No Done when and no check a machine runs');
+    expect(view.container.querySelector('[data-testid="not-ready"]')?.textContent).toBe('Not ready: No Done when and no check a machine runs');
 
     itemSummary = { done_when: true, checks: 0, risk: null, not_ready: null };
     const tick = view.container.querySelector('input[aria-label="Done: Works"]') as HTMLInputElement;
@@ -213,8 +213,8 @@ describe('ItemBody', () => {
     view.dispose();
   });
 
-  it('says Not ready in the next step when the project list sends why, as given, and nothing when it does not', async () => {
-    projectItems = [{ ...ITEM, brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'Not ready: no Done when' } }];
+  it('says Not ready in the next step with the reason the project list sends, and nothing when it sends none', async () => {
+    projectItems = [{ ...ITEM, brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'no Done when' } }];
     const ready = await mount('page');
     expect(ready.container.querySelector('[data-testid="now-panel"] [data-testid="not-ready"]')?.textContent).toBe('Not ready: no Done when');
     ready.dispose();

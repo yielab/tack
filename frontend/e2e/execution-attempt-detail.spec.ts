@@ -143,16 +143,17 @@ test.describe('Runs — real attempts/decisions/artifacts against the production
 
     // The real decision the runner just raised — found through the list,
     // no id typed anywhere.
-    await expect(drawer3.getByText('e2e: allow this action?')).toBeVisible();
-    await expect(drawer3.getByText('Pending')).toBeVisible();
+    await expect(drawer3.getByText('e2e: allow this action?').first()).toBeVisible();
+    await expect(drawer3.getByTestId('decision-needs-you').first()).toBeVisible();
 
     // Resolve with NO decision token entered — the real, fail-closed
     // default: "decisions cannot be resolved on this deployment" is a real,
     // expected operator-facing state, not an error. Toasts render via a
     // `<Portal>` to `document.body`, outside the dialog subtree — asserted
     // page-wide, not `drawer3`-scoped.
-    await drawer3.getByText('Allow once', { exact: true }).click();
-    await drawer3.getByRole('button', { name: 'Send answer' }).click();
+    // The question waits in the Work panel and in the run's own section: answer the first.
+    await drawer3.getByText('Allow once', { exact: true }).first().click();
+    await drawer3.getByRole('button', { name: 'Send answer' }).first().click();
     await expect(
       page.getByText(/not configured decision resolution|token entered above is wrong/),
     ).toBeVisible();

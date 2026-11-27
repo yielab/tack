@@ -123,7 +123,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
           <Show when={notReady()}>
             {(why) => (
               <p data-testid="not-ready" class="text-small font-semibold" style={{ color: 'var(--run-needs-ink)' }}>
-                {why()}
+                Not ready: {why()}
               </p>
             )}
           </Show>

@@ -1627,7 +1627,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
   });
 
   it('puts the reason a task is not ready in one amber line that never blocks the run, and says nothing without one', async () => {
-    mount({}, { runners: [RUNNER], fleets: [], itemExtra: { brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'Not ready: no Done when' } } });
+    mount({}, { runners: [RUNNER], fleets: [], itemExtra: { brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'no Done when' } } });
     await flush();
     await flush();
     expect(document.querySelector('[data-testid="run-not-ready"]')!.textContent).toBe('Not ready: no Done when');

@@ -14,8 +14,7 @@ import {
   enrollRunner,
   claimOnceWithLease,
   waitForApp,
-  setPaletteAndTheme,
-} from './helpers';
+  setPaletteAndTheme, openWhoDoesIt, openRunOptions } from './helpers';
 
 // Accessibility scans (WCAG 2.0/2.1/2.2 A & AA) on the key surfaces. axe-core finds
 // the machine-detectable ~40% of issues: contrast, missing labels, ARIA misuse,
@@ -465,14 +464,14 @@ test('Board card "Run with agent" modal has no accessibility violations', async 
   await page.goto(`/projects/${projectId}/board`);
   await waitForApp(page);
   await page.getByRole('button', { name: /^Run with agent:/ }).first().click();
-  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(dialog).toBeVisible();
 
   let violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 
   // The folded-away part is where the fields are: scan it open too.
-  await dialog.getByText('Advanced for this run').click();
+  await openRunOptions(dialog);
   await expect(dialog.getByLabel('Token limit')).toBeVisible();
   violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
@@ -499,7 +498,7 @@ test('item detail Runs (with a real request) has no accessibility violations', a
   const drawer = page.getByRole('dialog');
   await drawer.getByRole('button', { name: 'Run with agent' }).click();
 
-  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const modal = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   // "Where it runs" disappears entirely whenever exactly one runner is
   // active and no fleet exists (`RunWithAgentModal.tsx`'s
   // `hideTargetPicker`) — select this test's own runner explicitly only
@@ -509,10 +508,11 @@ test('item detail Runs (with a real request) has no accessibility violations', a
   if ((await picker.count()) > 0) {
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
+  await openWhoDoesIt(modal);
   await modal.getByRole('radio', { name: profileName, exact: true }).check();
   // The fixture's codex needs a model named and lists none, so the model is
   // typed by hand ("Other…"); without one the dialog has no Run button.
-  // With no model named, "Advanced for this run" is already open on the model.
+  // With no model named, "Options" is already open on the model.
   await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
   await modal.getByLabel('Model name').fill('opaque/model-a11y');
   await modal.getByRole('button', { name: 'Start run', exact: true }).click();

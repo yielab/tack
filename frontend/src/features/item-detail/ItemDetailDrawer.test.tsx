@@ -137,7 +137,7 @@ describe('ItemDetailDrawer', () => {
     expect(label.textContent).toBe('todo');
     expect(document.querySelector('[role="group"][aria-label="Status"]')).toBeNull();
     expect(document.querySelector('[role="menu"]')).toBeNull();
-    const change = document.querySelector<HTMLButtonElement>('button[aria-label="Change status"]')!;
+    const change = document.querySelector<HTMLButtonElement>('button[aria-label$="Change status"]')!;
     change.click();
     await flush();
     const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Status"] [role="menuitem"]')];
@@ -162,7 +162,7 @@ describe('ItemDetailDrawer', () => {
     container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
     await flush();
 
-    const change = document.querySelector<HTMLButtonElement>('button[aria-label="Change status"]')!;
+    const change = document.querySelector<HTMLButtonElement>('button[aria-label$="Change status"]')!;
     expect(change.getAttribute('aria-haspopup')).toBe('menu');
     expect(change.getAttribute('aria-expanded')).toBe('false');
     change.click();

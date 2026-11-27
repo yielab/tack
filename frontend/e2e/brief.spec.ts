@@ -21,6 +21,7 @@ test('a checklist line and a check for the agent survive a reload', async ({ pag
 
   // The machine check lives in the collapsed "For the agent" block.
   await drawer.getByRole('button', { name: /^For the agent/ }).click();
+  await drawer.getByRole('button', { name: 'Edit', exact: true }).click();
   await drawer.getByRole('button', { name: 'Add criterion' }).click();
   await drawer.getByTestId('criterion').getByLabel('Title').fill('Build passes');
   await drawer.getByLabel('Command').fill('cargo build');
@@ -35,6 +36,7 @@ test('a checklist line and a check for the agent survive a reload', async ({ pag
   await expect(drawer.getByLabel('Acceptance criterion')).toHaveValue('The copy is clear');
   // The block stays as it was left, in this browser: open again, no press needed.
   await expect(drawer.getByRole('button', { name: /^For the agent/ })).toHaveAttribute('aria-expanded', 'true');
-  await expect(drawer.getByTestId('criterion')).toHaveCount(1);
-  await expect(drawer.getByLabel('Command')).toHaveValue('cargo build');
+  // Read back, not in its form: the check is a row of the panel's table.
+  await expect(drawer.getByText('Build passes')).toBeVisible();
+  await expect(drawer.getByText('cargo build')).toBeVisible();
 });

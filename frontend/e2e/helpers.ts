@@ -39,7 +39,12 @@ export async function waitForApp(page: Page): Promise<void> {
 /** Opens the Runs fold of the task on screen (the drawer, or the page), unless it is already open. */
 export async function openRuns(scope: Page | Locator): Promise<void> {
   const header = scope.getByRole('button', { name: /^Runs/ }).first();
-  if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+  // The screen opens the Runs by itself when a run is created: a press that lands just after would shut them, so it
+  // presses until they stay open.
+  await expect(async () => {
+    if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'true', { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
 }
 
 /**
@@ -736,3 +741,15 @@ export const test = base.extend<{ executionToggleLock: void }>({
     }
   },
 });
+
+/** Opens "Who does it" behind the run dialog's Agent row (its Change…), where the agents and the profiles are radios. */
+export async function openWhoDoesIt(dialog: import('@playwright/test').Locator): Promise<void> {
+  const change = dialog.getByRole('button', { name: 'Change…', exact: true });
+  if ((await change.getAttribute('aria-expanded')) !== 'true') await change.click();
+}
+
+/** Opens the run dialog's **Options** fold (model, branch, tools, token limit) when it is shut. */
+export async function openRunOptions(dialog: import('@playwright/test').Locator): Promise<void> {
+  const options = dialog.getByTestId('run-options');
+  if (!(await options.evaluate((el) => (el as HTMLDetailsElement).open))) await options.locator(':scope > summary').click();
+}

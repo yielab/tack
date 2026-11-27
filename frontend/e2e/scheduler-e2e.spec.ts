@@ -6,8 +6,7 @@ import {
   enrollRunner,
   claimOnce,
   openRuns,
-  waitForApp,
-} from './helpers';
+  waitForApp, openWhoDoesIt } from './helpers';
 
 // Cross-surface E2E: a request made in the UI is claimed and the UI shows it
 // without a reload, and a model no runner attests is blocked in the form from
@@ -45,7 +44,7 @@ async function openRunModal(page: import('@playwright/test').Page, projectId: st
   const drawer = page.getByRole('dialog', { name: 'Item details' });
   await expect(drawer).toBeVisible();
   await drawer.getByRole('button', { name: 'Run with agent' }).click();
-  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const modal = page.getByRole('dialog', { name: 'Run with agent', exact: true });
   await expect(modal).toBeVisible();
   return { drawer, modal };
 }
@@ -67,6 +66,7 @@ async function fillExactRunnerTarget(
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
   // Profiles are pills; the project's default is preselected, so click this test's own.
+  await openWhoDoesIt(modal);
   await modal.getByRole('radio', { name: agentProfileName, exact: true }).check();
 }
 
@@ -87,7 +87,7 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
 
   // A model named by hand: the fixture's codex lists no models, so the
   // control offers only "Other…", and a typed name is what reaches the run.
-  // With no model named, "Advanced for this run" is already open on the model.
+  // With no model named, "Options" is already open on the model.
   await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
   await modal.getByLabel('Model name').fill(modelId);
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();

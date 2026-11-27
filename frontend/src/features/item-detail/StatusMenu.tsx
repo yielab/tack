@@ -16,7 +16,7 @@ const StatusMenu: Component<{ item: Item; onChange: (status: string) => void }> 
   const categoryOf = (status: string) => statuses().find((s) => s.name === status)?.category;
   return (
     <ItemMenu
-      buttonLabel="Change status"
+      buttonLabel={`Status: ${props.item.status}. Change status`}
       menuLabel="Status"
       align="left"
       label={

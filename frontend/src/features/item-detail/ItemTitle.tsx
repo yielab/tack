@@ -89,7 +89,7 @@ const ItemTitle: Component<ItemTitleProps> = (props) => {
         <div class="flex flex-wrap items-center gap-2" data-testid="item-chips">
           <StatusMenu item={props.item} onChange={(status) => props.onPatch({ status })} />
           <ItemMenu
-            buttonLabel="Change priority"
+            buttonLabel={`Priority: ${priorityLabel(props.item.priority)}. Change priority`}
             menuLabel="Priority"
             align="left"
             label={<span data-testid="item-priority">{priorityLabel(props.item.priority)}</span>}

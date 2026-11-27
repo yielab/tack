@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { waitForApp } from './helpers';
+import { waitForApp, openWhoDoesIt } from './helpers';
 
 // Records real hero/Agents-page assets — hero.gif, agents.png,
 // agents-flow.gif, attempt.png, two-machines.png — driving the actual "Run
@@ -243,7 +243,8 @@ test('hero gif', async ({ page }) => {
 
   // "Who does it": the agent first, then the connection check's own profile
   // (four built-in profiles sit beside it, and the dialog opens on the Implementer).
-  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  const dialog = page.getByRole('dialog', { name: 'Run with agent', exact: true });
+  await openWhoDoesIt(dialog);
   await dialog.getByRole('radiogroup', { name: 'Agent' }).getByRole('radio', { name: 'Claude Code' }).click();
   await page.waitForTimeout(500);
   await dialog.getByRole('radio', { name: PROFILE_NAME, exact: true }).check();

@@ -238,7 +238,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <Show when={props.notReady?.()}>
         {(text) => (
           <p data-testid="run-not-ready" class="rounded-md px-3 py-2 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}>
-            {text()}
+            Not ready: {text()}
           </p>
         )}
       </Show>
