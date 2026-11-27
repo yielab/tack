@@ -185,11 +185,11 @@ impl Repository {
     }
 }
 
-/// The body of [`Repository::upsert_item_brief`] over a transaction the caller opened with
-/// `BEGIN IMMEDIATE` and ends: a change set that makes an item with acceptance criteria calls
+/// The body of [`Repository::upsert_item_brief`] on a connection inside a transaction the caller
+/// opened with `BEGIN IMMEDIATE` and ends: a change set that makes an item with acceptance criteria calls
 /// it inside its own.
 pub(crate) async fn upsert_brief_in(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    conn: &mut sqlx::SqliteConnection,
     item_id: Uuid,
     input: UpsertItemBrief,
 ) -> Result<ItemBrief, StoreError> {
@@ -207,7 +207,7 @@ pub(crate) async fn upsert_brief_in(
              FROM item_briefs WHERE item_id = ?",
     )
     .bind(item_id.to_string())
-    .fetch_optional(&mut **tx)
+    .fetch_optional(&mut *conn)
     .await?;
     if let Some(row) = &stored {
         let same = row.get::<String, _>("acceptance") == acceptance
@@ -220,7 +220,7 @@ pub(crate) async fn upsert_brief_in(
                      FROM item_briefs WHERE item_id = ?",
                 )
                 .bind(item_id.to_string())
-                .fetch_one(&mut **tx)
+                .fetch_one(&mut *conn)
                 .await?;
             return brief_from_row(&row);
         }
@@ -243,14 +243,14 @@ pub(crate) async fn upsert_brief_in(
         .bind(&risk)
         .bind(&now)
         .bind(&now)
-        .execute(&mut **tx)
+        .execute(&mut *conn)
         .await?;
     let row = sqlx::query(
         "SELECT item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at
              FROM item_briefs WHERE item_id = ?",
     )
     .bind(item_id.to_string())
-    .fetch_one(&mut **tx)
+    .fetch_one(&mut *conn)
     .await?;
     let brief = brief_from_row(&row)?;
     // `brief.json` as the runner stages it: the brief as a JSON value, pretty-printed.
@@ -275,7 +275,7 @@ pub(crate) async fn upsert_brief_in(
         .bind(&risk)
         .bind(&brief_sha256)
         .bind(&now)
-        .execute(&mut **tx)
+        .execute(&mut *conn)
         .await?;
     Ok(brief)
 }

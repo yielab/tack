@@ -1,5 +1,7 @@
+use crate::repo::{Parent, require_row};
 use crate::{StoreError, decode};
 use chrono::Utc;
+use sqlx::SqliteConnection;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
@@ -14,52 +16,14 @@ impl Repository {
         project_id: Uuid,
         input: CreateSprint,
     ) -> Result<Sprint, StoreError> {
-        self.require_project(project_id).await?;
-        let id = Uuid::new_v4();
-        let now = Utc::now();
-        let now_str = now.to_rfc3339();
-
-        sqlx::query(
-            "INSERT INTO sprints (id, project_id, name, goal, start_date, end_date, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?)"
-        )
-        .bind(id.to_string())
-        .bind(project_id.to_string())
-        .bind(&input.name)
-        .bind(&input.goal)
-        .bind(input.start_date.map(|d| d.to_rfc3339()))
-        .bind(input.end_date.map(|d| d.to_rfc3339()))
-        .bind(&now_str)
-        .bind(&now_str)
-        .execute(self.pool())
-        .await?;
-
-        debug!(sprint_id = %id, name = %input.name, "Sprint created");
-
-        Ok(Sprint {
-            id,
-            project_id,
-            name: input.name,
-            goal: input.goal,
-            start_date: input.start_date,
-            end_date: input.end_date,
-            status: SprintStatus::Planning,
-            created_at: now,
-            updated_at: now,
-        })
+        let mut conn = self.pool().acquire().await?;
+        create_sprint_in(&mut conn, project_id, input).await
     }
 
     #[instrument(skip(self))]
     pub async fn get_sprint(&self, id: Uuid) -> Result<Option<Sprint>, StoreError> {
-        let row = sqlx::query_as::<_, SprintRow>(
-            "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
-             FROM sprints WHERE id = ?"
-        )
-        .bind(id.to_string())
-        .fetch_optional(self.pool())
-        .await?;
-
-        row.map(SprintRow::into_sprint).transpose()
+        let mut conn = self.pool().acquire().await?;
+        get_sprint_in(&mut conn, id).await
     }
 
     #[instrument(skip(self))]
@@ -83,26 +47,8 @@ impl Repository {
         id: Uuid,
         input: UpdateSprint,
     ) -> Result<Option<Sprint>, StoreError> {
-        let now = Utc::now().to_rfc3339();
-        let result = sqlx::query(
-            "UPDATE sprints SET name = ?, goal = ?, start_date = ?, end_date = ?, updated_at = ?
-             WHERE id = ?",
-        )
-        .bind(&input.name)
-        .bind(&input.goal)
-        .bind(input.start_date.map(|d| d.to_rfc3339()))
-        .bind(input.end_date.map(|d| d.to_rfc3339()))
-        .bind(&now)
-        .bind(id.to_string())
-        .execute(self.pool())
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Ok(None);
-        }
-
-        debug!(sprint_id = %id, "Sprint updated");
-        self.get_sprint(id).await
+        let mut conn = self.pool().acquire().await?;
+        update_sprint_in(&mut conn, id, input).await
     }
 
     #[instrument(skip(self))]
@@ -111,16 +57,130 @@ impl Repository {
         id: Uuid,
         status: SprintStatus,
     ) -> Result<bool, StoreError> {
-        let now = Utc::now().to_rfc3339();
-        let result = sqlx::query("UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?")
-            .bind(status.to_string())
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-
-        Ok(result.rows_affected() > 0)
+        let mut conn = self.pool().acquire().await?;
+        update_sprint_status_in(&mut conn, id, status).await
     }
+
+    /// Whether a sprint went; its items stay, with no sprint.
+    #[instrument(skip(self))]
+    pub async fn delete_sprint(&self, id: Uuid) -> Result<bool, StoreError> {
+        let mut conn = self.pool().acquire().await?;
+        delete_sprint_in(&mut conn, id).await
+    }
+}
+
+/// The sprint `INSERT`, on whatever connection the caller holds.
+pub(crate) async fn create_sprint_in(
+    conn: &mut SqliteConnection,
+    project_id: Uuid,
+    input: CreateSprint,
+) -> Result<Sprint, StoreError> {
+    require_row(conn, Parent::Project, project_id).await?;
+    let id = Uuid::new_v4();
+    let now = Utc::now();
+    let now_str = now.to_rfc3339();
+
+    sqlx::query(
+        "INSERT INTO sprints (id, project_id, name, goal, start_date, end_date, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?)"
+    )
+    .bind(id.to_string())
+    .bind(project_id.to_string())
+    .bind(&input.name)
+    .bind(&input.goal)
+    .bind(input.start_date.map(|d| d.to_rfc3339()))
+    .bind(input.end_date.map(|d| d.to_rfc3339()))
+    .bind(&now_str)
+    .bind(&now_str)
+    .execute(&mut *conn)
+    .await?;
+
+    debug!(sprint_id = %id, name = %input.name, "Sprint created");
+
+    Ok(Sprint {
+        id,
+        project_id,
+        name: input.name,
+        goal: input.goal,
+        start_date: input.start_date,
+        end_date: input.end_date,
+        status: SprintStatus::Planning,
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+/// The sprint with this id, on the caller's connection.
+pub(crate) async fn get_sprint_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+) -> Result<Option<Sprint>, StoreError> {
+    let row = sqlx::query_as::<_, SprintRow>(
+        "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+         FROM sprints WHERE id = ?",
+    )
+    .bind(id.to_string())
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    row.map(SprintRow::into_sprint).transpose()
+}
+
+/// The sprint `UPDATE` (see [`Repository::update_sprint`]), on the caller's connection.
+pub(crate) async fn update_sprint_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+    input: UpdateSprint,
+) -> Result<Option<Sprint>, StoreError> {
+    let now = Utc::now().to_rfc3339();
+    let result = sqlx::query(
+        "UPDATE sprints SET name = ?, goal = ?, start_date = ?, end_date = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(&input.name)
+    .bind(&input.goal)
+    .bind(input.start_date.map(|d| d.to_rfc3339()))
+    .bind(input.end_date.map(|d| d.to_rfc3339()))
+    .bind(&now)
+    .bind(id.to_string())
+    .execute(&mut *conn)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Ok(None);
+    }
+
+    debug!(sprint_id = %id, "Sprint updated");
+    get_sprint_in(conn, id).await
+}
+
+/// The sprint's status (see [`Repository::update_sprint_status`]), on the caller's connection.
+pub(crate) async fn update_sprint_status_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+    status: SprintStatus,
+) -> Result<bool, StoreError> {
+    let now = Utc::now().to_rfc3339();
+    let result = sqlx::query("UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?")
+        .bind(status.to_string())
+        .bind(&now)
+        .bind(id.to_string())
+        .execute(&mut *conn)
+        .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Whether a sprint went (see [`Repository::delete_sprint`]), on the caller's connection.
+pub(crate) async fn delete_sprint_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+) -> Result<bool, StoreError> {
+    let result = sqlx::query("DELETE FROM sprints WHERE id = ?")
+        .bind(id.to_string())
+        .execute(&mut *conn)
+        .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 #[derive(sqlx::FromRow)]

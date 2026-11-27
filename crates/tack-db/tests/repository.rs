@@ -48,6 +48,8 @@ mod item_facts;
 mod item_types;
 #[path = "repository/notifications.rs"]
 mod notifications;
+#[path = "repository/project_file.rs"]
+mod project_file;
 #[path = "repository/quality_rows.rs"]
 mod quality_rows;
 #[path = "repository/routing_queries.rs"]

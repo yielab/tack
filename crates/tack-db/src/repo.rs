@@ -15,6 +15,7 @@ pub mod items;
 pub mod metrics;
 pub mod notifications;
 pub mod prill_records;
+pub mod project_file;
 pub mod projects;
 pub mod pull_requests;
 pub mod roles;

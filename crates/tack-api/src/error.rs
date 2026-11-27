@@ -57,13 +57,11 @@ pub enum ApiError {
         field: Option<String>,
     },
 
-    /// One section of a project file could not be written. `kept` says
-    /// whether what the file wrote before it stays (an existing project) or
-    /// went with the project (a new one).
+    /// One section of a project file could not be written; the file's write is one transaction,
+    /// so nothing of it landed.
     #[error("the {section} section could not be written")]
     SectionFailed {
         section: &'static str,
-        kept: bool,
         #[source]
         source: StoreError,
     },
@@ -168,20 +166,9 @@ impl IntoResponse for ApiError {
                 log_store_failure(failure);
                 "Internal server error".into()
             }
-            ApiError::SectionFailed {
-                section,
-                kept,
-                source,
-            } => {
+            ApiError::SectionFailed { section, source } => {
                 error!(error = %source, section, "A project file section could not be written");
-                if *kept {
-                    format!(
-                        "The {section} section could not be written. What the file wrote before \
-                         it stays, so importing it again finishes the job."
-                    )
-                } else {
-                    format!("The {section} section could not be written, so nothing was created.")
-                }
+                format!("The {section} section could not be written; nothing was changed.")
             }
             ApiError::Store(err @ (StoreError::NotFound { .. } | StoreError::Conflict(_))) => {
                 err.to_string()
@@ -300,23 +287,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failed_section_names_itself_and_says_what_stayed() {
-        let failed = |kept| ApiError::SectionFailed {
+    async fn a_failed_section_names_itself_and_says_nothing_was_changed() {
+        let failed = ApiError::SectionFailed {
             section: "roles",
-            kept,
             source: StoreError::not_found("role"),
         };
-        let (status, kept) = message_of(failed(true)).await;
+        let (status, message) = message_of(failed).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(
-            kept,
-            "The roles section could not be written. What the file wrote before it stays, so \
-             importing it again finishes the job."
-        );
-        let (_, gone) = message_of(failed(false)).await;
-        assert_eq!(
-            gone,
-            "The roles section could not be written, so nothing was created."
+            message,
+            "The roles section could not be written; nothing was changed."
         );
     }
 

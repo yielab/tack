@@ -1,6 +1,6 @@
 use crate::Repository;
 use crate::{StoreError, decode};
-use sqlx::FromRow;
+use sqlx::{FromRow, SqliteConnection};
 use tack_core::models::*;
 use tracing::instrument;
 use uuid::Uuid;
@@ -74,6 +74,16 @@ pub async fn create_field(
     project_id: Uuid,
     data: CreateCustomField,
 ) -> Result<CustomFieldDefinition, StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    create_field_in(&mut conn, project_id, data).await
+}
+
+/// The field `INSERT` (see [`create_field`]), on the caller's connection.
+pub(crate) async fn create_field_in(
+    conn: &mut SqliteConnection,
+    project_id: Uuid,
+    data: CreateCustomField,
+) -> Result<CustomFieldDefinition, StoreError> {
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
@@ -112,22 +122,30 @@ pub async fn create_field(
     .bind(validation)
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
-    .execute(repo.pool())
+    .execute(&mut *conn)
     .await?;
 
-    get_field(repo, id).await
+    get_field_in(conn, id).await
 }
 
 /// Get a custom field definition by ID
 #[instrument(skip(repo))]
 pub async fn get_field(repo: &Repository, id: Uuid) -> Result<CustomFieldDefinition, StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    get_field_in(&mut conn, id).await
+}
+
+async fn get_field_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+) -> Result<CustomFieldDefinition, StoreError> {
     let row = sqlx::query_as::<_, CustomFieldRow>(
         "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
          WHERE id = ?"
     )
     .bind(id.to_string())
-    .fetch_optional(repo.pool())
+    .fetch_optional(&mut *conn)
     .await?
     .ok_or(StoreError::not_found("custom field"))?;
 
@@ -162,6 +180,16 @@ pub async fn update_field(
     id: Uuid,
     data: UpdateCustomField,
 ) -> Result<CustomFieldDefinition, StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    update_field_in(&mut conn, id, data).await
+}
+
+/// The field `UPDATE`s (see [`update_field`]), on the caller's connection.
+pub(crate) async fn update_field_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+    data: UpdateCustomField,
+) -> Result<CustomFieldDefinition, StoreError> {
     let now = chrono::Utc::now();
 
     if let Some(name) = &data.name {
@@ -169,7 +197,7 @@ pub async fn update_field(
             .bind(name)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(repo.pool())
+            .execute(&mut *conn)
             .await?;
     }
 
@@ -180,7 +208,7 @@ pub async fn update_field(
         .bind(description)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(repo.pool())
+        .execute(&mut *conn)
         .await?;
     }
 
@@ -191,7 +219,7 @@ pub async fn update_field(
         .bind(required as i32)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(repo.pool())
+        .execute(&mut *conn)
         .await?;
     }
 
@@ -203,7 +231,7 @@ pub async fn update_field(
         .bind(value_str)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(repo.pool())
+        .execute(&mut *conn)
         .await?;
     }
 
@@ -213,7 +241,7 @@ pub async fn update_field(
             .bind(options_str)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(repo.pool())
+            .execute(&mut *conn)
             .await?;
     }
 
@@ -225,19 +253,28 @@ pub async fn update_field(
         .bind(validation_str)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(repo.pool())
+        .execute(&mut *conn)
         .await?;
     }
 
-    get_field(repo, id).await
+    get_field_in(conn, id).await
 }
 
 /// Delete a custom field definition
 #[instrument(skip(repo))]
 pub async fn delete_field(repo: &Repository, id: Uuid) -> Result<(), StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    delete_field_in(&mut conn, id).await
+}
+
+/// The field `DELETE` (see [`delete_field`]), on the caller's connection.
+pub(crate) async fn delete_field_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM custom_field_definitions WHERE id = ?")
         .bind(id.to_string())
-        .execute(repo.pool())
+        .execute(&mut *conn)
         .await?;
     Ok(())
 }
@@ -248,6 +285,17 @@ pub async fn delete_field(repo: &Repository, id: Uuid) -> Result<(), StoreError>
 #[instrument(skip(repo))]
 pub async fn set_field_value(
     repo: &Repository,
+    item_id: Uuid,
+    field_id: Uuid,
+    value: serde_json::Value,
+) -> Result<CustomFieldValue, StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    set_field_value_in(&mut conn, item_id, field_id, value).await
+}
+
+/// The value upsert (see [`set_field_value`]), on the caller's connection.
+pub(crate) async fn set_field_value_in(
+    conn: &mut SqliteConnection,
     item_id: Uuid,
     field_id: Uuid,
     value: serde_json::Value,
@@ -270,16 +318,25 @@ pub async fn set_field_value(
     .bind(now.to_rfc3339())
     .bind(&value_str)
     .bind(now.to_rfc3339())
-    .execute(repo.pool())
+    .execute(&mut *conn)
     .await?;
 
-    get_field_value(repo, item_id, field_id).await
+    get_field_value_in(conn, item_id, field_id).await
 }
 
 /// Get a custom field value for an item
 #[instrument(skip(repo))]
 pub async fn get_field_value(
     repo: &Repository,
+    item_id: Uuid,
+    field_id: Uuid,
+) -> Result<CustomFieldValue, StoreError> {
+    let mut conn = repo.pool().acquire().await?;
+    get_field_value_in(&mut conn, item_id, field_id).await
+}
+
+async fn get_field_value_in(
+    conn: &mut SqliteConnection,
     item_id: Uuid,
     field_id: Uuid,
 ) -> Result<CustomFieldValue, StoreError> {
@@ -290,7 +347,7 @@ pub async fn get_field_value(
     )
     .bind(item_id.to_string())
     .bind(field_id.to_string())
-    .fetch_optional(repo.pool())
+    .fetch_optional(&mut *conn)
     .await?
     .ok_or(StoreError::not_found("custom field value"))?;
 

@@ -1049,30 +1049,40 @@ impl Repository {
         row: &tack_core::outline::bundle::ProfileRow,
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let now = now.to_rfc3339();
-        sqlx::query(
-            "INSERT INTO agent_profiles \
-             (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, egress_mode, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
-             instructions = excluded.instructions, tool_policy = excluded.tool_policy, \
-             limits = excluded.limits, kind = excluded.kind, fleet_id = excluded.fleet_id, \
-             delivers = excluded.delivers, egress_mode = excluded.egress_mode, \
-             updated_at = excluded.updated_at",
-        )
-        .bind(&row.id)
-        .bind(&row.name)
-        .bind(&row.instructions)
-        .bind(row.tool_policy.to_string())
-        .bind(row.limits.to_string())
-        .bind(&row.kind)
-        .bind(&row.fleet_id)
-        .bind(&row.delivers)
-        .bind(&row.egress_mode)
-        .bind(&now)
-        .bind(&now)
-        .execute(self.pool())
-        .await?;
-        Ok(())
+        let mut conn = self.pool().acquire().await?;
+        write_agent_profile_in(&mut conn, row, now).await
     }
+}
+
+/// The profile write of [`Repository::write_agent_profile`], on the caller's connection.
+pub(crate) async fn write_agent_profile_in(
+    conn: &mut sqlx::SqliteConnection,
+    row: &tack_core::outline::bundle::ProfileRow,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let now = now.to_rfc3339();
+    sqlx::query(
+        "INSERT INTO agent_profiles \
+         (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, egress_mode, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
+         instructions = excluded.instructions, tool_policy = excluded.tool_policy, \
+         limits = excluded.limits, kind = excluded.kind, fleet_id = excluded.fleet_id, \
+         delivers = excluded.delivers, egress_mode = excluded.egress_mode, \
+         updated_at = excluded.updated_at",
+    )
+    .bind(&row.id)
+    .bind(&row.name)
+    .bind(&row.instructions)
+    .bind(row.tool_policy.to_string())
+    .bind(row.limits.to_string())
+    .bind(&row.kind)
+    .bind(&row.fleet_id)
+    .bind(&row.delivers)
+    .bind(&row.egress_mode)
+    .bind(&now)
+    .bind(&now)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }
