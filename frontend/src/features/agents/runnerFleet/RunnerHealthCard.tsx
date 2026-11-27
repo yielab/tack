@@ -104,7 +104,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
 
   return (
     <Card
-      class="flex flex-col gap-2 px-5 py-4"
+      class="flex flex-col gap-2 p-5"
       data-connection-status={props.connectionStatus}
     >
       <div class="flex flex-wrap items-center gap-2.5">
@@ -123,14 +123,14 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
         {props.connectionReason}
       </p>
 
-      <div class="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <div class="flex flex-wrap items-center gap-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
         <span>
           {props.capacity ? formatCapacity(props.capacity.total, props.capacity.available) : 'capacity unknown'}
         </span>
         <For each={labelChips()}>
           {(chip) => (
             <span
-              class="rounded-full px-2.5 py-[3px] font-mono text-micro"
+              class="rounded-sm px-2.5 py-[3px] font-mono text-micro"
               style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
             >
               {chip}
@@ -139,11 +139,11 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
         </For>
       </div>
 
-      <div class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <div class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         Protocol version: {props.capabilities?.protocol_version ?? 'not reported'}
       </div>
 
-      <div class="flex flex-wrap items-center gap-1.5 text-xs">
+      <div class="flex flex-wrap items-center gap-1.5 text-small">
         <p style={{ color: 'var(--color-text-tertiary)' }}>
           Agents
         </p>
@@ -158,7 +158,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
           <ul class="flex flex-wrap gap-1.5">
             <For each={props.capabilities?.harnesses ?? []}>
               {(h) => (
-                <li class="rounded-full bg-app px-2.5 py-[3px]" style={{ color: 'var(--color-text-secondary)' }}>
+                <li class="rounded-sm bg-app px-2.5 py-[3px]" style={{ color: 'var(--color-text-secondary)' }}>
                   <span class="font-mono">{h.harness_kind}</span> {versionText(h)}
                   <Show when={h.probe_error}>
                     {(err) => (
@@ -172,7 +172,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
         </Show>
       </div>
 
-      <div class="flex flex-wrap items-center gap-1.5 text-xs">
+      <div class="flex flex-wrap items-center gap-1.5 text-small">
         <p style={{ color: 'var(--color-text-tertiary)' }}>
           Feature support
         </p>
@@ -191,7 +191,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
               const unreported = () => !gate().enabled && gate().reason === NO_DATA_REASON;
               return (
                 <li
-                  class="inline-flex flex-wrap items-center gap-1 rounded-full bg-app py-[3px] pl-2.5 pr-[3px]"
+                  class="inline-flex flex-wrap items-center gap-1 rounded-sm bg-app py-[3px] pl-2.5 pr-[3px]"
                   style={{ color: 'var(--color-text-secondary)' }}
                 >
                   {FEATURE_LABEL[feature]}:{' '}

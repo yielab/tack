@@ -83,8 +83,8 @@ const AddManager: Component = () => {
     AGENT_LEVELS.find((l) => l.value === level) ?? AGENT_LEVELS[1];
 
   return (
-    <section class="flex flex-col gap-3 rounded-lg bg-panel px-5 py-5" data-testid="add-manager">
-      <h2 class="text-xl leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-3 rounded-lg bg-panel p-6" data-testid="add-manager">
+      <h2 class="text-section" style={{ color: 'var(--color-text-primary)' }}>
         Add a manager
       </h2>
       <p class="text-small" style={MUTED}>
@@ -95,8 +95,7 @@ const AddManager: Component = () => {
       </p>
 
       <form
-        class="flex flex-col gap-3 rounded-lg px-3.5 py-3"
-        style={{ 'background-color': 'var(--color-bg-app)' }}
+        class="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -193,11 +192,11 @@ const AddManager: Component = () => {
                 <p class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                   Give this to the agent
                 </p>
-                <p class="text-xs" style={MUTED}>
+                <p class="text-small" style={MUTED}>
                   Paste it into the agent&apos;s MCP configuration (for Claude Code, a <code>.mcp.json</code> file in the folder
                   it works in). It holds the credential&apos;s secret, which is shown only now; Tack keeps a hash.
                 </p>
-                <pre class="overflow-x-auto font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>{result().mcpConfig}</pre>
+                <pre class="overflow-x-auto font-mono text-small" style={{ color: 'var(--color-text-primary)' }}>{result().mcpConfig}</pre>
                 <div class="flex gap-2">
                   <Button size="sm" onClick={() => void copy(result().mcpConfig!)}>
                     Copy

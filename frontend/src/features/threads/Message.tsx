@@ -37,14 +37,14 @@ const RefLine: Component<{ r: MessageRef; projectId: string }> = (props) => (
   <Show
     when={props.r.kind === 'item'}
     fallback={
-      <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         About a question ({shortItemId(props.r.id)})
       </span>
     }
   >
     <A
       href={`/projects/${props.projectId}/items/${props.r.id}`}
-      class="text-xs underline"
+      class="text-small underline"
       style={{ color: 'var(--color-text-primary)' }}
     >
       Item {shortItemId(props.r.id)}
@@ -73,14 +73,14 @@ const Message: Component<{ entry: Entry; profileName: string; projectId: string 
         'background-color': mine() ? 'var(--color-accent-soft)' : 'transparent',
       }}
     >
-      <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           {writerName(message().principal, props.profileName)}
         </span>{' '}
         · {relativeTimeFromIso(message().created_at)}
         <Show when={failed()}> · This turn failed</Show>
       </p>
-      <p class="whitespace-pre-wrap text-sm" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+      <p class="whitespace-pre-wrap text-body" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
         {message().body}
       </p>
       <Show when={others().length > 0}>

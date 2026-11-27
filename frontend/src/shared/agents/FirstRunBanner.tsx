@@ -54,7 +54,7 @@ const FirstRunBanner: Component<FirstRunBannerProps> = (props) => {
   return (
     <Show when={props.hasItems && !dismissed() && !runnersResult.loading && !runnersResult.error && !anyActiveAgent()}>
       <div
-        class="mx-[22px] mt-1 mb-2 flex items-center gap-3 rounded-full py-3 pl-[22px] pr-4 text-sm"
+        class="mx-[22px] mt-1 mb-2 flex items-center gap-3 rounded-lg py-3 pl-6 pr-4 text-sm"
         style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }}
       >
         <IconAgent size={18} class="flex-shrink-0" />
@@ -62,7 +62,7 @@ const FirstRunBanner: Component<FirstRunBannerProps> = (props) => {
         <A href="/agents" class="font-bold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>Turn on</A>
         <button
           type="button"
-          class="rounded-full px-1.5 text-small focus:outline-none focus-visible:ring-2"
+          class="rounded-md px-1.5 text-small focus:outline-none focus-visible:ring-2"
           style={{ color: 'var(--color-text-secondary)' }}
           aria-label="Dismiss"
           onClick={() => {

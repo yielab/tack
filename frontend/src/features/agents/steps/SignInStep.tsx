@@ -48,8 +48,8 @@ const CodeBlock: Component<{ children: string }> = (props) => (
 const SignInStep: Component<SignInStepProps> = (props) => {
   const agents = () => installedAgents(props.thisMachineRunner);
   return (
-    <section class="flex flex-col gap-2.5 rounded-lg bg-panel px-[22px] py-5">
-      <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-2.5 rounded-lg bg-panel p-6">
+      <h2 class="text-step" style={{ color: 'var(--color-text-primary)' }}>
         Sign in
       </h2>
       <Show
@@ -68,7 +68,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
             const cannotSay = () => signIn()?.state !== 'signed_in' && signIn()?.state !== 'signed_out';
             const failedCommand = () => failedCommandOf(signIn()?.detail);
             return (
-              <div class="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
+              <div class="flex min-w-0 flex-wrap items-center gap-3 rounded-md bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
                 <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{label}</span>
                 <Show
                   when={signIn()?.state === 'signed_in'}
@@ -85,7 +85,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                       <span style={{ color: 'var(--color-text-secondary)' }}>
                         Not signed in.
                         <Show when={signIn()?.command}>
-                          {(command) => <> Run <code class="font-mono text-[0.75rem]">{command()}</code> in a terminal.</>}
+                          {(command) => <> Run <code class="font-mono text-caption">{command()}</code> in a terminal.</>}
                         </Show>
                       </span>
                     </Show>
@@ -96,7 +96,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                 </Show>
                 <Show when={link()}>
                   {(href) => (
-                    <a href={href()} target="_blank" rel="noopener noreferrer" class="text-xs font-semibold underline" style={{ color: 'var(--color-accent-ink)' }}>
+                    <a href={href()} target="_blank" rel="noopener noreferrer" class="text-small font-semibold underline" style={{ color: 'var(--color-accent-ink)' }}>
                       How to sign in to {label}
                     </a>
                   )}
@@ -106,7 +106,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                     <Show when={failedCommand()}>
                       {(command) => (
                         <>
-                          <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>To see why, run this in a terminal:</span>
+                          <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>To see why, run this in a terminal:</span>
                           <CodeBlock>{command()}</CodeBlock>
                         </>
                       )}
@@ -114,7 +114,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                     <Show when={signIn()?.command}>
                       {(command) => (
                         <>
-                          <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>To sign in, run:</span>
+                          <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>To sign in, run:</span>
                           <CodeBlock>{command()}</CodeBlock>
                         </>
                       )}
@@ -122,7 +122,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                     <Show when={signIn()?.detail}>
                       {(detail) => (
                         <details>
-                          <summary class="cursor-pointer text-xs" style={{ color: 'var(--color-text-secondary)' }}>What {label} said</summary>
+                          <summary class="cursor-pointer text-small" style={{ color: 'var(--color-text-secondary)' }}>What {label} said</summary>
                           <p class="mt-1 font-mono text-caption" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{detail()}</p>
                         </details>
                       )}

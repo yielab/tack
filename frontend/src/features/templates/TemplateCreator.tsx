@@ -34,32 +34,32 @@ function Section(props: {
 }) {
   return (
     <div
-      class={`bg-panel transition-[border-radius] ${props.open ? 'rounded-lg' : 'rounded-lg'}`}
+      class="rounded-lg bg-panel"
     >
       <button
         type="button"
         onClick={props.onToggle}
         aria-expanded={props.open}
-        class={`w-full flex items-center gap-2.5 text-left transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2 ${props.open ? 'rounded-t-lg px-[22px] pt-[18px] pb-1' : 'rounded-lg px-[22px] py-3'}`}
+        class={`w-full flex items-center gap-2.5 text-left transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2 ${props.open ? 'rounded-t-lg px-6 pt-5 pb-1' : 'rounded-lg px-6 py-3'}`}
         style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
       >
         <Show when={props.open} fallback={<FiChevronRight size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />}>
           <FiChevronDown size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
         </Show>
-        <span class={`font-heading ${props.open ? 'text-lg' : 'text-[1.0625rem]'}`} style={{ color: 'var(--color-text-primary)' }}>
+        <span class="text-section font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           {props.title}
         </span>
         <Show when={props.badge}>
           <Badge tone="primary">{props.badge}</Badge>
         </Show>
         <Show when={!props.open}>
-          <span class="ml-auto min-w-0 text-right text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          <span class="ml-auto min-w-0 text-right text-small" style={{ color: 'var(--color-text-tertiary)' }}>
             {props.description}
           </span>
         </Show>
       </button>
       <Show when={props.open}>
-        <div class="px-[22px] pb-[18px] pt-1 space-y-3">
+        <div class="space-y-3 px-6 pb-5 pt-1">
           <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             {props.description}
           </p>
@@ -70,16 +70,15 @@ function Section(props: {
   );
 }
 
-// Inputs inside a panel sit on the app ground (pill single-line controls).
+// Inputs inside a panel sit on the app ground.
 const inPanelInput =
-  'rounded-full border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2';
+  'rounded-md border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2';
 const inPanelInputStyle = {
   'background-color': 'var(--color-bg-app)',
   'border-color': 'var(--color-border-light)',
   color: 'var(--color-text-primary)',
   '--tw-ring-color': 'var(--color-focus-ring)',
 };
-// Multi-line controls use the item radius.
 const textareaStyle = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',
@@ -92,9 +91,9 @@ const itemStyle = {
   'box-shadow': 'var(--shadow-sm)',
 };
 const iconBtnClass =
-  'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2';
+  'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-md transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2';
 const addBtnClass =
-  'flex w-full items-center justify-center gap-2 rounded-full border-2 border-dashed px-4 py-2 text-small font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
+  'flex w-full items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-2 text-small font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
 const addBtnStyle = { 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' };
 
 // ── field type meta ───────────────────────────────────────────────────────────
@@ -274,20 +273,20 @@ export default function TemplateCreator() {
     <div class="lg:px-6 lg:py-3">
       <div class="max-w-[760px]">
         {/* Header */}
-        <div class="mb-4">
-          <h1 class="text-[2.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <div class="mb-12">
+          <h1 class="text-title" style={{ color: 'var(--color-text-primary)' }}>
             Create Project Template
           </h1>
-          <p class="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="mt-2 text-body" style={{ color: 'var(--color-text-secondary)' }}>
             Define a reusable project blueprint — workflow, vocabulary, and custom fields.
             Sections left collapsed use the project type defaults.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} class="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} class="flex flex-col gap-6">
           {/* ── Basic Information ─────────────────────────────────────────── */}
-          <Card class="grid grid-cols-1 gap-x-4 gap-y-3 px-[22px] py-5 sm:grid-cols-2">
-            <h3 class="text-lg sm:col-span-2" style={{ color: 'var(--color-text-primary)' }}>
+          <Card class="grid grid-cols-1 gap-x-4 gap-y-3 p-6 sm:grid-cols-2">
+            <h3 class="text-section sm:col-span-2" style={{ color: 'var(--color-text-primary)' }}>
               Basic Information
             </h3>
 
@@ -337,7 +336,7 @@ export default function TemplateCreator() {
             open={workflowOpen()}
             onToggle={() => setWorkflowOpen(o => !o)}
           >
-            <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
               Leave empty to use the default workflow for the selected project type.
             </p>
 
@@ -366,7 +365,7 @@ export default function TemplateCreator() {
                       <option value="done">Done</option>
                     </select>
                     <div class="flex flex-shrink-0 items-center gap-1.5">
-                      <span class="whitespace-nowrap text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                      <span class="whitespace-nowrap text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                         WIP
                       </span>
                       <input
@@ -376,7 +375,7 @@ export default function TemplateCreator() {
                         aria-label={`Status ${i() + 1}: WIP limit`}
                         placeholder="∞"
                         onInput={(e) => setStatusField(row.id, 'wip_limit', e.currentTarget.value)}
-                        class="w-16 rounded-full border px-2 py-1.5 text-center text-sm focus:outline-none focus-visible:ring-2"
+                        class="w-16 rounded-md border px-2 py-1.5 text-center text-sm focus:outline-none focus-visible:ring-2"
                         style={inPanelInputStyle}
                       />
                     </div>
@@ -413,11 +412,11 @@ export default function TemplateCreator() {
             open={vocabOpen()}
             onToggle={() => setVocabOpen(o => !o)}
           >
-            <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
               Leave fields blank to keep the default label.
             </p>
 
-            <div class="overflow-hidden rounded-lg" style={itemStyle}>
+            <div class="overflow-hidden rounded-md" style={itemStyle}>
               <table class="w-full text-sm">
                 <thead>
                   <tr>
@@ -481,7 +480,7 @@ export default function TemplateCreator() {
             <Show
               when={customFields().length > 0}
               fallback={
-                <p class="text-xs text-center py-3" style={{ color: 'var(--color-text-tertiary)' }}>
+                <p class="text-small text-center py-3" style={{ color: 'var(--color-text-tertiary)' }}>
                   No custom fields defined — add one below.
                 </p>
               }
@@ -489,7 +488,7 @@ export default function TemplateCreator() {
               <div class="space-y-2">
                 <For each={customFields()}>
                   {(field, i) => (
-                    <div class="flex items-center gap-3 rounded-lg px-4 py-3" style={itemStyle}>
+                    <div class="flex items-center gap-3 rounded-md px-4 py-3" style={itemStyle}>
                       <span class="text-lg">{fieldTypeIcon(field.field_type)}</span>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
@@ -502,7 +501,7 @@ export default function TemplateCreator() {
                           </Show>
                         </div>
                         <Show when={field.options && field.options.length > 0}>
-                          <p class="text-xs mt-0.5 truncate" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <p class="text-small mt-0.5 truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                             Options: {field.options!.join(', ')}
                           </p>
                         </Show>
@@ -510,7 +509,7 @@ export default function TemplateCreator() {
                       <button
                         type="button"
                         onClick={() => openEditFieldModal(i())}
-                        class="rounded-full px-3 py-1 text-xs font-semibold transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
+                        class="rounded-md px-3 py-1 text-small font-semibold transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
                         style={{ color: 'var(--color-accent-ink)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                       >
                         Edit

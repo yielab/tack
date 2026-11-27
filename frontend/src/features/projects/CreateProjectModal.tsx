@@ -227,7 +227,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     }
   };
 
-  // Items inside the picker: item radius, app fill, 2px accent border when chosen.
+  // Items inside the picker: panel radius, app fill, 2px accent border when chosen.
   const cardBaseStyle = {
     'background-color': 'var(--color-bg-app)',
     'border-color': 'transparent',
@@ -247,8 +247,8 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     const samples = vocabSamples(t);
     return (
       <div
-        class="mt-2 flex flex-col gap-1.5 rounded-lg px-2.5 py-2 text-micro"
-        style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }}
+        class="mt-2 flex flex-col gap-1.5 border-t pt-2 text-micro"
+        style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' }}
       >
         <Show when={columns.length > 0}>
           <div class="flex flex-wrap items-center gap-1">
@@ -256,7 +256,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
               {(col, i) => (
                 <>
                   <span
-                    class="rounded-full px-2 py-0.5"
+                    class="rounded-sm px-2 py-0.5"
                     style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)' }}
                   >
                     {col}
@@ -280,10 +280,10 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
 
   return (
     <Modal isOpen={props.isOpen} onClose={handleClose} title="Create New Project" size="lg">
-      <form onSubmit={handleSubmit} class="space-y-4">
+      <form onSubmit={handleSubmit} class="space-y-8">
         <Show when={error()}>
           <div
-            class="rounded-lg px-4 py-2.5 text-sm font-semibold"
+            class="rounded-md px-4 py-2.5 text-sm font-semibold"
             style={{
               'background-color': 'var(--color-danger-100)',
               color: 'var(--color-danger-600)',
@@ -366,7 +366,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                 </Button>
               </div>
               <Show when={pathCheck()}>
-                <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{checkSentence(pathCheck()!)}</p>
+                <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{checkSentence(pathCheck()!)}</p>
               </Show>
             </Show>
           </div>
@@ -393,7 +393,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                   <Badge tone="primary">Selected</Badge>
                 </Show>
               </div>
-              <p class="mt-0.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <p class="mt-0.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 Pick a project type; workflow and terminology are derived from it.
               </p>
             </button>
@@ -471,7 +471,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                               <TypeList types={t.item_types} class="mt-1" />
                               <Show when={t.description}>
                                 <p
-                                  class="mt-0.5 line-clamp-2 text-xs"
+                                  class="mt-0.5 line-clamp-2 text-small"
                                   style={{ color: 'var(--color-text-secondary)' }}
                                 >
                                   {t.description}
@@ -495,7 +495,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
             <ImportFromFile target={{ kind: 'new' }} onDone={handleClose}>
               From a project file…
             </ImportFromFile>
-            <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               A file exported from a project, or an outline. You see what it creates before anything is written.
             </span>
           </div>

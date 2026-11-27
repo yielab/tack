@@ -25,18 +25,18 @@ const ThreadsPage: Component = () => {
   const current = () => threads().find((t) => t.id === opened());
 
   return (
-    <div class="flex min-w-0 flex-col gap-4 px-6 py-7 sm:px-12" data-testid="threads-page">
+    <div class="flex min-w-0 flex-col gap-8 px-6 py-10 sm:px-12" data-testid="threads-page">
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div class="min-w-0">
-          <h1 class="m-0 text-content leading-tight" style={{ 'font-size': '2.125rem', color: 'var(--color-text-primary)' }}>
+          <h1 class="m-0 text-title" style={{ color: 'var(--color-text-primary)' }}>
             Threads
           </h1>
-          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="mt-2 text-body" style={{ color: 'var(--color-text-secondary)' }}>
             Talk with an agent profile. Each message you write is answered by one run of it, and its answer may carry changes
             for you to apply.
           </p>
         </div>
-        <Button size="sm" data-testid="new-thread-open" onClick={() => setStarting(true)} disabled={starting()}>
+        <Button size="sm" variant={starting() ? 'secondary' : 'primary'} data-testid="new-thread-open" onClick={() => setStarting(true)} disabled={starting()}>
           New thread
         </Button>
       </div>
@@ -71,7 +71,7 @@ const ThreadsPage: Component = () => {
                     <li data-testid="thread-item">
                       <A
                         href={`/projects/${projectId()}/threads?open=${t.id}`}
-                        class="flex min-w-0 flex-col gap-0.5 rounded-lg p-3"
+                        class="flex min-w-0 flex-col gap-0.5 rounded-md p-3"
                         aria-current={t.id === opened() ? 'true' : undefined}
                         style={{
                           border: `1px solid ${t.id === opened() ? 'var(--color-primary-600)' : 'var(--color-border-light)'}`,
@@ -80,7 +80,7 @@ const ThreadsPage: Component = () => {
                         }}
                       >
                         <span class="truncate text-sm font-semibold">{t.title}</span>
-                        <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                           {profileName(t.profile)} · {t.status === 'open' ? 'Open' : 'Closed'} · {relativeTimeFromIso(t.last_message_at)}
                         </span>
                       </A>

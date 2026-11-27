@@ -252,7 +252,7 @@ const TeamCard: Component<TeamCardProps> = (props) => {
   return (
     <li id={`team-${entry().name}`} class="flex min-w-0 flex-col gap-2.5 rounded-lg bg-app px-4 py-3.5" data-testid={`team-card-${entry().name}`}>
       <div class="flex flex-wrap items-center gap-2">
-        <h3 class="text-lead font-bold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+        <h3 class="text-lead" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
           {entry().name}
         </h3>
         <Show when={entry().reported} fallback={<Badge tone="neutral">Not reported by any computer</Badge>}>

@@ -162,7 +162,7 @@ export function createTeamApply(options: {
 export const ShapeSelect: Component<{ name: string; teams: TeamApply }> = (props) => (
   <select
     aria-label={`Shape of ${props.name}`}
-    class="rounded-full border px-3 py-1 text-xs"
+    class="rounded-md border px-3 py-1 text-small"
     style={{ 'background-color': 'var(--color-bg-base)', color: 'var(--color-text-primary)', 'border-color': 'var(--color-border-medium)' }}
     onChange={(e) => props.teams.chooseShape(props.name, e.currentTarget.value)}
   >

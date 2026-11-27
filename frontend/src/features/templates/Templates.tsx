@@ -83,9 +83,9 @@ export default function Templates() {
     { value: 'custom', label: 'Custom' },
   ];
 
-  /** Filter chip: a pill, accent-filled when active, with a type-hue dot. */
+  /** Filter chip: accent-filled when active, with a type-hue dot. */
   const chipClass =
-    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-caption transition-colors ' +
+    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-caption transition-colors ' +
     'focus:outline-none focus-visible:ring-2';
   const chipStyle = (active: boolean) => ({
     'background-color': active ? 'var(--color-primary-600)' : 'var(--color-bg-panel)',
@@ -140,20 +140,22 @@ export default function Templates() {
   };
 
   return (
-    <div class="flex flex-col gap-5 lg:px-6 lg:py-3">
+    <div class="flex flex-col gap-8 lg:px-6 lg:py-3">
     <ConfirmHost />
         {/* Header */}
         <div class="flex flex-wrap items-end gap-3">
           <div>
-            <h1 class="text-[2.125rem] leading-tight text-content">
+            <h1 class="text-title text-content">
               Project Templates
             </h1>
-            <p class="text-content-muted mt-1">
+            <p class="mt-2 text-body text-content-muted">
               Start your project with a pre-configured template
             </p>
           </div>
           <div class="ml-auto flex gap-3">
-            <Button onClick={() => navigate('/templates/new')}>+ Create Template</Button>
+            <Button variant={templates()?.length === 0 ? 'secondary' : 'primary'} onClick={() => navigate('/templates/new')}>
+              + Create Template
+            </Button>
             <Button variant="secondary" onClick={() => navigate('/projects')}>
               Back to Projects
             </Button>
@@ -217,7 +219,7 @@ export default function Templates() {
 
         <Show when={templates.error}>
           <div
-            class="rounded-full px-5 py-3 text-sm font-semibold"
+            class="rounded-md px-5 py-3 text-sm font-semibold"
             style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
             role="alert"
           >
@@ -257,7 +259,7 @@ export default function Templates() {
                       }}
                       aria-hidden="true"
                     />
-                    <h3 class="min-w-0 text-lg leading-[1.15] text-content">
+                    <h3 class="min-w-0 text-section text-content">
                       {template.name}
                     </h3>
                   </div>
@@ -273,7 +275,7 @@ export default function Templates() {
 
                   {/* Description */}
                   <Show when={template.description}>
-                    <p class="text-small leading-[1.4] text-content-muted">
+                    <p class="text-small text-content-muted">
                       {template.description}
                     </p>
                   </Show>
@@ -292,13 +294,13 @@ export default function Templates() {
 
                   {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
                   <Show when={showPreview() && (columns().length > 0 || samples().length > 0 || roles().length > 0)}>
-                    <div class="flex flex-col gap-1.5 rounded-lg bg-app px-3 py-2.5 text-micro text-content-muted" data-testid="template-preview">
+                    <div class="flex flex-col gap-1.5 rounded-md bg-app px-3 py-2.5 text-micro text-content-muted" data-testid="template-preview">
                       <Show when={columns().length > 0}>
                         <div class="flex flex-wrap items-center gap-1">
                           <For each={columns()}>
                             {(col, i) => (
                               <>
-                                <span class="rounded-full bg-panel px-2 py-0.5 text-content">{col}</span>
+                                <span class="rounded-sm bg-panel px-2 py-0.5 text-content">{col}</span>
                                 <Show when={i() < columns().length - 1}>
                                   <span aria-hidden="true">→</span>
                                 </Show>
@@ -322,7 +324,7 @@ export default function Templates() {
 
                   {/* Actions */}
                   <div class="mt-auto flex gap-2 pt-1">
-                    <Button class="flex-1" onClick={() => handleUseTemplate(template)}>
+                    <Button variant="secondary" class="flex-1" onClick={() => handleUseTemplate(template)}>
                       Use Template
                     </Button>
                     <Show when={!template.is_builtin}>
@@ -367,7 +369,7 @@ export default function Templates() {
             class="mb-4 rounded-lg px-4 py-3"
             style={{ 'background-color': 'var(--color-accent-soft)' }}
           >
-            <div class="text-xs" style={{ color: 'var(--color-accent-ink)' }}>
+            <div class="text-small" style={{ color: 'var(--color-accent-ink)' }}>
               Using template:
             </div>
             <div class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>

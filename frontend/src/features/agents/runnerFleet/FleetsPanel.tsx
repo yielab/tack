@@ -147,7 +147,7 @@ const FleetsPanel: Component = () => {
           <ul class="space-y-2">
             <For each={rows()}>
               {(fleet) => (
-                <li class="flex flex-col gap-2.5 rounded-lg bg-panel px-5 py-[18px]">
+                <li class="flex flex-col gap-2.5 rounded-lg bg-panel p-5">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {fleet.name}
@@ -166,7 +166,7 @@ const FleetsPanel: Component = () => {
                     <Show
                       when={!runners.loading}
                       fallback={
-                        <p class="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <p class="mt-1 text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                           Loading runners…
                         </p>
                       }
@@ -174,7 +174,7 @@ const FleetsPanel: Component = () => {
                       <Show
                         when={membersOf(fleet.fleet_id).length > 0}
                         fallback={
-                          <p class="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <p class="mt-1 text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                             No members yet.
                           </p>
                         }
@@ -182,7 +182,7 @@ const FleetsPanel: Component = () => {
                         <ul class="flex flex-col gap-1.5">
                           <For each={membersOf(fleet.fleet_id)}>
                             {(runner) => (
-                              <li class="flex items-center gap-2 rounded-full bg-app py-1 pl-3 pr-1">
+                              <li class="flex items-center gap-2 rounded-md bg-app py-1 pl-3 pr-1">
                                 <span class="text-small" style={{ color: 'var(--color-text-primary)' }}>
                                   {runner.name}
                                 </span>
@@ -208,7 +208,7 @@ const FleetsPanel: Component = () => {
                       <Show
                         when={nonMembersOf(fleet.fleet_id).length > 0}
                         fallback={
-                          <p class="mt-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <p class="mt-2 text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                             No other runners available to add.
                           </p>
                         }
@@ -264,7 +264,7 @@ const FleetsPanel: Component = () => {
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg bg-panel px-5 py-[18px]">
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg bg-panel p-5">
           <Field label="Name" required placeholder="backend-fleet" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <Field
             label="Concurrency limit (optional)"

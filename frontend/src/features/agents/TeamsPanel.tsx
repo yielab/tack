@@ -116,10 +116,10 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
   };
 
   return (
-    <section class="flex flex-col gap-3 rounded-lg bg-panel px-5 py-5" id="teams" data-testid="teams-panel">
+    <section class="flex flex-col gap-3 rounded-lg bg-panel p-6" id="teams" data-testid="teams-panel">
       <div>
         <div class="flex items-center gap-2">
-          <h2 class="text-lead font-bold leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+          <h2 class="text-section" style={{ color: 'var(--color-text-primary)' }}>
             Teams
           </h2>
           <HelpHint label="Teams" help={HELP.teamsPanel} />
@@ -135,7 +135,7 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
             <select
               aria-label="Project the sheets are read for"
               data-testid="teams-project"
-              class="rounded-full border px-3 py-1 text-sm"
+              class="rounded-md border px-3 py-1 text-sm"
               style={{ 'background-color': 'var(--color-bg-base)', color: 'var(--color-text-primary)', 'border-color': 'var(--color-border-medium)' }}
               onChange={(e) => setChosen(e.currentTarget.value)}
             >
@@ -188,12 +188,12 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
 
       <Show when={noTeam().length > 0}>
         <div class="flex flex-col gap-2" data-testid="no-team-profiles">
-          <h3 class="text-lead font-bold leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+          <h3 class="text-lead" style={{ color: 'var(--color-text-primary)' }}>
             Profiles with no team
           </h3>
           <For each={noTeam()}>
             {([key, list]) => (
-              <div class="flex flex-col gap-1 rounded-lg bg-app px-4 py-3" data-testid={`no-team-${key}`}>
+              <div class="flex flex-col gap-1 rounded-md bg-app px-4 py-3" data-testid={`no-team-${key}`}>
                 <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
                   {key === 'any' ? profileAgentText({}) : agentName(key)}
                 </span>
