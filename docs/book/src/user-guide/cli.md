@@ -77,6 +77,40 @@ Would create 3 items and 0 dependencies
 
 The last line reads "Created" instead of "Would create" when you did not pass `--dry-run`. Each warning follows as `warning: …`.
 
+`tack import` adds and updates and never removes anything. An item with a `key` the project already has is updated, not added twice. To keep a project's plan beside its code, use `tack folder`.
+
+### The project folder
+
+`tack folder` keeps a project's plan in a `.tack/` folder in your repository: `project.yaml` and one `items/<key>.md` file per item. The commands read and write that folder where you run them; the board never reads your repository. `dir` is `.tack` in the current directory unless you give another.
+
+```sh
+tack folder status <project>                  # the last revision, and what changed on the board since
+tack folder export <project> [dir]            # write the folder from the board
+tack folder import <project> [dir]            # read the folder, show the plan, apply it
+tack folder import <project> --dry-run        # show the plan and write nothing
+tack folder import <project> --yes            # apply a plan that removes things
+tack folder import <project> --prefer folder  # settle every conflict with the folder's value
+tack folder history <project>                 # the revisions, newest first
+tack folder revert <project> 7                # plan going back to revision 7, and apply it
+```
+
+| Command | What it does |
+|---|---|
+| `status` | Prints the last revision and the changes the board has made since it. With no revision it says to export once. |
+| `export` | Writes the files the board answers with, and removes the `items/*.md` files the board no longer has. |
+| `import` | Reads every file under the folder, prints the plan and applies it. |
+| `history` | Lists the revisions: number, where it came from (the board, a file or a revert), when, and its hash. |
+| `revert <project> <number>` | Plans going back to that revision and applies it. It takes no folder. |
+
+| Flag | On | Meaning |
+|---|---|---|
+| `--dry-run` | `import`, `revert` | Print the plan and write nothing. |
+| `--yes` | `import`, `revert` | Apply a plan that removes things. Without it the command stops with exit 1 and says "add --yes to apply the N removals". |
+| `--prefer folder\|board` | `import`, `revert` | Settle every conflict with the folder's value or the board's. Without it, a plan with a conflict stops with exit 1. |
+| `--json` | every command | Print the answer as JSON. |
+
+The plan prints each change as `<verb> <section> <name>: <path> <from> → <to>`, then what is kept and why, each conflict with the last revision's, the board's and the folder's value, each removal with its cost, and the warnings. An apply sends the plan's hash and is refused if the board changed since the preview. What the plan means, what a removal costs and what is never removed are in [Keeping the plan in the repository](import-export.md#keeping-the-plan-in-the-repository).
+
 ### Autonomy
 
 ```sh

@@ -42,6 +42,12 @@ pack, Tack lists the changed files itself, matching file names exactly. Either w
 the task says "A file that decides how the work is checked changed", and **Merge** asks you to write why you
 are merging it anyway.
 
+### A change to the project folder
+
+A change whose files include `.tack/`, the [project folder](import-export.md#keeping-the-plan-in-the-repository), is a change to the plan: it holds each item's brief, the checks the work is judged by. A person merges it, whatever the project's level and its domains say; it never merges by itself, at L4 or at L5.
+
+Its files are listed under "The agent changed how it is checked", with the other files that decide how the work is checked, and **Merge** asks you to write why you are merging it anyway. Merging the change does not change the board. The board reads the folder only when you apply it: see [Exporting and importing](import-export.md#exporting-and-importing).
+
 ## Merge when moved to Done
 
 With this option on, moving a task to Done merges its latest finished run. The move happens
