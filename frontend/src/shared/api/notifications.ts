@@ -12,10 +12,12 @@ export type NotificationList = Schemas['NotificationList'];
 export type NotificationChannel = Schemas['NotificationChannel'];
 
 export const notifications = {
-  /** `open` (the default): what still asks something of the person; `all`: everything kept, newest first. */
-  list: (state: 'open' | 'all' = 'open', limit?: number) => {
+  /** `open` (the default): what still asks something of the person; `all`: everything kept, newest first.
+   *  `project` keeps one project's notifications, and its `open` count. */
+  list: (state: 'open' | 'all' = 'open', limit?: number, project?: string) => {
     const query = new URLSearchParams({ state });
     if (limit !== undefined) query.set('limit', String(limit));
+    if (project !== undefined) query.set('project', project);
     return request<NotificationList>(`/notifications?${query.toString()}`);
   },
   read: (id: string) => request<void>(`/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),

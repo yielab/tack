@@ -1,18 +1,21 @@
-import { type Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
+import { type Component, For, Show, createMemo, createResource, createSignal, onCleanup } from 'solid-js';
 import { A, useNavigate, useParams, useSearchParams } from '@solidjs/router';
 import { Badge, Button, LoadError, Skeleton } from '../../shared/ui';
 import { api } from '../../shared/api';
 import type { ChangeSet } from '../../shared/api/changeSets';
-import type { AutonomySettings } from '../../shared/api/autonomy';
 import type { InboxNotification } from '../../shared/api/notifications';
 import ChangeSetPanel from '../../shared/runWithAgent/ChangeSetPanel';
 import { proposerName } from '../../shared/runWithAgent/changeSetOps';
 import { relativeTimeFromIso } from '../../shared/runWithAgent/shared';
-import { changeSetIdOf, notificationHref, projectWaits, refreshChangeSets, waitingChangeSetsOf } from '../../shared/state/waiting';
+import { changeSetIdOf, notificationHref, refreshChangeSets, waitingChangeSetsOf } from '../../shared/state/waiting';
+import { onInboxChange } from '../../shared/state/notifications';
 import { changeSetsOffReason } from '../../shared/state/changeSets';
 import { useProject } from '../../shared/state/projectContext';
 import { shortItemId } from '../../shared/shortItemId';
 import { waitedFor, wordsOf } from './words';
+
+/** As many of the project's open notices as the route gives at once. */
+const PROJECT_WAITS_LIMIT = 500;
 
 type Filter = 'waiting' | 'decided';
 
@@ -22,7 +25,6 @@ const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
 ];
 
 /** The limit a project sets on what waits for a person; the API serves it with the budgets once it exists. */
-type WaitingBudgets = AutonomySettings['budgets'] & { waiting_max?: number | null };
 
 /** One change set that waits, in the one panel that applies, edits or turns it down. */
 const ChangeSetBody: Component<{ changeSetId: string; open: boolean }> = (p) => {
@@ -180,9 +182,17 @@ const NeedsYou: Component = () => {
   const [tasks] = createResource(projectId, (id) => api.items.list(id).catch(() => []));
   const [autonomy] = createResource(projectId, (id) => api.autonomy.get(id).catch(() => null));
 
-  const waits = () => projectWaits(projectId());
+  // The project's own open notices, as many as the route gives (the shared inbox keeps only the newest).
+  const [notices, { refetch }] = createResource(projectId, (id) =>
+    api.notifications.list('open', PROJECT_WAITS_LIMIT, id).catch(() => null),
+  );
+  onCleanup(onInboxChange(() => void refetch()));
+  const waits = () =>
+    (notices()?.notifications ?? [])
+      .filter((n) => n.level === 'needs_you')
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
   const titles = createMemo(() => new Map((tasks() ?? []).map((i) => [i.id, i.title])));
-  const limit = () => (autonomy()?.budgets as WaitingBudgets | undefined)?.waiting_max ?? null;
+  const limit = () => autonomy()?.budgets?.waiting_max ?? null;
   const opened = () => (typeof search.open === 'string' ? search.open : undefined);
   const offReason = () => changeSetsOffReason(project() ?? undefined, waitingChangeSetsOf(projectId()));
 
