@@ -207,13 +207,12 @@ pub struct Removals {
     pub sprints: Vec<Uuid>,
 }
 
-/// The revisions an apply of a project folder leaves, as bodies: the board as it is when the
-/// write begins (kept when it differs from the last revision), then the plan as it ends, with
-/// the origin (`file` or `revert`) of the second.
+/// The revision an apply of a project folder leaves inside its transaction: the board as it is
+/// when the write begins, kept when it differs from the last revision. The revision of what the
+/// apply wrote is recorded after the commit, from the board read back, because the board stores
+/// the plan in its own form (a description without its last newline, a type filled in).
 pub struct RevisionWrite {
     pub board: String,
-    pub origin: &'static str,
-    pub plan: String,
 }
 
 /// Everything one checked file writes, in the order it is written: the project, its settings,
@@ -256,8 +255,6 @@ pub struct Written {
     pub dependencies: usize,
     /// The items of the board the write changed.
     pub updated: Vec<Uuid>,
-    /// The plan's revision; none when the last revision already holds the same plan.
-    pub revision: Option<RevisionRow>,
 }
 
 /// What stops a write; the board is as it was.
@@ -920,18 +917,11 @@ async fn write_in(
             updated.push(id);
         }
     }
-    let revision = match &revisions {
-        Some(revisions) => record_revision_in(tx, project_id, revisions.origin, &revisions.plan)
-            .await
-            .map_err(at("revisions"))?,
-        None => None,
-    };
     Ok(Written {
         project_id,
         items: created,
         dependencies,
         updated,
-        revision,
     })
 }
 

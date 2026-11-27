@@ -226,7 +226,14 @@ async fn an_apply_with_a_stale_hash_is_refused() {
 async fn an_apply_writes_everything_or_nothing_and_leaves_two_revisions() {
     let (app, pid) = my_saas().await;
     exported(&app, &pid).await;
-    let files = v2();
+    let mut files = v2();
+    // A new item written as a person writes one: its description ends with a newline and it names
+    // no type. The board stores it trimmed and typed, and the revision must be what the board
+    // stored, or the status below would see a change nobody made.
+    files.insert(
+        "items/a-new-one.md".into(),
+        "---\ntitle: A new one\n---\nWritten in the folder.\n".into(),
+    );
     let (_, plan) = post(&app, &pid, "plan", "", &files).await;
     let hash = plan["plan_hash"].as_str().unwrap();
     let (status, applied) = post(&app, &pid, "apply", &format!("?plan_hash={hash}"), &files).await;
@@ -243,7 +250,7 @@ async fn an_apply_writes_everything_or_nothing_and_leaves_two_revisions() {
         .iter()
         .map(|i| i["title"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(titles.len(), 18);
+    assert_eq!(titles.len(), 19);
     assert!(!titles.contains(&"Informe mensual de métricas".to_owned()));
     let previewed = item_id(&app, &pid, "Vista previa de la factura en PDF").await;
     let versions = get(&app, &format!("/api/items/{previewed}/brief/versions")).await;
