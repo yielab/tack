@@ -125,13 +125,14 @@ review with every attempt kept.
 
 ## Budgets
 
-Each project can cap three things, set under **Daily limits** in the Limits section. Leave a box empty for no
+Each project can cap four things, set under **Daily limits** in the Limits section. Leave a box empty for no
 limit; nothing has one until you set it.
 
 | Limit | What happens when it is reached |
 |---|---|
 | **Tokens per day** | New runs do not start, and no automatic merge happens |
 | **Items waiting at once** | New runs do not start while that many tasks wait for your review |
+| **Waiting for a person at once** | Auto-start starts nothing new while that many questions, reviews, failures and changes to apply wait for you; each waiting task says "4 of 5 waiting for you: auto-start is paused until one is decided". 0 keeps it paused |
 | **Automatic merges per day** | No further automatic merge happens that day |
 
 **Tokens per day** is reserved when a run starts, so the runs of one day cannot add up past it. A run starts
