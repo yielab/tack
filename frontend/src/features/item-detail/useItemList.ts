@@ -2,10 +2,10 @@ import { createMemo, createResource } from 'solid-js';
 import { api } from '../../shared/api';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import type { Item } from '../../shared/types';
-import type { ItemWithBrief } from '../../shared/ui/briefSummary';
+import type { ItemWithBrief } from '../../shared/types';
 
-/** An item as the project's list sends it. */
-export type ListedItem = ItemWithBrief;
+/** An item of the project's list: as the board served it, or one made on the screen before the board answered. */
+export type ListedItem = Item | ItemWithBrief;
 
 /**
  * The project's items, which name an item's ancestors and carry its `brief_summary`. A screen under the

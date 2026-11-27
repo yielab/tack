@@ -1,20 +1,11 @@
 import { Show, type Component } from 'solid-js';
 import { FiAlertTriangle } from 'solid-icons/fi';
-import type { Item } from '../../shared/types';
+import type { BriefSummary, Item, ItemWithBrief } from '../../shared/types';
 import Badge from '../../shared/ui/Badge';
 
-/** What the project's item list says about a task's brief; the API writes the reason, the screen only shows it. */
-export interface BriefSummary {
-  done_when: boolean;
-  checks: number;
-  risk: 'low' | 'medium' | 'high' | null;
-  not_ready: string | null;
-}
-
-/** An item as the project's list serves it: the brief's summary rides along when the API has one. */
-export type ItemWithBrief = Item & { brief_summary?: BriefSummary | null };
-
-export const briefOf = (item: Item): BriefSummary | null => (item as ItemWithBrief).brief_summary ?? null;
+/** What the item routes say about a task's brief, when the item came from them (an item made on the
+ *  screen before the board answered has none yet). */
+export const briefOf = (item: Item | ItemWithBrief): BriefSummary | null => ('brief_summary' in item ? item.brief_summary : null);
 
 /** The reason a task cannot be verified yet, as the API gave it. */
 export const notReadyOf = (item: Item): string | null => briefOf(item)?.not_ready || null;

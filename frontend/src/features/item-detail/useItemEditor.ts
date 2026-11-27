@@ -2,7 +2,7 @@ import { createEffect, createResource, type Accessor } from 'solid-js';
 import { api } from '../../shared/api';
 import { isItemVersionConflict } from '../../shared/api/items';
 import { toast } from '../../shared/ui/toast';
-import type { Item, UpdateItem } from '../../shared/types';
+import type { UpdateItem } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { useExecutionStore } from '../../shared/state/executionContext';
 import { isTerminalStateString } from '../../shared/runWithAgent/shared';
@@ -47,10 +47,10 @@ export function useItemEditor(itemId: Accessor<string | undefined>) {
   const patch = async (p: UpdateItem) => {
     const current = item();
     if (!current) return;
-    mutate({ ...current, ...p } as Item);
+    mutate({ ...current, ...p } as typeof current);
     try {
-      // Editing an item changes none of its children, and the answer to a PATCH does not count them.
-      const updated = { ...(await api.items.update(current.id, p)), progress: current.progress };
+      // Editing an item changes none of its children and none of its brief, and the answer to a PATCH carries neither.
+      const updated = { ...current, ...(await api.items.update(current.id, p)), progress: current.progress };
       mutate(updated);
       window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT, { detail: updated }));
     } catch (err) {

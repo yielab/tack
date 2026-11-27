@@ -33,6 +33,10 @@ export type CreateProject = Schemas['CreateProject'];
 
 export type Item = Schemas['ItemCard'];
 
+/** An item as the item routes serve it: the card plus what its brief says about whether it can be verified. */
+export type ItemWithBrief = Schemas['ItemWithBrief'];
+export type BriefSummary = Schemas['BriefSummary'];
+
 /**
  * Paginated envelope returned by `GET /api/projects/:id/items` (`PaginatedItems`
  * in the backend schema). Clients page through `total` items using
