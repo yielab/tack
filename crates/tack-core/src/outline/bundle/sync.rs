@@ -6,8 +6,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::outline::Outline;
 use crate::outline::key::key_of;
+use crate::outline::{Outline, OutlineItem};
 
 pub struct Three<'a> {
     pub base: Option<&'a Outline>,
@@ -471,6 +471,31 @@ fn file_only(
     }
 }
 
+/// What a thing the board has goes into the merged outline as: for an item its plan and its key,
+/// never the board's own keys, which the check would read as the file asking to change them.
+fn as_merged(section: &str, entry: &Entry) -> Value {
+    if section != "items" {
+        return entry.full.clone();
+    }
+    let mut value = entry.plan.clone();
+    if let (Value::Object(map), Some(key)) = (&mut value, entry.full.get("key")) {
+        map.insert("key".to_owned(), key.clone());
+    }
+    value
+}
+
+/// [`as_merged`] for an item the caller puts back in a merged outline, such as one a removal
+/// keeps because it has history.
+pub fn without_board_keys(item: &OutlineItem) -> OutlineItem {
+    let mut value = serde_json::to_value(item).unwrap_or(Value::Null);
+    if let Value::Object(map) = &mut value {
+        for name in ITEM_BOARD_KEYS {
+            map.remove(name);
+        }
+    }
+    serde_json::from_value(value).unwrap_or_else(|_| item.clone())
+}
+
 /// A thing only the board has: a removal the file asks for, or something the file never saw.
 fn board_only(
     section: &'static str,
@@ -481,7 +506,11 @@ fn board_only(
 ) -> Step {
     let keep = |reason: Option<&str>| {
         let note = reason.map(|r| change(section, b, Verb::Keep, Some(r)));
-        (Some(b.full.clone()), note.into_iter().collect(), vec![])
+        (
+            Some(as_merged(section, b)),
+            note.into_iter().collect(),
+            vec![],
+        )
     };
     let remove = || (None, vec![change(section, b, Verb::Remove, None)], vec![]);
     match base {
@@ -499,7 +528,7 @@ fn board_only(
             let (value, notes, _) = match prefer {
                 Some(Prefer::File) => remove(),
                 Some(Prefer::Board) => keep(None),
-                None => (Some(b.full.clone()), vec![], vec![]),
+                None => (Some(as_merged(section, b)), vec![], vec![]),
             };
             (value, notes, open)
         }

@@ -180,6 +180,13 @@ async fn a_plan_names_every_change_and_its_cost() {
         .expect("the item with a comment is kept");
     assert_eq!(kept["reason"], "it has 1 comment");
     assert_eq!(plan["applies"], true);
+    // A folder never writes the board's keys, so the plan has nothing to say about them, even for
+    // the item a removal keeps because it has history.
+    assert!(
+        !plan["warnings"].to_string().contains("the board's"),
+        "{}",
+        plan["warnings"]
+    );
     assert_eq!(plan["conflicts"], json!([]));
 
     // Nothing was written.
