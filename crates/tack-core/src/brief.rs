@@ -68,12 +68,19 @@ pub struct BriefSummary {
 /// The reason a task has neither a Done when nor a check a machine runs.
 const NOT_READY: &str = "No Done when and no check a machine runs";
 
-/// The summary of `brief`. The Done when is the item's, or the project's when the item has none (a
-/// run receives the project's). A check is a criterion a person does not tick (`manual` is the
-/// only kind a machine does not run).
+/// The summary of `brief`. A task says when it is done with a line a person ticks (a `manual`
+/// criterion, the checklist the item page calls Done when) or with a definition of done, the
+/// item's or the project's (a run receives the project's when the item has none). A check is a
+/// criterion a person does not tick (`manual` is the only kind a machine does not run).
 pub fn readiness(brief: Option<&ItemBrief>, project_done: Option<&str>) -> BriefSummary {
     let said = |text: Option<&str>| text.is_some_and(|t| !t.trim().is_empty());
-    let done_when = said(brief.and_then(|b| b.definition_of_done.as_deref())) || said(project_done);
+    let ticked = brief.is_some_and(|b| {
+        b.acceptance
+            .iter()
+            .any(|c| matches!(c, AcceptanceCriterion::Manual { .. }))
+    });
+    let done_when =
+        ticked || said(brief.and_then(|b| b.definition_of_done.as_deref())) || said(project_done);
     let checks = brief.map_or(0, |b| {
         b.acceptance
             .iter()

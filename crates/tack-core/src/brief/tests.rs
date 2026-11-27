@@ -189,8 +189,8 @@ fn readiness_says_why_a_task_cannot_be_verified() {
     );
     assert_eq!(
         readiness(Some(&manual_only), None),
-        summary(false, 0, None, true),
-        "a manual criterion only"
+        summary(true, 0, None, false),
+        "a Done when line a person ticks"
     );
     assert_eq!(
         readiness(Some(&one_command), None),
