@@ -2,17 +2,10 @@ import { createMemo, createResource } from 'solid-js';
 import { api } from '../../shared/api';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import type { Item } from '../../shared/types';
-
-/** What the project's item list says about whether a task can be verified. The API writes `not_ready`; the web shows it as given. */
-export interface BriefSummary {
-  done_when: boolean;
-  checks: number;
-  risk: 'low' | 'medium' | 'high' | null;
-  not_ready: string | null;
-}
+import type { ItemWithBrief } from '../../shared/ui/briefSummary';
 
 /** An item as the project's list sends it. */
-export type ListedItem = Item & { brief_summary?: BriefSummary | null };
+export type ListedItem = ItemWithBrief;
 
 /**
  * The project's items, which name an item's ancestors and carry its `brief_summary`. A screen under the
