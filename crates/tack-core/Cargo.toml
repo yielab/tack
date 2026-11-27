@@ -24,10 +24,8 @@ validator = { workspace = true }
 regex = { workspace = true }
 globset = "0.4"
 csv = { workspace = true }
-utoipa = { workspace = true, optional = true }
-
-[dev-dependencies]
 serde-saphyr = { workspace = true }
+utoipa = { workspace = true, optional = true }
 
 [lints]
 workspace = true

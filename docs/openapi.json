@@ -15320,6 +15320,13 @@
               "type": "string"
             }
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item's key: its file name in the project folder; absent, the item is matched by\nnothing and always added."
+          },
           "parent": {
             "type": [
               "string",
