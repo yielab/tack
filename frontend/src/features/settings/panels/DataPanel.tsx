@@ -6,6 +6,7 @@ import { toast } from '../../../shared/ui/toast';
 import { Button } from '../../../shared/ui';
 import ImportFromFile from '../../../shared/ui/ImportFromFile';
 import { useProject } from '../../../shared/state/projectContext';
+import ProjectFolderCard from './projectFolder/ProjectFolderCard';
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -65,6 +66,8 @@ const DataPanel: Component = () => {
 
   return (
     <div class="flex max-w-xl flex-col gap-3">
+      <Show when={projectId()}>{(id) => <ProjectFolderCard projectId={id()} />}</Show>
+
       <section class={CARD}>
         <h3 class={TITLE} style={{ color: 'var(--color-text-primary)' }}>
           Export

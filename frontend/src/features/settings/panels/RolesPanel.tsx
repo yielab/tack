@@ -1,5 +1,6 @@
 import { type Component, createResource, createSignal, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
+import KeyLabel from '../../../shared/ui/KeyLabel';
 import { toast } from '../../../shared/ui/toast';
 import { Button, Field, EmptyState } from '../../../shared/ui';
 import { useProject } from '../../../shared/state/projectContext';
@@ -57,7 +58,10 @@ const RolesPanel: Component = () => {
                   class="inline-block h-3 w-3 shrink-0 rounded-full"
                   style={{ 'background-color': role.color }}
                 />
-                {role.name}
+                <span class="flex min-w-0 flex-col leading-tight">
+                  {role.name}
+                  <KeyLabel row={role} />
+                </span>
                 <Button
                   size="sm"
                   variant="ghost"

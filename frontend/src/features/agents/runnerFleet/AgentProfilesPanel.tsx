@@ -3,6 +3,7 @@ import { createStore, produce } from 'solid-js/store';
 import { Badge, Button, EmptyState, Field, FieldShell, HelpHint, LoadError, Skeleton } from '../../../shared/ui';
 import { EGRESS_MODES, HELP, defaultEgressMode } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
+import KeyLabel from '../../../shared/ui/KeyLabel';
 import { IconSettings } from '../../../shared/ui/icons';
 import {
   PER_TASK_AGENT_TEXT,
@@ -383,8 +384,11 @@ const AgentProfilesPanel: Component = () => {
               {(profile) => (
                 <li class="flex flex-col gap-1.5 rounded-card bg-panel px-5 py-[18px]">
                   <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
-                      {profile.name}
+                    <span class="flex flex-col">
+                      <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                        {profile.name}
+                      </span>
+                      <KeyLabel row={profile} />
                     </span>
                     <span class="font-mono text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
                       {profile.agent_profile_id}

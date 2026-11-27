@@ -256,7 +256,8 @@ describe('Settings panels', () => {
       ).toBe(true),
     );
 
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    // The project folder's picker comes first; the snapshot restore is the next file input.
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]:not([data-testid="project-folder-input"])')!;
     const file = new File([JSON.stringify({ project: {}, items: [] })], 'p.json', { type: 'application/json' });
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
     input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -272,8 +273,8 @@ describe('Settings panels', () => {
     const { container, dispose } = mount(() => <DataPanel />);
     await flush();
 
-    // Inputs: the snapshot restore, then "Add items", then "New project".
-    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    // Inputs past the project folder's picker: the snapshot restore, then "Add items", then "New project".
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]:not([data-testid="project-folder-input"])');
     const file = new File(['title\nFoo\nBar\nBaz'], 'items.csv', { type: 'text/csv' });
     Object.defineProperty(inputs[1], 'files', { value: [file], configurable: true });
     inputs[1].dispatchEvent(new Event('change', { bubbles: true }));

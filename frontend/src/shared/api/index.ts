@@ -26,6 +26,7 @@ import { triggers } from './triggers';
 import { notifications } from './notifications';
 import { teams } from './teams';
 import { itemTypes } from './itemTypes';
+import { folder } from './folder';
 
 export const api = {
   projects,
@@ -50,6 +51,7 @@ export const api = {
   notifications,
   teams,
   itemTypes,
+  folder,
 };
 
 export { ApiError, tokenStore, request } from './client';

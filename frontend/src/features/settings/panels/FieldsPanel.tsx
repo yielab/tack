@@ -1,6 +1,7 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { api } from '../../../shared/api';
+import KeyLabel from '../../../shared/ui/KeyLabel';
 import { toast } from '../../../shared/ui/toast';
 import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState, createConfirm } from '../../../shared/ui';
 import type { CustomField } from '../../../shared/types';
@@ -153,6 +154,7 @@ export default function FieldsPanel() {
                       <Badge tone="neutral">Required</Badge>
                     </Show>
                   </div>
+                  <KeyLabel row={field} class="-mt-1 pl-9" />
 
                   <Show when={field.description}>
                     <p class="text-caption text-content-muted">{field.description}</p>

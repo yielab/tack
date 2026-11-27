@@ -2,6 +2,7 @@ import { type Component, type JSX, createMemo, createResource, createSignal, cre
 import { api } from '../../shared/api';
 import { Icons, TypeTile } from '../../shared/ui';
 import ItemPath from '../../shared/ui/ItemPath';
+import KeyLabel from '../../shared/ui/KeyLabel';
 import { statusDotColor } from '../../shared/ui/statusDot';
 import ItemMenu from '../../shared/ui/ItemMenu';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
@@ -110,6 +111,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         }}
         aria-label="Item title"
       />
+      <KeyLabel row={props.item} class="-mt-4 block" />
 
       {/* Status: a person's. What the agents report is Work, in the Work panel below. Only the current
           status shows; the others are options behind one button, never a row of steps. */}

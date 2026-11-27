@@ -17,6 +17,7 @@ export const BOOK = {
   decisionToken: `${BOOK_BASE}admin-guide/administration.html#authentication`,
   workQuality: `${BOOK_BASE}user-guide/reviewing-runs.html#quality-of-the-work`,
   importFiles: `${BOOK_BASE}user-guide/import-export.html#the-project-file`,
+  projectFolder: `${BOOK_BASE}user-guide/import-export.html#keeping-the-plan-in-the-repository`,
 };
 
 /** The book page for where the user is. `dialogOpen` (the Run dialog) wins over the route. */
