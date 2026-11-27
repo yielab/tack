@@ -88,11 +88,29 @@ sqlite_ignores() {
 EOF
 }
 
+# RustSec marks chrono and humantime unmaintained, with no fixed version and no known vulnerability.
+# chrono is Tack's date type in every crate and in sqlx's own column mapping (sqlx-core 0.9.0, its
+# newest release); RustSec names jiff and time instead, and the move waits on sqlx. humantime comes
+# only through object_store 0.14.2, its newest release. Re-review when either changes.
+unmaintained_ignores() {
+  cat <<'EOF'
+  { id = "RUSTSEC-2026-0543", reason = "chrono 0.4.45, unmaintained with no fixed version and no known vulnerability; Tack's date type in every crate and in sqlx-core 0.9.0's column mapping (its newest release). Moving to jiff waits on sqlx. Reviewed 2026-11-27, next review 2027-02-27." },
+EOF
+}
+
+humantime_ignores() {
+  cat <<'EOF'
+  { id = "RUSTSEC-2026-0542", reason = "humantime 2.3.0, unmaintained with no known vulnerability; reached only through object_store 0.14.2, its newest release. Reviewed 2026-11-27, next review 2027-02-27." },
+EOF
+}
+
 {
   echo '[advisories]'
   echo 'ignore = ['
   zbus_ignores
   sqlite_ignores
+  unmaintained_ignores
+  humantime_ignores
   echo ']'
   echo
   common_policy main
@@ -133,5 +151,6 @@ ignore = [
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
 EOF
 zbus_ignores >> crates/tack-desktop/deny.toml
+unmaintained_ignores >> crates/tack-desktop/deny.toml
 printf ']\n\n' >> crates/tack-desktop/deny.toml
 common_policy >> crates/tack-desktop/deny.toml
