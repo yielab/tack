@@ -94,7 +94,7 @@ builds cargo.
 |---|---|---|
 | 1 | M (the key and the comparison, pure), B (one write, one transaction), Q (the figures by sprint, domain and level) | — |
 | 2 | K (keys on the five tables), A (the `.tack/` level), N (what waits for a person, counted and limited) | B (K and N write through B's `_in` functions) and M (`key_of`) |
-| 3 | I (items: matching by key, the brief in the file and its summary), F (the folder format, pure) | K; F only M |
+| 3 | I (items: matching by key, the brief in the file and its summary), F (the folder format, pure), T (a thread's question reaches Needs you) | K; F only M; T only N |
 | 4 | S (routes, revisions, plan, apply) | everything above |
 | 5 | C (CLI and MCP), then Z | S |
 
@@ -513,6 +513,33 @@ files.
 **Done when:** `cargo nextest run --workspace -E 'package(tack-api) + package(tack-db)'`, a clean
 regen, and the gate are green.
 
+### T — a question asked in a thread reaches Needs you (Sonnet, two layers)
+
+Found by task N: a manager's thread turn runs on the thread's hidden anchor item, and the inbox
+skips every notice about a hidden item, so a question asked in a thread opens no `decision`
+(ADR 0033 decision 6 promises it). The same holds for a trigger's hidden item.
+
+**Files:** `crates/tack-app/src/notifications/subscriber.rs` (`apply`, line 57, and the reconcile's
+use of `is_hidden`, line 164); `crates/tack-db/src/repo/notifications.rs` (`pending_decisions`,
+line 420, and the list queries); `crates/tack-core/src/notification.rs` (`Notification`, line 163);
+`crates/tack-api/src/handlers/notifications.rs` only if the answer is built there; the tests beside
+each; the generated files.
+
+**Do:**
+
+- A `decision` notice is never skipped for a hidden item: a question always waits for a person.
+  Every other kind keeps the skip (a thread's runs are not reviews, failures or news).
+  `pending_decisions` drops `i.hidden = 0` for the same reason.
+- `Notification` gains `thread_id: Option<Uuid>`: the thread whose anchor is the notification's
+  item, read with a `LEFT JOIN threads t ON t.anchor_item_id = n.item_id` in the list queries. No
+  column and no migration; a notification about an ordinary item has none.
+
+**Tests (RED first):** in `crates/tack-app/tests/notifications.rs`, a question in a thread's turn
+opens a `decision` whose `thread_id` is the thread's; a run that finishes on the same anchor opens
+no `review`; the reconcile keeps the thread's question open.
+
+**Done when:** the crates' tests, a clean regen, and the gate are green.
+
 ### C — `tack folder`, and the MCP tool (Sonnet, one layer)
 
 **Files:** `crates/tack-cli/src/main.rs` (`Commands::Folder { action: FolderAction }` beside
@@ -578,7 +605,7 @@ built against:
 | Ask | Answer |
 |---|---|
 | A summary of each item's brief on the item list | Task I: `brief_summary { done_when, checks, risk, not_ready } \| null` on `GET /projects/{id}/items`. The rule lives in `tack_core::brief::readiness`: `not_ready` says why when there is neither a Done when (the item's or the project's) nor a check a machine runs; the screens show it and never compute it. Not ready never blocks a run |
-| Every wait for a person in one project | Task N: `GET /notifications?project=<uuid>` (open by default), because the shared list keeps only the newest 50; and a succeeded run becomes a `review` wait until it is accepted, turned down, merged or run again. A question, a failure and a change set already are waits; a thread turn that waits arrives as a question |
+| Every wait for a person in one project | Task N: `GET /notifications?project=<uuid>` (open by default), because the shared list keeps only the newest 50. Task T: a question in a thread arrives as `decision` with `thread_id` set; and a succeeded run becomes a `review` wait until it is accepted, turned down, merged or run again. A question, a failure and a change set already are waits; a thread turn that waits arrives as a question |
 | A limit on what waits | Task N: `waiting_max` in the project's budgets, beside `queue_items_max`, null is no limit; at the limit auto-start starts nothing and each waiting task gives the reason `waiting_max` |
 | A sprint's decision load | Task Q: `human_minutes_by_sprint` on the factory figures |
 | The ladder's error rate per domain and level | Task Q: `work_quality.cuts` gains `domain` and `level` |
@@ -646,6 +673,10 @@ Owned by the frontend session; this session does not edit it. Two parts:
   the project id; `put_project_budgets_in` joined the twins so the limits land in the same
   transaction; `upsert_brief_in` keeps its name. The autonomy overlay is read before the
   transaction opens.
+- **N** (`a8a1c441`): `RunStarted` under a new request closes the old `review` through the
+  reconcile, within about 30 seconds. The integrator removed the agent's seven-day window on
+  waiting reviews: a run waits however old it is. `waiting_max: 0` pauses auto-start for good. The
+  thread finding became task T.
 - **Q** (`1dc6efb0`): an attempt merged by hand has no merge-ledger row, so the quality cuts by
   domain and level put it under "Not merged"; `human_minutes_by_sprint` is ordered by sprint id.
 
