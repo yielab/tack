@@ -418,6 +418,7 @@ async fn tokens_are_set_against_the_projects_limits() {
                 tokens_per_day: Some(1_000_000),
                 auto_merges_per_day: None,
                 queue_items_max: None,
+                waiting_max: None,
                 provisional_tokens_per_run: Some(250_000),
             },
         )

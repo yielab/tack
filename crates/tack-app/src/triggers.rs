@@ -250,6 +250,8 @@ async fn happened_of(
         ),
         // A summary of runs the triggers have already seen one by one.
         Fact::ChildrenFinished { .. } => return Ok(None),
+        // A person's verdict on a run that already finished, which triggers saw as finished.
+        Fact::RunReviewed { .. } => return Ok(None),
     };
     if let Some(item) = item
         && repo.item_is_hidden(item).await?

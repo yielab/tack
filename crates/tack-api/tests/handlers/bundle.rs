@@ -169,6 +169,7 @@ async fn the_fixture_makes_a_whole_project() {
 
     let autonomy = get(&app, &format!("/api/projects/{pid}/autonomy")).await;
     assert_eq!(autonomy["level"], "L3");
+    assert_eq!(autonomy["budgets"]["waiting_max"], 2);
     assert_eq!(autonomy["domains"][0]["level"], "L3");
     let warnings = section(&out, "automation")["warnings"].to_string();
     assert!(

@@ -3640,6 +3640,19 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "project",
+            "in": "path",
+            "description": "Only this project's notifications; `open` counts only its own too.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -3654,7 +3667,7 @@
             }
           },
           "400": {
-            "description": "`state` or `limit` is not what it should be",
+            "description": "`state`, `limit` or `project` is not what it should be",
             "content": {
               "application/json": {
                 "schema": {
@@ -10357,6 +10370,14 @@
               "null"
             ],
             "format": "int64"
+          },
+          "waiting_max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The most things that may wait for a person; at the limit auto-start starts nothing."
           }
         }
       },
@@ -10550,6 +10571,13 @@
             "format": "int64"
           },
           "tokens_per_day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "waiting_max": {
             "type": [
               "integer",
               "null"
@@ -14291,7 +14319,7 @@
       },
       "Key": {
         "type": "string",
-        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,\n`trend:<project>:<cut>:<name>`."
+        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `review:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,\n`trend:<project>:<cut>:<name>`."
       },
       "Kind": {
         "type": "string",
@@ -14301,6 +14329,7 @@
           "run_failed",
           "change_set",
           "run_finished",
+          "review",
           "due_soon",
           "children_finished",
           "memory",
@@ -20645,7 +20674,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "`open_request`, `blocked`, `no_profile`, `no_machine`, `budget` or `max_open`."
+            "description": "`open_request`, `blocked`, `no_profile`, `no_machine`, `budget`, `max_open` or `waiting_max`."
           },
           "text": {
             "type": "string",

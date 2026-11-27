@@ -25,6 +25,8 @@ pub enum Kind {
     /// An agent proposed a change set.
     ChangeSet,
     RunFinished,
+    /// A run succeeded and waits for a person to accept it, turn it down or merge it.
+    Review,
     /// An item is due within the hour.
     DueSoon,
     /// No child of a parent item has a run open any more.
@@ -42,6 +44,7 @@ impl Kind {
             Kind::RunFailed => "run_failed",
             Kind::ChangeSet => "change_set",
             Kind::RunFinished => "run_finished",
+            Kind::Review => "review",
             Kind::DueSoon => "due_soon",
             Kind::ChildrenFinished => "children_finished",
             Kind::Memory => "memory",
@@ -72,7 +75,7 @@ impl Level {
 
 /// The situation a notification is about, so the same situation is never open twice and the
 /// fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-/// `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,
+/// `finished:<request>`, `review:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,
 /// `trend:<project>:<cut>:<name>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -95,6 +98,11 @@ impl Key {
 
     pub fn finished(request_id: &str) -> Key {
         Key(format!("finished:{request_id}"))
+    }
+
+    /// A run that succeeded, until it is accepted, turned down, merged or run again.
+    pub fn review(request_id: &str) -> Key {
+        Key(format!("review:{request_id}"))
     }
 
     /// One item is announced once for the day it falls due.
@@ -212,12 +220,12 @@ pub fn notice(event: &DomainEvent) -> Option<Notice> {
             "A change set is waiting for you",
         ),
         Fact::RunFinished { run } => (
-            Kind::RunFinished,
-            Level::Info,
-            Key::finished(&run.request_id),
+            Kind::Review,
+            Level::NeedsYou,
+            Key::review(&run.request_id),
             Some(run.item_id),
             Some(run.request_id.clone()),
-            "A run finished",
+            "A run is ready for review",
         ),
         Fact::ChildrenFinished { parent_id } => (
             Kind::ChildrenFinished,
@@ -232,6 +240,7 @@ pub fn notice(event: &DomainEvent) -> Option<Notice> {
         | Fact::ItemMoved { .. }
         | Fact::ItemDeleted { .. }
         | Fact::RunStarted { .. }
+        | Fact::RunReviewed { .. }
         | Fact::RunWaiting { .. }
         | Fact::DecisionResolved { .. }
         | Fact::ChangeSetSettled { .. } => return None,
@@ -248,15 +257,17 @@ pub fn notice(event: &DomainEvent) -> Option<Notice> {
     })
 }
 
-/// The situation a fact ends, or `None`. Who caused the fact does not matter: a question answered
-/// in docket's own tool closes it as well. A run that starts closes the failure of its request;
-/// a run that began as a new request leaves the old failure to the store's reconcile.
-pub fn closes(event: &DomainEvent) -> Option<Key> {
+/// The situations a fact ends, none for most. Who caused the fact does not matter: a question
+/// answered in docket's own tool closes it as well. A run that starts closes the failure and the
+/// review of its request, and a run reviewed closes its review; a run that began as a new request
+/// leaves the old ones to the store's reconcile.
+pub fn closes(event: &DomainEvent) -> Vec<Key> {
     match &event.fact {
-        Fact::DecisionResolved { decision_id, .. } => Some(Key::decision(decision_id)),
-        Fact::RunStarted { run } => Some(Key::run(&run.request_id)),
-        Fact::ChangeSetSettled { change_set_id } => Some(Key::change_set(change_set_id)),
-        _ => None,
+        Fact::DecisionResolved { decision_id, .. } => vec![Key::decision(decision_id)],
+        Fact::RunStarted { run } => vec![Key::run(&run.request_id), Key::review(&run.request_id)],
+        Fact::RunReviewed { run } => vec![Key::review(&run.request_id)],
+        Fact::ChangeSetSettled { change_set_id } => vec![Key::change_set(change_set_id)],
+        _ => Vec::new(),
     }
 }
 

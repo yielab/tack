@@ -62,7 +62,7 @@ async fn apply(repo: &Repository, inbox: &Inbox, event: &DomainEvent) -> Result<
     {
         inbox.open(&titled(repo, notice).await?).await?;
     }
-    if let Some(key) = closes(event) {
+    for key in closes(event) {
         inbox.close(&key).await?;
     }
     Ok(())
@@ -142,6 +142,11 @@ async fn waiting(repo: &Repository, clock: &dyn Clock) -> Result<Vec<Notice>, Ap
         .await?
     {
         facts.push((run.project_id, Fact::RunFailed { run: run_ref(&run) }));
+    }
+    // A run waits for its review however old it is: only a person's verdict, a merge or a later
+    // run of the item ends the wait (ADR 0033 decision 6).
+    for run in repo.unreviewed_finished_runs().await? {
+        facts.push((run.project_id, Fact::RunFinished { run: run_ref(&run) }));
     }
     for set in repo.waiting_change_sets().await? {
         facts.push((
@@ -288,7 +293,7 @@ pub async fn reconcile_memory(repo: &Repository, inbox: &Inbox) -> Result<Reconc
 }
 
 /// Makes the needs-you notifications say what the store says: one open for each question, failed
-/// run and change set that waits on a person, none for anything else. Idempotent: the key keeps a
+/// run, run to review and change set that waits on a person, none for anything else. Idempotent: the key keeps a
 /// situation from being opened twice.
 pub async fn reconcile(
     repo: &Repository,

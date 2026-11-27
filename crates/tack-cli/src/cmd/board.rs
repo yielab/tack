@@ -280,10 +280,11 @@ pub(crate) fn cmd_project_autonomy(
     println!("Loop cap:            {}", a["verify_loop_max_attempts"]);
     let b = &a["budgets"];
     println!(
-        "Budgets per day:     tokens {}, auto merges {}, review queue {}",
+        "Budgets per day:     tokens {}, auto merges {}, review queue {}, waiting for you {}",
         limit(&b["tokens_per_day"]),
         limit(&b["auto_merges_per_day"]),
-        limit(&b["queue_items_max"])
+        limit(&b["queue_items_max"]),
+        limit(&b["waiting_max"])
     );
     println!("Domains:");
     let empty = vec![];

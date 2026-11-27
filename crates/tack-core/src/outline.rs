@@ -334,6 +334,8 @@ pub struct BundleBudgets {
     pub auto_merges_per_day: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue_items_max: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_max: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

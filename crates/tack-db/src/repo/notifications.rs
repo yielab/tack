@@ -237,13 +237,27 @@ impl Repository {
         listing: Listing,
         limit: u32,
     ) -> Result<Vec<Notification>, StoreError> {
+        self.list_notifications_of(None, listing, limit).await
+    }
+
+    /// [`Self::list_notifications`] for one project when `project_id` is given.
+    #[instrument(skip(self))]
+    pub async fn list_notifications_of(
+        &self,
+        project_id: Option<Uuid>,
+        listing: Listing,
+        limit: u32,
+    ) -> Result<Vec<Notification>, StoreError> {
         let filter = match listing {
             Listing::Open => OPEN,
             Listing::All => "1 = 1",
         };
+        let project = project_id.map(|id| id.to_string());
         let rows = sqlx::query_as::<_, NotificationRow>(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} FROM notifications WHERE {filter} ORDER BY created_at DESC, id LIMIT ?"
+            "SELECT {COLUMNS} FROM notifications WHERE {filter} AND (?1 IS NULL OR project_id = ?1)
+             ORDER BY created_at DESC, id LIMIT ?2"
         )))
+        .bind(project)
         .bind(i64::from(limit))
         .fetch_all(self.pool())
         .await?;
@@ -255,12 +269,35 @@ impl Repository {
     /// How many notifications are open.
     #[instrument(skip(self))]
     pub async fn count_open_notifications(&self) -> Result<u64, StoreError> {
+        self.count_open_notifications_of(None).await
+    }
+
+    /// [`Self::count_open_notifications`] for one project when `project_id` is given.
+    #[instrument(skip(self))]
+    pub async fn count_open_notifications_of(
+        &self,
+        project_id: Option<Uuid>,
+    ) -> Result<u64, StoreError> {
         let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT COUNT(*) FROM notifications WHERE {OPEN}"
+            "SELECT COUNT(*) FROM notifications WHERE {OPEN} AND (?1 IS NULL OR project_id = ?1)"
         )))
+        .bind(project_id.map(|id| id.to_string()))
         .fetch_one(self.pool())
         .await?;
         Ok(u64::try_from(count).unwrap_or(0))
+    }
+
+    /// How many things wait for a person in one project: its open needs-you notifications.
+    #[instrument(skip(self))]
+    pub async fn count_open_needs_you(&self, project_id: Uuid) -> Result<usize, StoreError> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM notifications
+             WHERE project_id = ? AND level = 'needs_you' AND resolved_at IS NULL",
+        )
+        .bind(project_id.to_string())
+        .fetch_one(self.pool())
+        .await?;
+        Ok(usize::try_from(count).unwrap_or(0))
     }
 
     /// Deliveries whose time has come, oldest first, at most `limit`.
@@ -430,6 +467,38 @@ impl Repository {
              ORDER BY r.updated_at, r.id",
         ))
         .bind(since.to_rfc3339())
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter().map(WaitingRunRow::into_run).collect()
+    }
+
+    /// The runs that succeeded, in items that are not hidden, that no later
+    /// request of the same item has followed and that nobody has accepted, turned down or merged:
+    /// the runs that wait for a person to review them.
+    #[instrument(skip(self))]
+    pub async fn unreviewed_finished_runs(&self) -> Result<Vec<WaitingRun>, StoreError> {
+        let rows: Vec<WaitingRunRow> = sqlx::query_as(super::execution::state::sql(
+            "SELECT i.project_id AS project_id, r.item_id AS item_id, r.id AS request_id,
+                    COALESCE((SELECT a.id FROM execution_attempts a WHERE a.request_id = r.id
+                              ORDER BY a.attempt_number DESC LIMIT 1), '') AS attempt_id,
+                    NULL AS decision_id
+             FROM execution_requests r JOIN items i ON i.id = r.item_id
+             WHERE r.state = {succeeded} AND i.hidden = 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM execution_requests later
+                   WHERE later.item_id = r.item_id
+                     AND (later.created_at > r.created_at
+                          OR (later.created_at = r.created_at AND later.rowid > r.rowid)))
+               AND NOT EXISTS (
+                   SELECT 1 FROM execution_attempts a
+                   JOIN attempt_reviews v ON v.attempt_id = a.id
+                   WHERE a.request_id = r.id)
+               AND NOT EXISTS (
+                   SELECT 1 FROM execution_attempts a
+                   JOIN tack_merges m ON m.attempt_id = a.id
+                   WHERE a.request_id = r.id AND m.merged_at IS NOT NULL)
+             ORDER BY r.updated_at, r.id",
+        ))
         .fetch_all(self.pool())
         .await?;
         rows.into_iter().map(WaitingRunRow::into_run).collect()

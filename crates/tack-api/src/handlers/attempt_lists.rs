@@ -397,6 +397,17 @@ pub async fn review_execution_attempt(
                 )
             }
         })?;
+    if let Some(app) = &state.app {
+        let by = tack_core::principal::Principal::from_label(&reviewed_by)
+            .unwrap_or_else(|| tack_core::principal::Principal::operator(&reviewed_by));
+        tack_app::runs::announce::run_reviewed(
+            &app.repo,
+            app.events().as_ref(),
+            &by,
+            &tack_protocol::execution::AttemptId::new(attempt_id.as_str()),
+        )
+        .await;
+    }
     let pull_request_url = match (input.verdict.as_str(), state.app.clone()) {
         ("accepted", Some(app)) => {
             tack_app::pull_request::open_for_attempt(&app.repo, &app.ports(), &attempt_id).await
