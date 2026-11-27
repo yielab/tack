@@ -110,6 +110,9 @@ pub async fn seed_builtin_profiles(
             .execute(pool)
             .await?;
     }
+    // The seed runs after the migrations' fill, so a built-in profile it just made takes its key
+    // here, by the same rule.
+    crate::repo::project_file::fill_missing_keys(pool).await?;
     Ok(())
 }
 

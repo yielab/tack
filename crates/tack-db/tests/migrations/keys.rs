@@ -88,3 +88,21 @@ async fn migration_115_gives_every_visible_row_a_key_once() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_built_in_profile_has_its_key_on_the_first_start() {
+    let pool = init_pool("sqlite::memory:").await.expect("pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    tack_db::repo::execution::seed_builtin_profiles(
+        &tack_db::Repository::new(pool.clone()),
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("seed");
+    let unkeyed: Vec<(String,)> =
+        sqlx::query_as("SELECT name FROM agent_profiles WHERE builtin = 1 AND key = ''")
+            .fetch_all(&pool)
+            .await
+            .expect("query");
+    assert!(unkeyed.is_empty(), "built-ins without a key: {unkeyed:?}");
+}
