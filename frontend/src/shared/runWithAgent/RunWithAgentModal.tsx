@@ -134,7 +134,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   );
   // The reason the API gives when the task cannot be verified yet; shown as given, never worked out here.
   const notReady = (): string | null =>
-    item.error === undefined ? ((item() as { brief_summary?: { not_ready?: string | null } | null } | undefined)?.brief_summary?.not_ready ?? null) : null;
+    item.error === undefined ? (item()?.brief_summary?.not_ready ?? null) : null;
   const checkedCard = (): boolean | undefined => {
     if (acceptanceCount.loading) return undefined;
     const n = acceptanceCount();

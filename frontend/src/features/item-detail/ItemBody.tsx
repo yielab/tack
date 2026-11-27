@@ -1,5 +1,6 @@
 import { type Component, type JSX, createEffect, createSignal, on, Show } from 'solid-js';
 import { Fold, Icons, RunState, SectionHeading, priorityLabel, type DocketRunWord, type RunStateName } from '../../shared/ui';
+import { notReadyOf } from '../../shared/ui/briefSummary';
 import type { Item } from '../../shared/types';
 import ItemMenu from '../../shared/ui/ItemMenu';
 import MoveUnderDialog from '../../shared/ui/MoveUnderDialog';
@@ -58,7 +59,10 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
   const marks = useFolderMarks(() => props.item);
   const { byId } = useProjectItemList(() => props.item);
   const brief = useBrief(() => props.item.id);
-  const notReady = () => byId().get(props.item.id)?.brief_summary?.not_ready ?? null;
+  const notReady = () => {
+    const listed = byId().get(props.item.id);
+    return listed ? notReadyOf(listed) : null;
+  };
 
   // The latest run's state, told by the next-step panel, marks the Runs section with the same icon.
   const [runState, setRunState] = createSignal<{ state: RunStateName; docket?: DocketRunWord } | undefined>(undefined);
