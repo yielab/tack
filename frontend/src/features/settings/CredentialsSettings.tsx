@@ -7,7 +7,8 @@ import type {
   IssuedCredential,
 } from '../../shared/api/credentials';
 import { toast } from '../../shared/ui/toast';
-import { Badge, Button, Field, createConfirm } from '../../shared/ui';
+import { FiKey } from 'solid-icons/fi';
+import { Badge, Button, Field, SectionHeading, createConfirm } from '../../shared/ui';
 
 /** What a scope may name, in the order a screen lists them, and why one cannot be picked yet. */
 const CAPABILITIES: { value: CredentialCapability; label: string; hint: string; reason?: string }[] = [
@@ -35,8 +36,6 @@ export function credentialState(c: AgentCredential, now = Date.now()): 'active' 
   return new Date(c.expires_at).getTime() <= now ? 'expired' : 'active';
 }
 
-const CARD = 'flex flex-col gap-3 rounded-lg bg-panel px-5 py-5';
-const CARD_TITLE = 'text-xl leading-tight';
 const MUTED = { color: 'var(--color-text-secondary)' };
 
 /** Settings: the keys the operator hands to agents. */
@@ -137,11 +136,11 @@ const CredentialsSettings: Component = () => {
   };
 
   return (
-    <section class={CARD} data-testid="credentials-settings">
+    <section class="flex flex-col gap-4" data-testid="credentials-settings" aria-labelledby="credentials-title">
       <ConfirmHost />
-      <h2 class={CARD_TITLE} style={{ color: 'var(--color-text-primary)' }}>
+      <SectionHeading id="credentials-title" icon={<FiKey size={16} />}>
         Agent credentials
-      </h2>
+      </SectionHeading>
       <p class="text-small" style={MUTED}>
         A credential is a key you hand to an agent so it can use Tack on its own. It reaches only the projects
         you name, does only what you tick, signs what it writes with its name, and expires after 90 days.
@@ -151,18 +150,18 @@ const CredentialsSettings: Component = () => {
       <Show when={shown()}>
         {(issued) => (
           <div
-            class="flex flex-col gap-2 rounded-lg px-3.5 py-3"
-            style={{ 'background-color': 'var(--color-bg-app)' }}
+            class="flex flex-col gap-2 rounded-lg border p-4"
+            style={{ 'background-color': 'var(--color-warning-50)', 'border-color': 'var(--color-warning-500)' }}
             role="status"
             data-testid="credential-secret"
           >
             <p class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>
               Secret for {issued().credential.name}
             </p>
-            <code class="break-all font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>
+            <code class="break-all font-mono text-caption" style={{ color: 'var(--color-text-primary)' }}>
               {issued().secret}
             </code>
-            <p class="text-xs" style={MUTED}>
+            <p class="text-caption" style={MUTED}>
               This is the only time it is shown. Copy it now; Tack keeps only a hash.
             </p>
             <div class="flex gap-2">
@@ -203,8 +202,8 @@ const CredentialsSettings: Component = () => {
                         {state()}
                       </Badge>
                     </span>
-                    <For each={c.scopes}>{(scope) => <span class="text-xs">{scopeText(scope)}</span>}</For>
-                    <span class="text-xs">
+                    <For each={c.scopes}>{(scope) => <span class="text-caption">{scopeText(scope)}</span>}</For>
+                    <span class="text-caption">
                       {state() === 'revoked' ? `Revoked ${day(c.revoked_at!)}` : `Expires ${day(c.expires_at)}`}
                       {' · '}
                       {c.last_used_at ? `Last used ${day(c.last_used_at)}` : 'Never used'}
@@ -238,16 +237,16 @@ const CredentialsSettings: Component = () => {
       </Show>
 
       <form
-        class="flex flex-col gap-3 rounded-lg px-3.5 py-3"
-        style={{ 'background-color': 'var(--color-bg-app)' }}
+        class="flex flex-col gap-3 border-t pt-6"
+        style={{ 'border-color': 'var(--color-border-light)' }}
         onSubmit={(e) => {
           e.preventDefault();
           if (!reason()) void issue();
         }}
       >
-        <p class="text-micro font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-tertiary)' }}>
+        <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Issue a credential
-        </p>
+        </h3>
         <Field
           label="Name"
           placeholder="Reviewer"
@@ -257,7 +256,7 @@ const CredentialsSettings: Component = () => {
         />
 
         <fieldset class="flex flex-col gap-1.5">
-          <legend class="mb-1 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          <legend class="mb-1 text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
             Projects
           </legend>
           <label class="flex items-center gap-2 text-small" style={{ color: 'var(--color-text-primary)' }}>
@@ -269,7 +268,7 @@ const CredentialsSettings: Component = () => {
             Every project
           </label>
           <Show when={everyProject()}>
-            <p class="text-xs" style={MUTED}>
+            <p class="text-caption" style={MUTED}>
               It reaches the {(projects() ?? []).length} project{(projects() ?? []).length === 1 ? '' : 's'} that
               exist today and every project made after.
             </p>
@@ -291,14 +290,14 @@ const CredentialsSettings: Component = () => {
             )}
           </For>
           <Show when={noProjects()}>
-            <p class="text-xs" style={MUTED}>
+            <p class="text-caption" style={MUTED}>
               There are no projects yet.
             </p>
           </Show>
         </fieldset>
 
         <fieldset class="flex flex-col gap-1.5">
-          <legend class="mb-1 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          <legend class="mb-1 text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
             It may
           </legend>
           <For each={CAPABILITIES}>
@@ -315,9 +314,9 @@ const CredentialsSettings: Component = () => {
                   onChange={(e) => setCaps(toggle(caps(), c.value, e.currentTarget.checked))}
                 />
                 <span class="font-semibold">{c.label}</span>
-                <span class="text-xs">{c.hint}</span>
+                <span class="text-caption">{c.hint}</span>
                 <Show when={c.reason}>
-                  <span id={`cap-${c.value}-reason`} class="text-xs" style={MUTED}>
+                  <span id={`cap-${c.value}-reason`} class="text-caption" style={MUTED}>
                     ({c.reason})
                   </span>
                 </Show>

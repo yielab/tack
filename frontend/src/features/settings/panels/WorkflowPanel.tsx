@@ -79,10 +79,10 @@ const WorkflowPanel: Component = () => {
     }
   };
 
-  // Row controls: pills on the page ground, sitting inside a surface-filled row.
+  // Row controls: fields at the control radius on the white surface.
   const control = {
-    'background-color': 'var(--color-bg-app)',
-    'border-color': 'var(--color-border-light)',
+    'background-color': 'var(--color-bg-base)',
+    'border-color': 'var(--color-border-medium)',
     color: 'var(--color-text-primary)',
     '--tw-ring-color': 'var(--color-focus-ring)',
   };
@@ -96,21 +96,21 @@ const WorkflowPanel: Component = () => {
       <div class="flex flex-col gap-2">
         <For each={rows()}>
           {(row, i) => (
-            <div class="flex flex-wrap items-center gap-2 rounded-lg bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
+            <div class="flex flex-wrap items-center gap-2 sm:flex-nowrap">
               <input
                 type="text"
                 value={row.name}
                 aria-label={`Status ${i() + 1}: name`}
                 placeholder="Status name"
                 onInput={(e) => setField(row.id, 'name', e.currentTarget.value)}
-                class="min-h-8 min-w-0 flex-1 rounded-full border px-3.5 py-1 text-sm focus:outline-none focus-visible:ring-2"
+                class="min-h-8 min-w-0 flex-1 rounded-md border px-3.5 py-1 text-sm focus:outline-none focus-visible:ring-2"
                 style={control}
               />
               <select
                 aria-label={`Status ${i() + 1}: category`}
                 value={row.category}
                 onChange={(e) => setField(row.id, 'category', e.currentTarget.value)}
-                class="min-h-8 w-[150px] rounded-full border px-3.5 py-1 text-small focus:outline-none focus-visible:ring-2"
+                class="min-h-8 w-[150px] rounded-md border px-3.5 py-1 text-small focus:outline-none focus-visible:ring-2"
                 style={control}
               >
                 <option value="todo">To Do</option>
@@ -118,7 +118,7 @@ const WorkflowPanel: Component = () => {
                 <option value="done">Done</option>
               </select>
               <label
-                class="flex min-h-8 w-[96px] flex-shrink-0 items-center gap-1 rounded-full border px-3.5 text-small focus-within:ring-2"
+                class="flex min-h-8 w-[96px] flex-shrink-0 items-center gap-1 rounded-md border px-3.5 text-small focus-within:ring-2"
                 style={control}
               >
                 <span class="whitespace-nowrap" style={{ color: 'var(--color-text-tertiary)' }}>WIP</span>
@@ -135,7 +135,7 @@ const WorkflowPanel: Component = () => {
               </label>
               <button
                 onClick={() => removeStatus(row.id)}
-                class="flex-shrink-0 rounded-full p-1.5 transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
+                class="flex-shrink-0 rounded-md p-1.5 transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
                 style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                 title="Remove status"
                 aria-label={`Remove status ${i() + 1}${row.name ? ` (${row.name})` : ''}`}
@@ -149,7 +149,7 @@ const WorkflowPanel: Component = () => {
 
       <button
         onClick={addStatus}
-        class="flex items-center justify-center gap-2 rounded-full border-2 border-dashed p-2 text-small font-semibold transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
+        class="flex items-center justify-center gap-2 rounded-md border-2 border-dashed p-2 text-small font-semibold transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
         style={{
           'border-color': 'var(--color-border-light)',
           color: 'var(--color-text-secondary)',

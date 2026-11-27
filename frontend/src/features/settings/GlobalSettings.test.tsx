@@ -45,6 +45,16 @@ const findButton = (c: HTMLElement, text: string) =>
   Array.from(c.querySelectorAll('button')).find((b) => b.textContent?.includes(text))!;
 
 describe('GlobalSettings', () => {
+  it('is one surface whose sections each carry a heading, with no section drawn as its own card', async () => {
+    const { container } = mount();
+    await flush();
+    const sections = Array.from(container.querySelectorAll('section[aria-labelledby]'));
+    const headings = sections.map((sec) => container.querySelector(`#${sec.getAttribute('aria-labelledby')}`)?.textContent?.trim());
+    expect(headings).toEqual(['Display & accessibility', 'Local Backup', 'Cloud Backup', 'Agent credentials', 'System']);
+    for (const sec of sections) expect(sec.className).not.toContain('bg-panel');
+    expect(sections.every((sec) => sec.parentElement === sections[0].parentElement)).toBe(true);
+  });
+
   it('shows every cloud backup control disabled with its reason while cloud backup is not set up', async () => {
     const { container } = mount();
     await flush();

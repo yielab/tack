@@ -11,7 +11,7 @@ const RouteBoundary: Component<{ children: JSX.Element }> = (props) => (
       console.error(err);
       return (
         <div role="alert" class="flex flex-col items-start gap-3 px-6 py-14" data-testid="route-error">
-          <h1 class="text-[1.75rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+          <h1 class="text-step" style={{ color: 'var(--color-text-primary)' }}>
             This page could not be shown
           </h1>
           <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>

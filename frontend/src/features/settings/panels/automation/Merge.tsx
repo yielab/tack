@@ -122,7 +122,7 @@ const Merge: Component<{
                         </span>
                         <select
                           aria-label="Domain level"
-                          class="rounded-full border px-3 py-1 text-sm"
+                          class="rounded-md border px-3 py-1 text-sm"
                           style={inputStyle}
                           onChange={(e) => void saveDomain(i(), { level: e.currentTarget.value })}
                         >
@@ -147,7 +147,7 @@ const Merge: Component<{
                   )}
                 </For>
                 <div>
-                  <button type="button" class="rounded-full border px-3 py-1 text-sm" style={inputStyle} onClick={() => void addDomain()}>
+                  <button type="button" class="rounded-md border px-3 py-1 text-sm" style={inputStyle} onClick={() => void addDomain()}>
                     Add a domain
                   </button>
                 </div>
@@ -166,7 +166,7 @@ const Merge: Component<{
                 <div>
                   <button
                     type="button"
-                    class="rounded-full border px-3 py-1 text-sm"
+                    class="rounded-md border px-3 py-1 text-sm"
                     style={inputStyle}
                     onClick={() => void save({ verify_require: PRILL_STAGES })}
                   >

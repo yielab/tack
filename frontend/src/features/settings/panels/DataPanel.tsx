@@ -3,7 +3,8 @@ import { useNavigate } from '@solidjs/router';
 import { api } from '../../../shared/api';
 import { BOOK } from '../../../shared/help/routes';
 import { toast } from '../../../shared/ui/toast';
-import { Button } from '../../../shared/ui';
+import { FiDownload, FiUpload } from 'solid-icons/fi';
+import { Button, SectionHeading } from '../../../shared/ui';
 import ImportFromFile from '../../../shared/ui/ImportFromFile';
 import { useProject } from '../../../shared/state/projectContext';
 import ProjectFolderCard from './projectFolder/ProjectFolderCard';
@@ -59,27 +60,26 @@ const DataPanel: Component = () => {
     }
   };
 
-  const CARD = 'flex flex-col gap-2.5 rounded-lg bg-panel p-[18px]';
-  const TITLE = 'text-[1.1875rem] leading-tight';
+  const SECTION = 'flex flex-col gap-4';
   const NOTE = 'text-caption';
   const CODE = 'font-mono';
 
   return (
-    <div class="flex max-w-xl flex-col gap-3">
+    <div class="flex max-w-2xl flex-col gap-12">
       <Show when={projectId()}>{(id) => <ProjectFolderCard projectId={id()} />}</Show>
 
-      <section class={CARD}>
-        <h3 class={TITLE} style={{ color: 'var(--color-text-primary)' }}>
+      <section class={SECTION} aria-labelledby="data-export-title">
+        <SectionHeading id="data-export-title" icon={<FiDownload size={16} />}>
           Export
-        </h3>
+        </SectionHeading>
         <div class="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => void exportAs('json')} disabled={busy()}>
+          <Button variant="ghost" onClick={() => void exportAs('json')} disabled={busy()}>
             Export JSON
           </Button>
-          <Button variant="secondary" onClick={() => void exportAs('yaml')} disabled={busy()}>
+          <Button variant="ghost" onClick={() => void exportAs('yaml')} disabled={busy()}>
             Export YAML
           </Button>
-          <Button variant="secondary" onClick={() => void exportAs('csv')} disabled={busy()}>
+          <Button variant="ghost" onClick={() => void exportAs('csv')} disabled={busy()}>
             Export CSV
           </Button>
           <Button variant="secondary" onClick={() => void exportAs('yaml', 'bundle')} disabled={busy()}>
@@ -91,15 +91,15 @@ const DataPanel: Component = () => {
         </p>
       </section>
 
-      <section class={CARD}>
-        <h3 class={TITLE} style={{ color: 'var(--color-text-primary)' }}>
+      <section class={SECTION} aria-labelledby="data-import-title">
+        <SectionHeading id="data-import-title" icon={<FiUpload size={16} />}>
           Import
-        </h3>
+        </SectionHeading>
 
         <p class={NOTE} style={{ color: 'var(--color-text-secondary)' }}>
           Restore a full project from a previously exported JSON or YAML snapshot (creates a new project).
         </p>
-        <Button class="self-start" onClick={() => importJsonInput?.click()} disabled={busy()}>
+        <Button variant="secondary" class="self-start" onClick={() => importJsonInput?.click()} disabled={busy()}>
           Import from JSON / YAML…
         </Button>
         <input

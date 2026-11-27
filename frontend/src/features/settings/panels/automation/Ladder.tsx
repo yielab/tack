@@ -12,6 +12,7 @@ import Rungs from './Rungs';
 import AgentsOnBoard from './AgentsOnBoard';
 import Triggers from './Triggers';
 import Notifications from './Notifications';
+import { FiUsers, FiClock, FiGitMerge, FiSliders, FiCpu, FiBell } from 'solid-icons/fi';
 import { Section, inputStyle } from './parts';
 
 interface Props {
@@ -69,7 +70,7 @@ const Ladder: Component<Props> = (props) => {
                 <li>
                   <a
                     href={`#${section.id}`}
-                    class="inline-block rounded-full border px-3 py-1 text-sm"
+                    class="inline-block rounded-md border px-3 py-1 text-sm"
                     style={inputStyle}
                     onClick={(e) => {
                       e.preventDefault();
@@ -83,8 +84,8 @@ const Ladder: Component<Props> = (props) => {
             </For>
           </ul>
         </nav>
-        <div class="flex min-w-0 flex-1 flex-col gap-4">
-          <Section id="automation-who" title="Who" lead="The agent, model and profile that work on this project, and the team each role goes to.">
+        <div class="flex min-w-0 flex-1 flex-col gap-12">
+          <Section id="automation-who" icon={<FiUsers size={16} />} title="Who" lead="The agent, model and profile that work on this project, and the team each role goes to.">
             {props.agent}
             <Teams
               roles={roleList}
@@ -98,21 +99,21 @@ const Ladder: Component<Props> = (props) => {
             />
             {props.workspace}
           </Section>
-          <Section id="automation-when" title="When" lead="When a task starts by itself, and what counts as done.">
+          <Section id="automation-when" icon={<FiClock size={16} />} title="When" lead="When a task starts by itself, and what counts as done.">
             <Start project={props.project} roles={roleList} statuses={props.statuses} save={props.saveProject} />
             {props.definition}
           </Section>
-          <Section id="automation-merge" title="Merge" lead="How much Tack may merge by itself, and what it needs to do so.">
+          <Section id="automation-merge" icon={<FiGitMerge size={16} />} title="Merge" lead="How much Tack may merge by itself, and what it needs to do so.">
             <Merge settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} save={saveAutonomy} />
           </Section>
-          <Section id="automation-limits" title="Limits" lead="What the project may spend and queue, in tokens.">
+          <Section id="automation-limits" icon={<FiSliders size={16} />} title="Limits" lead="What the project may spend and queue, in tokens.">
             <Limits settings={settings} save={saveAutonomy} />
           </Section>
-          <Section id="automation-agents" title="Agents" lead="How far an agent may go on this board, and what wakes it.">
+          <Section id="automation-agents" icon={<FiCpu size={16} />} title="Agents" lead="How far an agent may go on this board, and what wakes it.">
             <AgentsOnBoard project={props.project} save={props.saveProject} />
             <Triggers projectId={props.projectId} profiles={props.profiles} />
           </Section>
-          <Section id="automation-notifications" title="Notifications" lead="Where what needs you is sent besides this screen. The same for every project.">
+          <Section id="automation-notifications" icon={<FiBell size={16} />} title="Notifications" lead="Where what needs you is sent besides this screen. The same for every project.">
             <Notifications />
           </Section>
         </div>

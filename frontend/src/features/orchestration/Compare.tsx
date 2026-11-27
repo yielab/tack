@@ -86,13 +86,12 @@ const Compare: Component<{ model: CompareModel }> = (props) => {
   const edges = useScrollEdges();
   return (
   <section
-    class="flex min-w-0 flex-col gap-3 rounded-lg px-4 py-3"
+    class="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-5"
     data-testid="compare"
     aria-labelledby="compare-title"
-    style={{ 'background-color': 'var(--color-bg-panel)' }}
   >
     <div class="flex min-w-0 flex-col gap-1">
-      <h3 id="compare-title" class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>Compare the teams</h3>
+      <h3 id="compare-title" class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>Compare the teams</h3>
       <p class="text-small" data-testid="compare-summary" style={MUTED}>
         <Show
           when={props.model.teams.length > 0}

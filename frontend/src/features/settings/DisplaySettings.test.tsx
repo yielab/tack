@@ -25,7 +25,7 @@ afterEach(() => {
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  render(() => <DisplaySettings cardClass="" titleClass="" />, container);
+  render(() => <DisplaySettings />, container);
   return container;
 }
 

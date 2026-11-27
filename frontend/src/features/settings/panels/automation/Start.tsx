@@ -48,7 +48,7 @@ const Start: Component<Props> = (props) => {
           When a task reaches
           <select
             aria-label="Start status"
-            class="rounded-full border px-3 py-1 text-sm"
+            class="rounded-md border px-3 py-1 text-sm"
             style={inputStyle}
             disabled={!hasProfile()}
             onChange={(e) => void props.save({ auto_start_status: e.currentTarget.value })}
@@ -62,7 +62,7 @@ const Start: Component<Props> = (props) => {
             type="number"
             min="1"
             aria-label="Runs open at once"
-            class="w-20 rounded-full border px-3.5 py-2 text-sm"
+            class="w-20 rounded-md border px-3.5 py-2 text-sm"
             style={inputStyle}
             disabled={!hasProfile()}
             value={props.project()?.auto_start_max_open ?? 1}

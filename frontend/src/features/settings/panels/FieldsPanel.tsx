@@ -137,16 +137,16 @@ export default function FieldsPanel() {
             {(field: CustomField) => {
               const typeInfo = getFieldTypeInfo(field.field_type);
               return (
-                <div class="flex flex-col gap-1.5 rounded-lg bg-panel px-4 py-3.5">
+                <div class="flex flex-col gap-1.5 rounded-lg border border-line px-4 py-3.5">
                   <div class="flex flex-wrap items-center gap-2">
                     <span
-                      class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm"
-                      style={{ 'background-color': 'var(--color-bg-app)' }}
+                      class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-sm"
+                      style={{ 'background-color': 'var(--color-bg-subtle)' }}
                       aria-hidden="true"
                     >
                       {typeInfo.icon}
                     </span>
-                    <h3 class="text-sm font-bold text-content" style={{ 'font-family': 'var(--font-body)' }}>
+                    <h3 class="text-lead font-semibold text-content" style={{ 'font-family': 'var(--font-body)' }}>
                       {field.name}
                     </h3>
                     <Badge>{typeInfo.label}</Badge>
@@ -231,7 +231,7 @@ export default function FieldsPanel() {
                 onInput={(e) => setDescription(e.currentTarget.value)}
                 rows={2}
                 placeholder="Optional description"
-                class="w-full resize-none rounded-lg border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                class="w-full resize-none rounded-md border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{
                   'background-color': 'var(--color-bg-base)',
                   color: 'var(--color-text-primary)',
@@ -255,7 +255,7 @@ export default function FieldsPanel() {
                   rows={4}
                   required
                   placeholder="Option 1&#10;Option 2&#10;Option 3"
-                  class="w-full rounded-lg border px-3.5 py-2.5 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                  class="w-full rounded-md border px-3.5 py-2.5 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                   style={{
                     'background-color': 'var(--color-bg-base)',
                     color: 'var(--color-text-primary)',

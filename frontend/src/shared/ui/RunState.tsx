@@ -152,7 +152,7 @@ const RunState: Component<RunStateProps> = (props) => {
       <Match when={true}>
         <span
           title={text()}
-          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-0.5 text-xs font-semibold"
+          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 py-0.5 text-caption font-semibold"
           style={{
             'background-color': `var(--run-${view().state}-soft)`,
             color: ink(),

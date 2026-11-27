@@ -64,7 +64,7 @@ const MemberMark: Component<{ member: TeamMember }> = (props) => {
         <span
           aria-hidden="true"
           class="absolute rounded-full"
-          style={{ width: '8px', height: '8px', right: '0', top: '0', 'background-color': 'var(--color-accent2)', 'box-shadow': '0 0 0 2px var(--color-bg-panel)' }}
+          style={{ width: '8px', height: '8px', right: '0', top: '0', 'background-color': 'var(--color-accent2)', 'box-shadow': '0 0 0 2px var(--color-bg-base)' }}
         />
       </Show>
       <span class="sr-only">{words()}</span>
@@ -335,8 +335,7 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
       data-testid="flow-lane"
       data-lane={lane().key}
       data-urgency={lane().urgency}
-      class="flex min-w-0 flex-col gap-3 rounded-lg px-4 py-3"
-      style={{ 'background-color': 'var(--color-bg-panel)' }}
+      class="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-5"
     >
       <div class="flex min-w-0 flex-wrap items-start gap-x-4 gap-y-2">
         <div class="flex min-w-0 flex-1 flex-col gap-1.5" style={{ 'flex-basis': '16rem' }}>
@@ -355,7 +354,7 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
             >
               <span aria-hidden="true">{open() ? '▾' : '▸'}</span>
             </button>
-            <h3 class="min-w-0 text-lead font-bold" style={{ 'overflow-wrap': 'anywhere', color: 'var(--color-text-primary)' }}>
+            <h3 class="min-w-0 text-lead font-semibold" style={{ 'overflow-wrap': 'anywhere', color: 'var(--color-text-primary)' }}>
               <A
                 href={href()}
                 data-testid="flow-lane-name"

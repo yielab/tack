@@ -88,7 +88,7 @@ const AgentsOnBoard: Component<{
             min="0"
             max={MAX_CREATES_PER_CHANGE_SET}
             aria-label="New items per change set"
-            class="w-20 rounded-full border px-3.5 py-2 text-sm"
+            class="w-20 rounded-md border px-3.5 py-2 text-sm"
             style={inputStyle}
             disabled={capsOff() || saving()}
             value={current().creates_per_change_set}
@@ -102,7 +102,7 @@ const AgentsOnBoard: Component<{
             min="0"
             max={MAX_CREATES_PER_DAY}
             aria-label="New items per day"
-            class="w-24 rounded-full border px-3.5 py-2 text-sm"
+            class="w-24 rounded-md border px-3.5 py-2 text-sm"
             style={inputStyle}
             disabled={capsOff() || saving()}
             value={current().creates_per_day}

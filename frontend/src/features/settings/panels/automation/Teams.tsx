@@ -93,7 +93,7 @@ const Teams: Component<Props> = (props) => {
   const ProfileSelect = (p: { label: string; value: string | null | undefined; onChange: (v: string) => void }) => (
     <select
       aria-label={p.label}
-      class="rounded-full border px-3 py-1 text-sm"
+      class="rounded-md border px-3 py-1 text-sm"
       style={inputStyle}
       onChange={(e) => p.onChange(e.currentTarget.value)}
     >
