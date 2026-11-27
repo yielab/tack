@@ -17,8 +17,11 @@ impl Repository {
         project_id: Uuid,
         input: CreateSprint,
     ) -> Result<Sprint, StoreError> {
-        let mut conn = self.pool().acquire().await?;
-        create_sprint_in(&mut conn, project_id, input).await
+        // The key is read and then written: on a plain connection another writer could take it in between.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let sprint = create_sprint_in(&mut tx, project_id, input).await?;
+        tx.commit().await?;
+        Ok(sprint)
     }
 
     #[instrument(skip(self))]

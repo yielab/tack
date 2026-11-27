@@ -17,8 +17,11 @@ impl Repository {
         project_id: Uuid,
         input: CreateRole,
     ) -> Result<Role, StoreError> {
-        let mut conn = self.pool().acquire().await?;
-        create_role_in(&mut conn, project_id, input).await
+        // The key is read and then written: on a plain connection another writer could take it in between.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let role = create_role_in(&mut tx, project_id, input).await?;
+        tx.commit().await?;
+        Ok(role)
     }
 
     /// Applies the fields `input` names; `None` when no such role exists.

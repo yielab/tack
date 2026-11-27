@@ -46,6 +46,8 @@ mod integration;
 mod item_facts;
 #[path = "repository/item_types.rs"]
 mod item_types;
+#[path = "repository/key_write_race.rs"]
+mod key_write_race;
 #[path = "repository/notifications.rs"]
 mod notifications;
 #[path = "repository/profile_write_lock.rs"]

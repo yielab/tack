@@ -77,8 +77,11 @@ pub async fn create_field(
     project_id: Uuid,
     data: CreateCustomField,
 ) -> Result<CustomFieldDefinition, StoreError> {
-    let mut conn = repo.pool().acquire().await?;
-    create_field_in(&mut conn, project_id, data).await
+    // The key is read and then written: on a plain connection another writer could take it in between.
+    let mut tx = repo.pool().begin_with("BEGIN IMMEDIATE").await?;
+    let field = create_field_in(&mut tx, project_id, data).await?;
+    tx.commit().await?;
+    Ok(field)
 }
 
 /// The field `INSERT` (see [`create_field`]), on the caller's connection.

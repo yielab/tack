@@ -208,16 +208,19 @@ impl Repository {
         input: CreateItem,
         source: ItemSource,
     ) -> Result<Item, ItemError> {
-        let mut conn = self.pool().acquire().await?;
-        insert_item(
-            &mut conn,
+        // The key is read and then written: on a plain connection another writer could take it in between.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let item = insert_item(
+            &mut tx,
             project_id,
             initial_status,
             input,
             source,
             &Hierarchy,
         )
-        .await
+        .await?;
+        tx.commit().await?;
+        Ok(item)
     }
 
     /// Write a resolved outline's items, parents first, and its dependencies
@@ -233,7 +236,8 @@ impl Repository {
         source: ItemSource,
         parent_gate: &dyn ParentGate,
     ) -> Result<(Vec<Item>, usize), ItemError> {
-        let mut tx = self.pool().begin().await?;
+        // Every item's key is read and then written: a deferred transaction would lose the upgrade to another writer.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let written =
             create_outline_items_in(&mut tx, project_id, outline, source, parent_gate).await?;
         tx.commit().await?;
