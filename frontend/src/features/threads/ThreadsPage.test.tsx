@@ -51,6 +51,17 @@ const profile = { agent_profile_id: 'prof1', name: 'Planner', instructions: '', 
 const aThread = { id: 'th1', title: 'Weekly check', profile: 'prof1', scope: { kind: 'project', project: 'p1' }, status: 'open', turns: 2, created_at: 'x', last_message_at: new Date().toISOString() };
 
 describe('ThreadsPage', () => {
+  it('leaves the solid button to the form while a thread is being started', async () => {
+    const { c } = mount([], [profile]);
+    await settle();
+    const solid = (el: Element | null) => (el?.getAttribute('style') ?? '').includes('--color-primary-600');
+    expect(solid(q(c, 'new-thread-open'))).toBe(true);
+    q(c, 'new-thread-open')!.click();
+    await settle();
+    expect(solid(q(c, 'new-thread-open'))).toBe(false);
+    expect(solid(q(c, 'new-thread-start'))).toBe(true);
+  });
+
   it('says there are no threads and offers to start one', async () => {
     const { c } = mount([], [profile]);
     await settle();

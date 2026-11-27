@@ -39,7 +39,7 @@ const TurnState: Component<{ turn: Turn; version: unknown; onAnswered?: () => vo
         <p class="flex flex-wrap items-center gap-2 text-sm" role="status" aria-live="polite">
           <RunState state={asking() ? 'needs' : 'running'} />
           {asking() ? 'The agent is asking you something before it can answer.' : 'The agent is working on your message.'}
-          <span class="text-xs">Started {relativeTimeFromIso(props.turn.started_at)}.</span>
+          <span class="text-small">Started {relativeTimeFromIso(props.turn.started_at)}.</span>
         </p>
         <Show when={asking()}>
           {(attempt) => (

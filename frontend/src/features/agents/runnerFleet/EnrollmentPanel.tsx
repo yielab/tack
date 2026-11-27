@@ -217,9 +217,9 @@ const EnrollmentPanel: Component = () => {
       {/* Enroll form */}
       <form
         onSubmit={(e) => void submitEnroll(e)}
-        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-lg bg-panel px-5 py-[18px] sm:grid-cols-3"
+        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-lg bg-panel p-5 sm:grid-cols-3"
       >
-        <h3 class="col-span-full text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="col-span-full text-lead" style={{ color: 'var(--color-text-primary)' }}>
           Enroll a runner
         </h3>
         <Field
@@ -262,7 +262,7 @@ const EnrollmentPanel: Component = () => {
 
       {/* Session-local roster */}
       <div class="space-y-2">
-        <h3 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)', 'font-family': 'var(--font-body)' }}>
+        <h3 class="text-lead" style={{ color: 'var(--color-text-primary)' }}>
           Runners enrolled or revoked this session
         </h3>
         <Show
@@ -311,12 +311,12 @@ const EnrollmentPanel: Component = () => {
       {/* Manual revoke by ID — the fallback for a runner not enrolled this session */}
       <form
         onSubmit={(e) => void submitManualRevoke(e)}
-        class="flex flex-col gap-2.5 rounded-lg bg-panel px-5 py-[18px]"
+        class="flex flex-col gap-2.5 rounded-lg bg-panel p-5"
       >
-        <h3 class="text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="text-lead" style={{ color: 'var(--color-text-primary)' }}>
           Revoke a runner by ID
         </h3>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
           For a runner enrolled outside this session (e.g. before a page reload, or by another operator).
         </p>
         <div class="flex flex-wrap items-end gap-2.5">
@@ -350,7 +350,7 @@ const EnrollmentPanel: Component = () => {
                 </p>
               </div>
               <div>
-                <p class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
+                <p class="text-small font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
                   Runner ID
                 </p>
                 <p class="font-mono text-sm" style={{ color: 'var(--color-text-primary)' }}>
@@ -358,7 +358,7 @@ const EnrollmentPanel: Component = () => {
                 </p>
               </div>
               <div>
-                <p class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
+                <p class="text-small font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
                   Enrollment token
                 </p>
                 <p
@@ -368,7 +368,7 @@ const EnrollmentPanel: Component = () => {
                   {token().enrollment_token}
                 </p>
               </div>
-              <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                 {formatExpiresIn(token().expires_at)} — give it to the runner before then.{' '}
                 <a href={BOOK.enrolling} target="_blank" rel="noreferrer" class="underline">
                   The Administrator Guide shows how.

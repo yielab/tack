@@ -9,10 +9,10 @@ import Card from '../../shared/ui/Card';
 
 /** Six card-shaped placeholders in the loaded grid's container shape. */
 const ProjectsGridSkeleton: Component = () => (
-  <div class="grid grid-cols-1 gap-[18px] md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+  <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
     <For each={[1, 2, 3, 4, 5, 6]}>
       {() => (
-        <Card class="flex h-[150px] flex-col gap-2.5 p-[18px]">
+        <Card class="flex h-[150px] flex-col gap-2.5 p-5">
           <Skeleton width="70%" height="16px" />
           <Skeleton width="90%" height="10px" />
           <Skeleton width="60%" height="10px" />
@@ -29,20 +29,22 @@ const Projects: Component = () => {
   const [projects, { refetch }] = createResource(() => api.projects.list());
   const [showCreateModal, setShowCreateModal] = createSignal(false);
 
+  const empty = () => !projects.loading && (projects()?.length ?? 0) === 0;
+
   const handleProjectCreated = () => {
     refetch();
   };
 
   return (
-    <div class="flex flex-col gap-[26px] lg:px-6 lg:py-3">
+    <div class="flex flex-col gap-12 lg:px-6 lg:py-3">
       <div class="flex flex-wrap items-end gap-4">
         <div>
-          <h1 class="text-[2.125rem] leading-tight text-content">Projects</h1>
-          <p class="mt-1 text-content-muted">
+          <h1 class="text-title text-content">Projects</h1>
+          <p class="mt-2 text-body text-content-muted">
             Select a project to get started
           </p>
         </div>
-        <Button class="ml-auto" onClick={() => setShowCreateModal(true)}>
+        <Button class="ml-auto" variant={empty() ? 'secondary' : 'primary'} onClick={() => setShowCreateModal(true)}>
           <IconPlus size={14} />
           New Project
         </Button>
@@ -69,10 +71,10 @@ const Projects: Component = () => {
               >
                 <IconBoard size={44} />
               </div>
-              <h2 class="max-w-[520px] text-2xl text-content">
+              <h2 class="max-w-[520px] text-step text-content">
                 Track any kind of work — your terms, your workflow
               </h2>
-              <p class="max-w-[520px] text-content-muted">
+              <p class="max-w-[520px] text-reading text-content-muted">
                 Tack adapts to software teams, construction projects, personal tasks, and more.
                 Create your first project to get started.
               </p>
@@ -82,7 +84,7 @@ const Projects: Component = () => {
                 </Button>
                 <A
                   href="/templates"
-                  class="rounded-full px-3 py-2 text-sm font-semibold text-accent-ink underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2"
+                  class="rounded-md px-3 py-2 text-sm font-semibold text-accent-ink underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2"
                   style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
                 >
                   Browse templates
@@ -91,7 +93,7 @@ const Projects: Component = () => {
             </div>
           }
         >
-          <div class="grid grid-cols-1 gap-[18px] md:grid-cols-2 lg:grid-cols-3">
+          <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             <For each={projects()}>
               {(project) => (
                 <A
@@ -99,7 +101,7 @@ const Projects: Component = () => {
                   class="flex min-h-[170px] flex-col gap-2.5 rounded-lg border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
                 >
                   <div class="flex items-start gap-2.5">
-                    <h3 class="min-w-0 text-[1.3125rem] leading-[1.15] text-content">
+                    <h3 class="min-w-0 text-section text-content">
                       {project.name}
                     </h3>
                     <span class="ml-auto shrink-0" style={projectTypePillStyle(project.project_type)}>
@@ -107,12 +109,12 @@ const Projects: Component = () => {
                     </span>
                   </div>
                   <Show when={project.description}>
-                    <p class="line-clamp-2 text-[0.84375rem] leading-[1.45] text-content-muted">
+                    <p class="line-clamp-2 text-small text-content-muted">
                       {project.description}
                     </p>
                   </Show>
                   <div class="mt-auto border-t border-line pt-3">
-                    <p class="text-xs text-content-subtle">
+                    <p class="text-small text-content-subtle">
                       Created {new Date(project.created_at).toLocaleDateString()}
                     </p>
                   </div>

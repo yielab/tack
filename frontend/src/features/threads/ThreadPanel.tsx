@@ -74,17 +74,17 @@ const ThreadPanel: Component<{
   };
 
   return (
-    <section data-testid="thread-panel" class="flex min-w-0 flex-col gap-3" aria-label="Thread">
+    <section data-testid="thread-panel" class="flex min-w-0 flex-col gap-6" aria-label="Thread">
       <Show when={!detail.error} fallback={<LoadError what="the thread" error={detail.error} onRetry={() => void refetch()} />}>
         <Show when={thread()} fallback={<Skeleton />}>
           {(t) => (
             <>
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <h2 class="m-0 text-lg" style={{ color: 'var(--color-text-primary)' }} data-testid="thread-title">
+                  <h2 class="m-0 text-section" style={{ color: 'var(--color-text-primary)' }} data-testid="thread-title">
                     {t().title}
                   </h2>
-                  <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                     With {props.profileName} · {t().turns === 1 ? '1 turn' : `${t().turns} turns`} ·{' '}
                     <span data-testid="thread-status">{t().status === 'open' ? 'Open' : 'Closed'}</span>
                   </p>

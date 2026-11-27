@@ -45,6 +45,11 @@ function mount() {
   return { container, dispose };
 }
 
+
+const isSolid = (el: Element | null | undefined) => (el?.getAttribute('style') ?? '').includes('--color-primary-600');
+const buttonNamed = (c: HTMLElement, text: string) =>
+  [...c.querySelectorAll('button')].find((b) => (b.textContent ?? '').includes(text));
+
 describe('Templates', () => {
   it('shows a template\'s roles, profiles and merge level, and lists the roles on hover', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
@@ -87,6 +92,30 @@ describe('Templates', () => {
     const tiles = [...container.querySelectorAll('[data-testid="type-list"] li')];
     expect(tiles.map((t) => t.textContent)).toEqual(['Building (holds work)', 'Work Order']);
     expect(tiles.map((t) => t.getAttribute('data-holds-work'))).toEqual(['true', 'false']);
+    dispose();
+  });
+
+  it('has one solid button in a place: Create Template in the header, Use Template only outlined on a card', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(new Response(JSON.stringify(String(input).includes('/api/templates') ? [TEMPLATE] : {}), { status: 200 })),
+    );
+    const { container, dispose } = mount();
+    await flush();
+    await flush();
+    expect(isSolid(buttonNamed(container, 'Create Template'))).toBe(true);
+    expect(isSolid(buttonNamed(container, 'Use Template'))).toBe(false);
+    dispose();
+  });
+
+  it('leaves the empty state the only solid button when there is no template', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(new Response(JSON.stringify(String(input).includes('/api/templates') ? [] : {}), { status: 200 })),
+    );
+    const { container, dispose } = mount();
+    await flush();
+    await flush();
+    expect(isSolid(buttonNamed(container, '+ Create Template'))).toBe(false);
+    expect(isSolid(buttonNamed(container, 'Create Your First Template'))).toBe(true);
     dispose();
   });
 });

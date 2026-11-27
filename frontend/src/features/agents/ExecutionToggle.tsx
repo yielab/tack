@@ -39,9 +39,9 @@ const ExecutionToggle: Component = () => {
   };
 
   return (
-    <section class="flex flex-col gap-3 rounded-lg bg-panel px-[22px] py-5">
+    <section class="flex flex-col gap-3 rounded-lg bg-panel p-6">
       <div class="flex items-center gap-2.5">
-        <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <h2 class="text-step" style={{ color: 'var(--color-text-primary)' }}>
           Agent execution on this machine
         </h2>
         <Show when={!status.loading && !unavailable() && !loadFailed()}>

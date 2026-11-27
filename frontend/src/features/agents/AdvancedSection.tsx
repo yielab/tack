@@ -22,7 +22,7 @@ const AdvancedSection: Component = () => {
 
   return (
     <section id="advanced" class="space-y-4">
-      <div class="flex flex-wrap items-center gap-2.5 rounded-full bg-panel px-[22px] py-3.5">
+      <div class="flex flex-wrap items-center gap-2.5 rounded-lg bg-panel px-6 py-4">
         <button
           type="button"
           class="flex items-center gap-2.5"
@@ -33,7 +33,7 @@ const AdvancedSection: Component = () => {
           <Show when={open()} fallback={<IconChevronRight size={14} />}>
             <IconChevronDown size={14} />
           </Show>
-          <span class="font-heading text-[1.125rem]">Advanced</span>
+          <span class="text-section font-semibold">Advanced</span>
         </button>
         {/* Stays unrendered while collapsed: its vocabulary belongs to Advanced only. */}
         <Show when={open()}>

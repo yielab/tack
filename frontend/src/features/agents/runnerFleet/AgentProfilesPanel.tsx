@@ -125,12 +125,12 @@ export const HistoryLine: Component<{ history: ProfileHistory; onApply: (tokens:
   <Show
     when={props.history.proposal !== null && props.history.min !== null && props.history.max !== null}
     fallback={
-      <p data-testid="profile-history" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <p data-testid="profile-history" class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
         {props.history.n} of {props.history.runs_needed} successful runs measured before a limit is proposed
       </p>
     }
   >
-    <p data-testid="profile-history" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+    <p data-testid="profile-history" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
       The last {props.history.n} runs used {spaced(props.history.min!)} to {spaced(props.history.max!)} tokens. Proposed limit:{' '}
       <strong>{spaced(props.history.proposal!)}</strong>{' '}
       <Button type="button" size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onApply(props.history.proposal!)}>
@@ -382,7 +382,7 @@ const AgentProfilesPanel: Component = () => {
           <ul class="space-y-2">
             <For each={rows()}>
               {(profile) => (
-                <li class="flex flex-col gap-1.5 rounded-lg bg-panel px-5 py-[18px]">
+                <li class="flex flex-col gap-1.5 rounded-lg bg-panel p-5">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="flex flex-col">
                       <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
@@ -449,7 +449,7 @@ const AgentProfilesPanel: Component = () => {
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg bg-panel px-5 py-[18px]">
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg bg-panel p-5">
           <Field label="Name" required placeholder="reviewer" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <FieldShell label="Instructions" required for={instructionsId}>
             <textarea
@@ -486,7 +486,7 @@ const AgentProfilesPanel: Component = () => {
               id={teamId}
               value={team()}
               onChange={(e) => setTeam(e.currentTarget.value)}
-              class="rounded-full border px-3 py-1 text-sm"
+              class="rounded-md border px-3 py-1 text-sm"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
@@ -512,7 +512,7 @@ const AgentProfilesPanel: Component = () => {
               data-testid="profile-web-access"
               value={egressMode()}
               onChange={(e) => setChosenEgress(e.currentTarget.value as EgressMode)}
-              class="rounded-full border px-3 py-1 text-sm"
+              class="rounded-md border px-3 py-1 text-sm"
               style={FIELD_STYLE}
             >
               <For each={EGRESS_MODES}>
@@ -600,7 +600,7 @@ const AgentProfilesPanel: Component = () => {
               value={kind()}
               disabled={!!editing()?.builtin}
               onChange={(e) => setKind(e.currentTarget.value as ProfileKind)}
-              class="rounded-full border px-3 py-1 text-sm"
+              class="rounded-md border px-3 py-1 text-sm"
               style={FIELD_STYLE}
             >
               <For each={PROFILE_KINDS}>
@@ -656,7 +656,7 @@ const AgentProfilesPanel: Component = () => {
                             aria-label={`Method for ${row.type || `row ${i() + 1}`}`}
                             value={row.method}
                             onChange={(e) => setMethodRows((rs) => rs.map((r, j) => (j === i() ? { ...r, method: e.currentTarget.value } : r)))}
-                            class="rounded-full border px-3 py-1 text-sm"
+                            class="rounded-md border px-3 py-1 text-sm"
                             style={FIELD_STYLE}
                           >
                             <option value="" selected={!row.method}>Choose a method</option>
@@ -712,7 +712,7 @@ const AgentProfilesPanel: Component = () => {
             <input type="checkbox" class="mt-0.5" checked={network()} onChange={(e) => setNetwork(e.currentTarget.checked)} />
             <span>
               This role needs the network (web search and reading sources)
-              <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              <span class="block text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                 Its runs start with web tools on, including the ones that start by themselves. A run can still turn them off.
               </span>
             </span>

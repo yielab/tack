@@ -54,8 +54,8 @@ const INITIAL_BADGE_STYLES: readonly JSX.CSSProperties[] = [
 
 const HarnessStep: Component<HarnessStepProps> = (props) => {
   return (
-    <section class="flex flex-col gap-2.5 rounded-lg bg-panel px-[22px] py-5">
-      <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-2.5 rounded-lg bg-panel p-6">
+      <h2 class="text-step" style={{ color: 'var(--color-text-primary)' }}>
         Agents on this machine
       </h2>
 
@@ -73,9 +73,9 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
               const harness = () => findHarness(harnessesOf(props.thisMachineRunner), kind.value);
               const status = () => statusLabel(harness());
               return (
-                <div class="flex flex-wrap items-center gap-3 rounded-lg bg-app px-3.5 py-3 text-sm">
+                <div class="flex flex-wrap items-center gap-3 rounded-md bg-app px-3.5 py-3 text-sm">
                   <span
-                    class="font-heading grid h-10 w-10 flex-none place-items-center rounded-full text-[1.0625rem]"
+                    class="font-heading grid h-10 w-10 flex-none place-items-center rounded-full text-reading"
                     style={INITIAL_BADGE_STYLES[index() % INITIAL_BADGE_STYLES.length]}
                     aria-hidden="true"
                   >
@@ -90,13 +90,13 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                     <Show
                       when={HARNESS_INSTALL_COMMAND[kind.value]}
                       fallback={
-                        <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                           {HARNESS_INSTALL_NOTE[kind.value] ?? "See the vendor's own install instructions."}
                         </span>
                       }
                     >
                       {(command) => (
-                        <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[0.71875rem]" style={{ color: 'var(--color-text-secondary)' }}>
+                        <code class="rounded-sm bg-panel px-2.5 py-1 font-mono text-caption" style={{ color: 'var(--color-text-secondary)' }}>
                           {command()}
                         </code>
                       )}
@@ -120,7 +120,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
             <Button variant="secondary" size="sm" loading={props.rechecking} onClick={props.onRecheck}>
               Re-check
             </Button>
-            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               Re-checking restarts agent execution on this machine to run a fresh check.
             </p>
           </div>
