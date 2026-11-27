@@ -587,6 +587,14 @@ edit an item's brief and drop an item with a run, plan, read the costs and the k
 read the history and revert. Write what was seen in "How it went". Never against the real database
 or the running service.
 
+**Also for the roadmap, from the docket session (2026-11-27), not Phase 76's to build:** D1's ask of
+docket is done on docket's develop (the subject comes from `task.objective`, `pod-dispatch`
+13.1.0), so D1 keeps only the runner's own commit for local agents; D3 is a declared limit in
+docket (under Landlock a bind to 127.0.0.1 is refused, a Unix socket works, the Docker backend has
+its loopback) with no `features` entry, so the dialog's sentence stays (the frontend session's).
+The frontend session's third finding becomes a card asked of docket: a decision's metadata lists
+what the approval changes, so the approval can show it.
+
 **Done when:** the gate is green on `develop`, `mdbook build docs/book` is clean, and the roadmap's
 Phase 76 section says what shipped.
 
