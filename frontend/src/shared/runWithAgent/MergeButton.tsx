@@ -57,7 +57,7 @@ const MergeButton: Component<MergeButtonProps> = (props) => {
         <div class="w-full space-y-1" data-testid="merge-over-reject">
           <Field label={question()} value={reason()} onInput={(e) => setReason(e.currentTarget.value)} />
           <Show when={!reason().trim()}>
-            <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               Write a reason to enable Merge.
             </span>
           </Show>
@@ -68,7 +68,7 @@ const MergeButton: Component<MergeButtonProps> = (props) => {
       </Button>
       <Show when={note()}>
         {(why) => (
-          <span data-testid="merge-reason" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <span data-testid="merge-reason" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             {why()}
           </span>
         )}

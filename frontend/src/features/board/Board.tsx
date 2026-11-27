@@ -32,7 +32,7 @@ import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import { ForById } from '../../shared/ui/ForById';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
-import { NotReadyLine, RiskChip, notReadyOf } from './briefSummary';
+import { NotReadyLine, RiskChip, notReadyOf } from '../../shared/ui/briefSummary';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
   cardRun, countRuns, getAlwaysPriority, orderByWork, passesFilters, showsPriority,
@@ -68,7 +68,7 @@ export const ItemCard: Component<{
   const [, setSearchParams] = useSearchParams();
   const store = useExecutionStore();
 
-  // The card holds its item's run state in the shared store whether or not it
+  // offers a run: the Run button is hidden on a live run.
   // offers a run: the button that used to register the item is hidden on a live run.
   onMount(() => onCleanup(store.watchItem(props.item.id)));
 
@@ -97,7 +97,7 @@ export const ItemCard: Component<{
     return run.state === 'needs' || run.state === 'failed' || (run.live && props.notStarted) ? run.state : undefined;
   };
 
-  // Clicking the run state opens the Execution tab, or the run's question when it asks one.
+  // Clicking the run state opens the task's runs, or the run's question when it asks one.
   const openExecutionTab = (e: MouseEvent) => {
     e.stopPropagation();
     setSearchParams({ item: props.item.id, tab: 'execution', run: props.run?.asking ? props.run.requestId : undefined });
@@ -199,13 +199,13 @@ export const ItemCard: Component<{
             {(run) => (
               <button
                 type="button"
-                title={run().asking ? 'Open the question' : 'Open the Execution tab'}
+                title={run().asking ? 'Open the question' : 'Open the runs'}
                 onClick={openExecutionTab}
                 class="rounded-md focus:outline-none focus-visible:ring-2"
                 style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
               >
                 <RunState state={run().state} docket={run().docket} note={run().note} />
-                <span class="sr-only">{` — open the Execution tab for ${props.item.title}`}</span>
+                <span class="sr-only">{` — open the runs of ${props.item.title}`}</span>
               </button>
             )}
           </Show>

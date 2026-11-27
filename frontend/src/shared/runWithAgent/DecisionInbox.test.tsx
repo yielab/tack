@@ -160,13 +160,13 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
 });
 
 describe('DecisionInbox — pending / expired / resolved are visually and semantically distinct', () => {
-  it('a pending decision shows a "Pending" badge and an enabled resolve form', async () => {
+  it('a pending decision says it needs you and has an enabled resolve form', async () => {
     mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
     const c = mount();
     await flush();
     await flush();
 
-    expect(c.textContent).toContain('Pending');
+    expect(c.querySelector('[data-testid="decision-needs-you"]')!.textContent).toBe('Needs you');
     expect(c.textContent).not.toContain('Expired');
     const radios = [...c.querySelectorAll('input[type="radio"]')];
     expect(radios).toHaveLength(2);
@@ -185,7 +185,7 @@ describe('DecisionInbox — pending / expired / resolved are visually and semant
     const c = mount();
     await flush();
     await flush();
-    const items = [...c.querySelectorAll('li')].filter((li) => li.textContent?.includes('Pending'));
+    const items = [...c.querySelectorAll('li')].filter((li) => li.textContent?.includes('Needs you'));
     expect(items[0].textContent).toContain('Question 2 of 2');
     expect(items[1].textContent).not.toContain('Question');
   });
@@ -232,12 +232,12 @@ describe('DecisionInbox — pending / expired / resolved are visually and semant
     await flush();
 
     const badges = [...c.querySelectorAll('li')].map((li) => {
-      if (li.textContent?.includes('Pending')) return 'pending';
+      if (li.textContent?.includes('Needs you')) return 'pending';
       if (li.textContent?.includes('Expired')) return 'expired';
       if (li.textContent?.includes('Resolved')) return 'resolved';
       return 'unknown';
     });
-    expect(new Set(badges).size).toBeGreaterThanOrEqual(3);
+    expect(new Set(badges)).toEqual(new Set(['pending', 'expired', 'resolved']));
   });
 });
 
@@ -345,30 +345,53 @@ describe('DecisionInbox — the answer box reads in one order', () => {
     expect(JSON.parse((call?.[1] as RequestInit).body as string)).toEqual({ answer: { option_id: 'decline', text: null } });
   });
 
-  it('an approval puts the recommended choice first, marks it once with its reason, and opens the reason field only under the refusal', async () => {
+  it('an approval is its choices as buttons: the recommended one solid, the refusal in red, the reason field only under the refusal', async () => {
     mockFetch([APPROVAL], () => new Response('unused'));
     const c = mount();
     await flush();
     await flush();
 
-    const radios = [...c.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
-    expect(radios.map((r) => r.value)).toEqual(['approve_task', 'approve_once', 'deny']);
-    expect(radios[0].checked).toBe(true);
+    expect(c.querySelector('input[type="radio"]')).toBeNull();
+    const group = c.querySelector('[role="group"][aria-label="Answers"]') as HTMLElement;
+    const options = [...group.querySelectorAll('button')];
+    // The recommended choice leads and is the one solid button; the refusal is red text.
+    expect(options.map((b) => b.dataset.option)).toEqual(['approve_task', 'approve_once', 'deny']);
+    expect(options[0].style.backgroundColor).toContain('primary');
+    expect(options[1].style.backgroundColor).toBe('');
+    expect(options[2].style.color).toContain('danger');
     expect(c.textContent?.match(/Recommended/g)).toHaveLength(1);
     expect(c.textContent).toContain('The same command ran twice already.');
-    expect(c.textContent).not.toContain('Recommended: ');
-    expect(c.querySelector('form input:not([type="radio"])')).toBeNull();
+    expect(c.querySelector('form input')).toBeNull();
 
-    radios[2].checked = true;
-    radios[2].dispatchEvent(new Event('change', { bubbles: true }));
+    options[2].click();
     await flush();
-    const field = c.querySelector('form input:not([type="radio"])') as HTMLInputElement;
+    const field = c.querySelector('form input') as HTMLInputElement;
     expect(c.querySelector(`label[for="${field.id}"]`)?.textContent).toContain('Reason');
     expect(field.required).toBe(false);
-    // Under the refusal, right after it and before the next control.
-    expect(radios[2].closest('label')!.nextElementSibling?.contains(field)).toBe(true);
     expect(document.activeElement).toBe(field);
-    expect(buttons(c)).toContain('Send answer');
+    expect(buttons(c)).not.toContain('Send answer');
+  });
+
+  it('pressing an approval choice sends it at once, and pressing the refusal twice sends it with its reason', async () => {
+    const spy = mockFetch([APPROVAL], () => new Response(JSON.stringify({ protocol_version: 1, decision_id: 'dec_approval', state: 'resolved', answer: { option_id: 'approve_once' }, resolved_at: '2026-08-06T12:30:00Z', resolved_by: { kind: 'operator', subject_id: 'operator:local' }, replayed: false }), { status: 200 }));
+    const c = mount();
+    await flush();
+    await flush();
+    const answer = (id: string) => c.querySelector(`button[data-option="${id}"]`) as HTMLButtonElement;
+    const bodies = () => spy.mock.calls.filter(([, init]) => init?.method === 'POST' && String(init.body ?? '').includes('answer')).map(([, init]) => JSON.parse(init!.body as string));
+
+    answer('approve_once').click();
+    await flush();
+    expect(bodies()).toEqual([{ answer: { option_id: 'approve_once', text: null } }]);
+
+    answer('deny').click();
+    await flush();
+    const field = c.querySelector('form input') as HTMLInputElement;
+    field.value = 'too risky';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    answer('deny').click();
+    await flush();
+    expect(bodies()[1]).toEqual({ answer: { option_id: 'deny', text: 'too risky' } });
   });
 
   it('a question that takes no text has no field at all', async () => {
@@ -616,7 +639,10 @@ describe('DecisionInbox — the consultation pack', () => {
       expect(block.style.fontFamily).toContain('mono');
       expect(block.style.maxHeight).toBe('30em'); // twenty lines of 1.5
       expect(block.style.overflow || block.className).toMatch(/overflow/);
-      const options = c.querySelector('fieldset') as HTMLElement;
+      const options = c.querySelector('[role="group"][aria-label="Answers"], fieldset') as HTMLElement;
+      // Behind a link, not open on the page.
+      expect((c.querySelector('[data-testid="decision-raw"]') as HTMLDetailsElement).open).toBe(false);
+      expect(c.querySelector('[data-testid="decision-raw"] summary')!.textContent).toBe('Show the raw call');
       expect(block.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 

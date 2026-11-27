@@ -109,6 +109,7 @@ function mockFetch(
     runSettings?: Record<string, unknown> | null;
     /** Where the card came from; absent answers none, as an item the server never labelled. */
     itemSource?: string;
+    itemExtra?: Record<string, unknown>;
     /** Holds the item back, so the runners land before the project's settings are applied. */
     itemDelayMs?: number;
     /** The item's brief; absent answers 404, as an item with no brief does. */
@@ -148,7 +149,7 @@ function mockFetch(
     if (url.endsWith('/items/item-1')) {
       if (opts.itemDelayMs) await new Promise((r) => setTimeout(r, opts.itemDelayMs));
       if (init?.method === 'PATCH') lastItemPatch = JSON.parse(String(init.body));
-      return new Response(JSON.stringify({ item: { id: 'item-1', source: opts.itemSource, run_settings: opts.runSettings ?? null }, id: 'item-1', source: opts.itemSource, run_settings: opts.runSettings ?? null }), { status: 200, headers: { ETag: '"1"' } });
+      return new Response(JSON.stringify({ item: { id: 'item-1', source: opts.itemSource, run_settings: opts.runSettings ?? null, ...opts.itemExtra }, id: 'item-1', source: opts.itemSource, run_settings: opts.runSettings ?? null, ...opts.itemExtra }), { status: 200, headers: { ETag: '"1"' } });
     }
     if (url.includes('/agent-context')) {
       // As the server resolves it: the project's default, else the only profile there is.
@@ -250,6 +251,10 @@ function setField(el: HTMLInputElement, value: string) {
 
 function submitButton(): HTMLButtonElement {
   return [...document.querySelectorAll('button')].find((b) => b.textContent === 'Start run') as HTMLButtonElement;
+}
+
+function webSwitch(): HTMLInputElement {
+  return [...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Let the agent use web tools')!.querySelector('input') as HTMLInputElement;
 }
 
 function teardown() {
@@ -464,7 +469,8 @@ describe('RunWithAgentModal', () => {
     const start = document.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!;
     expect(start.textContent).toBe('Plan with agent');
     expect(start.disabled).toBe(true);
-    expect(document.body.textContent).toContain('Plan with agent: Fix login bug');
+    expect(document.querySelector('[role="dialog"]')!.getAttribute('aria-label')).toBe('Plan with agent');
+    expect(document.querySelector('[data-testid="modal-subtitle"]')!.textContent).toBe('Fix login bug');
     profileRadio('Planner').click();
     await flush();
     expect(document.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!.disabled).toBe(false);
@@ -541,10 +547,13 @@ describe('RunWithAgentModal', () => {
     const summary = dialog.querySelector('[data-testid="run-summary"]')!;
     expect(summary.textContent).toContain('Reviewer');
     expect(summary.textContent).toContain("the agent's default");
-    expect(summary.textContent).toContain('on a new branch of ~/src/app');
+    expect(summary.textContent).toContain('new branch of ~/src/app');
     for (const a of summary.querySelectorAll('a')) expect(a.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
-    expect(dialog.textContent).toContain('What the agent will read');
-    expect(dialog.textContent).toContain('The brief.');
+    // The preview is one press away, and says what the agent reads.
+    expect(dialog.querySelector('[data-testid="run-preview"]')).toBeNull();
+    [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Preview what the agent reads')!.click();
+    await flush();
+    expect(dialog.querySelector('[data-testid="run-preview"]')!.textContent).toContain('The brief.');
     submitButton().click();
     await flush();
     await flush();
@@ -580,8 +589,9 @@ describe('RunWithAgentModal', () => {
     mount();
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain('Run with agent: Fix login bug');
-    for (const section of ['What the agent will read', 'Ask before each action', 'Web tools', 'Advanced for this run']) {
+    expect(dialog.getAttribute('aria-label')).toBe('Run with agent');
+    expect(dialog.querySelector('[data-testid="modal-subtitle"]')!.textContent).toBe('Fix login bug');
+    for (const section of ['What will happen', 'Agent', 'Where', 'Checked by', 'Ask first', 'Network', 'Ask me before each action', 'Let the agent use web tools', 'Options', 'Preview what the agent reads']) {
       expect(dialog.textContent).toContain(section);
     }
   });
@@ -792,8 +802,8 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     const summary = document.querySelector('[data-testid="run-summary"]')!;
-    expect(summary.textContent).toContain("in the team's own folder on this computer, not in this repository");
-    expect(summary.textContent).not.toContain('on a new branch of');
+    expect(summary.textContent).toContain("In the team's own folder on this computer, not in this repository");
+    expect(summary.textContent).not.toContain('new branch of');
     expect(document.querySelector('[data-testid="run-dialog-install"]')).toBeNull();
   });
 
@@ -803,10 +813,10 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [folderProfile, PROFILE_2], autonomy: { teams } });
     await flush();
     await flush();
-    expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain("in the team's own folder");
+    expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain("In the team's own folder");
     (profileRadio('Fixer')).click();
     await flush();
-    expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain('on a new branch of ~/src/app');
+    expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain('new branch of ~/src/app');
     expect(document.querySelector('[data-testid="run-dialog-install"]')).not.toBeNull();
   });
 
@@ -999,7 +1009,7 @@ describe('RunWithAgentModal', () => {
     expect(submitButton()).toBeUndefined();
     expect(document.querySelector('[data-prerequisite="missing"]')?.textContent).toContain('Codex needs a model named here.');
     // The field is in view: the advanced section opens while the model is missing.
-    expect((document.querySelectorAll('details')[1] as HTMLDetailsElement).open).toBe(true);
+    expect((document.querySelector('[data-testid="run-options"]') as HTMLDetailsElement).open).toBe(true);
   });
 
   it('a typed model name goes out verbatim, with no provider anywhere', async () => {
@@ -1170,7 +1180,7 @@ describe('RunWithAgentModal', () => {
     }));
     const opts = { runners: [sandboxed], fleets: [], agentProfiles: [researcher], project: { ...PROJECT, default_profile_id: 'profile-net' } };
     const ask = () => (document.querySelector('input[name="approvals"]') as HTMLInputElement);
-    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
+    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Let the agent use web tools')!.querySelector('input') as HTMLInputElement);
     const reason = () => document.querySelector('[data-testid="untrusted-reason"]')?.textContent ?? null;
     mount({}, { ...opts, itemSource: 'github' });
     await flush(); await flush();
@@ -1197,7 +1207,7 @@ describe('RunWithAgentModal', () => {
 
   it('the_web_tools_box_starts_at_the_profiles_network_and_a_remembered_or_touched_value_wins', async () => {
     const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', tool_policy: { network: true }, default_network: { codex: true } };
-    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
+    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Let the agent use web tools')!.querySelector('input') as HTMLInputElement);
     const pick = (name: string) => (profileRadio(name)).click();
     const opts = { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, researcher], project: { ...PROJECT, default_profile_id: null } };
     // A profile without the key: off, and the run says so.
@@ -1266,7 +1276,7 @@ describe('RunWithAgentModal', () => {
   });
 
   it('the_web_tools_box_follows_the_servers_default_for_the_chosen_agent_and_opencode_locks_it_on', async () => {
-    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
+    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Let the agent use web tools')!.querySelector('input') as HTMLInputElement);
     // Tools that name the web are a default of the server's, not a rule the dialog repeats.
     const researcher = { ...PROFILE, agent_profile_id: 'profile-web', name: 'Researcher', tool_policy: { tools: { codex: ['WebFetch'] } }, default_network: { codex: true, opencode: true } };
     const codex = runnerRow('runner-9', 'Box', runnerCapabilitySnapshot());
@@ -1502,7 +1512,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
   it('does not hold a run back for the web when the run turns Web tools off', async () => {
     const needsWeb = { ...team('saas-code'), profiles: [{ id: 'p-2', name: 'Code team', misfits: ['no_web'] }] };
     await mountWithTeams([needsWeb], { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')], project: { ...PROJECT, default_profile_id: 'p-2' } });
-    expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');
+    expect(webSwitch().checked).toBe(false);
     expect(document.querySelector('[data-testid="run-misfit"]')).toBeNull();
   });
 
@@ -1581,23 +1591,52 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     await flush();
     const section = document.querySelector('[data-testid="run-will-happen"]')!;
     expect(section.querySelector('h3')!.textContent).toBe('What will happen');
-    const line = (label: string) => [...section.querySelectorAll('li')].find((li) => li.querySelector('.sr-only')?.textContent === `${label}: `)!;
-    expect(line('Works').textContent).toContain('on a new branch of ~/src/app');
-    expect(line('Prepares').textContent).toContain('Replaced: npm ci');
-    expect(line('Prepares').querySelector('[data-testid="run-dialog-install-sandbox"]')!.textContent).toContain('Installs inside the sandbox');
+    // Five rows in a person's words; each is a label and a fact.
+    const labels = [...section.querySelectorAll('[data-testid="run-summary"] > div > span:first-child')].map((l) => l.textContent);
+    expect(labels).toEqual(['Agent', 'Where', 'Checked by', 'Ask first', 'Network']);
+    expect(section.textContent).toContain('On a new branch of ~/src/app');
     expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('2 Done when · 2 agent checks · verifier on');
-    expect(line('Sandbox').textContent).toContain('Contained by this computer (bwrap)');
-    expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');
-    // Each line has an icon that is hidden from a screen reader, which reads the word instead.
-    for (const li of section.querySelectorAll('li')) {
-      expect(li.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
-      expect(li.querySelector('.sr-only')).not.toBeNull();
-    }
-    // The toggles stay, and the network line follows the Web tools switch.
-    const web = [...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement;
-    web.click();
+    expect(webSwitch().checked).toBe(false);
+    // What the run installs and the sandbox it runs in are said under Options.
+    const options = document.querySelector('[data-testid="run-options"]')!;
+    expect(options.querySelector('[data-testid="run-dialog-install"]')!.textContent).toContain('Replaced: npm ci');
+    expect(options.querySelector('[data-testid="run-dialog-install-sandbox"]')!.textContent).toContain('Installs inside the sandbox');
+    expect(options.querySelector('[data-testid="sandbox-line"]')!.textContent).toContain('Contained by this computer (bwrap)');
+    webSwitch().click();
     await flush();
-    expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools on');
+    expect(webSwitch().checked).toBe(true);
+  });
+
+  it('shows the agent in one row, opens the list of agents with Change…, and says why the others are not offered', async () => {
+    mount({ autonomy: 'L3' }, { runners: [RUNNER], fleets: [] });
+    await flush();
+    await flush();
+    const list = () => document.getElementById(change().getAttribute('aria-controls')!)!;
+    const change = () => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Change…') as HTMLButtonElement;
+    expect(change().getAttribute('aria-expanded')).toBe('false');
+    expect(list().hidden).toBe(true);
+    change().click();
+    await flush();
+    expect(list().hidden).toBe(false);
+    expect(change().getAttribute('aria-expanded')).toBe('true');
+    const why = [...list().querySelectorAll('button')].find((b) => b.textContent === 'Why not the others?')!;
+    expect(document.querySelector('[data-testid="run-why-not"]')).toBeNull();
+    why.click();
+    await flush();
+    expect(document.querySelector('[data-testid="run-why-not"]')!.textContent).toContain('docket');
+  });
+
+  it('puts the reason a task is not ready in one amber line that never blocks the run, and says nothing without one', async () => {
+    mount({}, { runners: [RUNNER], fleets: [], itemExtra: { brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'Not ready: no Done when' } } });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-not-ready"]')!.textContent).toBe('Not ready: no Done when');
+    expect(submitButton().disabled).toBe(false);
+    teardown();
+    mount({}, { runners: [RUNNER], fleets: [] });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-not-ready"]')).toBeNull();
   });
 
   it('says nothing is installed when the team works in a folder, and counts no Done when', async () => {
@@ -1619,12 +1658,12 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     expect(footer.classList.contains('sticky')).toBe(true);
     // It sticks to the dialog's own bottom edge, past the scroll area's padding, so nothing shows below it.
     expect(footer.classList.contains('-bottom-6')).toBe(true);
-    expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Start run']);
+    expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Preview what the agent reads', 'Cancel', 'Start run']);
     expect(footer.querySelector('[data-testid="run-footer-limit"]')!.textContent).toBeTruthy();
     expect(footer.querySelector('[data-testid="run-start"]')!.textContent).toBe('Start run');
-    // The field itself is still under Advanced for this run.
+    // The field itself is still under Options.
     expect(field('Token limit').value).toBe('300000');
-    (footer.querySelector('button') as HTMLButtonElement).click();
+    [...footer.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!.click();
     await flush();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
@@ -1634,7 +1673,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     await flush();
     await flush();
     const footer = document.querySelector('[data-testid="run-footer"]')!;
-    expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel']);
+    expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Preview what the agent reads', 'Cancel']);
     expect(footer.querySelector('a')!.textContent).toBe("Choose where this project's code is →");
   });
 });

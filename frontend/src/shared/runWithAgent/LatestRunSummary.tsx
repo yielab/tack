@@ -39,13 +39,13 @@ export interface LatestRunSummaryProps {
   itemTitle?: string;
   projectId?: string;
   onCreated?: (requestId: string) => void;
-  /** Opens the run's full report (the item's Execution tab). */
+  /** Opens the run's full report (the item's runs). */
   onOpen: () => void;
-  /** The Execution tab is open and asks for the verdict in its own banner, so the card leaves
+  /** The runs are open and ask for the verdict in its own banner, so the card leaves
    *  out Accept and Reject… and keeps its state, its line and its other links. */
   reviewInTab?: boolean;
   /** Told the run's state whenever it changes, and `undefined` while the item has no run, so the
-   *  screen can mark the Execution tab with the same state. */
+   *  screen can mark the runs with the same state. */
   onState?: (state: { state: RunStateName; docket?: DocketRunWord } | undefined) => void;
   /** Under the Run button of an item with no run: who would do it. */
   idle?: JSX.Element;
@@ -97,7 +97,7 @@ const excerpt = (text: string, max: number) => {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
 
-/** The item's Now panel: its latest run as one card whose state and actions follow the run (its
+/** The item's next-step panel: its latest run as one card whose state and actions follow the run (its
  *  last steps and Stop while it runs; the opening of its report and Accept / Reject… when it wants
  *  a verdict, with Accept / Reject… only when there is no pack to review; why it failed; that it merged; why it still waits), with one filled button for what
  *  to do next. An item with no run shows Run with agent instead. */
@@ -279,7 +279,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     return parts.length > 0 ? parts.join(' · ') : null;
   };
 
-  // Whether the run left a merge-readiness pack: with one, the verdict is given on the Execution tab, where
+  // Whether the run left a merge-readiness pack: with one, the verdict is given in the runs, where
   // the pack and its reason are reviewed together, so this panel offers no Accept or Reject of its own.
   const [hasPack] = createResource(
     () => {
@@ -366,7 +366,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       class="min-w-0 space-y-3 rounded-lg p-4"
       style={{ 'background-color': 'var(--color-bg-panel)', 'box-shadow': 'var(--shadow-sm)' }}
     >
-      <h2 id={headingId} class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Work</h2>
+      <h2 id={headingId} class="text-small font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Work</h2>
 
       <Show when={!latest()}>
         <div data-testid="now-idle" class="space-y-1.5">
@@ -392,7 +392,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             <div role="status" aria-live="polite">
               <RunState size="banner" {...runState()} />
             </div>
-            <p data-testid="latest-run-status" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <p data-testid="latest-run-status" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               {statusLine()}
             </p>
 
@@ -433,7 +433,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                   </For>
                 </Show>
                 <Show when={waitingReason() && latest()?.waiting_since}>
-                  {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
+                  {(since) => <span style={{ color: 'var(--color-text-secondary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
                 </Show>
               </p>
             </Show>
@@ -497,7 +497,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 {(text) => (
                   <>
                     <Show when={noChange()}>
-                      <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
+                      <p class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
                     </Show>
                     <Show
                       when={plainLine(text()).raw}
@@ -512,18 +512,18 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
             <Show when={metaLine()}>
               {(line) => (
-                <p data-testid="latest-run-meta" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>
+                <p data-testid="latest-run-meta" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>
               )}
             </Show>
             <Show when={usageLine()}>
               {(line) => (
-                <p data-testid="latest-run-usage" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <p data-testid="latest-run-usage" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                   {line()}
                 </p>
               )}
             </Show>
             <Show when={questionCount() > 0}>
-              <p data-testid="latest-run-questions" class="text-xs">
+              <p data-testid="latest-run-questions" class="text-small">
                 <button type="button" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => props.onOpen()}>
                   The agent asked {questionCount()} {questionCount() === 1 ? 'question' : 'questions'}
                 </button>

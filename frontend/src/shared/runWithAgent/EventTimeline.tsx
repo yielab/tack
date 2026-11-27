@@ -90,7 +90,7 @@ const TerminalBody: Component<{ payload: Record<string, unknown> }> = (props) =>
     return text ?? 'See what the agent did and said above.';
   };
   return (
-    <div class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
+    <div class="mt-0.5 text-small break-words" style={{ color: 'var(--color-text-secondary)' }}>
       <p>{how()}</p>
       <button type="button" class="underline" aria-expanded={raw()} onClick={() => setRaw((v) => !v)}>
         Raw
@@ -116,7 +116,7 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
     <div class="min-w-0 pb-3.5">
       <div class="flex flex-wrap items-center gap-1.5">
         <Show when={known()?.clock}>
-          <Icons.IconClock size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+          <Icons.IconClock size={14} style={{ color: 'var(--color-text-secondary)' }} />
         </Show>
         <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }} title={props.event.kind}>
           {known()?.label ?? props.event.kind}
@@ -126,7 +126,7 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
       <Show
         when={props.event.kind === 'attempt.terminal' && props.event.payload && typeof props.event.payload === 'object'}
         fallback={
-          <p class="mt-0.5 text-xs break-words" title={plainLine(describeEventPayload(props.event.payload)).raw} style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="mt-0.5 text-small break-words" title={plainLine(describeEventPayload(props.event.payload)).raw} style={{ color: 'var(--color-text-secondary)' }}>
             {inProject(plainLine(describeEventPayload(props.event.payload)).text, props.workspace)}
           </p>
         }
@@ -134,7 +134,7 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
         <TerminalBody payload={props.event.payload as Record<string, unknown>} />
       </Show>
     </div>
-    <div class="flex flex-col items-end text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+    <div class="flex flex-col items-end text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
       <span>{relativeTimeFromIso(props.event.occurred_at)}</span>
     </div>
   </li>
@@ -173,7 +173,7 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
   return (
     <div>
       <Show when={events.state === 'pending'}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Loading events…
         </p>
       </Show>
@@ -181,7 +181,7 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
         <LoadError what="the events" error={events.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={loaded()?.length === 0}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No events reported yet</p>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>No events reported yet</p>
       </Show>
       <Show when={(loaded()?.length ?? 0) > 0}>
         <ul>

@@ -271,15 +271,15 @@ test('hero gif', async ({ page }) => {
   await page.waitForTimeout(1200);
   await page.waitForTimeout(4000);
 
-  // ── Scene: open the Execution tab via the chip ──────────────────────────
-  await page.getByRole('button', { name: `Open the Execution tab for ${ITEM_TITLE}` }).click();
+  // ── Scene: open the runs via the chip ──────────────────────────
+  await page.getByRole('button', { name: `Open the runs of ${ITEM_TITLE}` }).click();
   await page.waitForTimeout(900);
 
   await waitForRequestState(requestId, ['succeeded', 'failed'], 90_000);
   // The drawer clears `?tab=` from the URL the instant it applies it (so a
   // later reopen of a DIFFERENT item never inherits a stale tab) — a bare
   // reload here would land back on "Details". Re-supplying `tab=execution`
-  // explicitly keeps this on the Execution tab across the reload.
+  // explicitly keeps this on the runs across the reload.
   await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
   await waitForApp(page);
   await page.waitForTimeout(600);

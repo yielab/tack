@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {
+  openRuns,
   getOrCreateProject,
   getOrCreateItem,
   createRunnableProject,
@@ -160,13 +161,13 @@ test('board and settings at 200% text with the high-legibility font have no acce
 // Every project view, plus the forms inside them: the List's new-item row,
 // the List's cell editor, the new-item dialog. Each scan runs in a project
 // of its own, with one item and one sprint, so the views have rows to name.
-test('list, calendar, timeline, sprint and templates have no accessibility violations', async ({ page, request }) => {
+test('list, timeline, sprint and templates have no accessibility violations', async ({ page, request }) => {
   const projectId = await createFreshProject(request, `A11y views ${Date.now()}`);
   const title = `A11y views item ${Date.now()}`;
   await createFreshItem(request, projectId, title);
   await createSprintWithItem(request, projectId);
 
-  for (const view of ['list', 'calendar', 'timeline', 'sprint']) {
+  for (const view of ['list', 'timeline', 'sprint']) {
     await page.goto(`/projects/${projectId}/${view}`);
     await waitForApp(page);
     const violations = await scan(page);
@@ -197,8 +198,8 @@ test('list, calendar, timeline, sprint and templates have no accessibility viola
 });
 
 // The screens a person reaches by name rather than by a lens: every tab of the project's settings
-// (the Automation tab with its folded sections open), the item on a page of its own, the factory
-// metrics, the create-project dialog and the command palette. A project of its own for the same
+// (the Automation tab with its folded sections open), the item on a page of its own, the Overview's
+// parts, the create-project dialog and the command palette. A project of its own for the same
 // reason as the views above.
 test('project settings, every tab, has no accessibility violations', async ({ page, request }) => {
   const projectId = await createFreshProject(request, `A11y settings ${Date.now()}`);
@@ -218,22 +219,24 @@ test('project settings, every tab, has no accessibility violations', async ({ pa
 test('the item on a page of its own has no accessibility violations', async ({ page, request }) => {
   const projectId = await createFreshProject(request, `A11y item page ${Date.now()}`);
   const itemId = await createFreshItem(request, projectId, `A11y item page ${Date.now()}`);
-  for (const query of ['', '?tab=dependencies', '?tab=execution']) {
+  for (const query of ['', '?tab=execution']) {
     await page.goto(`/projects/${projectId}/items/${itemId}${query}`);
     await waitForApp(page);
-    await expect(page.getByRole('tablist')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Related' })).toBeVisible();
     const violations = await scan(page);
     expect(violations, `item page ${query}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
   }
 });
 
-test('factory metrics has no accessibility violations', async ({ page, request }) => {
-  const projectId = await createFreshProject(request, `A11y factory ${Date.now()}`);
-  await page.goto(`/projects/${projectId}/factory`);
-  await waitForApp(page);
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  const violations = await scan(page);
-  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+test('the Overview, every part, has no accessibility violations', async ({ page, request }) => {
+  const projectId = await createFreshProject(request, `A11y overview ${Date.now()}`);
+  for (const part of ['', '?part=agents', '?part=autonomy']) {
+    await page.goto(`/projects/${projectId}/overview${part}`);
+    await waitForApp(page);
+    await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
+    const violations = await scan(page);
+    expect(violations, `overview ${part}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+  }
 });
 
 test('the create-project dialog has no accessibility violations', async ({ page }) => {
@@ -475,7 +478,7 @@ test('Board card "Run with agent" modal has no accessibility violations', async 
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
-test('item detail Execution tab (with a real request) has no accessibility violations', async ({ page, request }) => {
+test('item detail Runs (with a real request) has no accessibility violations', async ({ page, request }) => {
   // A project with a folder to run in: the dialog has no repository fields.
   const projectId = await createRunnableProject(request, `A11y RWA project ${Date.now()}`);
   // A guaranteed-fresh item: `getOrCreateItem` reuses one shared item across
@@ -485,7 +488,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   const profileName = `A11y Profile ${Date.now()}`;
   await createAgentProfile(request, profileName);
   // An exact runner, not a fleet: naming the runner directly is the shortest
-  // setup that leaves the Execution tab populated for the scan, without a
+  // setup that leaves the Runs populated for the scan, without a
   // fleet and a membership write first. Same choice, same reason, as
   // `scheduler-e2e.spec.ts`.
   const modelId = `opaque/model-a11y-${Date.now()}`;
@@ -515,7 +518,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   await modal.getByRole('button', { name: 'Start run', exact: true }).click();
   await expect(modal).toBeHidden();
 
-  await drawer.getByRole('tab', { name: 'Execution' }).click();
+  await openRuns(drawer);
   // The newest run's state is shown once, in the Work region, not repeated in the Execution panel.
   await expect(drawer.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Queued');
 
@@ -528,7 +531,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
 // with a real claimed attempt so the expanded state (radios, text fields,
 // buttons across `EventTimeline`/`DecisionInbox`/`ArtifactDownloadPanel`) is
 // actually present in the DOM, not just the collapsed row.
-test('item detail Execution tab — expanded attempt detail (events/decisions/artifacts) has no accessibility violations', async ({
+test('item detail Runs — expanded attempt detail (events/decisions/artifacts) has no accessibility violations', async ({
   page,
   request,
 }) => {
@@ -545,7 +548,7 @@ test('item detail Execution tab — expanded attempt detail (events/decisions/ar
   await page.goto(`/projects/${projectId}/board?item=${itemId}`);
   await waitForApp(page);
   const drawer = page.getByRole('dialog');
-  await drawer.getByRole('tab', { name: 'Execution' }).click();
+  await openRuns(drawer);
   await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
 
   await expect(drawer.getByText('No events reported yet')).toBeVisible();

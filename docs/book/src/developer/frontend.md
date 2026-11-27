@@ -13,10 +13,10 @@ component relies on works.
 ```
 frontend/src/
 ├── app/          App shell — Router, Layout (sidebar + top bar), routes
-├── features/     One folder per surface: board, list, calendar, timeline,
-│                 orchestration, sprints, item-detail, dashboard (Overview and
-│                 Factory metrics), projects, settings, templates, agents,
-│                 changesets, threads, notifications (the inbox)
+├── features/     One folder per surface: board, list, timeline, orchestration,
+│                 sprints, item-detail, dashboard (the Overview: Progress,
+│                 Agents' work, Autonomy by domain), needs-you, projects,
+│                 settings, templates, agents, threads, notifications (the inbox)
 ├── shared/
 │   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs, Card,
 │   │             Switch, ConfirmDialog, Fold, CommandPalette, SearchBar,

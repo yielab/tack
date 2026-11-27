@@ -27,7 +27,7 @@ const ParityRules: Component<{ reports: Partial<HarnessCapability>[] }> = (props
   return (
     <Show when={lines()}>
       {(rows) => (
-        <details data-testid="parity-rules" class="mt-1 text-xs">
+        <details data-testid="parity-rules" class="mt-1 text-small">
           <summary class="cursor-pointer" style={{ color: 'var(--color-text-secondary)' }}>Who applies each rule</summary>
           <ul class="mt-1 space-y-0.5">
             <For each={rows()}>

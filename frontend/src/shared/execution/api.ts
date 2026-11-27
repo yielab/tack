@@ -95,7 +95,7 @@ export interface ExecutionSummary {
 }
 
 /** The latest hop event of a run's newest attempt, read by the server from its text. Match `role`
- *  to a team's steps without regard to case, as `stepMatch.ts` does for the Execution tab. */
+ *  to a team's steps without regard to case, as `stepMatch.ts` does for a task's runs. */
 export interface LatestHop {
   /** The role as the event names it, its first letter upper case. */
   role: string;
@@ -235,7 +235,7 @@ export const executionsApi = {
    *  `itemId`, when given, scopes the request to that item alone
    *  (`list_executions`'s `item_id` query parameter) instead of every
    *  execution request the install has ever recorded — the one-item
-   *  Execution tab (`ExecutionTimeline.tsx`) uses this so opening it never
+   *  runs list (`ExecutionTimeline.tsx`) uses this so opening it never
    *  pulls the whole table over the wire. `limit` forwards to
    *  `list_executions`'s own `?limit=`, server-capped at `MAX_LIMIT`
    *  regardless of what is asked; meaningless (and ignored server-side)

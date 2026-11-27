@@ -3,11 +3,10 @@ import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
 import { FiTrash2 } from 'solid-icons/fi';
-import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton, TypeList, createConfirm } from '../../shared/ui';
+import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton, TypeList, createConfirm, Card } from '../../shared/ui';
 import { IconTemplates } from '../../shared/ui/icons';
 import { projectTypePillStyle, projectTypeTone } from '../../shared/ui/projectTypeTone';
 import type { ProjectTemplate } from '../../shared/types';
-import Card from '../../shared/ui/Card';
 
 /** Workflow column names in board order (for the preset preview). */
 function workflowColumns(t: ProjectTemplate): string[] {

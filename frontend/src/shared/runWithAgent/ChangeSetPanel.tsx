@@ -198,9 +198,15 @@ const ChangeSetPanel: Component<{ changeSet: ChangeSet; onChange?: (next: Change
     }
   };
 
+  const allCreates = () => ops().length > 0 && ops().every(isCreate);
   const title = () => {
     const n = ops().length;
-    return `${proposerName(set())} proposes ${plural(n, 'change', 'changes')}`;
+    return allCreates() ? `${plural(n, 'item', 'items')} proposed` : `${plural(n, 'change', 'changes')} proposed`;
+  };
+  /** What the one solid button does: it makes items when everything ticked makes one, and otherwise applies. */
+  const applyLabel = () => {
+    const n = chosen().length;
+    return (n > 0 ? chosen().every((i) => isCreate(ops()[i])) : allCreates()) ? `Create ${plural(n, 'item', 'items')}` : `Apply ${plural(n, 'change', 'changes')}`;
   };
   const noteFor = (pos: number): string[] => {
     const result = set().ops[pos]?.result;
@@ -219,27 +225,30 @@ const ChangeSetPanel: Component<{ changeSet: ChangeSet; onChange?: (next: Change
       data-testid="change-set-panel"
       data-status={set().status}
       aria-label={title()}
-      class="min-w-0 space-y-3 rounded-lg p-3"
-      style={{ border: '1px solid var(--color-border-light)' }}
+      class="min-w-0 overflow-hidden rounded-lg"
+      style={{ border: '1px solid var(--color-border-light)', 'background-color': 'var(--color-bg-elevated)' }}
     >
-      <header class="min-w-0 space-y-1">
+      <header class="min-w-0 space-y-1 px-5 py-4" style={{ 'border-bottom': '1px solid var(--color-border-light)' }}>
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h4 class="text-base" style={{ color: 'var(--color-text-primary)' }}>
-            {title()}
-          </h4>
-          <span data-testid="change-set-status" class="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ border: '1px solid var(--color-border-medium)', color: 'var(--color-text-primary)' }}>
+          <p class="text-small font-semibold" style={secondary}>
+            Change set · from {proposerName(set())}
+          </p>
+          <span data-testid="change-set-status" class="rounded-sm px-2 py-0.5 text-small font-semibold" style={{ border: '1px solid var(--color-border-medium)', color: 'var(--color-text-primary)' }}>
             {STATUS_TEXT[set().status]}
           </span>
         </div>
-        <p data-testid="change-set-reason" class="text-sm" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+        <h4 class="text-section font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {title()}
+        </h4>
+        <p data-testid="change-set-reason" class="text-body" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
           {set().reason}
         </p>
-        <p data-testid="change-set-origin" class="text-xs" style={secondary}>
+        <p data-testid="change-set-origin" class="text-small" style={secondary}>
           {originText(set())} · proposed by {proposerName(set())} · {relativeTimeFromIso(set().created_at)}
         </p>
         <Show when={set().decided_at}>
           {(at) => (
-            <p class="text-xs" style={secondary}>
+            <p class="text-small" style={secondary}>
               Decided{set().decided_by ? ` by ${set().decided_by}` : ''} {relativeTimeFromIso(at())}
               {set().rejection ? `: ${set().rejection}` : ''}
             </p>
@@ -247,124 +256,132 @@ const ChangeSetPanel: Component<{ changeSet: ChangeSet; onChange?: (next: Change
         </Show>
       </header>
 
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-sm" style={secondary}>
-          {[
-            positions().length > 0 ? treeSummary(rows()) : null,
-            others().length > 0 ? plural(others().length, 'other change', 'other changes') : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
-        <div class="flex items-center gap-1">
-          <Button size="sm" variant="ghost" disabled={nothingWaits() || chosen().length === waiting().length} onClick={() => tickAll(true)}>
-            Select all
-          </Button>
-          <Button size="sm" variant="ghost" disabled={nothingWaits() || chosen().length === 0} onClick={() => tickAll(false)}>
-            Select none
-          </Button>
-        </div>
-      </div>
-
-      <Show when={positions().length > 0}>
-        <PlanTree rows={rows} offer={ctx} patch={patchRow} setTicked={tickRow} />
-      </Show>
-
-      <Show when={others().length > 0}>
-        <ul aria-label="Other changes" class="space-y-2">
-          <For each={others()}>
-            {(pos) => {
-              const op = () => ops()[pos];
-              const locked = () => states()[pos] !== 'waiting';
-              return (
-                <li data-testid="change-op" data-kind={op().op} class="min-w-0 space-y-2 rounded-lg p-2" style={{ border: '1px solid var(--color-border-light)' }}>
-                  <label class="flex min-w-0 items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={ticked().has(pos)}
-                      disabled={locked()}
-                      aria-label={summarize(op(), nameOf)}
-                      onChange={(e) => tick(pos, e.currentTarget.checked)}
-                    />
-                    <span class="rounded-full px-2 py-0.5 text-xs" style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}>
-                      {KIND_LABEL[op().op]}
-                    </span>
-                    <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere', color: 'var(--color-text-primary)' }}>
-                      {summarize(op(), nameOf)}
-                    </span>
-                    <Show when={locked()}>
-                      <span data-testid="change-op-state" class="ml-auto shrink-0 text-xs" style={secondary}>
-                        {OP_STATE_TEXT[states()[pos]]}
-                      </span>
-                    </Show>
-                  </label>
-                  <OperationEditor op={op()} name={itemName(op())} offer={ctx()} disabled={locked()} onEdit={(next) => draft(pos, next)} />
-                </li>
-              );
-            }}
-          </For>
-        </ul>
-      </Show>
-
-      <For each={doneNotes()}>{(note) => <p class="text-sm" style={secondary}>{note}</p>}</For>
-
-      <Show when={problem()}>
-        {(p) => (
-          <div data-testid="change-set-refusal" role="alert" class="space-y-1 text-sm" style={{ color: 'var(--color-danger-600)' }}>
-            <Show when={p().headline}>
-              <p>{p().headline}</p>
-            </Show>
-            <ul class={p().headline ? 'list-disc space-y-0.5 pl-5' : 'space-y-0.5'}>
-              <For each={p().reasons}>{(reason) => <li>{reason}</li>}</For>
-            </ul>
+      <div class="space-y-3 px-5 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-small" style={secondary}>
+            {[
+              positions().length > 0 ? treeSummary(rows()) : null,
+              others().length > 0 ? plural(others().length, 'other change', 'other changes') : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+          <div class="flex items-center gap-1">
+            <Button size="sm" variant="ghost" disabled={nothingWaits() || chosen().length === waiting().length} onClick={() => tickAll(true)}>
+              Select all
+            </Button>
+            <Button size="sm" variant="ghost" disabled={nothingWaits() || chosen().length === 0} onClick={() => tickAll(false)}>
+              Select none
+            </Button>
           </div>
-        )}
-      </Show>
+        </div>
 
-      <Show when={rejecting()}>
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <input
-            class="min-w-0 flex-1 rounded-sm px-2 py-1 text-sm"
-            style={inputStyle}
-            aria-label="Why you turn these changes down"
-            placeholder="Why? The proposer reads this."
-            value={rejectReason()}
-            onInput={(e) => setRejectReason(e.currentTarget.value)}
-          />
-          <Button size="sm" variant="destructive" data-testid="change-set-reject-confirm" disabled={busy() || rejectReason().trim() === ''} onClick={() => void reject()}>
-            Reject {plural(waiting().length, 'change', 'changes')}
+        <Show when={positions().length > 0}>
+          <PlanTree rows={rows} offer={ctx} patch={patchRow} setTicked={tickRow} />
+        </Show>
+
+        <Show when={others().length > 0}>
+          <ul aria-label="Other changes">
+            <For each={others()}>
+              {(pos) => {
+                const op = () => ops()[pos];
+                const locked = () => states()[pos] !== 'waiting';
+                const [editing, setEditing] = createSignal(false);
+                const editorId = `change-op-${pos}-editor`;
+                return (
+                  <li data-testid="change-op" data-kind={op().op} class="min-w-0 py-3" style={{ 'border-bottom': '1px solid var(--color-border-light)' }}>
+                    <div class="flex min-w-0 items-start gap-3">
+                      <input
+                        type="checkbox"
+                        class="mt-1 h-4 w-4"
+                        checked={ticked().has(pos)}
+                        disabled={locked()}
+                        aria-label={summarize(op(), nameOf)}
+                        onChange={(e) => tick(pos, e.currentTarget.checked)}
+                      />
+                      <div class="min-w-0 flex-1">
+                        <p class="text-body font-semibold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{summarize(op(), nameOf)}</p>
+                        <p class="text-small" style={secondary}>{KIND_LABEL[op().op]}</p>
+                      </div>
+                      <Show when={locked()}>
+                        <span data-testid="change-op-state" class="shrink-0 text-small" style={secondary}>
+                          {OP_STATE_TEXT[states()[pos]]}
+                        </span>
+                      </Show>
+                      <Button type="button" size="sm" variant="ghost" disabled={locked()} aria-expanded={editing()} aria-controls={editorId} onClick={() => setEditing(!editing())}>
+                        Edit
+                      </Button>
+                    </div>
+                    <div id={editorId} hidden={!editing()} class="mt-2 pl-8">
+                      <OperationEditor op={op()} name={itemName(op())} offer={ctx()} disabled={locked()} onEdit={(next) => draft(pos, next)} />
+                    </div>
+                  </li>
+                );
+              }}
+            </For>
+          </ul>
+        </Show>
+
+        <For each={doneNotes()}>{(note) => <p class="text-small" style={secondary}>{note}</p>}</For>
+
+        <Show when={problem()}>
+          {(p) => (
+            <div data-testid="change-set-refusal" role="alert" class="space-y-1 text-small" style={{ color: 'var(--color-danger-700)' }}>
+              <Show when={p().headline}>
+                <p>{p().headline}</p>
+              </Show>
+              <ul class={p().headline ? 'list-disc space-y-0.5 pl-5' : 'space-y-0.5'}>
+                <For each={p().reasons}>{(reason) => <li>{reason}</li>}</For>
+              </ul>
+            </div>
+          )}
+        </Show>
+
+        <Show when={rejecting()}>
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <input
+              class="min-w-0 flex-1 rounded-md px-2 py-1 text-small"
+              style={inputStyle}
+              aria-label="Why you turn these changes down"
+              placeholder="Why? The proposer reads this."
+              value={rejectReason()}
+              onInput={(e) => setRejectReason(e.currentTarget.value)}
+            />
+            <Button size="sm" variant="destructive" data-testid="change-set-reject-confirm" disabled={busy() || rejectReason().trim() === ''} onClick={() => void reject()}>
+              Turn down {plural(waiting().length, 'change', 'changes')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+              Cancel
+            </Button>
+          </div>
+        </Show>
+
+        <div class="flex flex-wrap items-center gap-2 pt-1">
+          <p data-testid="change-set-selected" class="flex-1 text-small" style={secondary}>
+            <Show when={!nothingWaits()} fallback="Nothing here waits for you.">
+              {chosen().length} of {waiting().length} selected
+            </Show>
+          </p>
+          <Button size="sm" variant="ghost" data-testid="change-set-reject" disabled={busy() || nothingWaits() || rejecting()} onClick={() => setRejecting(true)}>
+            Turn down all
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
-            Cancel
+          <Show when={dirty().length > 0}>
+            <Button size="sm" variant="ghost" data-testid="change-set-save" disabled={busy()} onClick={() => void saveOnly()}>
+              Save edits
+            </Button>
+          </Show>
+          <Button size="sm" variant="secondary" data-testid="change-set-apply-all" disabled={busy() || nothingWaits()} onClick={() => void applyAll()}>
+            Apply all
+          </Button>
+          <Button
+            size="sm"
+            data-testid="change-set-apply"
+            disabled={busy() || chosen().length === 0}
+            onClick={() => void applyChosen()}
+          >
+            {applyLabel()}
           </Button>
         </div>
-      </Show>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          data-testid="change-set-apply"
-          disabled={busy() || chosen().length === 0}
-          onClick={() => void applyChosen()}
-        >
-          {`Apply ${plural(chosen().length, 'change', 'changes')}`}
-        </Button>
-        <Button size="sm" variant="secondary" data-testid="change-set-apply-all" disabled={busy() || nothingWaits()} onClick={() => void applyAll()}>
-          Apply all
-        </Button>
-        <Show when={dirty().length > 0}>
-          <Button size="sm" variant="ghost" data-testid="change-set-save" disabled={busy()} onClick={() => void saveOnly()}>
-            Save edits
-          </Button>
-        </Show>
-        <Button size="sm" variant="ghost" data-testid="change-set-reject" disabled={busy() || nothingWaits() || rejecting()} onClick={() => setRejecting(true)}>
-          Reject…
-        </Button>
-        <Show when={nothingWaits()}>
-          <span class="text-xs" style={secondary}>
-            Nothing here waits for you.
-          </span>
-        </Show>
       </div>
     </section>
   );

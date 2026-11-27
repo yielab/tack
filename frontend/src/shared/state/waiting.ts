@@ -158,7 +158,7 @@ export const changeSetIdOf = (n: InboxNotification): string => n.key.slice('chan
 
 /**
  * Where a notification leads: a change set to its project's Needs you, a team's memory to the team's
- * sheet, a fall in quality to the project's Overview, anything else to its item (on the run, when it is about one).
+ * sheet, a fall in quality to the Agents' work part of the project's Overview, anything else to its item (on the run, when it is about one).
  */
 export function notificationHref(n: InboxNotification): string | null {
   if (n.kind === 'memory') {
@@ -166,7 +166,7 @@ export function notificationHref(n: InboxNotification): string | null {
     const team = n.key.split(':').slice(2, -1).join(':');
     return `/agents#team-${encodeURIComponent(team)}`;
   }
-  if (n.kind === 'quality_trend') return `/projects/${n.project_id}/overview`;
+  if (n.kind === 'quality_trend') return `/projects/${n.project_id}/overview?part=agents`;
   if (n.kind === 'change_set') return `/projects/${n.project_id}/needs-you?open=${encodeURIComponent(changeSetIdOf(n))}`;
   if (!n.item_id) return null;
   const query = n.request_id ? `?tab=execution&run=${encodeURIComponent(n.request_id)}` : '';

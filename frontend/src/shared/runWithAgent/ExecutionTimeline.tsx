@@ -28,7 +28,7 @@ export interface ExecutionTimelineProps {
   runId?: string;
   /** Called with the request id of the run a chip picks or a new run starts, so the address can name it. */
   onRunChange?: (requestId: string | undefined) => void;
-  /** The item's Now panel is on screen above this tab. It says the latest run's state, limit and token
+  /** The item's next-step panel is on screen above this list. It says the latest run's state, limit and token
    *  meter, so that run's section leaves them out and keeps only what Now does not say. */
   nowShown?: boolean;
 }
@@ -84,7 +84,7 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
   return (
     <div class="space-y-3">
       <Show when={store.listStatus() === 'loading' && requests().length === 0}>
-        <p class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
           Loading execution requests…
         </p>
       </Show>
@@ -282,13 +282,13 @@ const RequestRow: Component<{
   return (
     <section data-testid="run" class="min-w-0 space-y-4 border-t pt-5" style={{ 'border-color': 'var(--color-border-light)' }}>
       <div class="flex flex-wrap items-center gap-2">
-        <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
-        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <h3 class="text-section font-semibold" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
+        <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           created {relativeTimeFromIso(summary()?.created_at)}
         </span>
         {/* Once there is an attempt the ids sit with it; before that, this is the only place. */}
         <Show when={readyAttempts().length === 0}>
-          <span class="ml-auto max-w-[14rem] truncate text-micro" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          <span class="ml-auto max-w-[14rem] truncate text-micro" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
             {summary()?.request_id ?? '—'}
           </span>
         </Show>
@@ -310,7 +310,7 @@ const RequestRow: Component<{
           fallback={
             <div class="flex flex-wrap items-center gap-2">
               <Badge tone={status().tone}>{status().label}</Badge>
-              <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 (unrecognised state — showing raw value)
               </span>
             </div>
@@ -318,7 +318,7 @@ const RequestRow: Component<{
         >
           <RunState size="banner" {...banner()} />
           <Show when={status().label !== RUN_STATE_LABEL[banner().state]}>
-            <p data-testid="run-status-words" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{status().label}</p>
+            <p data-testid="run-status-words" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{status().label}</p>
           </Show>
         </Show>
       </div>
@@ -329,14 +329,14 @@ const RequestRow: Component<{
           <p data-testid="run-waiting" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             Waiting: {why()}
             <Show when={summary()?.waiting_since}>
-              {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
+              {(since) => <span style={{ color: 'var(--color-text-secondary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
             </Show>
           </p>
         )}
       </Show>
       <Show when={!props.nowShown && state() === 'failed' && summary()?.waiting_reason}>
         {(why) => (
-          <p data-testid="run-failure-reason" class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+          <p data-testid="run-failure-reason" class="text-small" style={{ color: 'var(--color-danger-600)' }}>
             {why()}
           </p>
         )}
@@ -388,7 +388,7 @@ const RequestRow: Component<{
 
       <Show when={props.record.error}>
         {(err) => (
-          <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+          <p class="text-small" style={{ color: 'var(--color-danger-600)' }}>
             {err().message}
           </p>
         )}
@@ -397,7 +397,7 @@ const RequestRow: Component<{
       {/* Attempt timeline — real data, from a wired endpoint.
           Every fetch state is rendered explicitly. */}
       <Show when={attempts().status === 'loading'}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Loading attempts…
         </p>
       </Show>
@@ -416,7 +416,7 @@ const RequestRow: Component<{
           when={readyAttempts().length > 0}
           fallback={
             <>
-              <p class="rounded-lg border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+              <p class="rounded-lg border-2 border-dashed px-4 py-3 text-small" style={{ color: 'var(--color-text-secondary)', 'border-color': 'var(--color-border-light)' }}>
                 No attempts yet.
               </p>
               <div class="flex flex-wrap items-center gap-2">{runAgain('secondary')}</div>
@@ -443,7 +443,7 @@ const RequestRow: Component<{
       </Show>
 
       <div class="flex flex-wrap items-center gap-2">
-        {/* The Now panel above already has Stop for the newest run: the same button twice would only compete. */}
+        {/* The next-step panel above already has Stop for the newest run: the same button twice would only compete. */}
         <Show when={canCancel() && !props.nowShown}>
           <Button size="sm" variant="secondary" onClick={cancel} disabled={busy()} loading={busy()}>
             Stop

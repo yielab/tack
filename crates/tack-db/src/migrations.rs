@@ -177,6 +177,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("113_default_expiry", &MIGRATION_113[..]),
         ordinary("114_reviewer_verdicts", &MIGRATION_114[..]),
         ordinary("115_keys", &MIGRATION_115[..]),
+        ordinary("116_waiting_max", &MIGRATION_116[..]),
     ]
 }
 
@@ -2376,3 +2377,7 @@ const MIGRATION_115: [&str; 10] = [
     "ALTER TABLE items ADD COLUMN key TEXT NOT NULL DEFAULT ''",
     "CREATE UNIQUE INDEX idx_items_key ON items(project_id, key) WHERE key <> ''",
 ];
+
+// 116: a project may limit how many things wait for a person (`project_budgets.waiting_max`), beside the
+// limit on what waits in the queue; null is no limit, and every project starts with none.
+const MIGRATION_116: [&str; 1] = ["ALTER TABLE project_budgets ADD COLUMN waiting_max INTEGER"];

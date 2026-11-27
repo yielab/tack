@@ -952,6 +952,25 @@ async fn the_default_profiles_team_is_a_team_of_the_project_too() {
     assert_eq!(teams().await["teams"].as_array().unwrap().len(), 1);
 }
 
+// The limit on what waits for a person is kept and read back; null is no limit.
+#[tokio::test]
+async fn the_waiting_limit_round_trips() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let uri = format!("/api/projects/{}/autonomy", b.project_id);
+    let (_, before) = common::send(&b.app, "GET", &uri, Value::Null, &operator_headers()).await;
+    assert_eq!(before["budgets"]["waiting_max"], Value::Null, "{before}");
+    for wanted in [json!(3), Value::Null] {
+        let mut settings = before.clone();
+        settings["budgets"]["waiting_max"] = wanted.clone();
+        let (status, put) = common::send(&b.app, "PUT", &uri, settings, &operator_headers()).await;
+        assert_eq!(status, StatusCode::OK, "{put}");
+        let (_, got) = common::send(&b.app, "GET", &uri, Value::Null, &operator_headers()).await;
+        assert_eq!(got["budgets"]["waiting_max"], wanted, "{got}");
+    }
+}
+
 // A project-level demotion to L3 switches auto-start off and the project says why.
 #[tokio::test]
 async fn a_demotion_to_l3_switches_auto_start_off() {

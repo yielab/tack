@@ -117,7 +117,7 @@ A task can be done by an agent: a program such as Claude Code that reads and edi
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: the profile to run as, a What will happen summary of the agent, branch, checks and network, two switches, collapsed What the agent will read and Advanced sections, and a Start run button.">
 
-When the run ends, the task's **Execution** tab shows the attempt. If the agent changed anything, the task is marked **Needs your review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal, see [Running from the command line](running-agents.md#running-from-the-command-line). To start the server with agents already on, run `tack serve --with-runner`.
+When the run ends, the task's **Runs** show the attempt. If the agent changed anything, the task is marked **Needs your review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal, see [Running from the command line](running-agents.md#running-from-the-command-line). To start the server with agents already on, run `tack serve --with-runner`.
 
 ---
 

@@ -3,8 +3,7 @@ import { useParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import type { AutonomyDomain } from '../../shared/api/autonomy';
 import type { components } from '../../shared/api/schema.gen';
-import { LoadError, Skeleton } from '../../shared/ui';
-import Card from '../../shared/ui/Card';
+import { LoadError, Skeleton, Card } from '../../shared/ui';
 import { rate, Table } from './QualityFigures';
 
 type CutRow = components['schemas']['CutRow'];

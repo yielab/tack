@@ -27,6 +27,7 @@ use crate::workflow::{Transition, WorkflowConfig};
 
 pub mod bundle;
 mod csv;
+pub mod folder;
 pub mod key;
 pub mod missing;
 pub use self::csv::{CsvOutline, items_from_csv, items_to_csv};
@@ -346,6 +347,8 @@ pub struct BundleBudgets {
     pub auto_merges_per_day: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue_items_max: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_max: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -434,13 +437,16 @@ pub struct OutlineProject {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct OutlineItem {
+    /// The item's key: its file name in the project folder; absent, the item is matched by
+    /// nothing and always added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     /// A name other items use in `parent` and `depends_on`. Any text or
     /// number, unique within the outline.
     #[serde(
         default,
         rename = "ref",
         alias = "id",
-        alias = "key",
         deserialize_with = "opt_text",
         skip_serializing_if = "Option::is_none"
     )]

@@ -1,5 +1,5 @@
 //! What happened on a board, as values (ADR 0034, decision 8): an item was created, edited,
-//! moved or deleted; a run started, finished, failed or began waiting on a person; a decision
+//! moved or deleted; a run started, finished, failed, was reviewed or began waiting on a person; a decision
 //! was opened or answered; a change set was proposed or settled. Each carries the project it
 //! happened in and the [`Principal`] that caused it, a runner and Tack itself included, so a
 //! consumer can tell a person's change from its own. The values live here so the pure rules
@@ -46,6 +46,11 @@ pub enum Fact {
         run: RunRef,
     },
     RunFailed {
+        run: RunRef,
+    },
+    /// A person accepted or turned down a run that succeeded, or its change was merged: it no
+    /// longer waits for review.
+    RunReviewed {
         run: RunRef,
     },
     /// The run stopped to wait for a person's answer; not said again for a second question.

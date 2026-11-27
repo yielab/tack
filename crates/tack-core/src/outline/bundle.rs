@@ -1370,6 +1370,7 @@ fn items_of(parts: &Parts<'_>) -> Vec<OutlineItem> {
                 .filter_map(|d| reference.get(&d.source_item_id).cloned())
                 .collect();
             OutlineItem {
+                key: None,
                 reference: reference.get(&item.id).cloned(),
                 title: item.title.clone(),
                 description: item.description.clone(),

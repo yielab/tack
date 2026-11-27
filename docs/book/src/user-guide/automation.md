@@ -41,7 +41,7 @@ A run never changes a task's status: the column is yours, and what the agents re
 See [Status and Work](views.md#status-and-work).
 
 > **Which tasks does this touch?** Only tasks with a role. A role is how Tack knows a task is meant for an
-> agent. Create roles under **Settings → Roles**, and give a task a role on its **Fields** tab.
+> agent. Create roles under **Settings → Roles**, and give a task a role in the **Custom fields and roles** fold of its **Related** column.
 
 ---
 
@@ -296,7 +296,7 @@ When Tack acts without you, it tells you in three places.
 
 Hover a badge for a one-sentence explanation.
 
-**The task's Automation row**, the last line of the Work panel in the task drawer, says what happens to this task
+**The task's Automation row**, the last line of the next step in the task drawer, says what happens to this task
 without you:
 
 - "Starts by itself when it reaches To Do · Team saas-content · Merge L3", when the project starts tasks by

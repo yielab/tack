@@ -88,7 +88,7 @@ describe('Overview parts', () => {
     expect(autonomy.pressed()).toEqual(['Autonomy by domain']);
     autonomy.dispose();
 
-    const unknown = open('/projects/p1/overview?part=factory');
+    const unknown = open('/projects/p1/overview?part=nonsense');
     await flush();
     expect(unknown.pressed()).toEqual(['Progress']);
     unknown.dispose();

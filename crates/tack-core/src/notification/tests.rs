@@ -83,10 +83,10 @@ fn a_change_set_proposed_needs_you_with_or_without_an_item() {
 }
 
 #[test]
-fn a_run_that_finished_is_information_under_its_own_key() {
+fn a_run_that_finished_needs_you_for_review_under_its_own_key() {
     let n = notice(&by(&runner(), Fact::RunFinished { run: run() })).expect("a notice");
-    assert_eq!((n.kind, n.level), (Kind::RunFinished, Level::Info));
-    assert_eq!(n.key.as_str(), "finished:req-1");
+    assert_eq!((n.kind, n.level), (Kind::Review, Level::NeedsYou));
+    assert_eq!(n.key.as_str(), "review:req-1");
     assert_ne!(
         n.key,
         notice(&by(&runner(), Fact::RunFailed { run: run() }))
@@ -134,6 +134,7 @@ fn what_the_board_shows_already_is_no_notification() {
         },
         Fact::ItemDeleted { item_id },
         Fact::RunStarted { run: run() },
+        Fact::RunReviewed { run: run() },
         Fact::RunWaiting { run: run() },
         Fact::DecisionResolved {
             run: run(),
@@ -184,17 +185,27 @@ fn an_answer_closes_its_decision_whoever_gave_it() {
     for principal in [Principal::operator("local"), runner(), Principal::system()] {
         assert_eq!(
             closes(&by(&principal, resolved.clone())),
-            Some(Key::decision("d-1"))
+            [Key::decision("d-1")]
         );
     }
 }
 
 #[test]
-fn a_run_that_starts_closes_the_failure_of_its_request() {
+fn a_run_that_starts_closes_the_failure_and_the_review_of_its_request() {
     assert_eq!(
         closes(&by(&runner(), Fact::RunStarted { run: run() })),
-        Some(Key::run("req-1"))
+        [Key::run("req-1"), Key::review("req-1")]
     );
+}
+
+#[test]
+fn a_run_reviewed_closes_its_review_whoever_reviewed_it() {
+    for principal in [Principal::operator("local"), Principal::system()] {
+        assert_eq!(
+            closes(&by(&principal, Fact::RunReviewed { run: run() })),
+            [Key::review("req-1")]
+        );
+    }
 }
 
 #[test]
@@ -206,7 +217,7 @@ fn a_change_set_applied_or_rejected_closes_its_proposal() {
                 change_set_id: "cs-1".into()
             }
         )),
-        Some(Key::change_set("cs-1"))
+        [Key::change_set("cs-1")]
     );
 }
 
@@ -231,7 +242,7 @@ fn nothing_else_closes_anything() {
             item_id: None,
         },
     ] {
-        assert_eq!(closes(&by(&runner(), fact.clone())), None, "{fact:?}");
+        assert!(closes(&by(&runner(), fact.clone())).is_empty(), "{fact:?}");
     }
 }
 
@@ -260,6 +271,7 @@ fn kinds_and_levels_have_the_names_the_store_and_the_api_use() {
         (Kind::RunFailed, "run_failed"),
         (Kind::ChangeSet, "change_set"),
         (Kind::RunFinished, "run_finished"),
+        (Kind::Review, "review"),
         (Kind::DueSoon, "due_soon"),
     ] {
         assert_eq!(kind.as_str(), name);

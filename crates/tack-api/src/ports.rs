@@ -130,6 +130,7 @@ fn board_message(event: &DomainEvent) -> Option<BoardEvent> {
         Fact::RunStarted { .. }
         | Fact::RunFinished { .. }
         | Fact::RunFailed { .. }
+        | Fact::RunReviewed { .. }
         | Fact::RunWaiting { .. }
         | Fact::DecisionOpened { .. }
         | Fact::DecisionResolved { .. }

@@ -85,7 +85,7 @@ const ContinueOrStartOver: Component<ContinueOrStartOverProps> = (props) => {
         </Show>
         <Show when={kept()}>
           {(k) => (
-            <p data-testid="budget-stop-kept-work" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p data-testid="budget-stop-kept-work" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               Its work is kept on <code style={{ 'font-family': 'var(--font-mono)' }}>{k().branch}</code> — see Changes, below, for the diff.
             </p>
           )}

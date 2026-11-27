@@ -52,8 +52,8 @@ npm run test:e2e      # Playwright; starts its own API and Vite (see docs/TESTIN
 ```
 frontend/src/
 ├── app/         # App shell, layouts and the route table (routes.tsx)
-├── features/    # One folder per screen: projects, board, orchestration, list, calendar,
-│                #   timeline, sprints, dashboard, item-detail, templates, agents, changesets,
+├── features/    # One folder per screen: projects, needs-you, board, orchestration, list,
+│                #   timeline, sprints, dashboard, item-detail, templates, agents,
 │                #   threads, notifications, settings
 ├── shared/      # What features share: api/, ui/, state/, execution/, runWithAgent/, vocab/, ...
 ├── test/        # Vitest setup
@@ -73,9 +73,9 @@ never edited by hand. The API base is `/api`; `VITE_API_URL` overrides it for a 
 ## Routing
 
 The route table is `src/app/routes.tsx`. The top-level pages are `/projects`, `/templates`,
-`/agents` and `/settings`; a project has `/projects/:id/overview`, `/factory`, `/change-sets`,
+`/agents` and `/settings`; a project has `/projects/:id/needs-you`, `/overview`,
 `/threads` and `/settings`, an item has `/projects/:id/items/:itemId`, and the work lenses
-(`board`, `orchestration`, `list`, `calendar`, `timeline`, `sprint`) sit under `/projects/:id/`.
+(`board`, `orchestration`, `list`, `timeline`, `sprint`) sit under `/projects/:id/`.
 
 ## More
 

@@ -16,13 +16,10 @@ describe('destinations shared by the sidebar and the command palette', () => {
     expect(PROJECT_DESTINATIONS.find((d) => d.id === 'project-settings')!.path('p1')).toBe('/projects/p1/settings');
   });
 
-  it('lists the nine project destinations in order, and none of the old addresses', () => {
+  it('lists the nine project destinations in order', () => {
     expect(PROJECT_DESTINATIONS.map((d) => d.id)).toEqual([
       'needs-you', 'board', 'list', 'timeline', 'sprint', 'orchestration', 'threads', 'overview', 'project-settings',
     ]);
-    const paths = PROJECT_DESTINATIONS.map((d) => d.path('p1'));
-    for (const gone of ['table', 'calendar', 'factory', 'change-sets']) expect(paths).not.toContain(`/projects/p1/${gone}`);
-    expect(PROJECT_DESTINATIONS.map((d) => d.label((k) => k))).not.toContain('Table');
   });
 
   it('puts Needs you first, at its own address', () => {

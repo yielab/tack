@@ -9,8 +9,8 @@ import { useItemEditor } from './useItemEditor';
 
 /**
  * An item on a page of its own, `/projects/:id/items/:itemId`: the same body
- * the drawer shows, with a side column for the properties. `?tab=` picks the tab
- * and `?run=` the run on the Execution tab; both follow what is on screen, so the
+ * the drawer shows, with a side column for the properties. `?tab=execution` opens
+ * the run history and `?run=` the run in it; both follow what is on screen, so the
  * address is always a link to it.
  */
 const ItemPage: Component = () => {
@@ -54,10 +54,8 @@ const ItemPage: Component = () => {
           run={typeof searchParams.run === 'string' ? searchParams.run : undefined}
           onRunChange={(run) => setSearchParams({ tab: 'execution', run }, { replace: true })}
           headerActions={
-            <Button size="sm" variant="secondary" onClick={() => void copyLink()}>
-              <span class="inline-flex items-center gap-1.5">
-                <Icons.IconLink size={14} /> Copy link
-              </span>
+            <Button size="sm" variant="ghost" aria-label="Copy link" title="Copy link" onClick={() => void copyLink()}>
+              <Icons.IconLink size={16} />
             </Button>
           }
         />

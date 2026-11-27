@@ -12,7 +12,7 @@ always runs and an agent executor that stays off until you turn it on. Everythin
 
 | Works without an agent | Needs an agent on this computer |
 |---|---|
-| Board, list, calendar, timeline and dashboard views | The **Run with agent** button on a task |
+| The Board, Orchestration, List, Timeline, Sprint and Overview views | The **Run with agent** button on a task |
 | Creating, moving, commenting on and searching tasks | An agent such as Claude Code or Codex working on your code |
 | The CLI and `tack mcp` for all of the above | A task that starts by itself ([Automating a Project](automation.md)) |
 | A webhook for what needs you, GitHub sync and backups | |
@@ -185,19 +185,26 @@ command line and an AI assistant's `create_execution` are refused with the same 
 
 ### The Run with agent dialog
 
-The dialog is a pre-flight, not a form. What belongs to the computer or the project is decided and shown
-read-only, and each part links to the page that owns it, so nothing is asked twice.
+The dialog is a pre-flight, not a form. Its title is **Run with agent**, with the task's title under it. In a
+few rows it says what will happen; everything else is folded under **Options**. What belongs to the computer or
+the project is decided and shown, and each part links to the page that owns it, so nothing is asked twice.
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: Who does it, with the profiles of Claude Code as radio buttons (Implementer, Planner, Researcher, Reviewer); a What will happen summary of the agent and model, the branch, the install, the checks, the permissions and the network; two switches, Ask before each action and Web tools; the collapsed sections What the agent will read and Advanced for this run; and Cancel and Start run under the limit.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: the task's title under the heading, a What will happen section with the rows Agent, Where, Checked by, Ask first and Network, an Options fold, and a footer with Preview what the agent reads, Cancel and Start run.">
 
-- **Who does it** asks for the agent first, then the profile.
-  - The agents are a row of pills, Docket first, then Claude Code, Codex and OpenCode: each one the computer
+If the task cannot be verified yet, one amber line at the top says why, for example "Not ready: no Done when". It
+never stops the run.
+
+**What will happen** has five rows:
+
+- **Agent** names the profile that runs the task, its team when it has one, the agent and the model. **Change…**
+  opens the list of agents and profiles.
+  - The agents are a row of buttons, Docket first, then Claude Code, Codex and OpenCode: each one the computer
     reports, and any agent a profile names that the computer does not report, greyed with the reason. Docket is
     chosen when a profile names a team, unless the project or the task names another agent.
   - Under the chosen agent you see only its profiles, each a radio button, and one line with five icons for what
     that agent can do: stop a run, pick it back up after a restart, answer questions, propose items and report
     usage. Only something the agent cannot do, or did not report, is drawn crossed out; hover it for the reason.
-  - Under Docket the profiles are grouped by team. A team shows who is in it as small chips and an icon for where
+  - Under Docket the profiles are grouped by team. A team shows who is in it as small tags and an icon for where
     it works (a branch of your repository, or its own folder). The teams that no profile names yet are one greyed
     row, "3 teams have no profile yet", with a link to the Agents page. Under any other agent the profiles are
     one list.
@@ -207,44 +214,49 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
     the role X"; the other sources are "Project default", "Saved on this task", "The built-in Implementer", or
     "More than one role has a profile, so the project default is used"). [Teams](automation.md#teams) explains
     how a role chooses.
-- **What will happen** is one line each, with an icon: which profile runs the task and on which model; where
-  the agent works ("on a new branch of your repo", "in the folder, directly"; a profile whose team works in
-  its own folder on this computer says "in the team's own folder on this computer, not in this repository");
-  what is installed before it starts ("No install: this profile runs no commands", or "Nothing is installed"
-  for a team that works in a folder); the checks ("2 Done when · verifier on"); the sandbox; and the network. The profile,
-  model and place link to where you change them.
-- **Machine or group.** Lists this computer and the other machines by name, then the groups. A machine that
-  has stopped answering is shown disabled, with the time it was last heard. With one machine answering and
-  no group there is nothing to choose, so the field is one line, "Runs on this computer". When no machine
-  answers, the field is a warning instead, **Agents offline**, naming each machine and when it was last
-  heard, with a link to turn agent execution on; the footer gives the same link in place of **Start run**.
-  The sidebar shows the same **Agents offline** warning on every page while it lasts.
-- **What the agent will read** shows the real text it will be given: the profile's instructions, the task's
-  title and description, its acceptance criteria, the project's **Definition of done**, and anything in the
-  task's collapsed **For the agent** block. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent).
-- **Start run** sits in a footer that stays in view while the dialog scrolls, beside **Cancel** and the run's
-  token limit, on the dialog's lower edge with no field showing beneath it. When something blocks the run, the footer gives the link that fixes it in its place.
-- **Ask before each action.** On when the agent is not sandboxed or the card was imported, off otherwise. When on, the agent pauses
-  and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
-  pause, the switch is disabled and says why.
-- **Web tools.** Off by default, unless the profile says its role needs the network (the profile's box on the
-  Agents page) or, for any agent but docket, the profile's tools for the agent you picked include the web tools.
-  Then the switch starts on and you can turn it off for this run.
+  - Only agents that can run this task can be chosen. **Why not the others?** lists each one that is left out
+    with its reason.
+- **Where** says where the agent works ("On a new branch of your repo", "In the folder, directly"; a profile whose
+  team works in its own folder on this computer says "In the team's own folder on this computer, not in this
+  repository"), and links to the project's settings. Under it, **Machine or group** lists this computer and the
+  other machines by name, then the groups. A machine that has stopped answering is shown disabled, with the time
+  it was last heard. With one machine answering and no group there is nothing to choose, so the field is one
+  line, "Runs on this computer". When no machine answers, the field is a warning instead, **Agents offline**,
+  naming each machine and when it was last heard, with a link to turn agent execution on; the footer gives the
+  same link in place of **Start run**. The sidebar shows the same **Agents offline** warning on every page while
+  it lasts.
+- **Checked by** counts what checks the work: the task's Done when lines, the checks the agent brings, and
+  whether the verifier is on ("2 Done when · 2 agent checks · verifier on").
+- **Ask first** is a switch, **Ask me before each action**. On when the agent is not sandboxed or the card was
+  imported, off otherwise. When on, the agent pauses and waits for your answer: see
+  [Asking before acting](#asking-before-acting). For an agent that cannot pause, the switch is disabled and says why.
+- **Network** is a switch, **Let the agent use web tools**. Off by default, unless the profile says its role needs
+  the network (the profile's box on the Agents page) or, for any agent but docket, the profile's tools for the
+  agent you picked include the web tools. Then the switch starts on and you can turn it off for this run.
   - opencode reaches the network on every run, so for it the switch is on, disabled, and says why.
   - A choice the task remembered wins over the profile.
   - A card that was imported (from GitHub, Linear or a file) starts with it off, and the dialog says why under
-    **Ask before each action**; you can turn both on or off for the run.
+    **Ask first**; you can turn both on or off for the run.
   - On lets the agent fetch pages and search the web. Off turns those tools off, but the agent's shell can still
     reach the network.
 
-  A line under the switches says whether the agent is sandboxed or has your user's access to this machine; see
-  [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md).
-- **Advanced.** The model, the allowed tools, the **Token limit** and the
-  timeout (both filled from the profile; clear the token limit to run without one), and the steps after a
-  run (verify, push). A step that is not available is shown disabled with the reason beside it, and
-  **Verify the result** and **Push the branch** say which part of the runner's setup turns them on; that is
-  the administrator's to set ([After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt)).
-  A pull request is not chosen per run: Tack opens one when a pushed branch's task is linked to a GitHub issue.
+**Options** is shut until you open it, and opens by itself when the agent needs a model that is missing. It says
+what is installed before the run starts ("No install: this profile runs no commands", or "Nothing is installed"
+for a team that works in a folder) and whether the agent is sandboxed or has your user's access to this machine;
+see [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md). Then it holds the model, the branch,
+the allowed tools, the **Token limit** and the timeout (both filled from the profile; clear the token limit to run
+without one), and the steps after a run (verify, push). A step that is not available is shown disabled with the
+reason beside it, and **Verify the result** and **Push the branch** say which part of the runner's setup turns
+them on; that is the administrator's to set
+([After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt)). A pull request is not chosen
+per run: Tack opens one when a pushed branch's task is linked to a GitHub issue.
+
+The footer stays in view while the dialog scrolls, on the dialog's lower edge with no field showing beneath it.
+**Preview what the agent reads** opens the real text it will be given: the profile's instructions, the task's
+title and description, its acceptance criteria, the project's **Definition of done**, and anything in the task's
+**For the agent** panel. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent). Beside
+**Cancel** and the run's token limit, **Start run** is the one solid button. When something blocks the run, the
+footer gives the link that fixes it in its place.
 
 A setting you change here is saved on the task, and one you change in the project stays on the project, so
 running the same task again does not make you retype it. A field that cannot work says why in a sentence
@@ -289,7 +301,7 @@ A limit is in tokens. A run has one unless the profile sets none and the project
 | Where | What it limits |
 |---|---|
 | A profile, on the Agents page: **Token limit per run** and **Time limit** | Every run of that profile |
-| The dialog's **Advanced** section | This run only; it replaces the profile's and the provisional limit, and an empty box runs it with the profile's, else the provisional one |
+| The dialog's **Options** fold | This run only; it replaces the profile's and the provisional limit, and an empty box runs it with the profile's, else the provisional one |
 | Settings → Automation → Limits, **Provisional tokens per run** | Every run whose profile sets no limit; 2 000 000 tokens until you change it, and empty means no limit |
 | Settings → Automation → Limits, **Tokens per day** | The project's day; see [Budgets](merging.md#budgets) |
 
@@ -362,7 +374,7 @@ screen reader is told when a run changes state.
 
 ### While a run works
 
-The run's **Timeline** (under **What the agent did** on the task's Execution tab) fills as the agent
+The run's **Timeline** (under **What the agent did** in the task's **Runs**) fills as the agent
 works: each call to the model with its tokens, each tool it ran (a shell command is shown as the command),
 and each call it was refused, and each question docket opened, who answered it, whether it expired and whether
 docket's own policy settled it. It refreshes every couple of seconds until the run ends. Only docket reports
@@ -380,7 +392,7 @@ When the run ends, see [Reviewing a Run](reviewing-runs.md).
 ## Asking before acting
 
 By default an agent decides everything on its own: every tool call, every file it touches. Turning on
-**Ask before each action** in the dialog (or `"approvals":"ask"` in a command-line permission policy) makes it
+**Ask me before each action** in the dialog (or `"approvals":"ask"` in a command-line permission policy) makes it
 pause and wait for a person.
 
 Each agent pauses at a different point, as the table in [Choosing an agent](#choosing-an-agent) says. For an
@@ -392,30 +404,38 @@ With docket, a question names the call and docket's reason for stopping it. For 
 reason follows when it gave one. **Allow** lets the call run. **Deny** refuses it, tells the agent it was
 refused, and the agent carries on.
 
-A question waits first in the **Now** panel, with its answers open, and on the task's Execution tab, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload. Each question
-shows its kind, so a tool permission reads differently from a choice the agent wants you to make. An option
-can carry a short description, its risks and a rough cost in tokens. When the agent has a preferred answer,
-that option comes first, preselected and marked **Recommended**, with its reason beneath it. Nothing is applied until you press
-**Send answer**, and you can pick any option. When a question takes text, the field opens under the choice it
-belongs to and is named for what is asked: **Your answer** for a question, **Reason** under a refusal. It is
-marked as required only when the question requires it, and a question that takes none shows no field. A question that
-takes only text is its field, with nothing to choose. **Decline** is a plain button beside **Send answer**, not a
-choice, and needs no text.
+A question waits first in the task's **next step**, with its answers open, and in its **Runs**, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload.
+
+A question is a panel that asks one thing in words. Its amber header says **Needs you**, gives the question, and
+says who asks and how long ago. Each question shows its kind, so a tool permission reads differently from a
+choice the agent wants you to make. An option can carry a short description, its risks and a rough cost in
+tokens. When the agent has a preferred answer, that option comes first, and the line above the buttons marks it
+**Recommended** with its reason.
+
+- An approval answers with a press. The recommended choice is the one solid button (**Approve for this task**,
+  say), the others are outlined (**Approve once**), and the refusal is red text. Pressing a choice sends it. The
+  refusal opens a **Reason** field first, and pressing it again sends it with the reason.
+- Any other question lists its choices as radio buttons, with the recommended one preselected, and nothing is
+  applied until you press **Send answer**. When a question takes text, the field opens under the choice it
+  belongs to and is named for what is asked: **Your answer** for a question, **Reason** under a refusal. It is
+  marked as required only when the question requires it, and a question that takes none shows no field. A
+  question that takes only text is its field, with nothing to choose.
+- **Decline** is a plain button beside the answers, not a choice, and needs no text.
 
 Some of docket's steps are not questions at all. A step that waits until a set time shows on the timeline as
 *The team waits until 14:00. Nobody needs to answer.*; there is nothing to press, and the run's time limit
 does not run while the team waits.
 
 When the team is about to do something that leaves it, such as sending an email, posting somewhere or writing to
-another service, the question is titled **This action leaves the team** and shows exactly what would happen,
-whole and in a block of its own above the options. A long one scrolls. Read it before you answer. Tack keeps that
+another service, the question is titled **This action leaves the team**. **Show the raw call** opens exactly what would happen,
+whole and in a block of its own above the answers. A long one scrolls. Read it before you answer. Tack keeps that
 text only while the question is open and erases it the moment you answer or the question expires, so it is not on
 the timeline, in the run's log or in an export afterwards. If docket does not show the action, Tack does not ask
 you to approve it blind; the timeline says to answer it in docket, where it is shown.
 
 If you answer a question in docket itself, with its own command, instead of in Tack, the question here closes as **Answered in docket** and the timeline says so; it is not an expiry and it is not marked as your answer. The team goes on, and its next question appears here at once. This needs a docket recent enough to tell Tack when a question was settled; with an older one the question stays open here until the run ends.
 
-<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Send answer button sits below, then the decision-token field.">
+<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you in the Runs: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; the answers sit below, then the decision-token field.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
 sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the
@@ -486,5 +506,5 @@ Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf92801
 
 That is a completed run, reached with no browser. `tack execution list` shows every request, newest first,
 and `tack execution cancel <ID>` asks the runner to stop one. For the detail of an attempt, such as which
-model answered and how the run ended, open the task's Execution tab. Every `tack execution`
+model answered and how the run ended, open the task's **Runs**. Every `tack execution`
 option is in the [CLI reference](cli.md#runs).

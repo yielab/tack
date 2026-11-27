@@ -3,7 +3,7 @@ import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
 import { Button, EmptyState, Icons } from '../../../shared/ui';
 
-export interface FilesTabProps {
+export interface FilesSectionProps {
   itemId: string;
 }
 
@@ -15,8 +15,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Attachments tab: drag-drop / picker upload, list, download, delete. */
-const FilesTab: Component<FilesTabProps> = (props) => {
+/** Attachments: drag-drop / picker upload, list, download, delete. */
+const FilesSection: Component<FilesSectionProps> = (props) => {
   const [files, { refetch }] = createResource(
     () => props.itemId,
     (id) => api.attachments.list(id),
@@ -61,7 +61,6 @@ const FilesTab: Component<FilesTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      {/* Drop zone */}
       <div
         role="button"
         tabindex={0}
@@ -75,7 +74,7 @@ const FilesTab: Component<FilesTabProps> = (props) => {
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        class="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-5 py-7 text-center text-sm transition-colors focus:outline-none focus-visible:ring-2"
+        class="flex cursor-pointer flex-col items-center gap-2 rounded-md border-2 border-dashed px-5 py-6 text-center text-small transition-colors focus:outline-none focus-visible:ring-2"
         style={{
           'border-color': dragOver() ? 'var(--color-primary-500)' : 'var(--color-border-medium)',
           'background-color': dragOver() ? 'var(--color-bg-active)' : 'transparent',
@@ -103,10 +102,10 @@ const FilesTab: Component<FilesTabProps> = (props) => {
         when={(files() ?? []).length > 0}
         fallback={<EmptyState icon={<Icons.IconAttachment size={28} />} title="No attachments yet" />}
       >
-        <ul class="space-y-2 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+        <ul class="space-y-1">
           <For each={files()}>
             {(f) => (
-              <li class="flex items-center justify-between gap-2 rounded-lg py-2.5 pl-4 pr-2 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+              <li class="flex items-center justify-between gap-2 py-1 text-sm">
                 <div class="min-w-0 flex-1">
                   <a
                     href={api.attachments.downloadUrl(f.id)}
@@ -116,7 +115,7 @@ const FilesTab: Component<FilesTabProps> = (props) => {
                   >
                     {f.filename}
                   </a>
-                  <div class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  <div class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
                     {formatSize(f.size_bytes)} · {f.mime_type}
                   </div>
                 </div>
@@ -132,4 +131,4 @@ const FilesTab: Component<FilesTabProps> = (props) => {
   );
 };
 
-export default FilesTab;
+export default FilesSection;

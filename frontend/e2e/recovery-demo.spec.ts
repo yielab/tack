@@ -120,13 +120,14 @@ async function clickResilient(
 // backdrop for the same click. Check first instead of assuming either state.
 async function openExecutionTab(page: import('@playwright/test').Page) {
   await page.waitForTimeout(500); // let a just-finished reload settle first
-  const execTab = page.getByText('Execution', { exact: true }).first();
-  const alreadyOpen = await execTab.isVisible().catch(() => false);
+  const runs = page.getByRole('button', { name: /^Runs/ }).first();
+  const alreadyOpen = await runs.isVisible().catch(() => false);
   if (!alreadyOpen) {
     await clickResilient(page.getByText('Fix the flaky checkout race', { exact: false }).first());
     await page.waitForTimeout(400);
   }
-  await clickResilient(execTab);
+  // The folds remember what was left open, so open the runs only when they are shut.
+  if ((await runs.getAttribute('aria-expanded')) !== 'true') await clickResilient(runs);
   await page.waitForTimeout(600);
 }
 

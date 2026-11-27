@@ -71,7 +71,7 @@ const TrackNode: Component<{ name: string; state?: keyof typeof LABEL | null; st
   <li
     data-step={props.step}
     data-state={props.state ?? undefined}
-    class="min-w-0 break-words text-xs"
+    class="min-w-0 break-words text-small"
     style={{ flex: '1 1 9rem', 'max-width': '16rem', color: 'var(--color-text-secondary)' }}
   >
     <span
@@ -82,7 +82,7 @@ const TrackNode: Component<{ name: string; state?: keyof typeof LABEL | null; st
     <div class="flex flex-wrap items-baseline gap-x-1.5">
       <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{props.name}</span>
       <Show when={props.state}>
-        {(state) => <span style={{ color: 'var(--color-text-tertiary)' }}>{props.stopped ? 'Stopped here' : props.unreached ? 'Not reached' : LABEL[state()]}</span>}
+        {(state) => <span style={{ color: 'var(--color-text-secondary)' }}>{props.stopped ? 'Stopped here' : props.unreached ? 'Not reached' : LABEL[state()]}</span>}
       </Show>
     </div>
     <For each={props.lines}>{(line) => <p class="mt-0.5">{line}</p>}</For>
@@ -131,7 +131,7 @@ const TeamStepsLine: Component<TeamStepsProps> = (props) => {
             fallback={
               <Show when={agent()}>
                 {(kind) => (
-                  <p data-testid="team-steps-unreported" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  <p data-testid="team-steps-unreported" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                     {agentName(kind())} does not report its steps in advance
                   </p>
                 )}

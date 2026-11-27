@@ -14,7 +14,8 @@ pub async fn project_budgets(
     project_id: &str,
 ) -> Result<Option<ProjectBudgets>, StoreError> {
     Ok(sqlx::query_as(
-        "SELECT tokens_per_day, auto_merges_per_day, queue_items_max, provisional_tokens_per_run
+        "SELECT tokens_per_day, auto_merges_per_day, queue_items_max, waiting_max,
+                provisional_tokens_per_run
          FROM project_budgets WHERE project_id = ?",
     )
     .bind(project_id)

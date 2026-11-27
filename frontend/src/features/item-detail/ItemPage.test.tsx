@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe('ItemPage', () => {
-  it('shows the item under a breadcrumb, with its properties and a count on Dependencies', async () => {
+  it('shows the item under a breadcrumb, with its properties and what it depends on', async () => {
     const history = createMemoryHistory();
     history.set({ value: `/projects/p1/items/${ITEM.id}` });
     const container = document.createElement('div');
@@ -98,19 +98,16 @@ describe('ItemPage', () => {
     expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Item title"]')?.value).toBe('My item');
     const properties = container.querySelector('aside section[aria-label="Properties"]')!;
     expect(properties.textContent).toContain('Assignee');
-    expect(properties.textContent).toContain('1 item'); // what it blocks
-    expect(container.textContent).toContain('Copy link');
+    expect(container.querySelector('button[aria-label="Copy link"]')).not.toBeNull();
     expect(document.title).toBe('My item — Proj · Tack');
 
-    const dependenciesTab = [...container.querySelectorAll('[role="tab"]')].find((t) =>
-      t.textContent?.startsWith('Dependencies'),
-    )!;
-    expect(dependenciesTab.textContent).toContain('2');
+    // Two edges: it blocks one item and is blocked by another, said on the fold's line.
+    expect(container.querySelector('[data-fold="dependencies"] > button')!.textContent).toContain('blocked by 1 · blocks 1');
 
     dispose();
   });
 
-  it('on the Execution tab only the tab asks for the verdict, and the run has a side column', async () => {
+  it('with the runs open only the run history asks for the verdict, and the run has a side column', async () => {
     const run = { request_id: 'req-1', item_id: ITEM.id, state: 'succeeded', cancellation_requested_at: null, created_at: '2026-10-08T12:00:00Z' };
     const attempt = {
       attempt_id: 'att-1', request_id: 'req-1', attempt_number: 1, runner_id: 'runner-1', fencing_token: 1, state: 'succeeded',
@@ -154,13 +151,15 @@ describe('ItemPage', () => {
     expect(container.querySelector('[data-testid="review-banner"]')?.contains(accepts[0])).toBe(true);
     // The run card keeps its state and its link to the report.
     expect(container.querySelector('[data-testid="latest-run"]')?.textContent).toContain('Review and merge');
-    // The Execution tab carries the run's state as a dot with its own label.
-    expect(container.querySelector('[role="tab"][aria-selected="true"] [role="img"]')?.getAttribute('aria-label')).toBe('Ready for review — Needs your review');
-    // The side column of the tab holds the ids.
+    // The Runs section carries the run's state as a dot with its own label, and is open.
+    const runsHead = container.querySelector('[data-fold="runs"] > button')!;
+    expect(runsHead.getAttribute('aria-expanded')).toBe('true');
+    expect(runsHead.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Ready for review — Needs your review');
+    // The side column of the run holds the ids.
     expect(container.querySelector('[data-testid="execution-side"] [data-testid="attempt-ids"]')).not.toBeNull();
     dispose();
   });
-  it('?run= opens the Execution tab on that run, and picking a chip writes the run into the address', async () => {
+  it('?run= opens the run history on that run, and picking a chip writes the run into the address', async () => {
     const runs = [
       { request_id: 'req-old', item_id: ITEM.id, state: 'failed', cancellation_requested_at: null, created_at: '2026-10-08T12:00:00Z' },
       { request_id: 'req-new', item_id: ITEM.id, state: 'queued', cancellation_requested_at: null, created_at: '2026-10-09T12:00:00Z' },

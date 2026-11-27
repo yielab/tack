@@ -148,7 +148,7 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
           when={created()}
           fallback={
             <>
-              <h4 class="text-base" style={{ color: 'var(--color-text-primary)' }}>
+              <h4 class="text-section font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                 {title()}
               </h4>
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -173,7 +173,7 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
         >
           {(list) => (
             <>
-              <h4 class="text-base" style={{ color: 'var(--color-text-primary)' }}>
+              <h4 class="text-section font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                 Created {list().length} {list().length === 1 ? 'item' : 'items'}
               </h4>
               <ul class="text-sm">

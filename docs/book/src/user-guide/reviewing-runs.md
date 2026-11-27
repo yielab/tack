@@ -10,7 +10,7 @@ A run that left changes marks the task **Needs your review**. This is a flag on 
 board columns. The board and the list show it. It clears when you press **Accept** or **Reject** on the
 attempt. The task's status does not change: its column is yours, and you move the card when you want to.
 
-Open the task and go to its **Execution** tab. Chips pick the run, each with its state; the run you picked
+Open the task and open its **Runs** fold. Chips pick the run, each with its state; the run you picked
 reads from the top down, in the same order every time: the verdict first, then why, then the raw detail.
 
 1. **The verdict.** The run's state, the verifier's recommendation and risk as two chips when a verifier
@@ -38,7 +38,7 @@ reads from the top down, in the same order every time: the verdict first, then w
      model and verdict of the role that did it. A step sent back shows as *Running* again and the steps after
      it wait again. A step that no one on the team does (a command, a question, a wait) is listed in its
      place with no mark, because nothing in the run says where it stands. When the team or its agent reports
-     no steps, the tab says "`<Agent>` does not report its steps in advance" and the track is made of the
+     no steps, the run says "`<Agent>` does not report its steps in advance" and the track is made of the
      steps the run took.
    - **What each step ran** lists each step in order: who did it (Lead, Implementer, Reviewer, or the name of
      a role your team gave), the model it used (with "a small model" or "a strong model" when the team said
@@ -66,7 +66,7 @@ reads from the top down, in the same order every time: the verdict first, then w
    worked, and the exact prompt it read), the **Usage** in full (see [Usage](#usage)), the
    **Raw log** and whether the verifier signed its pack. On the item's own page these sit in a side column.
 
-Every path on the tab is relative to the project, not to the working folder the agent was given on the
+Every path in the run is relative to the project, not to the working folder the agent was given on the
 computer that ran it.
 
 Sections 5 to 7 are folds: a header you press (with a chevron) that says in one line what is inside while it
@@ -116,7 +116,7 @@ badges and shows the run's state in its own column.
 
 | Badge | Meaning |
 |---|---|
-| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled, Not started) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
+| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled, Not started) | Where the latest run is. Press it to open the task's **Runs**; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
 | **Ready for review** | The latest run left changes and nobody has accepted or rejected them. When the verifier recommends rejecting them the chip says so, **Ready for review · verifier says reject**; the decision is still yours |
 | **Waiting for CI to merge**, **Not merged: …** | Tack tried to merge the change and could not. Press the badge for the reason and what to do |
 | **Started by itself** | The project started the run, not a person |
@@ -139,10 +139,14 @@ your choice, under [Agents on the board](#how-far-an-agent-may-go).
 
 #### One panel for every change set
 
-Every change set opens in the same panel, whoever proposed it. New items are a tree, with one row per item
-and a line that counts them: items, sub-items and dependencies. An item that belongs under another is nested
-beneath it, and it is unticked when its parent is unticked. Every other change is a line in a list under the
-tree, with the item it is about named by its title. Each row has a checkbox, and each can be edited:
+Every change set opens in the same panel, whoever proposed it. Its header says **Change set · from** who
+proposed it, then how many items or changes are proposed ("3 items proposed"), the reason the proposer gave,
+where it came from and when. Under it a line counts the changes: items, sub-items and dependencies. New items
+are a list with one row per item: a checkbox, its title, and a line saying what it is, who does it and how many
+Done when lines it has. An item with no Done when line says **No Done when yet** in red; it can still be created.
+An item that belongs under another is indented beneath it, and it is unticked when its parent is unticked. Every
+other change is a row in a list under the items, with the item it is about named by its title. Each row has a
+checkbox and an **Edit** button that opens its fields:
 
 - An item's **Title**, **Description**, **Done when** lines (one per line, and they become the item's Done when
   checks), its **Type** and **Role**, and **Who does it**, which names the team that will do it once it exists;
@@ -152,10 +156,12 @@ tree, with the item it is about named by its title. Each row has a checkbox, and
 - A change of who does an item, its role and team; a priority; the status to move to; the text of a
   comment; a due date. A dependency has nothing to edit: untick it to leave it out.
 
-**Select all** and **Select none** tick every change that still waits. Then choose:
+**Select all** and **Select none** tick every change that still waits. The foot of the panel says how many are
+selected ("2 of 3 selected"). Then choose:
 
-- **Apply 3 changes** applies the ticked ones, with your edits. **Apply all** applies everything that waits.
-- **Reject…** asks why and turns down what still waits. The proposer can read the reason.
+- The solid button applies the ticked ones, with your edits. It reads **Create 2 items** when everything ticked
+  makes an item, and **Apply 3 changes** otherwise. **Apply all** applies everything that waits.
+- **Turn down all** asks why and turns down what still waits. The proposer can read the reason.
 - **Save edits** keeps your edits without applying, to come back to them.
 
 A change set applies as one: if the board cannot take it, nothing is applied, and the panel lists every

@@ -17,7 +17,7 @@ export interface RadioRowProps {
  */
 const RadioRow: Component<RadioRowProps> = (props) => (
   <label
-    class="flex cursor-pointer items-center gap-2.5 rounded-full border-2 px-4 py-2.5 text-sm transition-colors has-[:disabled]:cursor-not-allowed"
+    class="flex cursor-pointer items-center gap-2.5 rounded-md border-2 px-4 py-2.5 text-sm transition-colors has-[:disabled]:cursor-not-allowed"
     style={{
       'background-color': 'var(--color-bg-app)',
       'border-color': props.checked ? 'var(--color-primary-600)' : 'transparent',

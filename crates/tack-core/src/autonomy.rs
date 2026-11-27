@@ -60,6 +60,9 @@ pub struct Domain {
     pub level: Level,
 }
 
+/// The name `level_for` gives a change that touches the project folder.
+pub const PROJECT_FOLDER_DOMAIN: &str = "project folder";
+
 /// The level that governs a change, and the name of the domain that set it
 /// (`None` when no domain matched and the project level applies).
 ///
@@ -71,6 +74,10 @@ pub struct Domain {
 ///
 /// No match gives `(L3, None)`, or `(L5, None)` when the project is L5. When
 /// several domains match, the lowest level and its name win.
+///
+/// A change to the project folder is a change to the plan, so a person merges
+/// it: any path under `.tack/` gives `(L3, Some(PROJECT_FOLDER_DOMAIN))` before
+/// the domains are read (ADR 0025 decision 14).
 #[must_use]
 pub fn level_for(
     project: Level,
@@ -78,6 +85,9 @@ pub fn level_for(
     paths: &[String],
     item_type: &str,
 ) -> (Level, Option<String>) {
+    if paths.iter().any(|p| p.starts_with(".tack/")) {
+        return (Level::L3, Some(PROJECT_FOLDER_DOMAIN.to_string()));
+    }
     let matched = domains
         .iter()
         .filter(|d| domain_matches(d, paths, item_type))
@@ -599,6 +609,30 @@ mod tests {
                 paths(&["src/main.rs"]),
                 "task",
                 (Level::L5, None),
+            ),
+            (
+                "a path under .tack/ is a change to the plan: L3 at L5",
+                Level::L5,
+                vec![],
+                paths(&[".tack/items/a.md", "src/x.rs"]),
+                "task",
+                (Level::L3, Some("project folder".into())),
+            ),
+            (
+                "a path under .tack/ beats a domain covering everything",
+                Level::L5,
+                vec![domain("wide", &["**"], &[], Level::L4)],
+                paths(&[".tack/project.yaml"]),
+                "task",
+                (Level::L3, Some("project folder".into())),
+            ),
+            (
+                "a name that only starts like .tack/ is not the project folder",
+                Level::L5,
+                vec![domain("wide", &["**"], &[], Level::L4)],
+                paths(&["src/.tack-notes"]),
+                "task",
+                (Level::L4, Some("wide".into())),
             ),
         ];
         for (name, project, domains, changed, item_type, expected) in rows {

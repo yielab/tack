@@ -11,7 +11,7 @@ import { waitForApp } from './helpers';
 // the UI: first open, project creation, adding tasks, a task's acceptance
 // criteria, turning agent execution on (the agents it finds), the project's
 // agent settings, an agent profile, the "Run with agent" dialog, and one REAL
-// Claude Code execution tracked from the board chip through the Execution tab
+// Claude Code execution tracked from the board chip through the Runs
 // to its files. Then records docs/screenshots/workflow.gif: the whole loop on
 // one page, from a new project to an accepted run.
 //
@@ -445,7 +445,7 @@ test.describe.serial('tutorial screenshots', () => {
     await waitForApp(page);
     await expect(
       page.getByRole('button', {
-        name: `Open the Execution tab for ${RUN_ITEM_TITLE}`,
+        name: `Open the runs of ${RUN_ITEM_TITLE}`,
       }),
     ).toBeVisible();
     await page.waitForTimeout(600);
@@ -453,7 +453,7 @@ test.describe.serial('tutorial screenshots', () => {
       path: path.join(OUT_DIR, '12-board-tracking.png'),
     });
 
-    // ── Up close: the Execution tab while the attempt runs ────────────────
+    // ── Up close: the Runs while the attempt runs ────────────────
     // Grab the in-flight state the moment its badge shows; if the run beats
     // us to Finished anyway, the capture honestly shows that instead.
     await page.goto(
@@ -605,7 +605,7 @@ test.describe('workflow gif', () => {
     await page.waitForTimeout(1200);
     await dialog.getByRole('button', { name: 'Start run', exact: true }).click();
     await expect(dialog).toBeHidden();
-    const chip = page.getByRole('button', { name: `Open the Execution tab for ${GIF_ITEM}` });
+    const chip = page.getByRole('button', { name: `Open the runs of ${GIF_ITEM}` });
     await expect(chip).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(2500);
     await chip.click();

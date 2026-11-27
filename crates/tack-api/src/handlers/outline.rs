@@ -759,6 +759,7 @@ fn automation_of(
         now.tokens_per_day = budgets.tokens_per_day.or(now.tokens_per_day);
         now.auto_merges_per_day = budgets.auto_merges_per_day.or(now.auto_merges_per_day);
         now.queue_items_max = budgets.queue_items_max.or(now.queue_items_max);
+        now.waiting_max = budgets.waiting_max.or(now.waiting_max);
     }
     if let Some(merge) = asked.merge_on_done {
         settings.merge_on_done = merge;

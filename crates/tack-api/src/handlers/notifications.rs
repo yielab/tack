@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use tack_app::notifications::Change;
 use tack_core::notification::Notification;
+use tack_db::repo::notifications::Listing;
 
 use crate::error::{ApiError, ApiResult};
 use crate::extract::{Json, Path, Query, Upgrade};
@@ -41,6 +42,8 @@ pub struct ListParams {
     /// How many to return, 50 by default and 500 at most. `0` returns none, for a caller that
     /// wants only `open`.
     limit: Option<u32>,
+    /// Only this project's notifications; `open` counts only its own too.
+    project: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -65,7 +68,7 @@ pub struct ReadAll {
     params(ListParams),
     responses(
         (status = 200, description = "The notifications, newest first, and how many are open", body = NotificationList),
-        (status = 400, description = "`state` or `limit` is not what it should be", body = crate::openapi::ErrorEnvelope),
+        (status = 400, description = "`state`, `limit` or `project` is not what it should be", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn list_notifications(
@@ -73,11 +76,18 @@ pub async fn list_notifications(
     Query(params): Query<ListParams>,
 ) -> ApiResult<Json<NotificationList>> {
     let limit = params.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
-    let notifications = match params.state {
-        NotificationState::Open => state.notifications.open_notifications(limit).await?,
-        NotificationState::All => state.notifications.recent(limit).await?,
+    let listing = match params.state {
+        NotificationState::Open => Listing::Open,
+        NotificationState::All => Listing::All,
     };
-    let open = state.notifications.open_count().await?;
+    let notifications = state
+        .repo
+        .list_notifications_of(params.project, listing, limit)
+        .await?;
+    let open = state
+        .repo
+        .count_open_notifications_of(params.project)
+        .await?;
     Ok(Json(NotificationList {
         open,
         notifications,

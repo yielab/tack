@@ -7,10 +7,11 @@
 use chrono::SecondsFormat;
 use serde_json::Value;
 use tack_core::autonomy::{Check, CiState, Facts, Level, Trigger, evaluate};
+use tack_core::principal::Principal;
 use tack_db::repo::autonomy::MergeRow;
 use tack_db::{Repository, queries};
 use tack_protocol::Clock;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ExecutionState};
 use tack_protocol::mrp::{MergeDecision, MergeReadinessPack};
 
 use crate::ports::Ports;
@@ -215,6 +216,13 @@ pub async fn attempt(
                 repo,
                 &context.item_id,
                 format!("Tack merged pull request #{} {by}.", pr.number),
+            )
+            .await;
+            crate::runs::announce::run_reviewed(
+                repo,
+                ports.events.as_ref(),
+                &Principal::system(),
+                &AttemptId::new(attempt_id),
             )
             .await;
             Ok(sha)

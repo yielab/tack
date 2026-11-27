@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import {
   API,
+  openRuns,
   acceptAndStartAttempt,
   claimOnceWithLease,
   createAgentProfile,
@@ -15,7 +16,7 @@ import {
   waitForApp,
 } from './helpers';
 
-// The attempts/events/decisions/artifacts UI on the Execution tab
+// The attempts/events/decisions/artifacts UI in the task's Runs
 // (`shared/runWithAgent/{AttemptList,EventTimeline,DecisionInbox,
 // ArtifactDownloadPanel}.tsx`), proven through the real production router —
 // not a mock. Both panels discover decisions/artifacts for real
@@ -70,7 +71,7 @@ async function completeAttempt(
   expect(completion.ok(), `completion failed: ${completion.status()} ${await completion.text()}`).toBeTruthy();
 }
 
-test.describe('Execution tab — real attempts/decisions/artifacts against the production router', () => {
+test.describe('Runs — real attempts/decisions/artifacts against the production router', () => {
   test('a claimed attempt renders honestly, decisions/artifacts are discovered as empty before anything is raised, and a real raised decision refuses to resolve without a token', async ({
     page,
     request,
@@ -89,7 +90,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer);
     // The newest run's state is shown once, in the Work region, not repeated in the Execution panel.
     await expect(drawer.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Queued');
     // Nothing has claimed it yet — an honest "no attempts", never a fake
@@ -107,7 +108,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.reload();
     await waitForApp(page);
     const drawer2 = page.getByRole('dialog');
-    await drawer2.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer2);
     await expect(drawer2.getByRole('heading', { name: 'Run 1' })).toBeVisible();
     // The ids live in the Technical fold, closed until asked for.
     await drawer2.locator('[data-section="technical"] > button').click();
@@ -138,7 +139,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.reload();
     await waitForApp(page);
     const drawer3 = page.getByRole('dialog');
-    await drawer3.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer3);
 
     // The real decision the runner just raised — found through the list,
     // no id typed anywhere.
@@ -186,7 +187,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer);
     await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
 
     // Both discovered through their real list routes — no id typed
@@ -229,7 +230,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await completeAttempt(request, runnerId, credential, attemptId, fencingToken, modelId);
     await page.reload();
     await waitForApp(page);
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer);
     // A finished run keeps its files folded, one press away.
     await drawer.getByRole('button', { name: /^Files from this run/ }).click();
     await expect(drawer.getByText(`${artifactId}.txt`)).toBeVisible();
@@ -281,7 +282,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer);
     await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
     await expect(drawer.getByText('e2e: allow this action?')).toBeVisible();
 
@@ -372,7 +373,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer);
 
     await expect(drawer.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
     // The run's one verdict is asked for in the banner; an accept needs no reason, a reject does.
@@ -400,7 +401,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await openRuns(drawer);
     // What the agent got sits in the Technical fold, closed until asked for.
     await drawer.locator('[data-section="technical"] > button').click();
     const got = drawer.getByTestId('agent-got');

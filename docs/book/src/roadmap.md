@@ -5,7 +5,7 @@
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
 **Tack is delivered through Phase 95.** A project is planned and tracked on a board, a list, a
-calendar or a timeline, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
+timeline or a sprint, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. A step that runs out of its own budget keeps its work and lets a person
 continue it or start over from it. The run's work comes back as evidence to review, an independent
@@ -53,7 +53,7 @@ for it and when, and everything a run leaves, stay on the board.
   once or nothing does; every export and import leaves a revision you can go back to.
 - **A person applies.** `tack folder status | export | import | history | revert` beside the repository; an
   agent may preview through MCP and never applies; a change under `.tack/` is merged by a person.
-- **The screens.** Settings → Data → Project folder, and the work surface (Board, List, Calendar, Timeline,
+- **The screens.** Settings → Data → Project folder, and the work surface (Board, List, Timeline with its Month layout,
   Sprint, Orchestration and the places that say what needs you) redefined around the board as the place
   that says where each thing is and what waits for a person. That part is written in the plan's last section.
 

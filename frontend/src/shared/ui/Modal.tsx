@@ -13,6 +13,8 @@ export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  /** One line under the title, in the secondary colour (the task a dialog is about). */
+  subtitle?: string;
   children: JSX.Element;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** The book page for this dialog: a "Help" link in the title row, since the
@@ -84,12 +86,26 @@ const Modal: Component<ModalProps> = (props) => {
             style={{ 'background-color': 'var(--color-bg-elevated)', 'box-shadow': 'var(--shadow-lg)' }}
           >
             <div class="flex items-center justify-between px-6 pt-6 pb-3">
-              <h2
-                class="text-step"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                {props.title}
-              </h2>
+              <div class="min-w-0">
+                <h2
+                  class="text-step"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
+                  {props.title}
+                </h2>
+                <Show when={props.subtitle}>
+                  {(text) => (
+                    <p
+                      data-testid="modal-subtitle"
+                      class="truncate text-small"
+                      style={{ color: 'var(--color-text-secondary)' }}
+                      title={text()}
+                    >
+                      {text()}
+                    </p>
+                  )}
+                </Show>
+              </div>
               <Show when={props.help}>
                 {(href) => (
                   <a

@@ -10,7 +10,7 @@ import type { RunnerCapabilities } from '../execution';
 // text. "Running" gets an accent ring and "Waiting on decision", the one
 // state that needs a person, is the loudest: a stronger warning fill, ringed.
 const CHIP_TONE: Record<StateTone, [bg: string, fg: string, dot: string]> = {
-  neutral: ['var(--color-bg-subtle)', 'var(--color-text-secondary)', 'var(--color-text-tertiary)'],
+  neutral: ['var(--color-bg-subtle)', 'var(--color-text-secondary)', 'var(--color-text-secondary)'],
   primary: ['var(--color-accent-soft)', 'var(--color-accent-ink)', 'var(--color-primary-600)'],
   success: ['var(--color-success-100)', 'var(--color-success-600)', 'var(--color-success-600)'],
   warning: ['var(--color-warning-100)', 'var(--color-warning-600)', 'var(--color-warning-600)'],
@@ -61,12 +61,12 @@ export interface RunWithAgentButtonProps {
    *  execution request state — registers this item with the shared
    *  store's batched fetch (`store.ts#watchItem`) rather than issuing a
    *  fetch of its own. Off by default; only the Board card mounts it
-   *  today. Clicking it opens the item to its Execution tab
+   *  today. Clicking it opens the item to its runs
    *  (`?item=<id>&tab=execution`), the same tab a successful create
    *  switches item-detail to via `onCreated`. */
   showStateChip?: boolean;
   onCreated?: (requestId: string) => void;
-  /** How the labelled trigger is drawn; the item's Now panel makes it the one filled button only
+  /** How the labelled trigger is drawn; the item's next-step panel makes it the one filled button only
    *  when starting a run is what to do next. */
   variant?: ButtonVariant;
   /** The labelled trigger's words, when "Run with agent" is not what the host offers (a group is planned, not run). */
@@ -126,16 +126,23 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
     setSearchParams({ item: props.itemId, tab: 'execution', run: asking() ? store.requestsForItem(props.itemId)[0].summary!.request_id : undefined });
   };
 
+  const visibleLabel = () => props.label ?? (hasRun() ? 'Run again' : 'Run with agent');
+  // The name always says which task it runs; it starts with the words on the button.
+  const accessibleName = () => {
+    const text = visibleLabel();
+    return `${text === 'Run' || text === 'Run with agent' ? 'Run with agent' : text}: ${props.itemTitle}`;
+  };
+
   return (
     <>
       <Show when={props.showStateChip && latestState()}>
         {(state) => (
           <button
             type="button"
-            aria-label={`Open the Execution tab for ${props.itemTitle}`}
-            title={asking() ? 'Open the question' : 'Open the Execution tab'}
+            aria-label={`Open the runs of ${props.itemTitle}`}
+            title={asking() ? 'Open the question' : 'Open the runs'}
             onClick={openExecutionTab}
-            class="rounded-full focus:outline-none focus-visible:ring-2"
+            class="rounded-sm focus:outline-none focus-visible:ring-2"
             style={{ ...chipStyle(state().tone, state().raw), border: 'none', cursor: 'pointer' }}
           >
             <span
@@ -159,11 +166,11 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
           style={{
             width: '24px',
             height: '24px',
-            'border-radius': '50%',
+            'border-radius': 'var(--radius-md)',
             border: 'none',
-            background: 'var(--color-bg-panel)',
+            background: 'var(--color-primary-600)',
             cursor: 'pointer',
-            color: 'var(--color-text-secondary)',
+            color: 'var(--color-on-accent)',
             display: 'grid',
             'place-items': 'center',
             padding: 0,
@@ -180,12 +187,13 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
           size={(props.variant ?? 'primary') === 'primary' ? 'md' : 'sm'}
           variant={props.variant ?? 'primary'}
           data-testid={props.testId}
+          aria-label={accessibleName()}
           onClick={(e) => {
             e.stopPropagation();
             setOpen(true);
           }}
         >
-          {props.label ?? (hasRun() ? 'Run again' : 'Run with agent')}
+          {visibleLabel()}
         </Button>
       )}
       <RunWithAgentModal

@@ -24,8 +24,9 @@ const NAMES: &[&str] = &[
     "go.mod",
 ];
 
-/// Directories whose whole content decides how the work is checked.
-const DIRECTORIES: &[&str] = &[".github", ".githooks"];
+/// Directories whose whole content decides how the work is checked. `.tack` is the project folder,
+/// which holds each item's brief: the criteria the work is judged by.
+const DIRECTORIES: &[&str] = &[".github", ".githooks", ".tack"];
 
 /// Directories that hold the tests themselves.
 const TEST_DIRECTORIES: &[&str] = &["test", "tests", "__tests__", "spec", "specs", "e2e"];
@@ -36,7 +37,7 @@ const RUNNERS: &[&str] = &["jest", "vitest", "playwright"];
 /// Whether `path` (workspace-relative, `/`-separated) is a file that decides
 /// how the work is checked. Names are matched exactly, never by a substring,
 /// so `latest/notes.md` and `contest.md` are not tests: everything under
-/// `.github/` or `.githooks/`; everything under a directory named `test`,
+/// `.github/`, `.githooks/` or `.tack/`; everything under a directory named `test`,
 /// `tests`, `__tests__`, `spec`, `specs` or `e2e`; files named
 /// `test_*.py`, `*_test.py`, `*_test.go`, `*.test.<ext>` or `*.spec.<ext>`;
 /// the `jest`, `vitest` and `playwright` config files; and the manifests and
@@ -110,6 +111,8 @@ mod tests {
             ("playwright.config.ts", true),
             (".github/workflows/ci.yml", true),
             (".githooks/pre-push", true),
+            (".tack/items/login.md", true),
+            (".tack/project.yaml", true),
             ("TESTS/X.RS", true),
             // What only has "test" or a name in its text.
             ("latest/x.md", false),
@@ -122,6 +125,7 @@ mod tests {
             ("docs/package.json.md", false),
             ("jestconfig.js", false),
             ("src/github/client.rs", false),
+            ("src/.tack-notes", false),
             ("", false),
         ];
         for (path, expected) in cases {

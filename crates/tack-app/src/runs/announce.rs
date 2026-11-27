@@ -85,6 +85,23 @@ pub async fn run_ended(
     }
 }
 
+/// A person accepted or turned down the attempt, or its change was merged: the run no longer
+/// waits for review.
+pub async fn run_reviewed(
+    repo: &Repository,
+    events: &dyn DomainEvents,
+    principal: &Principal,
+    attempt_id: &AttemptId,
+) {
+    if let Some((project_id, run)) = run_of(repo, attempt_id).await {
+        events.emit(DomainEvent::new(
+            project_id,
+            principal,
+            Fact::RunReviewed { run },
+        ));
+    }
+}
+
 /// A child's run finished: when its parent's children have no run open any more, the parent's
 /// children have finished. The parent's status is not asked and not moved.
 async fn children_finished(

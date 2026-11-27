@@ -91,6 +91,9 @@ async fn plan(
         return Ok(None);
     }
     let open = queries::execution_requests::items_with_an_open_request(repo, &project_id).await?;
+    let budgets = queries::budgets::project_budgets(repo, &project_id)
+        .await?
+        .unwrap_or_default();
     let budget_reached = crate::scheduler_wiring::budget_reached(repo, &project_id, clock.now())
         .await?
         .is_some();
@@ -177,6 +180,10 @@ async fn plan(
         max_open: usize::try_from(project.auto_start_max_open).unwrap_or(1),
         open_now: open.len(),
         budget_reached,
+        waiting_max: budgets
+            .waiting_max
+            .and_then(|max| usize::try_from(max).ok()),
+        waiting_now: repo.count_open_needs_you(project.id).await?,
     };
     let facts = Facts {
         max_open: limits.max_open,

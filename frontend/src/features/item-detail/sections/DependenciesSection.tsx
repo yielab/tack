@@ -12,7 +12,7 @@ import { api, ApiError } from '../../../shared/api';
 import { Button, Select, EmptyState, Icons } from '../../../shared/ui';
 import type { Item, Dependency, DependencyType } from '../../../shared/types';
 
-export interface DependenciesTabProps {
+export interface DependenciesSectionProps {
   item: Item;
   /** The item's dependency edges, loaded once by the item screen (it also counts them). */
   dependencies: Resource<Dependency[]>;
@@ -39,9 +39,9 @@ export function classify(dep: Dependency, itemId: string): { dir: Direction | 'r
   return { dir: 'related', otherId: other };
 }
 
-/** Dependencies tab: blocks / blocked-by lists, an item picker to add,
+/** Dependencies: blocks / blocked-by lists, an item picker to add,
  * cycle-error surfaced inline, links open the target item's own page. */
-const DependenciesTab: Component<DependenciesTabProps> = (props) => {
+const DependenciesSection: Component<DependenciesSectionProps> = (props) => {
   const deps = () => props.dependencies();
   const refetch = () => props.refetch();
   const [projectItems] = createResource(
@@ -102,7 +102,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
     <ul class="space-y-2">
       <For each={links}>
         {(link) => (
-          <li class="flex items-center justify-between gap-2 rounded-lg py-2.5 pl-4 pr-2.5 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+          <li class="flex items-center justify-between gap-2 py-1 text-sm">
             <A
               href={`/projects/${props.item.project_id}/items/${link.otherId}`}
               class="min-w-0 text-left font-semibold hover:underline"
@@ -115,7 +115,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
               aria-label="Remove dependency"
               onClick={() => void remove(link.dep.id)}
               style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
-              class="grid h-7 w-7 flex-none place-items-center rounded-full hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
+              class="grid h-7 w-7 flex-none place-items-center rounded-md hover:bg-hover focus:outline-none focus-visible:ring-2"
             >
               <Icons.IconClose size={12} stroke-width={2.2} />
             </button>
@@ -126,9 +126,9 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
   );
 
   return (
-    <div class="space-y-4">
-      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="space-y-5">
+      <section class="space-y-2">
+        <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Blocks
         </h3>
         <Show when={blocks().length > 0} fallback={<EmptyHint text="This item doesn't block anything." />}>
@@ -136,8 +136,8 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+      <section class="space-y-2">
+        <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Blocked by
         </h3>
         <Show when={blockedBy().length > 0} fallback={<EmptyHint text="Nothing is blocking this item." />}>
@@ -145,12 +145,12 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-lg p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+      <section class="space-y-2">
+        <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Add dependency
         </h3>
         <Show when={candidates().length > 0} fallback={<EmptyState icon={<Icons.IconLink size={28} />} title="No other items to link" />}>
-          <div class="flex items-end gap-2">
+          <div class="flex flex-wrap items-end gap-2">
             <Select
               class="w-32"
               label="Direction"
@@ -178,7 +178,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
           </div>
         </Show>
         <Show when={error()}>
-          <p class="rounded-lg px-4 py-2.5 text-sm font-medium" style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}>
+          <p role="alert" class="text-small font-medium" style={{ color: 'var(--color-danger-700)' }}>
             {error()}
           </p>
         </Show>
@@ -193,4 +193,4 @@ const EmptyHint: Component<{ text: string }> = (props) => (
   </p>
 );
 
-export default DependenciesTab;
+export default DependenciesSection;
