@@ -4,7 +4,7 @@
 > user's words, is in `CHANGELOG.md`; older phases and every closed plan are archived under
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
-**Tack is delivered through Phase 95.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 95, Phase 76 included.** A project is planned and tracked on a board, a list, a
 timeline or a sprint, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. A step that runs out of its own budget keeps its work and lets a person
@@ -12,7 +12,7 @@ continue it or start over from it. The run's work comes back as evidence to revi
 verifier can judge it, and Tack can push the branch, open the pull request and merge it: by a
 button, when the task moves to Done, or by itself at Level 4 or 5 under the verifier's signed
 verdict. A project can start its tasks by itself, send each role's tasks to a long-lived docket
-team, repeat tasks, and travel whole in one file. The agent is contained the same way whichever of the
+team, repeat tasks, travel whole in one file, and keep its plan beside its code in a `.tack/` folder. The agent is contained the same way whichever of the
 four runs it, and the work it leaves is measured against suites of tasks kept in the repository.
 
 **Where this is going.** Tack keeps the same three neighbours it never contains: an agent
@@ -25,7 +25,7 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 Everything built is under Delivered. What is left:
 
-- **The next release, `v0.2.0-beta.1`,** carries Phases 66 to 95: the version is bumped and the changelog
+- **The next release, `v0.2.0-beta.1`,** carries Phases 66 to 95 and Phase 76: the version is bumped and the changelog
   section is written. Tagging it is the maintainer's own step
   ([`docs/LAUNCH-CHECKLIST.md`](https://github.com/yielab/tack/blob/develop/docs/LAUNCH-CHECKLIST.md)), not a
   card. The `v0.1.0-beta.10` tag never had a release and is not re-cut; its changes ship in this one.
@@ -33,29 +33,6 @@ Everything built is under Delivered. What is left:
   Haiku 5.5) and the `agents-flow.gif` recording wait on the maintainer's own Codex model setting.
 - **`recovery-demo.gif`** is recorded from a released build, so it follows the tag. It is not shown in the
   README or the book.
-
-### Phase 76 — the plan lives in the repository (opened 2026-11-26)
-
-[ADR 0025](https://github.com/yielab/tack/blob/develop/docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md)
-and its amendment, accepted; the cards are in
-[`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md). A project's
-plan is kept in a `.tack/` folder beside its code: `project.yaml` for the configuration, and one file per
-item that says what the item is and what makes it done, its brief included. Where an item is, who answers
-for it and when, and everything a run leaves, stay on the board.
-
-- **Keys.** Every role, field, sprint, profile and item has a key that survives a rename; an item's key is
-  its file name. A file exported and imported again no longer doubles its items.
-- **Three-way comparison.** An import compares the folder, the board and the last revision: what only the
-  folder changed is applied, what only the board changed is kept, a field both changed is a conflict, and
-  what the folder removed goes, with its cost shown first, unless something happened to it (an item with a
-  run, a comment or children is kept, and the plan says why).
-- **One plan, one transaction, revisions.** The preview's hash travels to the apply; everything lands at
-  once or nothing does; every export and import leaves a revision you can go back to.
-- **A person applies.** `tack folder status | export | import | history | revert` beside the repository; an
-  agent may preview through MCP and never applies; a change under `.tack/` is merged by a person.
-- **The screens.** Settings → Data → Project folder, and the work surface (Board, List, Timeline with its Month layout,
-  Sprint, Orchestration and the places that say what needs you) redefined around the board as the place
-  that says where each thing is and what waits for a person. That part is written in the plan's last section.
 
 ### Cards from the recorded demo (2026-11-14)
 
@@ -65,21 +42,18 @@ five defects. Each card stands alone, and none waits on docket: where docket own
 says what Tack does without it and what is asked of docket.
 
 **D1 — A commit names its item.** Every change a run leaves is a commit whose subject says nothing
-about the work. With a local agent the runner writes `Tack attempt <attempt id> on item <item id>`. With
-docket the subject is the first line of the task's `description`, which is the profile's instructions,
-so four different items left four commits called "Eres un ingeniero de software cuidadoso. Haz lo que
-pide el ítem en el…" and `git log` could not tell them apart. Tack already sends docket the item's
-title as `task.objective`, and docket does not use it for the commit.
+about the work. With a local agent the runner writes `Tack attempt <attempt id> on item <item id>`, so
+`git log` cannot tell two items apart. docket takes the subject of its commit from `task.objective`, which
+Tack already sends as the item's title, so what is left is the runner's own commit for local agents.
 
 - The rule, for every agent: the subject is the item's title, cut at a word before 72 characters; the
   body says `Tack attempt <attempt id> on item <item id>`, so the ids stay where a tool can read them.
 - Tack: the runner's own commit (the evidence commit of a local agent) follows the rule.
-- Asked of docket: take the subject from `task.objective` when the task has one, and from the first line
-  of the description otherwise. Until docket does, Tack changes nothing in what it sends: the profile's
+- docket: the subject comes from `task.objective`, so Tack changes nothing in what it sends: the profile's
   instructions stay first, and moving the title into the prose would send it twice.
 - Done when: a run of Claude Code, Codex and opencode leaves a commit whose subject is the item's title
-  (a runner test per harness), and the live suite's code card shows it in the branch's log; with a docket
-  that follows the ask, the docket run does too.
+  (a runner test per harness), and the live suite's code card shows it in the branch's log; the docket
+  run's commit shows it too.
 
 **D2 — A failed docket gate says why.** When an item's command check fails inside docket, the card
 says only `docket said: external gate fail: 'python3 -m pytest -q'`. The reason was in docket's own
@@ -104,16 +78,14 @@ agent made was right and was lost twice for this reason.
 
 - Tack says it before the run: the run dialog's "What will happen" says, for a docket team without
   network, "no network, not even localhost: tests that open a local port fail inside docket". It says so
-  from what docket reports, and drops the sentence once docket reports loopback.
-- Asked of docket: at network `none`, give the jail a network namespace with only a loopback
-  interface where the kernel allows it, keeping the seccomp filter where it does not, and report which one
-  applies in `features` (for example `jailLoopback`).
+  from what docket reports. docket declares it as a limit with no `features` entry (under Landlock a bind
+  to `127.0.0.1` is refused and a Unix socket works; the Docker backend has its loopback), so the
+  dialog's sentence stays.
 - The onboarding skill measures it: when a repository's tests open sockets (an HTTP server, a test
   client bound to a port), it says so in its findings, and the team's checks are written so that they
   can pass inside docket.
-- Done when: the run preview's sentence is under a screen test for a docket profile without network, the
-  fake docket has a `features` capture with and without the loopback report, and the live suite has one
-  test that opens a local port inside a docket run and is expected to fail until docket reports loopback.
+- Done when: the run preview's sentence is under a screen test for a docket profile without network, and
+  the live suite has one test that opens a local port inside a docket run and is expected to fail.
 
 **D4 — A manager's turn reaches its team.** Found by the second recording (2026-11-15), which adds a
 research task, the items it proposes and a manager. **Agents → Add a manager** with a new profile makes
@@ -145,6 +117,17 @@ names. A profile picked in the dialog whose team no role names is read as a repo
 - Done when: a screen test picks, in the run dialog, a profile whose folder team no role names and reads
   "in the team's own folder on this computer, not in this repository", and the recorded demo's research
   chapter shows that sentence.
+
+**D6 — A decision lists what its approval changes.** Found by the frontend session while it built the
+approval (2026-11-27). An approval asks one question in words, and it cannot say what approving it
+changes: docket's decision carries no list of the files, the board rows or the services the approval
+touches, so Tack has nothing to show above the options.
+
+- Asked of docket: a decision's metadata lists what the approval changes, one line each.
+- Tack: the approval shows the list above the options when docket sends one, and shows nothing it was not
+  told when it sends none.
+- Done when: the fake docket has a capture of a decision with the list and one without, and a screen test
+  finds the list above the options in the first and no empty block in the second.
 
 ## Future, not planned
 
@@ -330,6 +313,22 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
 - **Phase 77 — the agent's copy is prepared.** ADR 0027. Whoever makes the agent's copy installs its
   dependencies from the lockfile, and every run has a limit that says where it comes from.
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-77.md).
+- **Phase 76 — the plan lives in the repository.** ADR 0025 and its amendment, and the amendment of
+  2026-11-26 to ADR 0033.
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md). A project's plan is kept in a
+  `.tack/` folder beside its code: `project.yaml` and one `items/<key>.md` per item, with the brief that
+  says what makes it done. Every role, field, sprint, profile and item has a key that survives a
+  rename. `tack folder status | export | import | history | revert` and Settings → Data → Project folder
+  compare the folder, the board and the last revision: what only the folder changed is applied, what
+  only the board changed is kept, a field both changed is a conflict, and what the folder removed goes,
+  with its cost shown first, unless something happened to it. One plan carries the preview's hash to the
+  apply, every import of a project file is written in one transaction, and every export and import leaves
+  a revision to go back to. A person applies; an agent previews with `plan_folder`; a change under `.tack/`
+  is merged by a person. An item in a project file carries its brief, and a task that cannot be verified
+  reads **Not ready**. A run that succeeded waits for review in the inbox, a project may limit how many
+  waits it has and auto-start pauses at the limit, a question asked in a thread reaches **Needs you**, and
+  the factory figures are cut by sprint and the quality figures by domain and level. The screens are
+  redefined around **Needs you**: nine destinations instead of eleven, with no ability lost.
 - **Phase 75 — limits in tokens.** ADR 0024. A limit is in tokens and nothing has one by default; cache
   reads are shown and never counted; every limit says who applies it; what Tack sends an agent carries
   nothing twice.

@@ -42,6 +42,12 @@ pack, Tack lists the changed files itself, matching file names exactly. Either w
 the task says "A file that decides how the work is checked changed", and **Merge** asks you to write why you
 are merging it anyway.
 
+### A change to the project folder
+
+A change whose files include `.tack/`, the [project folder](import-export.md#keeping-the-plan-in-the-repository), is a change to the plan: it holds each item's brief, the checks the work is judged by. A person merges it, whatever the project's level and its domains say; it never merges by itself, at L4 or at L5.
+
+Its files are listed under "The agent changed how it is checked", with the other files that decide how the work is checked, and **Merge** asks you to write why you are merging it anyway. Merging the change does not change the board. The board reads the folder only when you apply it: see [Exporting and importing](import-export.md#exporting-and-importing).
+
 ## Merge when moved to Done
 
 With this option on, moving a task to Done merges its latest finished run. The move happens
@@ -119,13 +125,14 @@ review with every attempt kept.
 
 ## Budgets
 
-Each project can cap three things, set under **Daily limits** in the Limits section. Leave a box empty for no
+Each project can cap four things, set under **Daily limits** in the Limits section. Leave a box empty for no
 limit; nothing has one until you set it.
 
 | Limit | What happens when it is reached |
 |---|---|
 | **Tokens per day** | New runs do not start, and no automatic merge happens |
 | **Items waiting at once** | New runs do not start while that many tasks wait for your review |
+| **Waiting for a person at once** | Auto-start starts nothing new while that many questions, reviews, failures and changes to apply wait for you; each waiting task says "4 of 5 waiting for you: auto-start is paused until one is decided". 0 keeps it paused |
 | **Automatic merges per day** | No further automatic merge happens that day |
 
 **Tokens per day** is reserved when a run starts, so the runs of one day cannot add up past it. A run starts

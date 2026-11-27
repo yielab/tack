@@ -92,6 +92,23 @@ true` reports what would be created. The call may also carry `fields`, `profiles
 `sprints`, `types` and `automation`, as in Tack's project file. The file's keys and the preview and refusal
 rules are in the developer guide's [project file reference](https://yielab.github.io/tack/developer/project-file.html) and the user guide's
 [import page](https://yielab.github.io/tack/user-guide/import-export.html#the-project-file).
+`create_outline` never removes anything, and an item that carries a `key` the project has is
+updated instead of added again. A person keeps the plan in the repository with `tack folder`.
+
+`plan_folder` previews what a project folder would change on the board. It takes `project_id` and
+either `files` (an object of path to text, each path relative to `.tack/`, as `tack folder import`
+reads them) or `revision` (a number, to plan going back to it); passing both is an error. `prefer`
+(`file` or `board`) says whose value wins a conflict. It returns the plan: the changes field by
+field, the rows kept with their reason, the conflicts with their three values, the removals with
+what each costs, the warnings and whether the plan `applies`. It never applies it. Applying needs a
+person's token, and an agent credential's call to `POST /api/projects/{id}/folder/apply` is refused
+with "An agent may preview the project folder; a person applies it". An assistant that edits `.tack/`
+in the repository calls `plan_folder` to read what its edit would do, commits it, and a person
+applies it with `tack folder import`. The user guide's [Keeping the plan in the
+repository](https://yielab.github.io/tack/user-guide/import-export.html#keeping-the-plan-in-the-repository)
+explains the plan, and the developer guide's [project folder](https://yielab.github.io/tack/developer/project-file.html#the-project-folder)
+the routes.
+
 `create_project` returns the new project's id and its workflow's status names, the values
 `status` and `move_item` accept. A project is created with `project_type: custom` unless
 another is given.
@@ -174,6 +191,8 @@ set, so under one:
 - `add_comment` ignores `author`: the comment carries the credential's name.
 - The tools whose routes belong to the operator (`create_project`, the execution, fleet and
   profile tools, `get_autonomy`) answer `403` to a credential, as the routes do.
+- `plan_folder` is a read tool, so a credential that may read the project may call it. It only
+  previews; the apply is the operator's.
 - `create_execution` answers that an agent does not start a run: it says who does the item
   (`who_does_it`), and the project starts it by itself when a person has allowed that.
 

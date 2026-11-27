@@ -14,22 +14,24 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 
 `docs/book/src/roadmap.md` is the one place for what is open and what was delivered; read its
 "Open" section first. Decisions are in `docs/adr/`, history in `CHANGELOG.md` and the commits, and
-every closed plan, board, handoff and audit in `docs/closed-cycles/` (frozen). As of 2026-11-15:
+every closed plan, board, handoff and audit in `docs/closed-cycles/` (frozen). As of 2026-11-27:
 
-- **Delivered through Phase 95**, all in `develop`. The roadmap's "Delivered" section has one
+- **Delivered through Phase 95**, Phase 76 included, all in `develop`. The roadmap's "Delivered" section has one
   paragraph per phase (73 to 95) with its ADR and plan.
 - **Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. `v0.2.0-beta.1`
-  (Phases 66–95) is prepared: the version is bumped and `CHANGELOG.md`'s section is written, and it
+  (Phases 66–95 and 76) is prepared: the version is bumped and `CHANGELOG.md`'s section is written, and it
   is not tagged. `v0.1.0-beta.10` (tagged 2026-10-14) never had a release and is not re-cut, so the
   README's install commands install `v0.1.0-beta.9` until the maintainer publishes
   `v0.2.0-beta.1` (`docs/LAUNCH-CHECKLIST.md`). Tagging is the maintainer's step, not a card.
-- **Open cards:** D1 to D4 from the recorded demo (a commit names its item; a failed docket gate
-  says why; the jail and the verifier agree about localhost; a manager's turn reaches its team).
+- **Open cards:** D1 to D6 from the recorded demo and Phase 76 (a commit names its item, now only
+  the runner's own for local agents; a failed docket gate says why; the jail and the verifier agree
+  about localhost, a limit docket declares; a manager's turn reaches its team; the run dialog says
+  where the team works; a decision lists what its approval changes, asked of docket).
   Codex's eval baseline and `agents-flow.gif` are postponed by the maintainer.
-- **Phase 76 is open (2026-11-26):** the plan lives in the repository, a `.tack/` folder (ADR 0025
-  and its amendment, accepted). `docs/plans/phase-76.md` holds the API cards, integrated by the
-  session that wrote them; its last section, the Project folder card and the redefined views, is
-  the frontend session's. Until it lands the project file only creates and updates, never deletes.
+- **Phase 76 is delivered (2026-11-27), in `develop`:** the plan lives in the repository, a `.tack/`
+  folder (ADR 0025 and its amendment, ADR 0033's amendment). `docs/plans/phase-76.md` holds its
+  cards and how it went. `tack import` still only adds and updates; `tack folder import` removes
+  what the folder removed, when nothing happened to it, and a person applies it.
 - **Future, not planned:** status rules, and what Phase 94 left out.
 - **The live suite** lives in the git-ignored `onboarding-lab/e2e/` (script names in
   `CLAUDE.local.md`; it also has a `--check` mode for drift against the fixtures), beside the

@@ -11,13 +11,14 @@ The examples use `http://127.0.0.1:3210` and a server started with `tack serve`.
 | I want to… | Use | Where |
 |---|---|---|
 | Move a whole project's setup: workflow, vocabulary, fields, agent profiles, roles, sprints, automation and items | The **project file** | [The project file](#the-project-file) |
+| Keep a project's plan beside its code, edit it there and let the board follow | The **project folder**, `.tack/` | [Keeping the plan in the repository](#keeping-the-plan-in-the-repository) |
 | Start new projects that all share the same roles, agents and automation | A **template** | [Templates](#templates) |
 | Create a project from a plan: a spreadsheet, a script or an AI assistant's list of tasks | An **outline** or a **CSV** | [Items only: outline and CSV](#items-only-outline-and-csv) |
 | Seed a project from work already tracked elsewhere | **GitHub** or **Linear** import | [Importing GitHub and Linear issues](#importing-github-and-linear-issues) |
 | Keep a copy of one project's items, sprints, dependencies and briefs, or move it to another Tack | A **JSON or YAML snapshot** | [Snapshots and CSV export](#snapshots-and-csv-export) |
 | Edit the item list in a spreadsheet and bring it back | A **CSV** export, then CSV import | [Snapshots and CSV export](#snapshots-and-csv-export) |
 
-A snapshot keeps items; a project file keeps the setup around them. For a copy of the whole board, database included, see [Backup & Restore](../admin-guide/backup-restore.md).
+A snapshot keeps items; a project file keeps the setup around them and what makes each item done. A project file moves or copies a project; the project folder keeps it in step with the repository. For a copy of the whole board, database included, see [Backup & Restore](../admin-guide/backup-restore.md).
 
 ---
 
@@ -36,9 +37,9 @@ A **project file** is one YAML or JSON document that holds a project: its workfl
 | `roles` | Project roles: name, color and the profile each role uses. |
 | `sprints` | Name, goal and dates. A sprint is created planned or closed, never active. |
 | `automation` | The project's folder or repository, branch, how the agent works, the install command, whether to push, default agent, profile and model, the definition of done, autonomy and auto-start. |
-| `items` | The items, with their hierarchy and dependencies, plus the role, sprint, field values and repeat of each. |
+| `items` | The items, with their hierarchy and dependencies, plus the role, sprint, field values, repeat and [brief](#an-items-brief) of each. |
 
-Every section is optional. A file with only `items` is an outline. The full list of keys, with their types and defaults, is in [The Project File Format](../developer/project-file.md).
+Every section is optional. A file with only `items` is an outline. Roles, fields, sprints, profiles and items may carry a `key`, the name that survives a rename; see [Keys](#keys). The full list of keys, with their types and defaults, is in [The Project File Format](../developer/project-file.md).
 
 ### A small example
 
@@ -112,7 +113,7 @@ items:
   - { ref: S2, title: Novedades de la versión 2.4, type: feature, parent: C1, status: Por hacer, roles: [Contenido], sprint: Semana 42, fields: { Plan: pro } }
 ```
 
-Items refer to each other by `ref`, to roles, sprints and fields by name, and a role refers to its profile by name. A profile's `tool_policy.docket.team` names the docket team that runs it; see [Running Agents on Tasks](running-agents.md).
+Items refer to each other by `ref` (or by `key`, once they have one), to roles, sprints and fields by name, and a role refers to its profile by name. A profile's `tool_policy.docket.team` names the docket team that runs it; see [Running Agents on Tasks](running-agents.md).
 
 ### How to import it
 
@@ -159,8 +160,9 @@ If the file cannot be imported, the preview shows **This file cannot be imported
 ### The rules that matter
 
 - **Names are the references.** An item names its roles, sprint and field values. A role's `profile` names a profile of the same file first, then one Tack already has. An unknown key anywhere is refused, so a misspelt key is reported instead of lost.
+- **A `key` is matched before a name.** A role, field, sprint or profile that gives a `key` is the board's row with that key, even when its name is new: that is a rename. One without a `key` is matched by its name, and gets a key made from it when it is created. A file whose new `key` is already another row's key, or whose name is already on the board under another key, is refused and says which.
 - **The whole file is checked before anything is written.** Either all of it can be written or none of it is.
-- **Nothing is deleted.** Importing into an existing project adds new names and updates the names the file mentions, using only the keys it gives. Roles, fields, sprints and profiles the file does not mention stay as they are. Items in a file are always added.
+- **`tack import` removes nothing.** Importing into an existing project adds new names and updates the names or keys the file mentions, using only the fields it gives. Roles, fields, sprints and profiles the file does not mention stay as they are. An item without a `key` is added. An item with a `key` the project already has is updated in the fields the plan holds (see [what is in the folder](#what-is-in-the-folder-and-what-is-the-boards)), never added twice, moved or removed, so a file imported twice does not double its items. To have a file remove what it leaves out, keep the plan in the project folder: `tack folder import` removes what the folder removed, when nothing happened to it on the board, and shows the cost first.
 - **The `project` block is read only for a new project.** For an existing one the name, workflow and vocabulary are kept, with a warning that says where to change them: Settings.
 - **Types:** a file that creates a project gives it exactly the types it lists. A file that adds to a project adds the types it lacks and takes the names and colours of the ones it has; their levels and the default stay as the project has them. An item's `type` is a key or a name of the project's types, in any case; a word the project does not have is added as a work type, and the preview lists it as a new type.
 - **Built-in profiles are never changed.** A role may use Implementer, Reviewer, Researcher or Planner. A file that redefines one gets a warning and the built-in stays.
@@ -181,6 +183,8 @@ The file is **refused** for:
 - a sprint with a date that is not `YYYY-MM-DD` or a status other than `planning` or `closed`;
 - an automation setting with an unknown code origin, workspace mode or default agent, a folder that is not an absolute path, a URL that is not a URL, an install command that is not one line, an unknown default profile, an auto-start status the workflow does not have, an auto-start cap below 1, or a level other than L3, L4 or L5;
 - an item that names a role, sprint or field found neither in the file nor in the project;
+- a `key` that is not a key (see [Keys](#keys)) on something the file creates, or that is already the key of another row;
+- a brief that breaks the rules of the Brief tab, such as two criteria with the same id; the problem names the item;
 - the item rules of the outline: no title, a `ref` used twice, a `parent` or `depends_on` that names no item or an ambiguous title, a parent or dependency loop, a due date that is not a date, a title over 500 characters, a negative estimate, more than 20 tags, or more than 1,000 items.
 
 The file is **accepted with a warning** for:
@@ -189,6 +193,7 @@ The file is **accepted with a warning** for:
 - a fleet name the board does not have: the profile then runs on any computer;
 - an autonomy level or auto-start the import lowered;
 - an item whose status the workflow does not have: it starts in the first status;
+- a status, priority, assignee, sprint or due date on an item the project already has: those are the board's, and are kept;
 - an unknown priority, which becomes medium;
 - an item with no value for a required field;
 - a CSV column Tack does not read.
@@ -197,10 +202,9 @@ A spreadsheet written for another tool should not have to be rewritten to import
 
 ### If a section fails to write
 
-The checks catch problems in the file. A failure while writing, such as a full disk, is different. The answer then names the section: "The roles section could not be written."
+The checks catch problems in the file. A failure while writing, such as a full disk, is different. The answer then names the section: "The roles section could not be written; nothing was changed."
 
-- **A new project:** nothing was created, because the half-written project is removed.
-- **An existing project:** what the file wrote before that section stays, and the answer says so. Items are written last, in one step, so a failed section never leaves half a set of items. Import the same file again to finish: names already written are matched and updated.
+Everything an import writes lands in one step, so nothing is written. A new project is not created, and an existing project stays as it was. Fix the cause and import the same file again.
 
 ### Exporting a project file
 
@@ -208,7 +212,7 @@ The checks catch problems in the file. A failure while writing, such as a full d
 - From the command line: `tack export <project> --bundle -o project.yaml`. Add `--format json` for JSON.
 - Over the API: `GET /api/projects/{id}/export?scope=bundle&format=yaml`.
 
-The export writes the same file back: items in written order, only the profiles the project's roles and default point at, and no ids. It never writes the signing key that merge verification uses; paste that in the **Public key** field under Merge in Settings → Automation. Exporting, importing into a new project and exporting again gives the same text.
+The export writes the same file back: every role, field, sprint, profile and item with its `key`, items in written order with parents and blockers named by key and each item's brief, only the profiles the project's roles and default point at, and no ids. It never writes the signing key that merge verification uses; paste that in the **Public key** field under Merge in Settings → Automation. Exporting, importing into a new project and exporting again gives the same text.
 
 ### Templates
 
@@ -218,6 +222,134 @@ A **template** is a project file without items. It gives every new project the s
 - **Save one:** `tack template save <project> --name "My template"` stores a project's roles, profiles, automation, workflow, types and vocabulary.
 - **Built-in templates:** **Web product with content**, **Library or CLI** and **Static content site** each bring their roles and profiles, with merging at L3. **Digital business** brings six departments (Software, Operations, Support, Growth, Finance and Insight) as roles, each with a profile that names no agent, so each runs on whichever agent the project uses and puts its work in the repository (a report is a file). It also lists the teams docket would run them with: one that builds, one that answers for Support and Growth together, one that operates and one that keeps records for Finance and Insight. A department gets a team of its own only when its work has a different shape or a different gate. The teams are described and never created: point a department's profile at docket and create the team with the command the preview prints.
 - **What the Templates page shows:** each card carries chips for what the template holds, such as "5 statuses", "3 roles", "3 profiles" and "Merges at L3". Hover a card to see its workflow columns and each role with its profile.
+
+---
+
+## Keeping the plan in the repository
+
+A project's **plan** is its setup (the workflow, fields, profiles, roles, sprints and automation) and, for each item, what the item is and what makes it done. You can keep the plan in a **project folder**, `.tack/`, beside your code. You export the folder, edit it yourself or let an assistant edit it, commit it, and import it again. The board follows, and the plan tells you everything it will change before it changes anything.
+
+Use the project file above to move or copy a project once. Use the folder to keep a project in step with its repository.
+
+### The folder
+
+```text
+.tack/
+  project.yaml
+  items/
+    facturacion-recurrente.md
+    vista-previa-de-la-factura-en-pdf.md
+```
+
+`project.yaml` holds every section of the project file except `items`. Each item has one file in `items/`, named by its key. The file is YAML between two `---` lines, then the item's description as Markdown. A file for an item with no description ends at the second `---` line.
+
+```text
+---
+title: Vista previa de la factura en PDF
+type: feature
+parent: facturacion-recurrente
+roles: [Desarrollo]
+estimate: 5
+estimate_unit: story_points
+fields: { Plan: pro }
+brief:
+  definition_of_done: La factura se ve en el navegador antes de descargarla
+  risk: low
+  acceptance:
+    - { kind: manual, id: se-ve, title: Se ve bien, text: Una persona abre la vista previa y la compara con el PDF }
+---
+Una vista previa de la factura, sin descargar el PDF.
+```
+
+Two branches that change two items change two files, and a diff names the item. An assistant can read or write one item at a time.
+
+### What is in the folder, and what is the board's
+
+| In the folder | On the board |
+|---|---|
+| The project's name, description and vocabulary | The project's type and workflow: change them in Settings |
+| Types, fields, profiles, roles, sprints and automation | Teams, which are what the agents report |
+| For each item: title, description, type, parent, blockers, roles, tags, estimate, repeat, field values and brief | Where an item is (its status), who answers for it and when (assignee, priority, sprint, due date) |
+| | Runs and what they leave, decisions, comments, attachments, change sets and links |
+
+Moving a card never changes a file. An item's run settings (agent, model, network, tools, approvals) never enter the folder, because they widen what an agent reaches and a file is text anyone can edit. When a file gives a status, priority, assignee, sprint or due date for an item that exists, the plan says "the board's" and keeps what the board has. Items created on the board reach the folder at the next export.
+
+### Keys
+
+Every role, field, sprint, profile and item has a **key**: lowercase letters, digits and hyphens, at most 64 characters. Tack makes it from the name or title when the thing is created, and it never changes after that. "Contenido" is `contenido`, "En revisión" is `en-revisión`, and a second "Dev Team" is `dev-team-2`. An item's key is its file name.
+
+A key is how the board knows that a file entry is the same thing after a rename. A new name under the same key is a rename, not a new role. Keys show in grey under the names in Settings and under a task's title.
+
+A file entry with no key is matched by its name, as in any project file, and gets a key made from its name when it is created. A key that creates something must be a valid key, and a key another row holds is refused: `roles: key "dev" is already the key of "Dev Team"`. A name that is already on the board under another key is refused too, and the message gives that key.
+
+### Exporting and importing
+
+| | Web UI (Settings → Data → **Project folder**) | Command line |
+|---|---|---|
+| Where the folder stands | The status line: the last revision, and what changed on the board since | `tack folder status <project>` |
+| Write the folder | **Export** | `tack folder export <project> [dir]` |
+| Read the folder | **Import…**, then the plan | `tack folder import <project> [dir]` |
+| The revisions | **History** | `tack folder history <project>` |
+| Go back to one | **Revert to this…** | `tack folder revert <project> <number>` |
+
+`dir` is `.tack` in the current directory unless you give another. `export` writes the files and removes the `items/*.md` files the board no longer has, so a deleted item's file goes away. In a browser that cannot write a folder, **Export** is shown disabled and says to run `tack folder export` in the repository. `import` reads every file under the folder, shows the plan and applies it; the flags are in [the CLI guide](cli.md#the-project-folder). Over the API the routes are under `/api/projects/{id}/folder`; see [The Project File Format](../developer/project-file.md#the-project-folder).
+
+The first export makes the folder authoritative. Until a project has a revision, an import removes nothing and the plan says "no revision yet: export once to make the folder authoritative".
+
+### The plan
+
+An import is never applied blind. It first builds a **plan**, and the plan is also what **Revert to this…** and `--dry-run` show. Each line is one of:
+
+- **new**: the folder has it and the board does not;
+- **changed**: a field differs, listed as `path: from → to`, such as `name: Contenido → Content` or `brief.risk: low → medium`;
+- **removed**: the board has it and the folder no longer does, with what the removal costs;
+- **kept**, with its reason: the board's status, assignee, priority, sprint or due date; something created on the board since the last revision; something removed on the board since the last revision; or a removal that is refused (see below).
+
+The plan compares three things for every field: the **last revision** (what the folder last knew), the **board** now, and the **folder** you are importing.
+
+| Changed since the last revision in | The plan |
+|---|---|
+| Only the folder | The folder's value is applied |
+| Only the board | The board's value is kept |
+| Both, to the same value | Nothing to do |
+| Both, to different values | A **conflict** |
+
+A thing the board created since the last revision is never removed because the folder lacks it. A thing the board removed is not brought back by a folder that did not change it. If the folder changed a thing the board removed, or the board changed a thing the folder removed, that is a conflict too.
+
+**Conflicts** are listed with the three values. A plan with a conflict cannot be applied until you say who wins for all of them: **prefer the folder** or **prefer the board** (`--prefer folder` or `--prefer board`). The plan still lists each conflict after you choose, so you can see what was chosen. Choosing per conflict is shown disabled with its reason.
+
+### What a removal costs
+
+A removal shows its cost first, and some removals are refused.
+
+| Removed from the folder | What the plan says |
+|---|---|
+| A role | The cards that lose it |
+| A field | The values deleted with it |
+| A sprint | The cards that leave it |
+| A type | Refused while items use it |
+| A profile | Refused while a role or the default of another project names it, or while a run of it has not ended. The built-in profiles are never in the plan |
+| An item | The blockers that go with it. An item with a run, a comment, an attachment, a change set, a link to a GitHub issue or children is never removed: the plan keeps it and says why, such as "'Login con GitHub' has 2 runs and 3 comments; close it on the board" |
+
+Tack has no archive, so a file never deletes an item's history with it. In the web UI you tick **I have read what these removals delete** before **Apply**. On the command line a plan with removals applies only with `--yes`; without it the command stops and says "add --yes to apply the N removals".
+
+Apply sends the plan's hash. If the board changed after the preview, apply is refused with "The project changed since the preview; preview again." and writes nothing. Everything the apply writes lands in one step: the removals, the changes, the briefs and the new revision, or nothing.
+
+### History and revert
+
+Every export and every import leaves a **revision**: a number, where it came from (the board, a file or a revert), and when. An export leaves one when the board differs from the last revision. An import leaves up to two: the board as it was, and what was written. Two equal revisions are one. Revisions are kept for ever.
+
+**Revert to this…** and `tack folder revert <project> <number>` plan going back to a revision, with the same conflicts, removals and costs, and apply it the same way. A revert is itself a revision. Git is the history of the folder's files; the revisions are the points where the board and the folder last agreed.
+
+### A person applies
+
+An assistant can preview a folder: the MCP tool `plan_folder` returns the plan and never applies it. Applying needs a person's token, and an agent's credential is refused with "An agent may preview the project folder; a person applies it."
+
+A change to `.tack/` in a run's work is a change to the plan, so a person merges it, whatever the project's level. Its files are listed under "The agent changed how it is checked", and the **Merge** button asks for a reason; see [Merging from Tack](merging.md#a-change-to-the-project-folder). The board reads the folder only when a person applies it, never from a run's work.
+
+### An item's brief
+
+An item's brief says what makes it done. In a project file or a folder an item carries it as `brief`, with the four parts of the Brief tab: `definition_of_done`, `risk` (`low`, `medium` or `high`), `acceptance` (criteria, each `manual` or a command a machine runs) and `constraints`. It is checked by the same rules as a save from the Brief tab, and a brief with none of its four parts is no brief. A brief the file changes is a new version of the item's brief, as after an edit on the Brief tab. A run already started keeps the brief it was given. The parts are described under [Acceptance criteria and For the agent](items.md#acceptance-criteria-and-for-the-agent).
 
 ---
 
@@ -252,7 +384,8 @@ Items can come in any order; a parent is always written before its children.
 
 | Field | Description |
 |-------|-------------|
-| `ref` | A name other items use in `parent` and `depends_on`. Any text or number, unique in the file. Optional. |
+| `key` | The item's key (see [Keys](#keys)). Optional. With none the item is added; with a key the project already has, that item is updated. |
+| `ref` | A name other items use in `parent` and `depends_on`, in this file only. Any text or number, unique in the file. Optional. `id` is also read; `key` is not, because it is the item's key. |
 | `title` | Required. |
 | `description` | Optional. |
 | `type` | A key or a name of the project's types, in any case; absent, the project's default work type. A word the project does not have is added to its types as work. |
@@ -263,8 +396,9 @@ Items can come in any order; a parent is always written before its children.
 | `due_date` | `YYYY-MM-DD`, or an RFC 3339 timestamp. |
 | `tags` | A list of words. |
 | `recurrence` | `weekly`, `monthly` or `quarterly`. Closing the task creates the next one. |
-| `parent` | The parent's `ref`, or its exact title. When adding to an existing project, also the id of an item already in it. |
-| `depends_on` | The `ref`s or titles of items that must finish first. Each becomes a *blocks* dependency. |
+| `parent` | The parent's `key`, `ref` or exact title. When adding to an existing project, also the id of an item already in it. |
+| `depends_on` | The `key`s, `ref`s or titles of items that must finish first. Each becomes a *blocks* dependency. |
+| `brief` | What makes the item done: `definition_of_done`, `risk`, `acceptance` and `constraints`. See [An item's brief](#an-items-brief). |
 
 The CSV uses the same names as column headers, matched in any case. Only `title` is required. These spellings are also read:
 
