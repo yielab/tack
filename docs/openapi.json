@@ -14898,6 +14898,14 @@
             ],
             "format": "date-time"
           },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The thread whose anchor is `item_id`, when the notification is about a thread's turn."
+          },
           "title": {
             "type": "string"
           }

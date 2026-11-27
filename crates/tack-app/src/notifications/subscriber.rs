@@ -55,10 +55,11 @@ pub struct Reconciled {
 }
 
 /// Applies one event to the inbox. An event about a hidden item (a thread's or a trigger's
-/// anchor) is a profile's own work, not the board's, and opens nothing.
+/// anchor) is a profile's own work, not the board's, and opens nothing, except a question: it
+/// always waits for a person.
 async fn apply(repo: &Repository, inbox: &Inbox, event: &DomainEvent) -> Result<(), AppError> {
     if let Some(notice) = notice(event)
-        && !is_hidden(repo, &notice).await?
+        && !skipped(repo, &notice).await?
     {
         inbox.open(&titled(repo, notice).await?).await?;
     }
@@ -83,10 +84,11 @@ async fn titled(repo: &Repository, mut notice: Notice) -> Result<Notice, AppErro
     Ok(notice)
 }
 
-async fn is_hidden(repo: &Repository, notice: &Notice) -> Result<bool, AppError> {
+/// Whether the inbox leaves `notice` out: it is about a hidden item and is not a question.
+async fn skipped(repo: &Repository, notice: &Notice) -> Result<bool, AppError> {
     match notice.item_id {
-        Some(item) => Ok(repo.item_is_hidden(item).await?),
-        None => Ok(false),
+        Some(item) if notice.kind != Kind::Decision => Ok(repo.item_is_hidden(item).await?),
+        _ => Ok(false),
     }
 }
 
@@ -161,7 +163,7 @@ async fn waiting(repo: &Repository, clock: &dyn Clock) -> Result<Vec<Notice>, Ap
     let mut notices = Vec::new();
     for (project, fact) in facts {
         if let Some(notice) = notice(&DomainEvent::new(project, &tack, fact))
-            && !is_hidden(repo, &notice).await?
+            && !skipped(repo, &notice).await?
         {
             notices.push(titled(repo, notice).await?);
         }

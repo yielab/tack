@@ -175,6 +175,8 @@ pub struct Notification {
     pub level: Level,
     pub key: Key,
     pub item_id: Option<Uuid>,
+    /// The thread whose anchor is `item_id`, when the notification is about a thread's turn.
+    pub thread_id: Option<Uuid>,
     pub request_id: Option<String>,
     pub title: String,
     pub cause: String,
