@@ -15,6 +15,13 @@ const TABLE: &str = "notifications";
 const COLUMNS: &str = "id, project_id, kind, level, key, item_id, request_id, title, cause, \
      created_at, read_at, resolved_at";
 
+/// The thread whose hidden anchor item the notification is about: a question asked in a thread's
+/// turn is opened on that anchor, so the screens can link it to the thread. A notification about
+/// an ordinary item has none. `item_id` is the notification's (`threads` has no such column), so
+/// it holds in `RETURNING` and in a join alike.
+const THREAD_ID: &str =
+    "(SELECT t.id FROM threads t WHERE t.anchor_item_id = item_id) AS thread_id";
+
 /// What counts as open: a needs-you row until the fact that answers it, an info row until read.
 const OPEN: &str = "resolved_at IS NULL AND (level = 'needs_you' OR read_at IS NULL)";
 
@@ -26,6 +33,7 @@ pub(crate) struct NotificationRow {
     level: String,
     key: String,
     item_id: Option<String>,
+    thread_id: Option<String>,
     request_id: Option<String>,
     title: String,
     cause: String,
@@ -43,6 +51,7 @@ impl NotificationRow {
             level: decode::variant(TABLE, "level", &self.level)?,
             key: Key::from_stored(self.key),
             item_id: decode::optional_uuid(TABLE, "item_id", self.item_id.as_deref())?,
+            thread_id: decode::optional_uuid(TABLE, "thread_id", self.thread_id.as_deref())?,
             request_id: self.request_id,
             title: self.title,
             cause: self.cause,
@@ -150,7 +159,7 @@ impl Repository {
             "INSERT INTO notifications (id, project_id, kind, level, key, item_id, request_id, title, cause, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(key) WHERE resolved_at IS NULL DO NOTHING
-             RETURNING {COLUMNS}"
+             RETURNING {COLUMNS}, {THREAD_ID}"
         )))
         .bind(Uuid::new_v4().to_string())
         .bind(notice.project_id.to_string())
@@ -254,7 +263,7 @@ impl Repository {
         };
         let project = project_id.map(|id| id.to_string());
         let rows = sqlx::query_as::<_, NotificationRow>(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} FROM notifications WHERE {filter} AND (?1 IS NULL OR project_id = ?1)
+            "SELECT {COLUMNS}, {THREAD_ID} FROM notifications WHERE {filter} AND (?1 IS NULL OR project_id = ?1)
              ORDER BY created_at DESC, id LIMIT ?2"
         )))
         .bind(project)
@@ -313,7 +322,7 @@ impl Repository {
             .collect::<Vec<_>>()
             .join(", ");
         let rows = sqlx::query_as::<_, DueRow>(sqlx::AssertSqlSafe(format!(
-            "SELECT {columns}, d.channel, d.attempts
+            "SELECT {columns}, {THREAD_ID}, d.channel, d.attempts
              FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
              WHERE d.delivered_at IS NULL AND d.next_at IS NOT NULL AND d.next_at <= ?
              ORDER BY d.next_at, n.id LIMIT ?"
@@ -417,7 +426,8 @@ impl Repository {
         .rows_affected())
     }
 
-    /// The questions runs wait on, in items that are not hidden.
+    /// The questions runs wait on. A question waits for a person in a hidden item too: a thread's
+    /// turn runs on its anchor, and what it asks is still asked.
     #[instrument(skip(self))]
     pub async fn pending_decisions(&self) -> Result<Vec<PendingDecision>, StoreError> {
         let rows: Vec<WaitingRunRow> = sqlx::query_as(
@@ -427,7 +437,7 @@ impl Repository {
              JOIN execution_attempts a ON a.id = d.attempt_id
              JOIN execution_requests r ON r.id = a.request_id
              JOIN items i ON i.id = r.item_id
-             WHERE d.state = 'pending' AND i.hidden = 0
+             WHERE d.state = 'pending'
              ORDER BY d.created_at, d.id",
         )
         .fetch_all(self.pool())

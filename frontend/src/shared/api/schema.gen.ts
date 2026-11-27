@@ -5903,6 +5903,11 @@ export interface components {
             request_id?: string | null;
             /** Format: date-time */
             resolved_at?: string | null;
+            /**
+             * Format: uuid
+             * @description The thread whose anchor is `item_id`, when the notification is about a thread's turn.
+             */
+            thread_id?: string | null;
             title: string;
         };
         /** @description How one channel's deliveries stand. */

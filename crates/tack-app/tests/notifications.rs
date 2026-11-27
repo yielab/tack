@@ -18,6 +18,8 @@ use tack_core::change_set::{CreateOp, Operation, Origin};
 use tack_core::models::CreateRole;
 use tack_core::notification::{Key, Kind, Level, Notice};
 use tack_core::principal::{Capability, Principal, Scope};
+use tack_core::thread::ThreadScope;
+use tack_db::repo::threads::NewThread;
 use tack_protocol::Clock;
 use tack_protocol::execution::{AttemptId, ExecutionState};
 use tack_test_support::{FixedClock, poll_until, seed};
@@ -171,6 +173,57 @@ async fn a_fact_about_a_hidden_item_opens_nothing() {
     drain(&fx.world.repo, &fx.inbox, &mut receiver).await;
 
     assert!(fx.keys().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_question_in_a_thread_reaches_needs_you_and_the_rest_of_its_runs_do_not() {
+    let mut fx = fixture().await;
+    let thread = fx
+        .world
+        .repo
+        .create_thread(&NewThread {
+            scope: ThreadScope::Project {
+                project: fx.project,
+            },
+            profile: "manager",
+            title: "Plan the quarter",
+            anchor_status: "todo",
+            now: fx.world.clock.now(),
+        })
+        .await
+        .unwrap();
+    let anchor = fx
+        .world
+        .repo
+        .thread_anchor(thread.id)
+        .await
+        .unwrap()
+        .unwrap();
+    fx.world.item_id = anchor.to_string();
+    fx.item = anchor;
+    fx.asking("asked", "dec-1").await;
+    let bus = EventBus::default();
+    let mut receiver = bus.subscribe();
+
+    // The question opens however the inbox hears of it, and names its thread; a thread's run is
+    // not a review.
+    bus.emit(fx.said(Fact::DecisionOpened {
+        run: fx.run("req-1"),
+        decision_id: "dec-1".into(),
+    }));
+    bus.emit(fx.said(Fact::RunFinished {
+        run: fx.run("req-1"),
+    }));
+    drain(&fx.world.repo, &fx.inbox, &mut receiver).await;
+    assert_eq!(fx.keys().await, ["decision:dec-1"]);
+    let open = fx.inbox.open_notifications(100).await.unwrap();
+    assert_eq!(open[0].thread_id, Some(thread.id));
+
+    // The reconcile keeps it open, and a finished run on the anchor still opens no review.
+    let done = enqueue(&fx.world, "done").await;
+    seed::execution_request_state(&fx.world.repo, &done, ExecutionState::Succeeded).await;
+    assert_eq!(fx.reconcile().await, Reconciled::default());
+    assert_eq!(fx.keys().await, ["decision:dec-1"]);
 }
 
 #[tokio::test]
