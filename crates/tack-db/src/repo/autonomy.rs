@@ -6,7 +6,9 @@
 use chrono::{DateTime, Utc};
 use tack_core::autonomy::{Domain, Level};
 
-use super::budgets::ProjectBudgets;
+use sqlx::SqliteConnection;
+
+use super::budgets::{ProjectBudgets, put_project_budgets_in};
 
 /// Everything the Automation panel edits for one project.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +20,21 @@ pub struct Settings {
     pub verify_loop_max_attempts: i64,
     pub budgets: ProjectBudgets,
     pub merge_on_done: bool,
+}
+
+impl Default for Settings {
+    /// A project nothing has set: the column defaults of migration 087, and no limits row.
+    fn default() -> Self {
+        Self {
+            level: Level::L3,
+            domains: Vec::new(),
+            verify_require: Vec::new(),
+            attestation_public_key: None,
+            verify_loop_max_attempts: 0,
+            budgets: ProjectBudgets::default(),
+            merge_on_done: false,
+        }
+    }
 }
 
 pub(crate) fn level_of(text: &str) -> Level {
@@ -95,53 +112,11 @@ impl crate::Repository {
         settings: &Settings,
     ) -> Result<bool, crate::StoreError> {
         let mut tx = self.pool().begin().await?;
-        let updated = sqlx::query(
-            "UPDATE projects SET autonomy_level = ?, verify_require = ?, attestation_public_key = ?,
-                    verify_loop_max_attempts = ?, merge_on_done = ? WHERE id = ?",
-        )
-        .bind(settings.level.to_string())
-        .bind(to_json(&settings.verify_require))
-        .bind(&settings.attestation_public_key)
-        .bind(settings.verify_loop_max_attempts)
-        .bind(i64::from(settings.merge_on_done))
-        .bind(project_id)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
-        if updated == 0 {
-            return Ok(false);
+        let found = put_autonomy_settings_in(&mut tx, project_id, settings).await?;
+        if found {
+            tx.commit().await?;
         }
-        // A held merge keeps the key id it was verified with so a tick need not run
-        // the verifier again; any change here may replace the key, so every unmerged
-        // attempt of the project is verified afresh.
-        sqlx::query(
-            "UPDATE tack_merges SET attestation_keyid = NULL WHERE project_id = ? AND merged_at IS NULL",
-        )
-        .bind(project_id)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query("DELETE FROM autonomy_domains WHERE project_id = ?")
-            .bind(project_id)
-            .execute(&mut *tx)
-            .await?;
-        for domain in &settings.domains {
-            sqlx::query(
-                "INSERT INTO autonomy_domains (id, project_id, name, path_globs, item_types, level)
-                 VALUES (?, ?, ?, ?, ?, ?)",
-            )
-            .bind(uuid::Uuid::new_v4().to_string())
-            .bind(project_id)
-            .bind(&domain.name)
-            .bind(to_json(&domain.path_globs))
-            .bind(to_json(&domain.item_types))
-            .bind(domain.level.to_string())
-            .execute(&mut *tx)
-            .await?;
-        }
-        tx.commit().await?;
-        self.put_project_budgets(project_id, &settings.budgets)
-            .await?;
-        Ok(true)
+        Ok(found)
     }
 
     /// Write the attempt's ledger row, replacing the earlier check. `demoted_at` is never
@@ -235,4 +210,58 @@ impl crate::Repository {
         tx.commit().await?;
         Ok(outcome)
     }
+}
+
+/// The settings write of [`Repository::put_autonomy_settings`], limits included, on a
+/// connection the caller holds inside a transaction it ends.
+pub(crate) async fn put_autonomy_settings_in(
+    conn: &mut SqliteConnection,
+    project_id: &str,
+    settings: &Settings,
+) -> Result<bool, crate::StoreError> {
+    let updated = sqlx::query(
+        "UPDATE projects SET autonomy_level = ?, verify_require = ?, attestation_public_key = ?,
+                verify_loop_max_attempts = ?, merge_on_done = ? WHERE id = ?",
+    )
+    .bind(settings.level.to_string())
+    .bind(to_json(&settings.verify_require))
+    .bind(&settings.attestation_public_key)
+    .bind(settings.verify_loop_max_attempts)
+    .bind(i64::from(settings.merge_on_done))
+    .bind(project_id)
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Ok(false);
+    }
+    // A held merge keeps the key id it was verified with so a tick need not run
+    // the verifier again; any change here may replace the key, so every unmerged
+    // attempt of the project is verified afresh.
+    sqlx::query(
+        "UPDATE tack_merges SET attestation_keyid = NULL WHERE project_id = ? AND merged_at IS NULL",
+    )
+    .bind(project_id)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query("DELETE FROM autonomy_domains WHERE project_id = ?")
+        .bind(project_id)
+        .execute(&mut *conn)
+        .await?;
+    for domain in &settings.domains {
+        sqlx::query(
+            "INSERT INTO autonomy_domains (id, project_id, name, path_globs, item_types, level)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(project_id)
+        .bind(&domain.name)
+        .bind(to_json(&domain.path_globs))
+        .bind(to_json(&domain.item_types))
+        .bind(domain.level.to_string())
+        .execute(&mut *conn)
+        .await?;
+    }
+    put_project_budgets_in(conn, project_id, &settings.budgets).await?;
+    Ok(true)
 }

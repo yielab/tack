@@ -93,24 +93,8 @@ impl crate::Repository {
         project_id: &str,
         budgets: &ProjectBudgets,
     ) -> Result<(), crate::StoreError> {
-        sqlx::query(
-            "INSERT INTO project_budgets (project_id, tokens_per_day, auto_merges_per_day, queue_items_max,
-                                          provisional_tokens_per_run)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(project_id) DO UPDATE SET
-               tokens_per_day = excluded.tokens_per_day,
-               auto_merges_per_day = excluded.auto_merges_per_day,
-               queue_items_max = excluded.queue_items_max,
-               provisional_tokens_per_run = excluded.provisional_tokens_per_run",
-        )
-        .bind(project_id)
-        .bind(budgets.tokens_per_day)
-        .bind(budgets.auto_merges_per_day)
-        .bind(budgets.queue_items_max)
-        .bind(budgets.provisional_tokens_per_run)
-        .execute(self.pool())
-        .await?;
-        Ok(())
+        let mut conn = self.pool().acquire().await?;
+        put_project_budgets_in(&mut conn, project_id, budgets).await
     }
 
     /// A queued run with no limit of its own, in a project with a daily limit, runs with what is
@@ -148,4 +132,30 @@ impl crate::Repository {
         .await?;
         Ok(())
     }
+}
+
+/// The limits write of [`Repository::put_project_budgets`], on the caller's connection.
+pub(crate) async fn put_project_budgets_in(
+    conn: &mut sqlx::SqliteConnection,
+    project_id: &str,
+    budgets: &ProjectBudgets,
+) -> Result<(), crate::StoreError> {
+    sqlx::query(
+        "INSERT INTO project_budgets (project_id, tokens_per_day, auto_merges_per_day, queue_items_max,
+                                      provisional_tokens_per_run)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(project_id) DO UPDATE SET
+           tokens_per_day = excluded.tokens_per_day,
+           auto_merges_per_day = excluded.auto_merges_per_day,
+           queue_items_max = excluded.queue_items_max,
+           provisional_tokens_per_run = excluded.provisional_tokens_per_run",
+    )
+    .bind(project_id)
+    .bind(budgets.tokens_per_day)
+    .bind(budgets.auto_merges_per_day)
+    .bind(budgets.queue_items_max)
+    .bind(budgets.provisional_tokens_per_run)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }

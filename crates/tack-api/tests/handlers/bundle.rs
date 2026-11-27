@@ -271,7 +271,7 @@ async fn a_budget_the_file_names_but_tack_does_not_have_is_refused() {
 
 #[tokio::test]
 async fn a_file_that_cannot_be_written_is_refused_whole() {
-    let app = app().await;
+    let (app, repo) = app_and_repo().await;
     let projects = count(&app, "/api/projects").await;
     let bad_value = MY_SAAS.replacen("Segmento: autónomo", "Segmento: gigante", 1);
     let bad_role = MY_SAAS.replacen(
@@ -292,6 +292,50 @@ async fn a_file_that_cannot_be_written_is_refused_whole() {
         assert!(text.contains(wanted), "{wanted} not in {text}");
     }
     assert_eq!(count(&app, "/api/projects").await, projects);
+
+    // A file the checks pass and the store cannot write: its last section fails, and nothing
+    // of the sections before it is kept, in the project that exists or in the one it would make.
+    let (_, out) = import(&app, "/api/projects/outline", MY_SAAS).await;
+    let pid = out["project"]["id"].as_str().unwrap().to_string();
+    tack_test_support::seed::statement(
+        &repo,
+        "CREATE TRIGGER fail_planted_item BEFORE INSERT ON items WHEN NEW.title = 'Planted' BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+        &[],
+    )
+    .await;
+    let counts = || async {
+        let mut counts = Vec::new();
+        for part in ["roles", "custom-fields", "sprints", "items"] {
+            counts.push(count(&app, &format!("/api/projects/{pid}/{part}")).await);
+        }
+        counts.push(count(&app, "/api/agent-profiles").await);
+        counts.push(count(&app, "/api/projects").await);
+        counts
+    };
+    let before = counts().await;
+    let unwritable = "profiles:\n  - { name: Planted profile }\n\
+        fields:\n  - { name: Planted field, type: text }\n\
+        roles:\n  - { name: Planted role }\n\
+        sprints:\n  - { name: Planted sprint }\n\
+        items:\n  - { title: Planted }\n";
+    let (status, text) = call(
+        &app,
+        Method::POST,
+        &format!("/api/projects/{pid}/outline"),
+        unwritable,
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{text}");
+    assert!(
+        text.contains("The items section could not be written; nothing was changed."),
+        "{text}"
+    );
+    assert_eq!(counts().await, before);
+    let named = format!("project: {{ name: Planted project }}\n{unwritable}");
+    let (status, text) = call(&app, Method::POST, "/api/projects/outline", &named).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{text}");
+    assert!(text.contains("The items section"), "{text}");
+    assert_eq!(counts().await, before);
 }
 
 #[tokio::test]

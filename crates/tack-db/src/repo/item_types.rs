@@ -2,12 +2,12 @@
 //! use a type) are `tack_core::item_types`'s; this asks them inside one transaction with the facts
 //! only the store can read atomically, and writes the catalog that comes back.
 
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 use tack_core::CoreError;
 use tack_core::item_types::{self, CreateItemType, ItemTypeDef, UpdateItemType, check_catalog};
 use uuid::Uuid;
 
-use super::Repository;
+use super::{Parent, Repository, require_row};
 use crate::StoreError;
 use crate::queries::item_types::{in_use_in, of_project_in};
 
@@ -30,26 +30,26 @@ impl From<sqlx::Error> for CatalogError {
 /// Replaces the project's rows with `types`, which the caller checked: the default is cleared
 /// first so the one-default index never sees two.
 pub(crate) async fn write_catalog(
-    tx: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     project_id: Uuid,
     types: &[ItemTypeDef],
 ) -> Result<(), StoreError> {
     let project = project_id.to_string();
     sqlx::query("UPDATE item_types SET default_work = 0 WHERE project_id = ?")
         .bind(&project)
-        .execute(&mut **tx)
+        .execute(&mut *conn)
         .await?;
     let keep: Vec<&str> = types.iter().map(|t| t.key.as_str()).collect();
     let present: Vec<String> =
         sqlx::query_scalar("SELECT key FROM item_types WHERE project_id = ?")
             .bind(&project)
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *conn)
             .await?;
     for key in present.iter().filter(|key| !keep.contains(&key.as_str())) {
         sqlx::query("DELETE FROM item_types WHERE project_id = ? AND key = ?")
             .bind(&project)
             .bind(key)
-            .execute(&mut **tx)
+            .execute(&mut *conn)
             .await?;
     }
     for def in types {
@@ -67,7 +67,7 @@ pub(crate) async fn write_catalog(
         .bind(def.color.as_str())
         .bind(i64::from(def.order))
         .bind(def.default_work)
-        .execute(&mut **tx)
+        .execute(&mut *conn)
         .await?;
     }
     Ok(())
@@ -75,11 +75,11 @@ pub(crate) async fn write_catalog(
 
 /// Gives a new project the catalog of its type (`tack_core::item_types::preset`).
 pub(crate) async fn seed(
-    tx: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     project_id: Uuid,
     types: &[ItemTypeDef],
 ) -> Result<(), StoreError> {
-    write_catalog(tx, project_id, types).await
+    write_catalog(conn, project_id, types).await
 }
 
 impl Repository {
@@ -90,26 +90,8 @@ impl Repository {
         project_id: Uuid,
         types: &[ItemTypeDef],
     ) -> Result<(), CatalogError> {
-        check_catalog(types)?;
-        self.require_project(project_id).await?;
         let mut tx = self.pool().begin().await?;
-        let used = in_use_in(&mut tx, project_id).await?;
-        let before = of_project_in(&mut tx, project_id).await?;
-        for old in &before {
-            let items = used
-                .iter()
-                .find(|(key, _)| *key == old.key)
-                .map_or(0, |(_, n)| *n);
-            let still = types.iter().find(|t| t.key == old.key);
-            if items > 0 && still.is_none_or(|t| t.level != old.level) {
-                return Err(CoreError::TypeInUse {
-                    key: old.key.clone(),
-                    items,
-                }
-                .into());
-            }
-        }
-        write_catalog(&mut tx, project_id, types).await?;
+        set_item_types_in(&mut tx, project_id, types).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -178,4 +160,33 @@ impl Repository {
         tx.commit().await?;
         Ok(after)
     }
+}
+
+/// The catalog write of [`Repository::set_item_types`], on a connection the caller holds inside a
+/// transaction it ends.
+pub(crate) async fn set_item_types_in(
+    conn: &mut SqliteConnection,
+    project_id: Uuid,
+    types: &[ItemTypeDef],
+) -> Result<(), CatalogError> {
+    check_catalog(types)?;
+    require_row(conn, Parent::Project, project_id).await?;
+    let used = in_use_in(conn, project_id).await?;
+    let before = of_project_in(conn, project_id).await?;
+    for old in &before {
+        let items = used
+            .iter()
+            .find(|(key, _)| *key == old.key)
+            .map_or(0, |(_, n)| *n);
+        let still = types.iter().find(|t| t.key == old.key);
+        if items > 0 && still.is_none_or(|t| t.level != old.level) {
+            return Err(CoreError::TypeInUse {
+                key: old.key.clone(),
+                items,
+            }
+            .into());
+        }
+    }
+    write_catalog(conn, project_id, types).await?;
+    Ok(())
 }

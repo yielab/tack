@@ -232,36 +232,10 @@ impl Repository {
         parent_gate: &dyn ParentGate,
     ) -> Result<(Vec<Item>, usize), ItemError> {
         let mut tx = self.pool().begin().await?;
-        let mut created: Vec<Item> = Vec::with_capacity(outline.items.len());
-        for planned in outline.items {
-            let mut input = planned.input;
-            input.parent_id = planned.parent.map(|parent| match parent {
-                PlannedParent::Planned(i) => created[i].id,
-                PlannedParent::Existing(id) => id,
-            });
-            let item = insert_item(
-                &mut tx,
-                project_id,
-                &planned.status,
-                input,
-                source.clone(),
-                parent_gate,
-            )
-            .await?;
-            created.push(item);
-        }
-        for &(blocker, blocked) in &outline.blocks {
-            insert_dependency(
-                &mut tx,
-                created[blocker].id,
-                created[blocked].id,
-                &DependencyType::Blocks,
-                None,
-            )
-            .await?;
-        }
+        let written =
+            create_outline_items_in(&mut tx, project_id, outline, source, parent_gate).await?;
         tx.commit().await?;
-        Ok((created, outline.blocks.len()))
+        Ok(written)
     }
 
     #[instrument(skip(self))]
@@ -422,11 +396,8 @@ impl Repository {
 
     #[instrument(skip(self))]
     pub async fn delete_item(&self, id: Uuid) -> Result<bool, StoreError> {
-        let result = sqlx::query("DELETE FROM items WHERE id = ?")
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        Ok(result.rows_affected() > 0)
+        let mut conn = self.pool().acquire().await?;
+        delete_item_in(&mut conn, id).await
     }
 
     #[instrument(skip(self))]
@@ -671,6 +642,58 @@ fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<Str
     }
 
     (clause, binds)
+}
+
+/// The items and dependencies of [`Repository::create_outline_items`], on a connection inside a
+/// transaction the caller ends.
+pub(crate) async fn create_outline_items_in(
+    conn: &mut SqliteConnection,
+    project_id: Uuid,
+    outline: ResolvedOutline,
+    source: ItemSource,
+    parent_gate: &dyn ParentGate,
+) -> Result<(Vec<Item>, usize), ItemError> {
+    let mut created: Vec<Item> = Vec::with_capacity(outline.items.len());
+    for planned in outline.items {
+        let mut input = planned.input;
+        input.parent_id = planned.parent.map(|parent| match parent {
+            PlannedParent::Planned(i) => created[i].id,
+            PlannedParent::Existing(id) => id,
+        });
+        let item = insert_item(
+            conn,
+            project_id,
+            &planned.status,
+            input,
+            source.clone(),
+            parent_gate,
+        )
+        .await?;
+        created.push(item);
+    }
+    for &(blocker, blocked) in &outline.blocks {
+        insert_dependency(
+            conn,
+            created[blocker].id,
+            created[blocked].id,
+            &DependencyType::Blocks,
+            None,
+        )
+        .await?;
+    }
+    Ok((created, outline.blocks.len()))
+}
+
+/// Whether an item went (see [`Repository::delete_item`]), on the caller's connection.
+pub(crate) async fn delete_item_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+) -> Result<bool, StoreError> {
+    let result = sqlx::query("DELETE FROM items WHERE id = ?")
+        .bind(id.to_string())
+        .execute(&mut *conn)
+        .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// The one `INSERT` every item-creating path shares, on whatever connection

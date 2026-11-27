@@ -1,6 +1,7 @@
 use crate::repo::item_types;
 use crate::{StoreError, decode, queries};
 use chrono::Utc;
+use sqlx::SqliteConnection;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
@@ -20,75 +21,10 @@ impl Repository {
         workspace_id: Uuid,
         input: CreateProject,
     ) -> Result<Project, StoreError> {
-        let id = Uuid::new_v4();
-        let now = Utc::now();
-        let vocabulary = vocabulary_for_type(&input.project_type);
-        let workflow = workflow_for_type(&input.project_type);
-        let vocab_json = decode::to_json(&vocabulary)?;
-        let workflow_json = decode::to_json(&workflow)?;
-        let project_type_str = input.project_type.to_string();
-        let now_str = now.to_rfc3339();
-        let code_origin = input.code_origin.unwrap_or_default();
-        let workspace_mode = input.workspace_mode.unwrap_or_default();
-
         let mut tx = self.pool().begin().await?;
-        sqlx::query(
-            "INSERT INTO projects (id, workspace_id, name, description, project_type, vocabulary, workflow, created_at, updated_at,
-                                   code_origin, repository, default_branch, workspace_mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(id.to_string())
-        .bind(workspace_id.to_string())
-        .bind(&input.name)
-        .bind(&input.description)
-        .bind(&project_type_str)
-        .bind(&vocab_json)
-        .bind(&workflow_json)
-        .bind(&now_str)
-        .bind(&now_str)
-        .bind(code_origin.to_string())
-        .bind(&input.repository)
-        .bind(&input.default_branch)
-        .bind(workspace_mode.to_string())
-        .execute(&mut *tx)
-        .await?;
-        let item_types = preset(&input.project_type);
-        item_types::seed(&mut tx, id, &item_types).await?;
+        let project = create_project_in(&mut tx, workspace_id, input).await?;
         tx.commit().await?;
-
-        debug!(project_id = %id, name = %input.name, "Project created");
-
-        Ok(Project {
-            id,
-            workspace_id,
-            name: input.name,
-            description: input.description,
-            project_type: input.project_type,
-            vocabulary,
-            item_types,
-            workflow,
-            default_model: None,
-            // Left NULL: a fresh project has no project-level token
-            // reference until an operator sets one via `update_project`.
-            github_token_ref: None,
-            created_at: now,
-            updated_at: now,
-            archived: false,
-            code_origin,
-            repository: input.repository,
-            default_branch: input.default_branch,
-            workspace_mode,
-            push_after_run: false,
-            default_harness: None,
-            default_profile_id: None,
-            definition_of_done: None,
-            auto_start_enabled: false,
-            auto_start_status: None,
-            auto_start_max_open: 3,
-            prepare_command: None,
-            auto_start_disabled_reason: None,
-            agents_on_board: Default::default(),
-        })
+        Ok(project)
     }
 
     #[instrument(skip(self))]
@@ -154,150 +90,9 @@ impl Repository {
         id: Uuid,
         input: UpdateProject,
     ) -> Result<Option<Project>, StoreError> {
-        let now = Utc::now().to_rfc3339();
-
-        if let Some(ref name) = input.name {
-            sqlx::query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
-                .bind(name)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-        if let Some(ref desc) = input.description {
-            sqlx::query("UPDATE projects SET description = ?, updated_at = ? WHERE id = ?")
-                .bind(desc)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-        if let Some(ref vocab) = input.vocabulary {
-            let json = decode::to_json(vocab)?;
-            sqlx::query("UPDATE projects SET vocabulary = ?, updated_at = ? WHERE id = ?")
-                .bind(&json)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-        if let Some(ref workflow) = input.workflow {
-            let json = decode::to_json(workflow)?;
-            sqlx::query("UPDATE projects SET workflow = ?, updated_at = ? WHERE id = ?")
-                .bind(&json)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-        if let Some(ref token_ref) = input.github_token_ref {
-            // The empty string is how the client spells "clear" for this
-            // plain (non-double-`Option`) field — stored as SQL NULL, never
-            // as a literal empty string. See `UpdateProject::github_token_ref`'s
-            // doc comment.
-            let value: Option<&str> = if token_ref.is_empty() {
-                None
-            } else {
-                Some(token_ref.as_str())
-            };
-            sqlx::query("UPDATE projects SET github_token_ref = ?, updated_at = ? WHERE id = ?")
-                .bind(value)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-        if let Some(archived) = input.archived {
-            sqlx::query("UPDATE projects SET archived = ?, updated_at = ? WHERE id = ?")
-                .bind(archived as i32)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-
-        if let Some(push_after_run) = input.push_after_run {
-            sqlx::query("UPDATE projects SET push_after_run = ?, updated_at = ? WHERE id = ?")
-                .bind(push_after_run as i32)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
-        if let Some(rung) = input.agents_on_board {
-            sqlx::query(
-                "UPDATE projects SET agents_on_board = ?, agents_create_per_set = ?,
-                        agents_create_per_day = ?, updated_at = ? WHERE id = ?",
-            )
-            .bind(rung.level.as_str())
-            .bind(i64::from(rung.creates_per_change_set))
-            .bind(i64::from(rung.creates_per_day))
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        for (column, value) in [
-            (
-                "auto_start_enabled",
-                input.auto_start_enabled.map(i64::from),
-            ),
-            ("auto_start_max_open", input.auto_start_max_open),
-        ] {
-            if let Some(value) = value {
-                sqlx::query(sqlx::AssertSqlSafe(format!(
-                    "UPDATE projects SET {column} = ?, updated_at = ? WHERE id = ?"
-                )))
-                .bind(value)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-            }
-        }
-        // A new default agent starts without the old one's model.
-        if let Some(ref harness) = input.default_harness {
-            sqlx::query(
-                "UPDATE projects SET default_model = NULL, updated_at = ? \
-                 WHERE id = ? AND default_harness IS NOT ?",
-            )
-            .bind(&now)
-            .bind(id.to_string())
-            .bind(harness.as_deref())
-            .execute(self.pool())
-            .await?;
-        }
-        // Each column name is a literal here, never client input.
-        for (column, value) in [
-            (
-                "code_origin",
-                input.code_origin.map(|v| Some(v.to_string())),
-            ),
-            (
-                "workspace_mode",
-                input.workspace_mode.map(|v| Some(v.to_string())),
-            ),
-            ("repository", input.repository),
-            ("default_branch", input.default_branch),
-            ("default_harness", input.default_harness),
-            ("default_profile_id", input.default_profile_id),
-            ("definition_of_done", input.definition_of_done),
-            ("default_model", input.default_model),
-            ("auto_start_status", input.auto_start_status),
-            ("prepare_command", input.prepare_command),
-        ] {
-            if let Some(value) = value {
-                sqlx::query(sqlx::AssertSqlSafe(format!(
-                    "UPDATE projects SET {column} = ?, updated_at = ? WHERE id = ?"
-                )))
-                .bind(value)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-            }
-        }
-
+        let mut conn = self.pool().acquire().await?;
+        update_project_in(&mut conn, id, input).await?;
+        drop(conn);
         self.get_project(id).await
     }
 
@@ -309,6 +104,235 @@ impl Repository {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+}
+
+/// The project `INSERT` with its type catalog, on a connection the caller holds inside a
+/// transaction it ends.
+pub(crate) async fn create_project_in(
+    conn: &mut SqliteConnection,
+    workspace_id: Uuid,
+    input: CreateProject,
+) -> Result<Project, StoreError> {
+    let id = Uuid::new_v4();
+    let now = Utc::now();
+    let vocabulary = vocabulary_for_type(&input.project_type);
+    let workflow = workflow_for_type(&input.project_type);
+    let vocab_json = decode::to_json(&vocabulary)?;
+    let workflow_json = decode::to_json(&workflow)?;
+    let project_type_str = input.project_type.to_string();
+    let now_str = now.to_rfc3339();
+    let code_origin = input.code_origin.unwrap_or_default();
+    let workspace_mode = input.workspace_mode.unwrap_or_default();
+
+    sqlx::query(
+        "INSERT INTO projects (id, workspace_id, name, description, project_type, vocabulary, workflow, created_at, updated_at,
+                               code_origin, repository, default_branch, workspace_mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(id.to_string())
+    .bind(workspace_id.to_string())
+    .bind(&input.name)
+    .bind(&input.description)
+    .bind(&project_type_str)
+    .bind(&vocab_json)
+    .bind(&workflow_json)
+    .bind(&now_str)
+    .bind(&now_str)
+    .bind(code_origin.to_string())
+    .bind(&input.repository)
+    .bind(&input.default_branch)
+    .bind(workspace_mode.to_string())
+    .execute(&mut *conn)
+    .await?;
+    let item_types = preset(&input.project_type);
+    item_types::seed(conn, id, &item_types).await?;
+
+    debug!(project_id = %id, name = %input.name, "Project created");
+
+    Ok(Project {
+        id,
+        workspace_id,
+        name: input.name,
+        description: input.description,
+        project_type: input.project_type,
+        vocabulary,
+        item_types,
+        workflow,
+        default_model: None,
+        // Left NULL: a fresh project has no project-level token
+        // reference until an operator sets one via `update_project`.
+        github_token_ref: None,
+        created_at: now,
+        updated_at: now,
+        archived: false,
+        code_origin,
+        repository: input.repository,
+        default_branch: input.default_branch,
+        workspace_mode,
+        push_after_run: false,
+        default_harness: None,
+        default_profile_id: None,
+        definition_of_done: None,
+        auto_start_enabled: false,
+        auto_start_status: None,
+        auto_start_max_open: 3,
+        prepare_command: None,
+        auto_start_disabled_reason: None,
+        agents_on_board: Default::default(),
+    })
+}
+
+/// The project `UPDATE`s of [`Repository::update_project`], on the caller's connection; the
+/// caller reads the project back.
+pub(crate) async fn update_project_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+    input: UpdateProject,
+) -> Result<(), StoreError> {
+    let now = Utc::now().to_rfc3339();
+
+    if let Some(ref name) = input.name {
+        sqlx::query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
+            .bind(name)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+    if let Some(ref desc) = input.description {
+        sqlx::query("UPDATE projects SET description = ?, updated_at = ? WHERE id = ?")
+            .bind(desc)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+    if let Some(ref vocab) = input.vocabulary {
+        let json = decode::to_json(vocab)?;
+        sqlx::query("UPDATE projects SET vocabulary = ?, updated_at = ? WHERE id = ?")
+            .bind(&json)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+    if let Some(ref workflow) = input.workflow {
+        let json = decode::to_json(workflow)?;
+        sqlx::query("UPDATE projects SET workflow = ?, updated_at = ? WHERE id = ?")
+            .bind(&json)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+    if let Some(ref token_ref) = input.github_token_ref {
+        // The empty string is how the client spells "clear" for this
+        // plain (non-double-`Option`) field — stored as SQL NULL, never
+        // as a literal empty string. See `UpdateProject::github_token_ref`'s
+        // doc comment.
+        let value: Option<&str> = if token_ref.is_empty() {
+            None
+        } else {
+            Some(token_ref.as_str())
+        };
+        sqlx::query("UPDATE projects SET github_token_ref = ?, updated_at = ? WHERE id = ?")
+            .bind(value)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+    if let Some(archived) = input.archived {
+        sqlx::query("UPDATE projects SET archived = ?, updated_at = ? WHERE id = ?")
+            .bind(archived as i32)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+
+    if let Some(push_after_run) = input.push_after_run {
+        sqlx::query("UPDATE projects SET push_after_run = ?, updated_at = ? WHERE id = ?")
+            .bind(push_after_run as i32)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+    }
+    if let Some(rung) = input.agents_on_board {
+        sqlx::query(
+            "UPDATE projects SET agents_on_board = ?, agents_create_per_set = ?,
+                    agents_create_per_day = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(rung.level.as_str())
+        .bind(i64::from(rung.creates_per_change_set))
+        .bind(i64::from(rung.creates_per_day))
+        .bind(&now)
+        .bind(id.to_string())
+        .execute(&mut *conn)
+        .await?;
+    }
+    for (column, value) in [
+        (
+            "auto_start_enabled",
+            input.auto_start_enabled.map(i64::from),
+        ),
+        ("auto_start_max_open", input.auto_start_max_open),
+    ] {
+        if let Some(value) = value {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE projects SET {column} = ?, updated_at = ? WHERE id = ?"
+            )))
+            .bind(value)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+        }
+    }
+    // A new default agent starts without the old one's model.
+    if let Some(ref harness) = input.default_harness {
+        sqlx::query(
+            "UPDATE projects SET default_model = NULL, updated_at = ? \
+             WHERE id = ? AND default_harness IS NOT ?",
+        )
+        .bind(&now)
+        .bind(id.to_string())
+        .bind(harness.as_deref())
+        .execute(&mut *conn)
+        .await?;
+    }
+    // Each column name is a literal here, never client input.
+    for (column, value) in [
+        (
+            "code_origin",
+            input.code_origin.map(|v| Some(v.to_string())),
+        ),
+        (
+            "workspace_mode",
+            input.workspace_mode.map(|v| Some(v.to_string())),
+        ),
+        ("repository", input.repository),
+        ("default_branch", input.default_branch),
+        ("default_harness", input.default_harness),
+        ("default_profile_id", input.default_profile_id),
+        ("definition_of_done", input.definition_of_done),
+        ("default_model", input.default_model),
+        ("auto_start_status", input.auto_start_status),
+        ("prepare_command", input.prepare_command),
+    ] {
+        if let Some(value) = value {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE projects SET {column} = ?, updated_at = ? WHERE id = ?"
+            )))
+            .bind(value)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *conn)
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 // ─── Row mapping ─────────────────────────────────────────────

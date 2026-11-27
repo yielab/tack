@@ -186,21 +186,31 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn delete_agent_profile(&self, id: &str) -> Result<(), StoreError> {
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let row = sqlx::query("SELECT builtin FROM agent_profiles WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
-        let Some(row) = row else {
-            return Err(StoreError::not_found("agent profile"));
-        };
-        if row.get::<i64, _>("builtin") != 0 {
-            return Err(StoreError::Conflict("builtin_profile".into()));
-        }
-        sqlx::query("DELETE FROM agent_profiles WHERE id = ? AND builtin = 0")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        delete_agent_profile_in(&mut tx, id).await?;
         tx.commit().await?;
         Ok(())
     }
+}
+
+/// The profile delete of [`Repository::delete_agent_profile`], on a connection inside a
+/// transaction the caller opened with `BEGIN IMMEDIATE` and ends.
+pub(crate) async fn delete_agent_profile_in(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+) -> Result<(), StoreError> {
+    let row = sqlx::query("SELECT builtin FROM agent_profiles WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await?;
+    let Some(row) = row else {
+        return Err(StoreError::not_found("agent profile"));
+    };
+    if row.get::<i64, _>("builtin") != 0 {
+        return Err(StoreError::Conflict("builtin_profile".into()));
+    }
+    sqlx::query("DELETE FROM agent_profiles WHERE id = ? AND builtin = 0")
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
 }
