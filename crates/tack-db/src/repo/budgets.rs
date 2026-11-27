@@ -10,6 +10,8 @@ pub struct ProjectBudgets {
     pub tokens_per_day: Option<i64>,
     pub auto_merges_per_day: Option<i64>,
     pub queue_items_max: Option<i64>,
+    /// The most things that may wait for a person before auto-start starts nothing more.
+    pub waiting_max: Option<i64>,
     /// The token limit of a run whose profile sets none; `None` turns it off.
     pub provisional_tokens_per_run: Option<i64>,
 }
@@ -25,6 +27,7 @@ impl Default for ProjectBudgets {
             tokens_per_day: None,
             auto_merges_per_day: None,
             queue_items_max: None,
+            waiting_max: None,
             provisional_tokens_per_run: Some(DEFAULT_PROVISIONAL_TOKENS),
         }
     }
@@ -142,18 +145,20 @@ pub(crate) async fn put_project_budgets_in(
 ) -> Result<(), crate::StoreError> {
     sqlx::query(
         "INSERT INTO project_budgets (project_id, tokens_per_day, auto_merges_per_day, queue_items_max,
-                                      provisional_tokens_per_run)
-         VALUES (?, ?, ?, ?, ?)
+                                      waiting_max, provisional_tokens_per_run)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id) DO UPDATE SET
            tokens_per_day = excluded.tokens_per_day,
            auto_merges_per_day = excluded.auto_merges_per_day,
            queue_items_max = excluded.queue_items_max,
+           waiting_max = excluded.waiting_max,
            provisional_tokens_per_run = excluded.provisional_tokens_per_run",
     )
     .bind(project_id)
     .bind(budgets.tokens_per_day)
     .bind(budgets.auto_merges_per_day)
     .bind(budgets.queue_items_max)
+    .bind(budgets.waiting_max)
     .bind(budgets.provisional_tokens_per_run)
     .execute(&mut *conn)
     .await?;

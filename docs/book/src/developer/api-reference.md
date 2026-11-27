@@ -133,11 +133,12 @@ GET /api/notifications
 |---|---|---|---|---|
 | `state` | path | `NotificationState` | yes | `open` (the default): what still asks something of the person. `all`: everything kept, |
 | `limit` | path | `['integer', 'null']` | yes | How many to return, 50 by default and 500 at most. `0` returns none, for a caller that |
+| `project` | path | `['string', 'null']` | yes | Only this project's notifications; `open` counts only its own too. |
 
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | The notifications, newest first, and how many are open | `NotificationList` |
-| 400 | `state` or `limit` is not what it should be | `ErrorEnvelope` |
+| 400 | `state`, `limit` or `project` is not what it should be | `ErrorEnvelope` |
 
 #### `GET /api/notifications/channels`
 
@@ -204,11 +205,12 @@ GET /api/notifications
 |---|---|---|---|---|
 | `state` | path | `NotificationState` | yes | `open` (the default): what still asks something of the person. `all`: everything kept, |
 | `limit` | path | `['integer', 'null']` | yes | How many to return, 50 by default and 500 at most. `0` returns none, for a caller that |
+| `project` | path | `['string', 'null']` | yes | Only this project's notifications; `open` counts only its own too. |
 
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | The notifications, newest first, and how many are open | `NotificationList` |
-| 400 | `state` or `limit` is not what it should be | `ErrorEnvelope` |
+| 400 | `state`, `limit` or `project` is not what it should be | `ErrorEnvelope` |
 
 #### `GET /api/notifications/channels`
 

@@ -176,6 +176,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("112_drop_rate_card", &MIGRATION_112[..]),
         ordinary("113_default_expiry", &MIGRATION_113[..]),
         ordinary("114_reviewer_verdicts", &MIGRATION_114[..]),
+        ordinary("116_waiting_max", &MIGRATION_116[..]),
     ]
 }
 
@@ -2356,3 +2357,7 @@ const MIGRATION_114: [&str; 2] = [
       WHERE builtin = 1 AND kind = 'reviewer'
         AND instructions = 'Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first.'",
 ];
+
+// 116: a project may limit how many things wait for a person (`project_budgets.waiting_max`), beside the
+// limit on what waits in the queue; null is no limit, and every project starts with none.
+const MIGRATION_116: [&str; 1] = ["ALTER TABLE project_budgets ADD COLUMN waiting_max INTEGER"];

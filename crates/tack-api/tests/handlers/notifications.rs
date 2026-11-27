@@ -125,6 +125,28 @@ async fn listing_follows_a_notification_from_open_to_read_to_settled() {
 }
 
 #[tokio::test]
+async fn a_project_filter_lists_and_counts_only_that_project() {
+    let (app, state, _) = common::test_app_with_state(AppConfig::default(), None).await;
+    let first = common::create_project(&app, "First", "software").await;
+    let second = common::create_project(&app, "Second", "software").await;
+    for (project, id) in [(first, "a"), (second, "b"), (second, "c")] {
+        state
+            .notifications
+            .open(&question(project, id))
+            .await
+            .unwrap();
+    }
+
+    let (_, list) = get(&app, "/api/notifications").await;
+    assert_eq!(titles_and_open(&list), (3, 3));
+    let (_, list) = get(&app, &format!("/api/notifications?project={first}")).await;
+    assert_eq!(titles_and_open(&list), (1, 1));
+    assert_eq!(list["notifications"][0]["key"], "decision:a");
+    let (status, body) = get(&app, "/api/notifications?project=nothing").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
+#[tokio::test]
 async fn limit_cuts_the_list_but_not_the_count() {
     let (app, state, _) = common::test_app_with_state(AppConfig::default(), None).await;
     let project = common::create_project(&app, "Inbox", "software").await;

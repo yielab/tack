@@ -16,7 +16,7 @@ use crate::router::AppState;
 /// Why one task is not started.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WaitingReason {
-    /// `open_request`, `blocked`, `no_profile`, `no_machine`, `budget` or `max_open`.
+    /// `open_request`, `blocked`, `no_profile`, `no_machine`, `budget`, `max_open` or `waiting_max`.
     pub code: String,
     /// The reason in a sentence, with the way out where there is one.
     pub text: String,

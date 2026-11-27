@@ -29,6 +29,10 @@ pub struct Limits {
     pub max_open: usize,
     pub open_now: usize,
     pub budget_reached: bool,
+    /// The most things that may wait for a person; `None` is no limit.
+    pub waiting_max: Option<usize>,
+    /// What waits for a person in the project now.
+    pub waiting_now: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +44,11 @@ pub enum Skip {
     WentOver,
     Budget,
     MaxOpen,
+    /// As many things wait for a person as the project allows.
+    WaitingMax {
+        now: usize,
+        max: usize,
+    },
 }
 
 /// The items to start, most urgent first, and why each of the others is not started.
@@ -54,10 +63,19 @@ pub fn pick(candidates: &[Candidate], limits: &Limits) -> (Vec<Uuid>, Vec<(Uuid,
     let mut ordered: Vec<&Candidate> = candidates.iter().collect();
     ordered.sort_by_key(|c| (rank(&c.priority), c.sort_order));
     let room = limits.max_open.saturating_sub(limits.open_now);
+    let waiting_full = limits
+        .waiting_max
+        .filter(|max| limits.waiting_now >= *max)
+        .map(|max| Skip::WaitingMax {
+            now: limits.waiting_now,
+            max,
+        });
     let (mut picked, mut skipped) = (Vec::new(), Vec::new());
     for c in ordered {
         let skip = if c.has_open_request {
             Some(Skip::OpenRequest)
+        } else if let Some(full) = &waiting_full {
+            Some(full.clone())
         } else if c.unfinished_blockers > 0 {
             Some(Skip::Blocked(c.unfinished_blockers))
         } else if c.profile.is_none() {
@@ -119,6 +137,10 @@ pub fn why(skip: &Skip, facts: &Facts) -> Why {
         ),
         Skip::Budget => ("budget", "This project's token limit is reached".to_owned()),
         Skip::MaxOpen => ("max_open", max_open_text(facts)),
+        Skip::WaitingMax { now, max } => (
+            "waiting_max",
+            format!("{now} of {max} waiting for you: auto-start is paused until one is decided"),
+        ),
     };
     Why { code, text }
 }
@@ -171,6 +193,8 @@ mod tests {
             max_open: 10,
             open_now: 0,
             budget_reached: false,
+            waiting_max: None,
+            waiting_now: 0,
         }
     }
 
@@ -238,6 +262,38 @@ mod tests {
                     (id(5), Skip::Budget),
                 ],
             ),
+            (
+                Limits {
+                    waiting_max: Some(2),
+                    waiting_now: 1,
+                    ..limits()
+                },
+                vec![id(7), id(6), id(8), id(5)],
+                vec![
+                    (id(1), Skip::OpenRequest),
+                    (id(2), Skip::Blocked(2)),
+                    (id(3), Skip::NoProfile),
+                    (id(4), Skip::NoMachine),
+                ],
+            ),
+            (
+                Limits {
+                    waiting_max: Some(2),
+                    waiting_now: 2,
+                    ..limits()
+                },
+                vec![],
+                vec![
+                    (id(1), Skip::OpenRequest),
+                    (id(2), Skip::WaitingMax { now: 2, max: 2 }),
+                    (id(3), Skip::WaitingMax { now: 2, max: 2 }),
+                    (id(4), Skip::WaitingMax { now: 2, max: 2 }),
+                    (id(7), Skip::WaitingMax { now: 2, max: 2 }),
+                    (id(6), Skip::WaitingMax { now: 2, max: 2 }),
+                    (id(8), Skip::WaitingMax { now: 2, max: 2 }),
+                    (id(5), Skip::WaitingMax { now: 2, max: 2 }),
+                ],
+            ),
         ];
         for (limits, picked, skipped) in rows {
             assert_eq!(pick(&all, &limits), (picked, skipped), "{limits:?}");
@@ -290,6 +346,11 @@ mod tests {
                 Skip::MaxOpen,
                 "max_open",
                 "3 runs are already open, the most this project allows",
+            ),
+            (
+                Skip::WaitingMax { now: 4, max: 5 },
+                "waiting_max",
+                "4 of 5 waiting for you: auto-start is paused until one is decided",
             ),
         ];
         for (skip, code, text) in rows {

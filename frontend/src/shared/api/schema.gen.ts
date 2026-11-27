@@ -4238,6 +4238,11 @@ export interface components {
             queue_items_max?: number | null;
             /** Format: int64 */
             tokens_per_day?: number | null;
+            /**
+             * Format: int64
+             * @description The most things that may wait for a person; at the limit auto-start starts nothing.
+             */
+            waiting_max?: number | null;
         };
         BundleAutoStart: {
             /**
@@ -4295,6 +4300,8 @@ export interface components {
             queue_items_max?: number | null;
             /** Format: int64 */
             tokens_per_day?: number | null;
+            /** Format: int64 */
+            waiting_max?: number | null;
         };
         BundleDomain: {
             /** @description Item types the domain covers; empty means all. */
@@ -5677,7 +5684,7 @@ export interface components {
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
          *     fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,
+         *     `finished:<request>`, `review:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`,
          *     `trend:<project>:<cut>:<name>`.
          */
         Key: string;
@@ -5685,7 +5692,7 @@ export interface components {
          * @description What happened that a person is told about.
          * @enum {string}
          */
-        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon" | "children_finished" | "memory" | "quality_trend";
+        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "review" | "due_soon" | "children_finished" | "memory" | "quality_trend";
         /**
          * @description The step of a docket run an attempt is in, read from the text of its latest hop event so a
          *     screen finds the step on the team's list without fetching the events.
@@ -8029,7 +8036,7 @@ export interface components {
         };
         /** @description Why one task is not started. */
         WaitingReason: {
-            /** @description `open_request`, `blocked`, `no_profile`, `no_machine`, `budget` or `max_open`. */
+            /** @description `open_request`, `blocked`, `no_profile`, `no_machine`, `budget`, `max_open` or `waiting_max`. */
             code: string;
             /** @description The reason in a sentence, with the way out where there is one. */
             text: string;
@@ -10684,6 +10691,8 @@ export interface operations {
                  *     wants only `open`.
                  */
                 limit: number | null;
+                /** @description Only this project's notifications; `open` counts only its own too. */
+                project: string | null;
             };
             cookie?: never;
         };
@@ -10698,7 +10707,7 @@ export interface operations {
                     "application/json": components["schemas"]["NotificationList"];
                 };
             };
-            /** @description `state` or `limit` is not what it should be */
+            /** @description `state`, `limit` or `project` is not what it should be */
             400: {
                 headers: {
                     [name: string]: unknown;

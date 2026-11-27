@@ -45,6 +45,8 @@ pub struct BudgetSettings {
     pub tokens_per_day: Option<i64>,
     pub auto_merges_per_day: Option<i64>,
     pub queue_items_max: Option<i64>,
+    /// The most things that may wait for a person; at the limit auto-start starts nothing.
+    pub waiting_max: Option<i64>,
     /// The token limit of a run whose profile sets none; `null` turns it off, and a body that
     /// leaves it out keeps the default.
     #[serde(default = "default_provisional")]
@@ -165,6 +167,7 @@ impl From<Settings> for AutonomySettings {
                 tokens_per_day: s.budgets.tokens_per_day,
                 auto_merges_per_day: s.budgets.auto_merges_per_day,
                 queue_items_max: s.budgets.queue_items_max,
+                waiting_max: s.budgets.waiting_max,
                 provisional_tokens_per_run: s.budgets.provisional_tokens_per_run,
             },
             merge_on_done: s.merge_on_done,
@@ -207,6 +210,7 @@ fn settings_of(input: AutonomySettings) -> ApiResult<Settings> {
         b.tokens_per_day,
         b.auto_merges_per_day,
         b.queue_items_max,
+        b.waiting_max,
         b.provisional_tokens_per_run,
     ]
     .into_iter()
@@ -230,6 +234,7 @@ fn settings_of(input: AutonomySettings) -> ApiResult<Settings> {
             tokens_per_day: b.tokens_per_day,
             auto_merges_per_day: b.auto_merges_per_day,
             queue_items_max: b.queue_items_max,
+            waiting_max: b.waiting_max,
             // Zero is the same as empty: no provisional limit.
             provisional_tokens_per_run: b.provisional_tokens_per_run.filter(|n| *n > 0),
         },

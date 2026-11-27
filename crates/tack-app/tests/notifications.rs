@@ -118,7 +118,7 @@ async fn the_events_of_a_question_open_and_close_its_notification() {
     assert!(!drain(&fx.world.repo, &fx.inbox, &mut receiver).await);
     assert_eq!(
         fx.keys().await,
-        ["decision:dec-1", "finished:req-1"],
+        ["decision:dec-1", "review:req-1"],
         "the repeat opened nothing more"
     );
 
@@ -132,7 +132,14 @@ async fn the_events_of_a_question_open_and_close_its_notification() {
         },
     ));
     drain(&fx.world.repo, &fx.inbox, &mut receiver).await;
-    assert_eq!(fx.keys().await, ["finished:req-1"]);
+    assert_eq!(fx.keys().await, ["review:req-1"]);
+
+    // A person's verdict, or a merge, ends the wait for review.
+    bus.emit(fx.said(Fact::RunReviewed {
+        run: fx.run("req-1"),
+    }));
+    drain(&fx.world.repo, &fx.inbox, &mut receiver).await;
+    assert!(fx.keys().await.is_empty());
 }
 
 #[tokio::test]
@@ -324,6 +331,29 @@ async fn a_failed_run_stays_open_until_a_later_request_follows_it() {
     assert_eq!(fx.keys().await, [format!("run:{failed}")]);
 
     // Run again under a new request id: no event names the old one.
+    let again = enqueue(&fx.world, "again").await;
+    seed::execution_request_created_at(&fx.world.repo, &again, "2026-08-06T11:45:00Z").await;
+    assert_eq!(
+        fx.reconcile().await,
+        Reconciled {
+            opened: 0,
+            closed: 1
+        }
+    );
+    assert!(fx.keys().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_succeeded_run_waits_for_review_until_a_later_request_follows_it() {
+    let fx = fixture().await;
+    let done = enqueue(&fx.world, "done").await;
+    seed::execution_request_state(&fx.world.repo, &done, ExecutionState::Succeeded).await;
+    seed::execution_request_created_at(&fx.world.repo, &done, "2026-08-06T11:00:00Z").await;
+    seed::execution_request_updated_at(&fx.world.repo, &done, "2026-08-06T11:30:00Z").await;
+
+    assert_eq!(fx.reconcile().await.opened, 1);
+    assert_eq!(fx.keys().await, [format!("review:{done}")]);
+
     let again = enqueue(&fx.world, "again").await;
     seed::execution_request_created_at(&fx.world.repo, &again, "2026-08-06T11:45:00Z").await;
     assert_eq!(
