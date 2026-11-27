@@ -29,7 +29,7 @@ test('home / projects page renders', async ({ page }) => {
 const views = [
   { name: 'board', path: 'board' },
   { name: 'list', path: 'list' },
-  { name: 'calendar', path: 'calendar' },
+  { name: 'orchestration', path: 'orchestration' },
   { name: 'timeline', path: 'timeline' },
   { name: 'sprint', path: 'sprint' },
 ];

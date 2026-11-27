@@ -3,6 +3,7 @@ import {
   test,
   expect,
   API,
+  openRuns,
   getOrCreateProject,
   createFreshProject,
   createRunnableProject,
@@ -134,7 +135,7 @@ test('Board: the run dialog stays open while the board takes in other changes', 
   await expect(dialog).toBeHidden();
 });
 
-test('item-detail: submitting a run creates the request and it appears in the Execution tab without navigation', async ({
+test('item-detail: submitting a run creates the request and it appears in the Runs without navigation', async ({
   page,
   request,
   executionToggleLock,
@@ -182,11 +183,10 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   await expect(modal).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`item=${itemId}`));
 
-  const executionTab = drawer.getByRole('tab', { name: 'Execution' });
-  await executionTab.click();
-  // The newest run's state is shown once, in the Work region, not repeated in the Execution panel.
+  await openRuns(drawer);
+  // The newest run's state is shown once, in the Work region, not repeated in the Runs.
   await expect(drawer.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Queued');
-  await expect(drawer.getByRole('tabpanel').getByRole('heading', { name: 'Run 1' })).toBeVisible();
+  await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
   // The real attempts endpoint is wired here, not a typed "not available
   // yet" placeholder — a freshly-created, unclaimed request honestly shows
   // zero attempts.

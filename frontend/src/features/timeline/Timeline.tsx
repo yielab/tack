@@ -1,9 +1,8 @@
 import { For, Show } from 'solid-js';
 import { useParams, useNavigate, useSearchParams } from '@solidjs/router';
-import { Button, EmptyState } from '../../shared/ui';
+import { Button, EmptyState, Card } from '../../shared/ui';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { IconTimeline } from '../../shared/ui/icons';
-import Card from '../../shared/ui/Card';
 import TimelineBars from './TimelineBars';
 import TimelineMonth from './TimelineMonth';
 

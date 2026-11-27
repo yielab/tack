@@ -15,22 +15,14 @@ const ItemDetailDrawer: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const itemId = () => (searchParams.item as string | undefined) || undefined;
 
-  // Defaults to `details`, but a `?tab=execution` alongside `?item=` (the attempt-state
-  // chip on a Board card, or `onCreated` switching this same drawer to
-  // `execution` after a fresh run) opens the run history straight away instead.
+  // A `?tab=execution` alongside `?item=` (the run chip on a Board card, or `onCreated` after a fresh
+  // run) opens the runs straight away; anything else shows the item as it reads.
   //
-  // Tracks `itemId()` only, a one-shot-per-open pattern — NOT
-  // `searchParams.tab` itself, and the param is read `untrack`ed and
-  // immediately cleared once applied. Every
-  // other "open an item" call site across the app (Timeline, Calendar,
-  // List, `Board.tsx`'s own card-body click, `DependenciesTab`) calls
-  // `setSearchParams({ item: id })` with no `tab` key, and `setSearchParams`
-  // merges rather than replaces — so without the clear, a `tab=execution`
-  // left over from one chip click would silently redirect every
-  // subsequently opened item to the run history. The one known gap this
-  // leaves: re-clicking the chip for the item ALREADY open (itemId
-  // unchanged) does not re-apply the tab — a narrower, and much less
-  // surprising, edge case than the leak this avoids.
+  // The param is read `untrack`ed and cleared once applied. Every other "open an item" call site
+  // (Timeline, List, `Board.tsx`'s own card-body click) calls `setSearchParams({ item: id })` with no
+  // `tab` key, and `setSearchParams` merges rather than replaces, so without the clear a `tab=execution`
+  // left over from one chip click would send every item opened after it to its runs. Re-clicking the
+  // chip of the item already open does not re-apply it.
   const [activeTab, setActiveTab] = createSignal(tabFromSearchParam(untrack(() => searchParams.tab)));
   // `?run=` is read and cleared the same way: it names the run the run history opens on.
   const [activeRun, setActiveRun] = createSignal<string | undefined>(undefined);

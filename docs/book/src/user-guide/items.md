@@ -212,7 +212,7 @@ The bell shows how many are open, and so does the browser tab's title ("(2) Boar
 
 While Tack is open, a new item that needs you also appears as a notice on the page. To hear about it when you are in another tab, turn on **Notify me when this tab is hidden** in a project's **Settings → General**; the browser asks once, and the choice stays in that browser. In the desktop app the same switch sends the system's own notification, and the tray icon's tooltip says how many need you.
 
-Once a day Tack also compares how often each profile's and each agent's runs succeeded in the last seven days with the 28 days before. When a drop is clear it opens a notification that needs you and links to the project's **Factory metrics**; it stays one notification until the rate recovers.
+Once a day Tack also compares how often each profile's and each agent's runs succeeded in the last seven days with the 28 days before. When a drop is clear it opens a notification that needs you and links to **Agents' work**, a part of the project's **Overview**; it stays one notification until the rate recovers.
 
 While a run is going, the item reads itself again each time the run changes state, so whatever changed on it
 shows without a reload. It stops once every run has ended.

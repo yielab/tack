@@ -187,7 +187,7 @@ describe('RunWithAgentButton', () => {
     expect(parentClick).not.toHaveBeenCalled();
   });
 
-  it('showStateChip renders the item\'s most recent execution state and clicking it opens the Execution tab, without opening the modal', async () => {
+  it('showStateChip renders the item\'s most recent execution state and clicking it opens the runs, without opening the modal', async () => {
     const c = mount(
       { compact: true, showStateChip: true },
       { executions: [{ request_id: 'req-1', item_id: 'item-1', state: 'queued', cancellation_requested_at: null, created_at: '2026-01-01T00:00:00Z' }] },

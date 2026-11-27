@@ -2,11 +2,10 @@ import { createSignal, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
-import { Button, Field, FieldShell, Select, Modal, Badge } from '../../shared/ui';
+import { Button, Field, FieldShell, Select, Modal, Badge, Card } from '../../shared/ui';
 import { VOCAB_KEYS, resolveLabel } from '../../shared/vocab/vocab';
 import { FiChevronDown, FiChevronRight, FiPlus, FiTrash2 } from 'solid-icons/fi';
 import type { WorkflowStatus, TemplateCustomField, ProjectType, CustomFieldType } from '../../shared/types';
-import Card from '../../shared/ui/Card';
 
 // ── local row shape for the workflow editor ──────────────────────────────────
 interface StatusRow {

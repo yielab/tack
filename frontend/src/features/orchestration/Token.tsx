@@ -25,7 +25,7 @@ export function moveChoices(source: Pick<MoveSource, 'lane' | 'inFlight' | 'stat
 }
 
 /**
- * One task as a token: its type, its title (which opens the task on its Execution tab), the path of
+ * One task as a token: its type, its title (which opens the task at its runs), the path of
  * what it sits under, the run's state, how long the run has been going, and what links it to other work:
  * sent back, waiting on another task, proposals it made or came from. A task that has not started can
  * be dragged to another lane's Up next, or sent with the Move to… menu.
@@ -72,7 +72,7 @@ const Token: Component<{ token: FlowToken; source: MoveSource }> = (props) => {
           data-testid="flow-token-open"
           class="min-w-0 flex-1 text-left text-small font-semibold focus:outline-none focus-visible:ring-2"
           style={{ 'overflow-wrap': 'anywhere', color: 'var(--color-text-primary)', background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
-          title="Open the Execution tab"
+          title="Open the runs"
           onClick={() => ui.open(t().id, t().summary)}
         >
           {t().item.title}

@@ -93,6 +93,17 @@ describe('InboxDrawer', () => {
     expect(hrefs[1]).toBe('/projects/p1/needs-you?open=cs-1');
   });
 
+  it('opens the Agents\' work of the Overview from a notice that quality fell', async () => {
+    mount({
+      open: 1,
+      notifications: [row('q', { kind: 'quality_trend', key: 'trend:p1:profile:Coder', item_id: null, request_id: null, title: 'Quality fell' })],
+    });
+    await flush();
+    openInbox();
+    await flush();
+    expect(rows()[0].querySelector('a')?.getAttribute('href')).toBe('/projects/p1/overview?part=agents');
+  });
+
   it('Read marks one row read; Read all is off, with its reason, when nothing is unread', async () => {
     mount({ open: 1, notifications: [row('a', { level: 'info', kind: 'run_finished', key: 'finished:r' })] });
     await flush();

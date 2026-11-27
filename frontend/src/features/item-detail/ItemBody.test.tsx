@@ -276,7 +276,7 @@ describe('ItemBody', () => {
       expect(buttons).toContain('Add item');
       expect(buttons.filter((b) => b === 'Plan with agent')).toHaveLength(1);
       expect(buttons).not.toContain('Run with agent');
-      // The progress comes before the Now panel.
+      // The progress comes before the next-step panel.
       expect(fold.compareDocumentPosition(container.querySelector('[data-testid="now-panel"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(container.querySelector('[data-testid="now-panel"]')!.textContent).toContain('Nothing has planned this yet.');
       dispose();
@@ -383,7 +383,7 @@ describe('ItemBody', () => {
     shut.dispose();
   });
 
-  it('the Automation line is the Now panel\'s footer, not a property', async () => {
+  it('the Automation line is the next-step panel\'s footer, not a property', async () => {
     const { container, dispose } = await mount('drawer');
     const row = container.querySelector('[data-testid="automation-row"]')!;
     expect(container.querySelector('[data-testid="now-panel"]')!.lastElementChild).toBe(row);
@@ -392,7 +392,7 @@ describe('ItemBody', () => {
     dispose();
   });
 
-  it('who would do the task is said once: by the idle Now panel before a run, by the Automation line (its team) after one', async () => {
+  it('who would do the task is said once: by the idle next-step panel before a run, by the Automation line (its team) after one', async () => {
     autoStart = true;
     try {
       const idle = await mount('drawer');
@@ -421,7 +421,7 @@ describe('ItemBody', () => {
       expect(held.container.querySelector('[data-testid="now-waiting"]')?.textContent).toBe(
         'Waiting to start: 3 runs are already open, the most this project allows',
       );
-      // The idle Now panel says it, so the Automation line under it does not say it twice.
+      // The idle next-step panel says it, so the Automation line under it does not say it twice.
       expect(held.container.querySelector('[data-testid="automation-row"]')!.textContent).not.toContain('Waiting to start');
       held.dispose();
       waitingReason = null;

@@ -88,14 +88,6 @@ export const IconList = stroke(
   <path d="M5 4h9M5 8h9M5 12h9M2 4h.01M2 8h.01M2 12h.01" stroke-linecap="round" />,
 );
 
-export const IconCalendar = stroke(
-  <>
-    <rect x="2.2" y="3" width="11.6" height="11" rx="2" />
-    <path d="M2.2 6.2h11.6M5.5 1.8v2.4M10.5 1.8v2.4" stroke-linecap="round" />
-  </>,
-  { width: 1.8 },
-);
-
 export const IconTimeline = stroke(
   <path d="M2 4h7M5 8h7M3 12h6" stroke-linecap="round" />,
   { width: 1.8 },
@@ -186,15 +178,6 @@ export const IconAgent = stroke(
     <path d="M8.4 10h2.6" stroke-linecap="round" />
   </>,
   { width: 1.4 },
-);
-
-/** Change sets: a list of proposed changes with one ticked. */
-export const IconChangeSet = stroke(
-  <>
-    <path d="M2.5 4.2l1.2 1.2 2-2.3M2.5 10.2l1.2 1.2 2-2.3" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M8.5 4.5h5M8.5 10.5h5" stroke-linecap="round" />
-  </>,
-  { width: 1.5 },
 );
 
 export const IconThread = stroke(

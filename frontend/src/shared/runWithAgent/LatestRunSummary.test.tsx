@@ -108,7 +108,7 @@ describe('LatestRunSummary', () => {
     expect(c.querySelector('[data-testid="latest-run"] [role="status"]')!.textContent).toContain('Ready for review');
   });
 
-  it('while the Execution tab is open the card keeps its state and its links but leaves out Accept and Reject…', async () => {
+  it('while the runs are open the card keeps its state and its links but leaves out Accept and Reject…', async () => {
     const c = mount([RUN], () => {}, [ATTEMPT], [], true);
     for (let i = 0; i < 4; i++) await flush();
     const card = c.querySelector('[data-testid="latest-run"]')!;
@@ -237,7 +237,7 @@ describe('LatestRunSummary', () => {
     expect(plain.textContent).not.toContain('Which chart library');
   });
 
-  it('on the Execution tab the card leaves the question to the attempt', async () => {
+  it('in the runs the card leaves the question to the attempt', async () => {
     const c = mount([{ ...RUN, state: 'running' }], () => {}, [waitingAttempt], [], true, [QUESTION]);
     for (let i = 0; i < 6; i++) await flush();
     expect(c.querySelector('[data-testid="latest-run"] form')).toBeNull();
@@ -377,7 +377,7 @@ describe('LatestRunSummary: questions the agent asked and a folder team', () => 
   });
 });
 
-describe('LatestRunSummary: the Now panel in each state', () => {
+describe('LatestRunSummary: the next-step panel in each state', () => {
   const buttonsOf = (root: Element) => [...root.querySelectorAll<HTMLButtonElement>('button')];
   /** The filled buttons: the panel has at most one. */
   const filled = (root: Element) =>

@@ -12,7 +12,7 @@ always runs and an agent executor that stays off until you turn it on. Everythin
 
 | Works without an agent | Needs an agent on this computer |
 |---|---|
-| Board, list, calendar, timeline and dashboard views | The **Run with agent** button on a task |
+| The Board, Orchestration, List, Timeline, Sprint and Overview views | The **Run with agent** button on a task |
 | Creating, moving, commenting on and searching tasks | An agent such as Claude Code or Codex working on your code |
 | The CLI and `tack mcp` for all of the above | A task that starts by itself ([Automating a Project](automation.md)) |
 | A webhook for what needs you, GitHub sync and backups | |
@@ -374,7 +374,7 @@ screen reader is told when a run changes state.
 
 ### While a run works
 
-The run's **Timeline** (under **What the agent did** on the task's Execution tab) fills as the agent
+The run's **Timeline** (under **What the agent did** in the task's **Runs**) fills as the agent
 works: each call to the model with its tokens, each tool it ran (a shell command is shown as the command),
 and each call it was refused, and each question docket opened, who answered it, whether it expired and whether
 docket's own policy settled it. It refreshes every couple of seconds until the run ends. Only docket reports
@@ -404,7 +404,7 @@ With docket, a question names the call and docket's reason for stopping it. For 
 reason follows when it gave one. **Allow** lets the call run. **Deny** refuses it, tells the agent it was
 refused, and the agent carries on.
 
-A question waits first in the **Now** panel, with its answers open, and on the task's Execution tab, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload.
+A question waits first in the task's **next step**, with its answers open, and in its **Runs**, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload.
 
 A question is a panel that asks one thing in words. Its amber header says **Needs you**, gives the question, and
 says who asks and how long ago. Each question shows its kind, so a tool permission reads differently from a
@@ -435,7 +435,7 @@ you to approve it blind; the timeline says to answer it in docket, where it is s
 
 If you answer a question in docket itself, with its own command, instead of in Tack, the question here closes as **Answered in docket** and the timeline says so; it is not an expiry and it is not marked as your answer. The team goes on, and its next question appears here at once. This needs a docket recent enough to tell Tack when a question was settled; with an older one the question stays open here until the run ends.
 
-<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; the answers sit below, then the decision-token field.">
+<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you in the Runs: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; the answers sit below, then the decision-token field.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
 sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the
@@ -506,5 +506,5 @@ Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf92801
 
 That is a completed run, reached with no browser. `tack execution list` shows every request, newest first,
 and `tack execution cancel <ID>` asks the runner to stop one. For the detail of an attempt, such as which
-model answered and how the run ended, open the task's Execution tab. Every `tack execution`
+model answered and how the run ended, open the task's **Runs**. Every `tack execution`
 option is in the [CLI reference](cli.md#runs).

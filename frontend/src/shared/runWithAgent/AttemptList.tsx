@@ -62,7 +62,7 @@ export interface AttemptListProps {
    *  column. `drawer` (the default): one column, in that same order. */
   layout?: 'drawer' | 'page';
   sideTarget?: HTMLElement;
-  /** The item's Now panel is on screen and shows this very run: what it already says (the state in
+  /** The item's next-step panel is on screen and shows this very run: what it already says (the state in
    *  words, the token meter) is not said again here. */
   nowShown?: boolean;
 }
@@ -527,7 +527,7 @@ const AttemptRow: Component<{
         </Show>
 
         <div data-testid="verdict-actions" class="flex flex-wrap items-center gap-2">
-          {/* The Now panel above already holds this button for the newest run; two for one question compete. */}
+          {/* The next-step panel above already holds this button for the newest run; two for one question compete. */}
           <Show when={personNeeded() && !dupe()}>
             <Button size="sm" variant={primary() === 'answer' ? 'primary' : 'secondary'} onClick={openQuestion}>
               Open the question

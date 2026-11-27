@@ -470,7 +470,7 @@ describe('RunWithAgentModal', () => {
     expect(start.textContent).toBe('Plan with agent');
     expect(start.disabled).toBe(true);
     expect(document.querySelector('[role="dialog"]')!.getAttribute('aria-label')).toBe('Plan with agent');
-    expect(document.querySelector('[data-testid="run-task-title"]')!.textContent).toBe('Fix login bug');
+    expect(document.querySelector('[data-testid="modal-subtitle"]')!.textContent).toBe('Fix login bug');
     profileRadio('Planner').click();
     await flush();
     expect(document.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!.disabled).toBe(false);
@@ -590,7 +590,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.getAttribute('aria-label')).toBe('Run with agent');
-    expect(dialog.querySelector('[data-testid="run-task-title"]')!.textContent).toBe('Fix login bug');
+    expect(dialog.querySelector('[data-testid="modal-subtitle"]')!.textContent).toBe('Fix login bug');
     for (const section of ['What will happen', 'Agent', 'Where', 'Checked by', 'Ask first', 'Network', 'Ask me before each action', 'Let the agent use web tools', 'Options', 'Preview what the agent reads']) {
       expect(dialog.textContent).toContain(section);
     }

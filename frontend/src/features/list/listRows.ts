@@ -56,12 +56,6 @@ export function matchesQuery(item: Item, query: string): boolean {
   return [item.title, item.assignee ?? '', item.status].some((f) => f.toLowerCase().includes(q));
 }
 
-/** Case-insensitive filter across title, assignee, and status. */
-export function filterItems(items: Item[], query: string): Item[] {
-  if (!query.trim()) return items;
-  return items.filter((it) => matchesQuery(it, query));
-}
-
 // ── Hierarchy ─────────────────────────────────────────────────────────────────
 
 export type ItemNode = Item & { children: ItemNode[]; level: number };

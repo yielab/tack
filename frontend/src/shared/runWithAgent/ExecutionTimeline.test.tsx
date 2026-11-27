@@ -224,7 +224,7 @@ describe('ExecutionTimeline', () => {
     expect(since.textContent).toContain('5m ago');
   });
 
-  it('with the Now panel on screen, the latest run leaves out the state, the reason and the limit Now already says, and an older run keeps them', async () => {
+  it('with the next-step panel on screen, the latest run leaves out the state, the reason and the limit the panel already says, and an older run keeps them', async () => {
     const c = mount('item-wait', { nowShown: true });
     await flush();
     await flush();

@@ -325,7 +325,7 @@ describe('AttemptList', () => {
     expect([...plain.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(false);
   });
 
-  it('with the Now panel on screen the run holds no second button for the question; without it, it keeps its own', async () => {
+  it('with the next-step panel on screen the run holds no second button for the question; without it, it keeps its own', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );

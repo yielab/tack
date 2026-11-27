@@ -1,10 +1,9 @@
 import { type Component, type JSX, For, Show } from 'solid-js';
-import { Badge, type BadgeTone } from '../../../shared/ui';
+import { Badge, type BadgeTone, Card } from '../../../shared/ui';
 import { gateFeature, gateFeatureAcrossRunners, NO_DATA_REASON, type FeatureName } from '../../../shared/execution';
 import type { RunnerCapabilities } from '../../../shared/execution';
 import { formatCapacity, formatLabelChips } from './format';
 import { versionText } from '../runnerObservations';
-import Card from '../../../shared/ui/Card';
 
 /**
  * A runner's connection state, as far as this component is ever fed it.

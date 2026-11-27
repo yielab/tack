@@ -17,7 +17,7 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useExecutionStore } from '../../shared/state/executionContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item, ItemTypeDef } from '../../shared/types';
-import { Button, Badge, EmptyState, RunState, createConfirm } from '../../shared/ui';
+import { Button, Badge, EmptyState, RunState, createConfirm, Card } from '../../shared/ui';
 import ItemMenu from '../../shared/ui/ItemMenu';
 import MoveUnderDialog from '../../shared/ui/MoveUnderDialog';
 import ProgressBar from '../../shared/ui/ProgressBar';
@@ -31,7 +31,6 @@ import {
   cardRun, newestRunByItem, passesFilters, type CardRun, type RunFilter,
 } from '../../shared/runWithAgent/cardRun';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiMaximize2, FiMinimize2, FiEdit2 } from 'solid-icons/fi';
-import Card from '../../shared/ui/Card';
 import {
   ACTIONS_REM, COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, emptyColumns, matchesQuery, pruneTree, visibleRows,
   type ColDef, type EditableKey, type ItemNode, type SortDir, type SortKey,

@@ -5,6 +5,7 @@ import {
   createAgentProfile,
   enrollRunner,
   claimOnce,
+  openRuns,
   waitForApp,
 } from './helpers';
 
@@ -96,9 +97,8 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   await runButton.click();
   await expect(modal).toBeHidden();
 
-  const executionTab = drawer.getByRole('tab', { name: 'Execution' });
-  await executionTab.click();
-  // The newest run's state is shown once, in the Work region, not repeated in the Execution panel.
+  await openRuns(drawer);
+  // The newest run's state is shown once, in the Work region, not repeated in the Runs.
   await expect(drawer.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Queued');
 
   // The runner claims it over the real runner-v1 wire — a background HTTP

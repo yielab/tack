@@ -51,7 +51,7 @@ The numbered steps are what happens when a project has auto-start on and a task 
 - A project with auto-start off answers `enabled: false` and an empty list.
 - An agent credential with `read` on the project may call it.
 
-The board card, the Work panel and the Automation line read it through `shared/state/autoStart.ts`, which loads it once per project and again on a board event.
+The board card, the next step and the Automation line read it through `shared/state/autoStart.ts`, which loads it once per project and again on a board event.
 
 ## Which profile a run gets
 
@@ -89,7 +89,7 @@ For a screen of a whole project, `GET /api/executions?project_id=<id>` is the ca
 
 Each row carries facts read from the newest attempt, so a card never opens an attempt or matches a message to read them:
 
-- **`latest_hop`:** the role, the kind (`started` or `finished`), the verdict and the cycle, read from the text of the attempt's latest `agent.hop_started` / `agent.hop_finished` event. It is null when the attempt reported none (every agent but docket, or an attempt not yet at its first hop). The step is matched to the team's list the way the Execution tab matches it (`stepMatch.ts`, case-insensitively by role). The hops of all rows come from one query, and the tokens counted so far are the row's `limit.used`.
+- **`latest_hop`:** the role, the kind (`started` or `finished`), the verdict and the cycle, read from the text of the attempt's latest `agent.hop_started` / `agent.hop_finished` event. It is null when the attempt reported none (every agent but docket, or an attempt not yet at its first hop). The step is matched to the team's list the way the task's Runs match it (`stepMatch.ts`, case-insensitively by role). The hops of all rows come from one query, and the tokens counted so far are the row's `limit.used`.
 - **`never_started`:** true when the attempt failed and the computer refused it (`harness_rejected`), or the team's ceiling did (a message that names `ceiling L<n>`). The one rule is `tack_core::run_outcome::never_started`; `GET /api/executions/{id}/attempts` carries the same flag on each attempt.
 - **`verifier_recommendation`:** `merge`, `review` or `reject`, from the merge-readiness pack of a succeeded attempt. It is null while the attempt has not succeeded or left no readable pack.
 
@@ -466,7 +466,7 @@ A harness that can tell which models it used writes `Usage.additional["by_model"
 
 One SQL adds up everything. `tack_db::repo::metrics::spend_by_model(repo, project, since)` returns one `SpendRow { model, team, tokens_in, cache_read, tokens_out, attempts }` per model and team. An attempt with a `by_model` object counts once per model, with cache reads and writes added to `tokens_in`. Any other attempt counts under `RUN_MODEL_SQL`, the model the agent reported, else the one the run asked for. A run on the agent's default model that reported none has no model.
 
-The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows comes from the same rows.
+The Overview's Agents' work part (`handlers/metrics.rs`) reads it, so every figure it shows comes from the same rows.
 
 ## A task that repeats
 

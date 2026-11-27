@@ -7,7 +7,7 @@ import {
 } from 'solid-js';
 import { useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { Button, LoadError } from '../../shared/ui';
+import { Button, LoadError, Card } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
@@ -18,7 +18,6 @@ import TypeTile from '../../shared/ui/TypeTile';
 import { ancestorsOf, treeRows } from '../../shared/tree';
 import type { Item, Priority } from '../../shared/types';
 import { onActivateKey } from '../../shared/ui/keyActivate';
-import Card from '../../shared/ui/Card';
 
 // ── Drag state ─────────────────────────────────────────────────────────────
 

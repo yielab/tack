@@ -113,7 +113,7 @@ describe('Board ItemCard', () => {
   it('the_state_chip_still_opens_the_execution_tab_under_its_old_name', async () => {
     const c = await mount(makeItem(), undefined, { run: run('running') });
     const chip = c.querySelector('[data-testid="card-work"] button')!;
-    expect(chip.textContent).toContain('open the Execution tab for Fix login bug');
+    expect(chip.textContent).toContain('open the runs of Fix login bug');
   });
 
   it('a_task_the_api_calls_not_ready_says_so_in_amber_text_and_still_offers_the_run', async () => {

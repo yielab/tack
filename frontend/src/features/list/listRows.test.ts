@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortItems, filterItems, matchesQuery, buildTree, pruneTree, visibleRows, editPatch, currentRaw, runRank, emptyColumns, type ItemNode } from './listRows';
+import { sortItems, matchesQuery, buildTree, pruneTree, visibleRows, editPatch, currentRaw, runRank, emptyColumns, type ItemNode } from './listRows';
 import type { CardRun } from '../../shared/runWithAgent/cardRun';
 import type { Item, ItemType, Priority } from '../../shared/types';
 
@@ -93,33 +93,6 @@ describe('matchesQuery', () => {
     expect(items.filter((it) => matchesQuery(it, 'an')).map((it) => it.id)).toEqual(['a']); // Banana
     expect(items.filter((it) => matchesQuery(it, 'kim')).map((it) => it.id)).toEqual(['b']);
     expect(items.filter((it) => matchesQuery(it, 'done')).map((it) => it.id)).toEqual(['a']);
-  });
-});
-
-describe('filterItems', () => {
-  it('returns all items for an empty query', () => {
-    expect(filterItems(items, '   ')).toHaveLength(3);
-  });
-
-  it('matches title case-insensitively', () => {
-    expect(ids(filterItems(items, 'CHERRY'))).toEqual(['c']);
-  });
-
-  it('matches assignee', () => {
-    expect(ids(filterItems(items, 'kim'))).toEqual(['b']);
-  });
-
-  it('matches status', () => {
-    expect(ids(filterItems(items, 'in progress'))).toEqual(['c']);
-  });
-
-  it('returns nothing when no field matches', () => {
-    expect(filterItems(items, 'zzz')).toHaveLength(0);
-  });
-
-  it('tolerates items with no assignee', () => {
-    expect(() => filterItems(items, 'sam')).not.toThrow();
-    expect(ids(filterItems(items, 'sam'))).toEqual(['a']);
   });
 });
 

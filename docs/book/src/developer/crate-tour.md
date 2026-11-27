@@ -287,7 +287,7 @@ Migrations are append-only: never edit a shipped one. For example, `004_items` c
 
 `repo.rs` declares the `Repository` struct, which holds a `SqlitePool`, and each submodule of `repo/` adds an `impl Repository` block with the commands of one aggregate (`items`, `projects`, `sprints`, `roles`, `comments`, `change_sets`, `threads`, `triggers`, `agent_credentials`, `templates/`, …). `repo/execution/` has one file per concern (`enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`). A caller holds one `Repository` and calls `repo.create_item(..)`; each entity's SQL stays in its own file. `canonical.rs` is the one canonical form of a JSON value that snapshots and replay fingerprints are compared in.
 
-`repo/metrics.rs` holds the one SQL that adds up usage: `spend_by_model` returns tokens per model and team, and the Factory page reads it.
+`repo/metrics.rs` holds the one SQL that adds up usage: `spend_by_model` returns tokens per model and team, and the Overview's Agents' work part reads it.
 
 - Methods return `Result<T, StoreError>` (or `Result<T, DependencyError>` for the dependency graph).
 - Queries use `sqlx::query` / `sqlx::query_as` with positional `?` parameters.

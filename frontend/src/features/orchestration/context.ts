@@ -31,7 +31,7 @@ export interface FlowUi {
   /** The task being dragged, if any. */
   dragged: Accessor<MoveSource | null>;
   setDragged: (source: MoveSource | null) => void;
-  /** Opens the task's page on its Execution tab, or on the run's question when it asks one. */
+  /** Opens the task's page at its runs, or on the run's question when it asks one. */
   open: (itemId: string, run?: Pick<ExecutionSummary, 'request_id' | 'state'>) => void;
   /** Asks to send a task to a lane; the person confirms first. */
   requestMove: (source: MoveSource, lane: FlowLane) => void;

@@ -56,7 +56,7 @@ the team has no member for is saved with a warning that stays on the form, and a
 team has the member. A profile that runs a single agent has one way of working, its own loop, and the field is
 there, greyed, saying so. The same names can be written in the [project file](import-export.md).
 
-What the team did with a particular task is on the task's Execution tab: each step, who did it, what it was
+What the team did with a particular task is in the task's **Runs**: each step, who did it, what it was
 given, and how long it took. See [Reviewing a Run](reviewing-runs.md).
 
 ## When does it ask?
@@ -81,7 +81,7 @@ A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens t
 
 ### Questions during a run
 
-When a team asks, the question waits in the **Now** panel and on the task's Execution tab, under **Needs you**.
+When a team asks, the question waits in the task's **next step** and in its **Runs**, under **Needs you**.
 Answer it there, or in docket's own command, and the question closes either way. A team about to do something that
 leaves it, such as sending an email or posting somewhere, shows the whole action before you answer, and Tack
 never asks you to approve one it cannot show. See [Asking before acting](running-agents.md#asking-before-acting).

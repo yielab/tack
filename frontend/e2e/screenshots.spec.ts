@@ -9,7 +9,7 @@ import { API, acceptAndStartAttempt, claimOnceWithLease, heartbeatRunner, setPro
 // Outputs PNG files to docs/screenshots/ at repo root.
 //
 // The agent screens (run dialog, decision inbox, merge-readiness panel,
-// factory metrics) need a runner and attempts. No model is called: a runner
+// Overview's Agents' work) need a runner and attempts. No model is called: a runner
 // is enrolled and its attempts driven through the real runner protocol, as
 // the e2e suite does, so every panel renders from the production router.
 // The pack is the mrp-v1 contract's own `ready.json` fixture.
@@ -349,6 +349,7 @@ test.describe.serial('README screenshots', () => {
   test('dashboard', async ({ page }) => {
     await page.goto(`/projects/${projectId}/overview`);
     await waitForApp(page);
+    await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(OUT_DIR, 'dashboard.png') });
   });
@@ -358,8 +359,8 @@ test.describe.serial('README screenshots', () => {
     await page.goto(`/projects/${projectId}/board?item=${seeded.briefItemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    // No Brief tab any more: the criteria are a checklist under the description,
-    // with the machine checks in the collapsed "For the agent" block.
+    // The criteria are a checklist under the description, with the machine
+    // checks in the collapsed "For the agent" block.
     await expect(drawer.getByRole('heading', { name: 'Done when' })).toBeVisible();
     await drawer.getByRole('heading', { name: 'Done when' }).scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
@@ -372,12 +373,13 @@ test.describe.serial('README screenshots', () => {
     await page.goto(`/projects/${projectId}/board`);
     await waitForApp(page);
     await page.getByRole('button', { name: `Run with agent: ${seeded.briefItemTitle}` }).click();
-    const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+    const dialog = page.getByRole('dialog', { name: 'Run with agent' });
     await expect(dialog).toBeVisible();
-    // The book shows the dialog as it opens: the summary line, "What the
-    // agent will read", the two switches, and Advanced collapsed.
-    await expect(dialog.getByText('What the agent will read')).toBeVisible();
-    await expect(dialog.getByText('Advanced for this run')).toBeVisible();
+    // The book shows the dialog as it opens: the task under the title, the
+    // five rows of "What will happen", and Options collapsed.
+    await expect(dialog.getByTestId('modal-subtitle')).toHaveText(seeded.briefItemTitle);
+    await expect(dialog.getByRole('heading', { name: 'What will happen' })).toBeVisible();
+    await expect(dialog.getByTestId('run-options')).toBeVisible();
     await page.waitForTimeout(400);
     await dialog.screenshot({ path: path.join(OUT_DIR, 'run-with-agent.png') });
   });
@@ -395,10 +397,9 @@ test.describe.serial('README screenshots', () => {
     // Short enough that the drawer can scroll the questions to its top: below the
     // heading there is about 1000px, so a taller frame would keep the Ids block above it.
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.goto(`/projects/${projectId}/board?item=${seeded.decisionItemId}`);
+    await page.goto(`/projects/${projectId}/board?item=${seeded.decisionItemId}&tab=execution`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer.getByText('Recommended', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
     await drawer.getByRole('heading', { name: 'Needs you', level: 4 }).first().evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
@@ -407,10 +408,9 @@ test.describe.serial('README screenshots', () => {
 
   test('merge-readiness', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: DRAWER_HEIGHT });
-    await page.goto(`/projects/${projectId}/board?item=${seeded.mrpItemId}`);
+    await page.goto(`/projects/${projectId}/board?item=${seeded.mrpItemId}&tab=execution`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer.getByText(/^Recommendation:/).first()).toBeVisible({ timeout: 10_000 });
     await drawer.getByRole('region', { name: 'Verdict' }).first().evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
@@ -418,27 +418,30 @@ test.describe.serial('README screenshots', () => {
   });
 
   test('item-page', async ({ page }) => {
-    // The item on a page of its own: the run card and the properties in the side column.
+    // The item on a page of its own: the next step and the task in the main column,
+    // the properties and what it is related to in the side column.
     await page.setViewportSize({ width: 1440, height: 1300 });
     await page.goto(`/projects/${projectId}/items/${seeded.mrpItemId}`);
     await waitForApp(page);
     await expect(page.getByRole('region', { name: 'Properties' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Related' })).toBeVisible();
     await expect(page.getByTestId('latest-run')).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(OUT_DIR, 'item-page.png') });
   });
 
-  test('factory-metrics', async ({ page, request }) => {
+  test('agents-work', async ({ page, request }) => {
     // The pack was opened in the previous capture; record its verdict.
     const review = await request.post(`${API}/executions/${seeded.mrpRequestId}/attempts/1/review`, {
       data: { verdict: 'accepted', reason: 'Every criterion passed; the coverage report matches the diff.' },
     });
     expect(review.ok(), `review: ${review.status()}`).toBeTruthy();
-    await page.goto(`/projects/${projectId}/factory`);
+    await page.goto(`/projects/${projectId}/overview?part=agents`);
     await waitForApp(page);
-    await expect(page.getByRole('heading', { name: /factory metrics/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: "Agents' work" })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('heading', { name: "A person's time" })).toBeVisible();
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(OUT_DIR, 'factory-metrics.png') });
+    await page.screenshot({ path: path.join(OUT_DIR, 'agents-work.png') });
   });
 
   test('settings-vocabulary', async ({ page }) => {

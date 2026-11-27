@@ -80,15 +80,12 @@ test('the drawer expands into the item page, with its breadcrumb, properties and
   await expect(page).toHaveTitle(new RegExp(`^(\\(\\d+\\) )?${title}`));
   await expect(page.getByRole('region', { name: 'Properties' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
-  const tabs = page.getByRole('tablist');
-  for (const name of ['Overview', 'Activity', 'Execution', 'Dependencies', 'Files', 'Fields']) {
-    await expect(tabs.getByRole('tab', { name })).toBeVisible();
-  }
-  await expect(tabs.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  // The task reads on one page: Runs and Activity under the description, Related at the side.
+  await expect(page.getByRole('button', { name: /^Runs/ })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Related' })).toBeVisible();
 
-  // `?tab=details` is the old name of Overview and still opens it.
+  // `?tab=execution` opens the Runs.
   await page.goto(`/projects/${projectId}/items/${itemId}?tab=execution`);
-  await expect(page.getByRole('tablist').getByRole('tab', { name: 'Execution' })).toHaveAttribute('aria-selected', 'true');
-  await page.goto(`/projects/${projectId}/items/${itemId}?tab=details`);
-  await expect(page.getByRole('tablist').getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: /^Runs/ })).toHaveAttribute('aria-expanded', 'true');
 });

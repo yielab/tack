@@ -1,10 +1,9 @@
 import { createResource, For, Show } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { LoadError, Skeleton } from '../../shared/ui';
+import { LoadError, Skeleton, Card } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { JSX } from 'solid-js';
-import Card from '../../shared/ui/Card';
 import QualityFigures from './QualityFigures';
 
 type Ratio = components['schemas']['Ratio'];

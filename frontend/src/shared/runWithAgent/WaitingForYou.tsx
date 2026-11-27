@@ -76,7 +76,7 @@ const headingStyle = {
 
 const Row: Component<{ row: WaitingRow; project: string | undefined; action: string; state: RunStateName; onNavigate: () => void }> = (p) => {
   const location = useLocation();
-  // The run opens on its Execution tab, over whatever page this is.
+  // The run opens at its runs, over whatever page this is.
   const href = () => {
     const query = new URLSearchParams(location.search);
     query.set('item', p.row.itemId);
