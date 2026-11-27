@@ -1,7 +1,7 @@
 # ADR 0033: the screen says what needs you first, and a project shows its teams at work
 
 **Status: ACCEPTED 2026-11-01** (proposed and accepted the same day). Executed by Phase 84
-(`docs/closed-cycles/plans/phase-84.md`). Amended 2026-11-26, accepted the same day: decisions 6 to 16 below. Keeps ADR 0032's rule: nothing on the screen names a harness; a team, its
+(`docs/closed-cycles/plans/phase-84.md`). Amended 2026-11-26, accepted the same day: decisions 6 to 16 below, built 2026-11-27 with Phase 76 (`docs/closed-cycles/plans/phase-76.md`). Keeps ADR 0032's rule: nothing on the screen names a harness; a team, its
 members and its steps are what any agent reported, and what it did not report is shown as not reported.
 
 **The rule behind every decision.** Every control, setting and fact on screen today stays. What changes
@@ -33,7 +33,7 @@ Execution tab at a time.
 them, opens runs one by one to learn where each stands, and cannot see which tasks no team will take
 until auto-start fails to start them.
 
-## Amendment of 2026-11-26: the work surface is cut by what a person must do (accepted)
+## Amendment of 2026-11-26: the work surface is cut by what a person must do (accepted, built)
 
 **Decided:** the project's destinations are cut by the question each one answers, now that what is
 scarce is a person's time to specify, decide and verify, not the hours of writing code. Two
