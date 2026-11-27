@@ -70,6 +70,7 @@ Then start the Tack server (`tack serve`) and the agent can call the tools below
 | `create_item` | write | `project_id`*, `title`*, `description`, `item_type`, `priority`, `parent_id`, `assignee`, `due_date`, `tags`, `reason` | `POST /api/projects/{id}/items` |
 | `create_project` | write | `name`*, `project_type`, `description` | `POST /api/projects` |
 | `create_outline` | write | `items`*, one of `project_id` / `project`*, `fields`, `profiles`, `roles`, `sprints`, `types`, `automation`, `dry_run`, `reason` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
+| `plan_folder` | read | `project_id`*, `files` or `revision`, `prefer` | `POST /api/projects/{id}/folder/plan` |
 | `update_item` | write | `id`*, `title`, `description`, `priority`, `assignee`, `status`, `due_date`, `parent_id`, `who_does_it`, `depends_on`, `reason` | `PATCH /api/items/{id}`; `POST /api/projects/{id}/change-sets` for `who_does_it`, `depends_on` |
 | `move_item` | write | `id`*, `status`*, `reason` | `PATCH /api/items/{id}` |
 | `add_comment` | write | `item_id`*, `content`*, `author`, `reason` | `POST /api/items/{id}/comments` |

@@ -12,6 +12,7 @@ use cmd::board::{
 };
 use cmd::entities::{CommentAction, FieldAction, SprintAction, cmd_role, cmd_template};
 use cmd::entities::{RoleAction, TemplateAction};
+use cmd::folder::FolderAction;
 use cmd::runs::{AgentProfileAction, ExecutionAction, FleetAction, RunnerAction};
 use cmd::runs::{SecretAction, ServiceAction};
 
@@ -337,6 +338,12 @@ enum Commands {
         json: bool,
     },
 
+    /// Keep a project's plan in the repository: status, export, import, history, revert
+    Folder {
+        #[command(subcommand)]
+        action: FolderAction,
+    },
+
     /// Manage project templates
     Template {
         #[command(subcommand)]
@@ -578,6 +585,8 @@ fn main() -> anyhow::Result<()> {
             key,
             json,
         } => cmd::backup::run_restore(&client, path, remote, key, json),
+
+        Commands::Folder { action } => cmd::folder::run_folder(&client, action),
 
         Commands::Template { action } => cmd_template(&client, action),
 
