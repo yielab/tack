@@ -14,7 +14,7 @@ import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
 import ParentPicker from '../../shared/ui/ParentPicker';
 import TypeTile from '../../shared/ui/TypeTile';
 
-/** Choice chip (type / priority / estimate): a pill; the chosen one gets the
+/** Choice chip (type / priority / estimate): the chosen one gets the
  *  accent-soft fill, accent ink and a 2px accent ring. */
 const chipClass = (selected: boolean) =>
   'transition-all focus:outline-none focus-visible:ring-2 ' +
@@ -25,7 +25,7 @@ const chipStyle = (selected: boolean) => ({
   '--tw-ring-color': 'var(--color-primary-600)',
 });
 const sectionLabel = 'block text-xs font-semibold mb-2';
-const pillInputStyle = {
+const fieldStyle = {
   'background-color': 'var(--color-bg-base)',
   'border-color': 'var(--color-border-medium)',
   color: 'var(--color-text-primary)',
@@ -270,7 +270,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                               type="button"
                               onClick={() => setItemType(def.key)}
                               aria-pressed={chosenType() === def.key}
-                              class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(chosenType() === def.key)}`}
+                              class={`px-3 py-1.5 rounded-md text-small font-semibold ${chipClass(chosenType() === def.key)}`}
                               style={chipStyle(chosenType() === def.key)}
                               disabled={loading()}
                             >
@@ -298,7 +298,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                     type="button"
                     onClick={() => setPriority(prio as Priority)}
                     aria-pressed={priority() === prio}
-                    class={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(priority() === prio)}`}
+                    class={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-small font-semibold ${chipClass(priority() === prio)}`}
                     style={chipStyle(priority() === prio)}
                     disabled={loading()}
                   >
@@ -409,7 +409,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   type="button"
                   onClick={() => setEstimate(estimate() === value ? null : value)}
                   aria-pressed={estimate() === value}
-                  class={`w-9 h-9 rounded-full font-mono text-small font-semibold ${chipClass(estimate() === value)}`}
+                  class={`w-9 h-9 rounded-md font-mono text-small font-semibold ${chipClass(estimate() === value)}`}
                   style={chipStyle(estimate() === value)}
                   disabled={loading()}
                 >
@@ -431,7 +431,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             <div class="flex flex-wrap gap-1.5 mb-2">
               <For each={tags()}>
                 {(tag) => (
-                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-full text-micro font-bold">
+                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-sm text-micro font-bold">
                     {tag}
                     <button
                       type="button"
@@ -461,8 +461,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 }
               }}
               placeholder="Add tags (frontend, api...)"
-              class="flex-1 min-h-9 px-3.5 py-1.5 border rounded-full text-sm focus:outline-none focus-visible:ring-2 transition-all"
-              style={pillInputStyle}
+              class="flex-1 min-h-9 px-3.5 py-1.5 border rounded-md text-sm focus:outline-none focus-visible:ring-2 transition-all"
+              style={fieldStyle}
               disabled={loading()}
             />
             <Button

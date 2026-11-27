@@ -1,4 +1,4 @@
-import { createMemo, createUniqueId, For, Show, createSignal, createEffect, onMount, onCleanup, type Component, type JSX } from 'solid-js';
+import { createMemo, createResource, createUniqueId, For, Show, createSignal, createEffect, onMount, onCleanup, type Component, type JSX } from 'solid-js';
 import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import AutomationBadge from '../../shared/ui/AutomationBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
@@ -20,7 +20,7 @@ import { ancestorsOf } from '../../shared/tree';
 import { useAutoStart, type WaitingReason } from '../../shared/state/autoStart';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
 import { statusDotColor } from '../../shared/ui/statusDot';
-import { Avatar, AvatarStack, teamInitials, Badge, RunState, TypeTile, PriorityDot, WipChip, Skeleton } from '../../shared/ui';
+import { Avatar, AvatarStack, teamInitials, Badge, Button, RunState, TypeTile, PriorityDot, WipChip, Skeleton } from '../../shared/ui';
 import { priorityLabel } from '../../shared/ui/PriorityDot';
 import GroupHeader from '../../shared/ui/GroupHeader';
 import ItemPath from '../../shared/ui/ItemPath';
@@ -32,6 +32,7 @@ import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import { ForById } from '../../shared/ui/ForById';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
+import { NotReadyLine, RiskChip, notReadyOf } from './briefSummary';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
   cardRun, countRuns, getAlwaysPriority, orderByWork, passesFilters, showsPriority,
@@ -102,6 +103,9 @@ export const ItemCard: Component<{
     setSearchParams({ item: props.item.id, tab: 'execution', run: props.run?.asking ? props.run.requestId : undefined });
   };
 
+  const runnable = () => !props.run?.live && props.run?.state !== 'review';
+  const showFooter = () => estimate() || props.item.assignee || runnable();
+
   return (
     <div
       draggable={true}
@@ -115,17 +119,16 @@ export const ItemCard: Component<{
       onMouseLeave={() => setIsHovered(false)}
       style={{
         position: 'relative',
-        background: 'var(--color-bg-app)',
-        border: raised() ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+        background: 'var(--color-bg-base)',
+        border: raised() ? '1px solid var(--color-accent-line)' : '1px solid var(--color-border-light)',
         'border-radius': 'var(--radius-lg)',
-        padding: '12px 13px',
+        padding: '14px 16px',
         display: 'flex',
         'flex-direction': 'column',
-        gap: '7px',
+        gap: '8px',
         cursor: 'pointer',
         'box-shadow': raised() ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-        transform: raised() ? 'translateY(-1px)' : 'none',
-        transition: 'border-color .12s, box-shadow .12s, transform .12s, opacity .12s',
+        transition: 'border-color .12s, box-shadow .12s, opacity .12s',
         opacity: isDragging() ? 0.4 : 1,
       }}
     >
@@ -145,11 +148,9 @@ export const ItemCard: Component<{
       <Show when={props.byId}>
         {(byId) => <ItemPath item={props.item} byId={byId()} projectId={props.item.project_id} />}
       </Show>
-      <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '7px' }}>
-        <h4 style={{
-          flex: 1, 'min-width': 0,
-          'font-family': 'var(--font-body)', 'font-size': '0.9375rem', 'font-weight': 700, 'font-synthesis': 'auto',
-          'letter-spacing': 'normal', margin: 0, 'line-height': 1.3, 'text-wrap': 'pretty', color: 'var(--color-text-primary)',
+      <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '8px' }}>
+        <h4 class="text-lead" style={{
+          flex: 1, 'min-width': 0, margin: 0, 'text-wrap': 'pretty', color: 'var(--color-text-primary)',
         }}>
           {/* The keyboard's way in: Enter or Space clicks this button, and the
               click bubbles to the card's own handler. A real button rather than
@@ -158,21 +159,20 @@ export const ItemCard: Component<{
             type="button"
             style={{
               background: 'none', border: 0, padding: 0, margin: 0, font: 'inherit', color: 'inherit',
-              'text-align': 'left', cursor: 'pointer', 'border-radius': '6px', 'overflow-wrap': 'anywhere',
+              'text-align': 'left', cursor: 'pointer', 'border-radius': 'var(--radius-md)', 'overflow-wrap': 'anywhere',
             }}
           >
             {props.item.title}
           </button>
         </h4>
-        <div style={{ display: 'flex', 'align-items': 'center', gap: '5px', 'flex-shrink': 0 }}>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'flex-shrink': 0 }}>
           <MoveMenu
             statuses={props.statuses.filter((status) => status !== props.item.status)}
             onMove={(status) => props.onMove(props.item.id, status)}
             itemRef={shortId(props.item.id)}
             onMoveUnder={props.onMoveUnder ? () => props.onMoveUnder!(props.item) : undefined}
           />
-          {/* The action follows the state: a run waiting for review is reviewed, not started again;
-              a live run has its own link in the meta line. */}
+          {/* A run waiting for review is reviewed, not started again. */}
           <Show when={props.run?.state === 'review'}>
             <button
               type="button"
@@ -182,7 +182,7 @@ export const ItemCard: Component<{
               onClick={openExecutionTab}
               class="focus:outline-none focus-visible:ring-2"
               style={{
-                width: '24px', height: '24px', 'border-radius': '50%', border: 'none', padding: 0, 'flex-shrink': 0,
+                width: '24px', height: '24px', 'border-radius': 'var(--radius-md)', border: 'none', padding: 0, 'flex-shrink': 0,
                 display: 'grid', 'place-items': 'center', cursor: 'pointer',
                 background: 'var(--run-review-soft)', color: 'var(--run-review-ink)',
               }}
@@ -190,49 +190,47 @@ export const ItemCard: Component<{
               <RunState state="review" size="dot" />
             </button>
           </Show>
-          <Show when={!props.run?.live && props.run?.state !== 'review'}>
-            <RunWithAgentButton
-              itemId={props.item.id}
-              itemTitle={props.item.title}
-              projectId={props.item.project_id}
-              compact
-              testId="card-run"
-            />
-          </Show>
         </div>
       </div>
-      <Show when={props.waiting}>
-        {(why) => (
-          <p
-            data-testid="card-waiting"
-            title={`Waiting to start: ${why().text}`}
-            style={{
-              margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)',
-              'overflow-wrap': 'anywhere',
-            }}
-          >
-            Waiting to start: {why().text}
-          </p>
-        )}
+      {/* The work line: what the agent's run is doing, why the task has not started, and whether it can be verified. */}
+      <Show when={props.run || props.waiting || notReadyOf(props.item)}>
+        <div data-testid="card-work" style={{ display: 'flex', 'flex-direction': 'column', 'align-items': 'flex-start', gap: '6px' }}>
+          <Show when={props.run}>
+            {(run) => (
+              <button
+                type="button"
+                title={run().asking ? 'Open the question' : 'Open the Execution tab'}
+                onClick={openExecutionTab}
+                class="rounded-md focus:outline-none focus-visible:ring-2"
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+              >
+                <RunState state={run().state} docket={run().docket} note={run().note} />
+                <span class="sr-only">{` — open the Execution tab for ${props.item.title}`}</span>
+              </button>
+            )}
+          </Show>
+          <Show when={props.waiting}>
+            {(why) => (
+              <p
+                data-testid="card-waiting"
+                title={`Waiting to start: ${why().text}`}
+                class="m-0 text-small"
+                style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
+              >
+                Waiting to start: {why().text}
+              </p>
+            )}
+          </Show>
+          <Show when={notReadyOf(props.item)}>
+            {(reason) => <NotReadyLine reason={reason()} />}
+          </Show>
+        </div>
       </Show>
       <div
         data-testid="card-meta"
-        style={{ display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '6px 8px', 'font-size': '0.75rem' }}
+        class="text-small"
+        style={{ display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '6px 10px', color: 'var(--color-text-secondary)' }}
       >
-        <Show when={props.run}>
-          {(run) => (
-            <button
-              type="button"
-              title={run().asking ? 'Open the question' : 'Open the Execution tab'}
-              onClick={openExecutionTab}
-              class="rounded-pill focus:outline-none focus-visible:ring-2"
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-            >
-              <RunState state={run().state} docket={run().docket} note={run().note} />
-              <span class="sr-only">{` — open the Execution tab for ${props.item.title}`}</span>
-            </button>
-          )}
-        </Show>
         <Show when={props.item.team}>
           {(team) => (
             <span
@@ -249,25 +247,36 @@ export const ItemCard: Component<{
           <PriorityDot priority={props.item.priority as Priority} showLabel />
         </Show>
         <TypeTile type={props.item.item_type} />
+        <RiskChip item={props.item} />
+        <Show when={props.item.recurrence}>
+          <Badge>Repeats</Badge>
+        </Show>
       </div>
-      <Show when={props.item.recurrence}>
-        <div><Badge>Repeats</Badge></div>
-      </Show>
       <MergeNoteBadge note={props.item.merge_note} />
       <AutomationBadge startedBy={props.item.started_by} mergedBy={props.item.merged_by} />
-      <Show when={estimate() || props.item.assignee}>
-        <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '0.75rem' }}>
-          <div style={{ flex: 1 }} />
+      <Show when={showFooter()}>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
           <Show when={estimate()}>
-            <span style={{
-              'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', 'font-weight': 500, color: 'var(--color-text-secondary)',
-              background: 'var(--color-bg-panel)', padding: '2px 7px', 'border-radius': 'var(--radius-pill)',
+            <span class="text-caption" style={{
+              'font-family': 'var(--font-mono)', 'font-weight': 500, color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-subtle)', padding: '2px 8px', 'border-radius': 'var(--radius-sm)',
             }}>
               {estimate()}
             </span>
           </Show>
           <Show when={props.item.assignee}>
             <Avatar name={props.item.assignee!} size="sm" />
+          </Show>
+          <div style={{ flex: 1 }} />
+          {/* The one solid control of a card that can run; a live run has its own link in the work line. */}
+          <Show when={runnable()}>
+            <RunWithAgentButton
+              itemId={props.item.id}
+              itemTitle={props.item.title}
+              projectId={props.item.project_id}
+              label="Run"
+              testId="card-run"
+            />
           </Show>
         </div>
       </Show>
@@ -314,37 +323,29 @@ const ColumnHead: Component<{
   <>
     <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
       <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
-      <h3 id={props.headingId} title={props.column.status} style={{
+      <h3 id={props.headingId} title={props.column.status} class="text-lead" style={{
         'min-width': 0, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap',
-        'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
-        'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
+        margin: 0, color: 'var(--color-text-primary)',
       }}>
         {props.column.status}
       </h3>
-      <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
+      <span class="text-small" style={{ 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-secondary)' }}>
         {props.shown === props.column.items.length ? props.column.items.length : `${props.shown} of ${props.column.items.length}`}
       </span>
       <Show when={props.column.wip_limit != null}>
         <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
       </Show>
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
+        class="ml-auto flex-none"
         onClick={() => props.onAddItem(props.column.status)}
         title="Add item"
         aria-label={`Add item to ${props.column.status}`}
-        class="focus:outline-none focus-visible:ring-2"
-        style={{
-          'margin-left': 'auto', 'min-width': '24px', 'min-height': '24px', 'border-radius': 'var(--radius-pill)', border: 'none',
-          background: 'var(--color-bg-app)', cursor: 'pointer', color: 'var(--color-text-secondary)',
-          display: 'inline-flex', 'align-items': 'center', gap: '4px', padding: '0 9px 0 7px', 'flex-shrink': 0,
-          'font-size': '0.75rem', 'font-weight': 600, 'white-space': 'nowrap',
-          transition: 'color .12s, box-shadow .12s',
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary-600)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.boxShadow = 'none'; }}
       >
         <IconPlus size={13} />
         Add item
-      </button>
+      </Button>
     </div>
     {/* The runs of the column sit under its name as a thin line, so the name keeps its width. */}
     <div style={{ padding: '0 8px 2px' }}>
@@ -563,15 +564,14 @@ const BoardLoadingSkeleton: Component = () => {
 /** The label over a lane that is not a group: "No parent", a priority, an assignee. */
 const LaneLabel: Component<{ label: string; count: number; refusal?: string | null }> = (props) => (
   <div style={{ padding: '4px 12px' }}>
-    <h2 style={{
-      margin: 0, display: 'flex', 'align-items': 'baseline', gap: '8px', 'font-family': 'var(--font-body)',
-      'font-size': '0.9375rem', 'font-weight': 700, color: 'var(--color-text-primary)',
+    <h2 class="text-lead" style={{
+      margin: 0, display: 'flex', 'align-items': 'baseline', gap: '8px', color: 'var(--color-text-primary)',
     }}>
       {props.label}
-      <span style={{ 'font-size': '0.75rem', 'font-weight': 500, color: 'var(--color-text-tertiary)' }}>{props.count}</span>
+      <span class="text-small" style={{ 'font-weight': 500, color: 'var(--color-text-secondary)' }}>{props.count}</span>
     </h2>
     <Show when={props.refusal}>
-      {(why) => <p role="alert" data-testid="group-refusal" style={{ margin: '4px 0 0', 'font-size': '0.75rem', 'font-weight': 600, color: 'var(--color-danger-600)' }}>{why()}</p>}
+      {(why) => <p role="alert" data-testid="group-refusal" class="text-small" style={{ margin: '4px 0 0', 'font-weight': 600, color: 'var(--color-danger-600)' }}>{why()}</p>}
     </Show>
   </div>
 );
@@ -633,6 +633,9 @@ const Board: Component = () => {
   const runOf = (item: Item): CardRun | undefined => cardRun(newestRuns().get(item.id), item.needs_review === true);
   const autoStart = useAutoStart(projectId);
   const waitingOf = (item: Item): WaitingReason | null => autoStart.waiting(item.id);
+  // The project's limit on what waits for a person; a project whose settings cannot be read has none to show.
+  const [autonomy] = createResource(projectId, (id) => (id ? api.autonomy.get(id).catch(() => null) : null));
+  const waitingMax = (): number | null => (autonomy()?.budgets as { waiting_max?: number | null } | undefined)?.waiting_max ?? null;
 
   const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
   const toggleRunFilter = (filter: RunFilter) =>
@@ -736,6 +739,8 @@ const Board: Component = () => {
   const assignees = createMemo(() => [...new Set(work().map((item) => item.assignee).filter((name): name is string => !!name))]);
   const itemCount = () => work().length;
   const boardRunCounts = createMemo(() => countRuns(work().map(runOf)));
+  // Auto-start stops at the waiting limit and says so on each task it holds back: the row shows that sentence once.
+  const pausedReason = (): string | null => work().map(waitingOf).find((why) => why?.code === 'waiting_max')?.text ?? null;
   const shown = (columnItems: Item[]) => orderedShown(runOf, runFilters)(columnItems);
 
   // Real-time board updates via the reconnecting socket.
@@ -866,7 +871,7 @@ const Board: Component = () => {
   createEffect(() => {
     if (lanesChoice() === 'none' || typeof ResizeObserver === 'undefined' || !lanesScroller) return;
     const el = lanesScroller;
-    const measure = () => setViewWidth(Math.max(0, el.clientWidth - 44));
+    const measure = () => setViewWidth(Math.max(0, el.clientWidth - 48));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -930,15 +935,15 @@ const Board: Component = () => {
   return (
     <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, 'min-height': 0 }}>
       {/* board toolbar */}
-      <div style={{ 'flex-shrink': 0, padding: '16px 22px 10px', display: 'flex', 'align-items': 'center', gap: '12px', 'flex-wrap': 'wrap' }}>
-        <h1 style={{ 'font-size': '2.125rem', 'line-height': 1.1, margin: 0, color: 'var(--color-text-primary)' }}>
+      <div style={{ 'flex-shrink': 0, padding: '24px 24px 16px', display: 'flex', 'align-items': 'center', gap: '12px', 'flex-wrap': 'wrap' }}>
+        <h1 class="text-title" style={{ margin: 0, color: 'var(--color-text-primary)' }}>
           {vocab.t('board')}
         </h1>
         <Show when={sock()}>
-          <span style={{
-            display: 'inline-flex', 'align-items': 'center', gap: '6px', 'font-size': '0.75rem', 'font-weight': 600,
+          <span class="text-small" style={{
+            display: 'inline-flex', 'align-items': 'center', gap: '6px', 'font-weight': 600,
             color: livePill().fg, background: livePill().bg,
-            padding: '3px 10px', 'border-radius': 'var(--radius-pill)', 'white-space': 'nowrap',
+            padding: '3px 10px', 'border-radius': 'var(--radius-sm)', 'white-space': 'nowrap',
           }}>
             <span style={{
               width: '7px', height: '7px', 'border-radius': '50%', background: livePill().dot,
@@ -948,14 +953,14 @@ const Board: Component = () => {
             {liveLabel()}
           </span>
         </Show>
-        <span style={{ display: 'inline-flex', gap: '4px', 'font-size': '0.8125rem', color: 'var(--color-text-secondary)' }}>
+        <span class="text-small" style={{ display: 'inline-flex', gap: '4px', color: 'var(--color-text-secondary)' }}>
           <span style={{ color: 'var(--color-text-tertiary)' }}>·</span>
           <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>
         <div style={{ flex: 1 }} />
         {/* Only a project with a group has lanes to choose. */}
         <Show when={hasGroups()}>
-          <label style={{ display: 'inline-flex', 'align-items': 'center', gap: '8px', 'font-size': '0.8125rem', color: 'var(--color-text-secondary)' }}>
+          <label class="text-small" style={{ display: 'inline-flex', 'align-items': 'center', gap: '8px', color: 'var(--color-text-secondary)' }}>
             Lanes
             <select
               data-testid="board-lanes"
@@ -963,7 +968,7 @@ const Board: Component = () => {
               onChange={(e) => chooseLanes(e.currentTarget.value as BoardLanes)}
               class="focus:outline-none focus-visible:ring-2"
               style={{
-                'min-height': '32px', padding: '0 12px', 'border-radius': 'var(--radius-pill)', 'font-size': '0.8125rem',
+                'min-height': '32px', padding: '0 12px', 'border-radius': 'var(--radius-md)', 'font-size': '0.8125rem',
                 border: '1px solid var(--color-border-medium)', 'background-color': 'var(--color-bg-base)', color: 'var(--color-text-primary)',
                 '--tw-ring-color': 'var(--color-focus-ring)',
               }}
@@ -983,17 +988,23 @@ const Board: Component = () => {
         </Show>
       </div>
 
-      <AgentStrip counts={boardRunCounts()} active={runFilters()} onToggle={toggleRunFilter} />
+      <AgentStrip
+        counts={boardRunCounts()}
+        active={runFilters()}
+        onToggle={toggleRunFilter}
+        waitingMax={waitingMax()}
+        pausedReason={pausedReason()}
+      />
 
       <FirstRunBanner hasItems={itemCount() > 0 || hasGroups()} />
 
-      <Show when={!loading()} fallback={<div style={{ padding: '6px 22px 22px', 'overflow-x': 'auto' }}><BoardLoadingSkeleton /></div>}>
+      <Show when={!loading()} fallback={<div style={{ padding: '6px 24px 24px', 'overflow-x': 'auto' }}><BoardLoadingSkeleton /></div>}>
         <Show
           when={projectId()}
           fallback={<div style={{ 'text-align': 'center', padding: '48px', color: 'var(--color-text-secondary)' }}>Please select a project from the Projects page</div>}
         >
           <Show when={columns().length > 0 && !hasGroups() && work().length === 0}>
-            <div style={{ padding: '10px 22px 0' }}>
+            <div style={{ padding: '10px 24px 0' }}>
               <EmptyProjectGuide onAddItem={() => handleAddItem(columns()[0].status)} />
             </div>
           </Show>
@@ -1010,7 +1021,7 @@ const Board: Component = () => {
                 tabindex={0}
                 style={{
                   flex: 1, 'min-height': 0, display: 'flex', gap: '14px', 'align-items': 'flex-start',
-                  'overflow-x': 'auto', 'overflow-y': 'hidden', 'scrollbar-gutter': 'stable', padding: '6px 22px 22px',
+                  'overflow-x': 'auto', 'overflow-y': 'hidden', 'scrollbar-gutter': 'stable', padding: '6px 24px 24px',
                 }}
               >
                 <ForById each={columns()}>
@@ -1037,7 +1048,7 @@ const Board: Component = () => {
               role="group"
               aria-label="Board lanes"
               tabindex={0}
-              style={{ flex: 1, 'min-height': 0, 'overflow': 'auto', 'scrollbar-gutter': 'stable', padding: '0 22px 22px' }}
+              style={{ flex: 1, 'min-height': 0, 'overflow': 'auto', 'scrollbar-gutter': 'stable', padding: '0 24px 24px' }}
             >
               <div style={{ 'min-width': 'max-content', display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
                 <div

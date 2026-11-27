@@ -82,7 +82,7 @@ describe('Board ItemCard', () => {
 
   it('a_card_shows_ready_for_review_when_its_run_left_something_to_review', async () => {
     const flagged = await mount(makeItem({ needs_review: true }), undefined, { run: cardRun(undefined, true) });
-    expect(flagged.querySelector('[data-testid="card-meta"]')?.textContent).toContain('Ready for review');
+    expect(flagged.querySelector('[data-testid="card-work"]')?.textContent).toContain('Ready for review');
     const plain = await mount(makeItem({ needs_review: false }), undefined, { run: cardRun(undefined, false) });
     expect(plain.textContent).not.toContain('Ready for review');
   });
@@ -94,24 +94,49 @@ describe('Board ItemCard', () => {
     expect(plain.textContent).not.toContain('Repeats');
   });
 
-  it('the_title_comes_first_and_the_meta_line_reads_state_team_priority_type', async () => {
-    const c = await mount(makeItem({ priority: 'high', team: 'saas-code' }), undefined, { run: run('running') });
+  it('the_title_comes_first_then_the_work_line_then_the_meta_line_team_priority_type_and_the_run_button_last', async () => {
+    const c = await mount(makeItem({ priority: 'high', team: 'saas-code' }), undefined, { run: run('failed') });
     const card = c.querySelector('[data-item-id]')!;
-    expect(card.firstElementChild?.nextElementSibling).toBe(c.querySelector('[data-testid="card-meta"]'));
+    const parts = [...card.children].map((el) => el.getAttribute('data-testid') ?? el.tagName.toLowerCase());
+    expect(parts.filter((part) => part !== 'card-rail')).toEqual(['div', 'card-work', 'card-meta', 'div']);
     expect(card.querySelector('h4')?.textContent).toBe('Fix login bug');
+    expect(c.querySelector('[data-testid="card-work"]')?.textContent).toContain('Failed');
     const meta = c.querySelector('[data-testid="card-meta"]')!;
     const order = [...meta.children].map((el) => el.textContent ?? '');
-    expect(order[0]).toContain('Running');
-    expect(order[1]).toContain('saas-code');
-    expect(order[2]).toContain('High');
-    expect(order[3]).toContain('Task');
+    expect(order[0]).toContain('saas-code');
+    expect(order[1]).toContain('High');
+    expect(order[2]).toContain('Task');
     expect(c.querySelector('[data-testid="badge-team"]')?.getAttribute('title')).toBe('Team: saas-code');
+    expect(card.lastElementChild?.querySelector('[data-testid="card-run"]')).toBeTruthy();
   });
 
   it('the_state_chip_still_opens_the_execution_tab_under_its_old_name', async () => {
     const c = await mount(makeItem(), undefined, { run: run('running') });
-    const chip = c.querySelector('[data-testid="card-meta"] button')!;
+    const chip = c.querySelector('[data-testid="card-work"] button')!;
     expect(chip.textContent).toContain('open the Execution tab for Fix login bug');
+  });
+
+  it('a_task_the_api_calls_not_ready_says_so_in_amber_text_and_still_offers_the_run', async () => {
+    const c = await mount(makeItem({ brief_summary: { done_when: false, checks: 0, risk: null, not_ready: 'no Done when' } } as Partial<Item>));
+    const line = c.querySelector<HTMLElement>('[data-testid="card-work"] [data-testid="not-ready"]')!;
+    expect(line.textContent).toBe('Not ready: no Done when');
+    expect(line.style.color).toContain('--color-warning-700');
+    expect(line.style.background).toBe('');
+    expect(c.querySelector('[data-testid="card-run"]')).toBeTruthy();
+    const ready = await mount(makeItem({ brief_summary: { done_when: true, checks: 2, risk: 'low', not_ready: null } } as Partial<Item>));
+    expect(ready.querySelector('[data-testid="not-ready"]')).toBeNull();
+    expect(ready.querySelector('[data-testid="risk-chip"]')).toBeNull();
+    expect((await mount(makeItem())).querySelector('[data-testid="not-ready"]')).toBeNull();
+  });
+
+  it('a_medium_or_high_risk_shows_as_a_chip_beside_the_type_and_a_low_one_does_not', async () => {
+    for (const risk of ['medium', 'high'] as const) {
+      const c = await mount(makeItem({ brief_summary: { done_when: true, checks: 1, risk, not_ready: null } } as Partial<Item>));
+      const meta = c.querySelector('[data-testid="card-meta"]')!;
+      const chip = meta.querySelector('[data-testid="risk-chip"]')!;
+      expect(chip.textContent).toBe(`Risk: ${risk}`);
+      expect(chip.previousElementSibling?.textContent).toContain('Task');
+    }
   });
 
   it('priority_is_hidden_at_the_default_and_shown_otherwise_or_when_asked_for', async () => {
@@ -146,20 +171,21 @@ describe('Board ItemCard', () => {
   });
 
   it('the_run_button_is_hidden_on_a_live_run_and_offered_otherwise', async () => {
-    const trigger = '[aria-label="Run with agent: Fix login bug"]';
+    const trigger = '[data-testid="card-run"]';
     for (const state of ['queued', 'running', 'waiting_decision']) {
       expect((await mount(makeItem(), undefined, { run: run(state) })).querySelector(trigger), state).toBeNull();
     }
     for (const state of ['failed', 'succeeded']) {
       expect((await mount(makeItem(), undefined, { run: run(state) })).querySelector(trigger), state).toBeTruthy();
     }
-    expect((await mount(makeItem())).querySelector(`[data-testid="card-run"]${trigger}`)).toBeTruthy();
-    expect((await mount(makeItem())).querySelector(trigger)).toBeTruthy();
+    const idle = (await mount(makeItem())).querySelector(trigger)!;
+    expect(idle.textContent).toBe('Run');
+    expect(idle.className).not.toContain('rounded-full');
   });
 
   it('a_card_ready_for_review_offers_to_review_not_to_run', async () => {
     const c = await mount(makeItem({ needs_review: true }), undefined, { run: cardRun(undefined, true) });
-    expect(c.querySelector('[aria-label="Run with agent: Fix login bug"]')).toBeNull();
+    expect(c.querySelector('[data-testid="card-run"]')).toBeNull();
     const review = c.querySelector<HTMLButtonElement>('[data-testid="card-review"]');
     expect(review?.getAttribute('aria-label')).toBe('Review the run: Fix login bug');
     expect(review?.title).toBe('Review and merge');
@@ -296,7 +322,11 @@ const summary = (id: string, itemId: string, state: string) => ({
   request_id: id, item_id: itemId, state, cancellation_requested_at: null, created_at: '2026-01-01T00:00:00Z',
 });
 
-async function mountBoard(items: Item[], executions: ReturnType<typeof summary>[]) {
+async function mountBoard(
+  items: Item[],
+  executions: ReturnType<typeof summary>[],
+  served: { autonomy?: unknown; autoStart?: unknown } = {},
+) {
   vi.stubGlobal('WebSocket', class { close() {} addEventListener() {} });
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -304,6 +334,8 @@ async function mountBoard(items: Item[], executions: ReturnType<typeof summary>[
       new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json', ETag: '"1"' } });
     if (url.includes('/items?')) return json({ data: items, total: items.length, page: 1, per_page: 200 });
     if (url.includes('/executions')) return json({ protocol_version: 1, data: executions });
+    if (url.endsWith('/autonomy') && served.autonomy) return json(served.autonomy);
+    if (url.endsWith('/auto-start') && served.autoStart) return json(served.autoStart);
     return json({ protocol_version: 1, data: [] });
   }) as typeof fetch);
   const history = createMemoryHistory();
@@ -359,7 +391,7 @@ describe('Board runs the server describes', () => {
     Object.assign(summary('r3', 'c', 'succeeded'), { verifier_recommendation: 'reject' }),
     Object.assign(summary('r4', 'd', 'succeeded'), { verifier_recommendation: 'merge' }),
   ];
-  const chip = (c: HTMLElement, id: string) => c.querySelector(`[data-item-id="${id}"] [data-testid="card-meta"] button`)!.textContent!;
+  const chip = (c: HTMLElement, id: string) => c.querySelector(`[data-item-id="${id}"] [data-testid="card-work"] button`)!.textContent!;
 
   it('a_run_turned_away_before_it_started_reads_Not_started_and_is_not_counted_as_failed', async () => {
     const c = await mountBoard(ITEMS, RUNS);
@@ -410,6 +442,39 @@ describe('Board agent strip and column bars', () => {
     const queued = strip.querySelector<HTMLButtonElement>('[data-testid="strip-queued"]')!;
     expect(queued.disabled).toBe(true);
     expect(queued.title).toBe('No work under Queued');
+  });
+
+  it('the_row_opens_with_how_many_wait_for_a_person_against_the_limit_when_there_is_one', async () => {
+    const runs = [summary('r1', 'a', 'waiting_decision'), summary('r2', 'b', 'succeeded'), summary('r3', 'c', 'running')];
+    const items = [
+      makeItem({ id: 'a', title: 'Alpha' }),
+      makeItem({ id: 'b', title: 'Bravo', needs_review: true }),
+      makeItem({ id: 'c', title: 'Charlie' }),
+    ];
+    const free = await mountBoard(items, runs);
+    const row = free.querySelector('[data-testid="agent-strip"]')!;
+    expect(row.children[1].getAttribute('data-testid')).toBe('strip-waiting-for-you');
+    expect(row.children[1].textContent).toBe('2 waiting for you');
+    expect(free.querySelector('[data-testid="strip-paused"]')).toBeNull();
+
+    const limited = await mountBoard(items, runs, { autonomy: { budgets: { waiting_max: 5 } } });
+    expect(limited.querySelector('[data-testid="strip-waiting-for-you"]')?.textContent).toBe('2 of 5 waiting for you');
+
+    const failing = await mountBoard([items[2]], [summary('r4', 'c', 'failed')]);
+    expect(failing.querySelector('[data-testid="strip-waiting-for-you"]')?.textContent).toBe('1 waiting for you');
+    const none = await mountBoard([items[2]], [summary('r3', 'c', 'running')]);
+    expect(none.querySelector('[data-testid="strip-waiting-for-you"]')?.textContent).toBe('Nothing waiting for you');
+  });
+
+  it('at_the_limit_the_row_shows_the_reason_the_api_gives_for_the_paused_auto_start', async () => {
+    const text = '2 tasks wait for you, the most this project allows: auto-start is paused until one is decided';
+    const items = [makeItem({ id: 'a', title: 'Alpha' }), makeItem({ id: 'b', title: 'Bravo' })];
+    const c = await mountBoard(items, [summary('r1', 'a', 'waiting_decision')], {
+      autonomy: { budgets: { waiting_max: 1 } },
+      autoStart: { enabled: true, waiting: [{ item_id: 'b', why: { code: 'waiting_max', text } }] },
+    });
+    expect(c.querySelector('[data-testid="strip-waiting-for-you"]')?.textContent).toBe('1 of 1 waiting for you');
+    expect(c.querySelector('[data-testid="strip-paused"]')?.textContent).toBe(text);
   });
 
   it('a_counter_toggles_a_filter_on_the_board', async () => {

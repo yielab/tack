@@ -7,6 +7,9 @@ import { Button, Field, FieldShell, Badge, Modal, EmptyState } from '../../share
 import { IconSprint } from '../../shared/ui/icons';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
+import { useExecutionStore } from '../../shared/state/executionContext';
+import { cardRun, newestRunByItem, type CardRun } from '../../shared/runWithAgent/cardRun';
+import { NotReadyLine, RiskChip, notReadyOf } from '../board/briefSummary';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -37,6 +40,14 @@ const STATUS_TONE = {
   closed: 'neutral',
 } as const;
 
+/** What the factory figures say about each sprint's decisions; the API serves a row only for a sprint that had some. */
+type FactoryByDecision = Awaited<ReturnType<typeof api.metrics.factoryMetrics>> & {
+  human_minutes_by_sprint?: { sprint_id: string; minutes: { median_minutes?: number | null } }[];
+};
+
+/** The median minutes a decision took, in words: "14 min", or "under 1 min" for a quick one. */
+const minutesWords = (minutes: number) => (minutes < 1 ? 'under 1 min' : `${Math.round(minutes)} min`);
+
 function formatDate(d?: string | null) {
   if (!d) return null;
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -57,6 +68,16 @@ export default function Sprints() {
     api.sprints.list(projectId),
   );
   const { items, refetch: refetchItems } = useProjectItems();
+  const executions = useExecutionStore();
+  const [factory] = createResource(() => api.metrics.factoryMetrics(projectId).catch(() => null));
+
+  // Each item's newest run, from the store the cards already watch: a sprint counts the ones that wait for a person.
+  const newestRuns = createMemo(() => {
+    const summaries = [];
+    for (const record of executions.requests().values()) if (record.summary) summaries.push(record.summary);
+    return newestRunByItem(summaries);
+  });
+  const runOf = (item: Item): CardRun | undefined => cardRun(newestRuns().get(item.id), item.needs_review === true);
 
   // Sprint form
   const [showModal, setShowModal] = createSignal(false);
@@ -106,6 +127,17 @@ export default function Sprints() {
       .map(group => ({ group, items: inGroup.get(group.id)! }));
     return { groups, loose };
   });
+
+  /** What a sprint will ask of a person: its tasks that wait for one, and how long a decision has taken. */
+  const sprintDecisions = (sprintId: string) => {
+    const waiting = itemsForSprint(sprintId).filter((item) => {
+      const state = runOf(item)?.state;
+      return state === 'needs' || state === 'review' || state === 'failed';
+    }).length;
+    const median = (factory() as FactoryByDecision | null | undefined)?.human_minutes_by_sprint
+      ?.find((row) => row.sprint_id === sprintId)?.minutes.median_minutes;
+    return { waiting, median: median ?? null };
+  };
 
   const sprintStats = (sprintId: string) => {
     const its = itemsForSprint(sprintId);
@@ -230,10 +262,10 @@ export default function Sprints() {
       {/* Header */}
       <div class="shrink-0 flex items-end gap-3">
         <div>
-          <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
+          <h1 class="text-title m-0 text-content">
             {t('sprint')} Planning
           </h1>
-          <p class="mt-0.5 text-small text-content-muted">
+          <p class="mt-1 text-small text-content-muted">
             Drag items from the {t('backlog').toLowerCase()} into a {t('sprint').toLowerCase()}, or between {t('sprint').toLowerCase()}s.
           </p>
         </div>
@@ -257,9 +289,9 @@ export default function Sprints() {
           onDrop={(e) => handleDrop(e, 'backlog')}
         >
           <div class="flex items-center gap-2">
-            <span class="font-heading text-lg" style={{ color: 'var(--color-accent2-ink)' }}>
+            <h2 class="text-section" style={{ color: 'var(--color-accent2-ink)' }}>
               {t('backlog')}
-            </span>
+            </h2>
             <Badge>{backlogItems().length}</Badge>
           </div>
 
@@ -359,9 +391,9 @@ export default function Sprints() {
                       {/* Sprint header */}
                       <div class="flex flex-col gap-2">
                         <div class="flex items-center gap-2 min-w-0">
-                          <span class="font-heading text-lg truncate text-content">
+                          <h2 class="text-section truncate text-content">
                             {sprint.name}
-                          </span>
+                          </h2>
                           <Badge tone={STATUS_TONE[sprint.status as keyof typeof STATUS_TONE] ?? 'neutral'}>
                             {sprint.status}
                           </Badge>
@@ -374,12 +406,25 @@ export default function Sprints() {
                         </Show>
 
                         {/* Capacity row */}
-                        <div class="flex items-center justify-between text-xs text-content">
+                        <div class="flex items-center justify-between text-small text-content">
                           <span>
                             {stats().done}/{stats().total} items · {stats().donePts}/{stats().totalPts} pts
                           </span>
                           <span class="font-bold">{stats().pct}%</span>
                         </div>
+                        <Show when={sprintDecisions(sprint.id).waiting > 0 || sprintDecisions(sprint.id).median != null}>
+                          <p data-testid="sprint-decisions" class="m-0 text-small font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                            <Show when={sprintDecisions(sprint.id).waiting > 0}>
+                              <span style={{ color: 'var(--run-needs-ink)' }}>{sprintDecisions(sprint.id).waiting} waiting for you</span>
+                            </Show>
+                            <Show when={sprintDecisions(sprint.id).waiting > 0 && sprintDecisions(sprint.id).median != null}>
+                              {' · '}
+                            </Show>
+                            <Show when={sprintDecisions(sprint.id).median}>
+                              {(median) => <span>a decision takes {minutesWords(median())}</span>}
+                            </Show>
+                          </p>
+                        </Show>
                         <div class="h-1.5 rounded-full overflow-hidden bg-app">
                           <div
                             class="h-full rounded-full transition-all"
@@ -394,7 +439,7 @@ export default function Sprints() {
 
                         {/* Sprint actions */}
                         <div class="flex gap-1.5">
-                          <Button variant="secondary" size="sm" onClick={() => openEdit(sprint)}>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(sprint)}>
                             Edit
                           </Button>
                           <Show when={sprint.status === 'planning'}>
@@ -403,17 +448,12 @@ export default function Sprints() {
                             </Button>
                           </Show>
                           <Show when={sprint.status === 'active'}>
-                            <Button size="sm" onClick={() => updateStatus(sprint.id, 'review')}>
+                            <Button variant="primary" size="sm" onClick={() => updateStatus(sprint.id, 'review')}>
                               Complete
                             </Button>
                           </Show>
                           <Show when={sprint.status === 'review'}>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              style={{ 'background-color': 'var(--color-bg-subtle)', border: 'none' }}
-                              onClick={() => updateStatus(sprint.id, 'closed')}
-                            >
+                            <Button variant="secondary" size="sm" onClick={() => updateStatus(sprint.id, 'closed')}>
                               Close
                             </Button>
                           </Show>
@@ -511,41 +551,39 @@ function ItemCard(props: {
       draggable={true}
       onDragStart={(e) => props.onDragStart(e, props.item)}
       onClick={() => props.onOpen({ item: props.item.id })}
-      class="shrink-0 flex flex-col gap-1 rounded-lg px-3 py-2.5 bg-app border-2 border-transparent hover:border-[var(--color-primary-600)] cursor-grab active:cursor-grabbing transition-[box-shadow,border-color] select-none shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
+      class="shrink-0 flex flex-col gap-2 rounded-lg border border-line bg-surface px-3.5 py-3 hover:border-[var(--color-accent-line)] cursor-grab active:cursor-grabbing transition-[box-shadow,border-color] select-none shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
     >
-      <div class="flex items-center gap-[7px]">
+      <div class="flex items-start gap-2">
         <div
-          class="w-2 h-2 rounded-sm shrink-0"
+          class="mt-1.5 w-2 h-2 rounded-sm shrink-0"
           style={{ 'background-color': priorityColor(props.item.priority) }}
           title={props.item.priority}
         />
-        <p class="flex-1 min-w-0 text-small font-bold truncate text-content">
+        <p class="flex-1 min-w-0 text-lead font-semibold break-words text-content">
           {/* Keyboard entry: its click bubbles to the card's own handler. */}
-          <button type="button" class="m-0 block min-h-6 max-w-full cursor-pointer truncate border-0 bg-transparent p-0 text-left" style={{ font: 'inherit', color: 'inherit' }}>
+          <button type="button" class="m-0 block min-h-6 max-w-full cursor-pointer break-words border-0 bg-transparent p-0 text-left" style={{ font: 'inherit', color: 'inherit' }}>
             {props.item.title}
           </button>
         </p>
-        {/* "Run with agent" — same execution
-            surface as Board's per-card trigger: launches a single
-            item's own execution request. */}
-        <span onClick={(e) => e.stopPropagation()}>
+      </div>
+      <Show when={notReadyOf(props.item)}>
+        {(reason) => <NotReadyLine reason={reason()} />}
+      </Show>
+      <div class="flex items-center gap-2 text-small text-content-muted">
+        <span>{props.item.status}</span>
+        <RiskChip item={props.item} />
+        <Show when={props.item.estimate}>
+          <span class="font-bold text-accent-ink">{props.item.estimate} pts</span>
+        </Show>
+        {/* The one solid control of a card: the same run the board's card starts. */}
+        <span class="ml-auto" onClick={(e) => e.stopPropagation()}>
           <RunWithAgentButton
             itemId={props.item.id}
             itemTitle={props.item.title}
             projectId={props.item.project_id}
-            compact
+            label="Run"
           />
         </span>
-      </div>
-      <div class="flex items-center gap-2 text-[0.71875rem]">
-        <span class="text-content-muted">
-          {props.item.status}
-        </span>
-        <Show when={props.item.estimate}>
-          <span class="ml-auto font-bold text-accent-ink">
-            {props.item.estimate} pts
-          </span>
-        </Show>
       </div>
     </div>
   );
