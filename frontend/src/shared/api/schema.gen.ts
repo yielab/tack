@@ -5307,6 +5307,11 @@ export interface components {
             decisions_answered: number;
             /** @description decisions ÷ attempts. */
             escalation_rate: components["schemas"]["Ratio"];
+            /**
+             * @description The same figure over the decisions on each sprint's items: one row per sprint that has any,
+             *     none for items without a sprint.
+             */
+            human_minutes_by_sprint: components["schemas"]["SprintHumanMinutes"][];
             human_minutes_per_decision: components["schemas"]["HumanMinutes"];
             human_minutes_per_mrp: components["schemas"]["HumanMinutes"];
             /**
@@ -6399,7 +6404,10 @@ export interface components {
             source: string;
         };
         QualityCut: {
-            /** @description `profile`, `harness`, `model`, `team` or `template`. */
+            /**
+             * @description `profile`, `harness`, `model`, `team`, `template`, `domain` or `level`. The last two are the
+             *     merge ledger's: an attempt that did not merge is `Not merged`.
+             */
             by: string;
             rows: components["schemas"]["CutRow"][];
         };
@@ -7019,6 +7027,11 @@ export interface components {
             status: components["schemas"]["SprintStatus"];
             /** Format: date-time */
             updated_at: string;
+        };
+        /** @description The human minutes of the decisions on one sprint's items. */
+        SprintHumanMinutes: {
+            minutes: components["schemas"]["HumanMinutes"];
+            sprint_id: string;
         };
         /** @enum {string} */
         SprintStatus: "planning" | "active" | "review" | "closed";

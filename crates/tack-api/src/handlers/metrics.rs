@@ -9,7 +9,7 @@ use crate::extract::{Json, Path, Query};
 use axum::extract::State;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tack_protocol::mrp::MergeDecision;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
@@ -62,6 +62,13 @@ pub struct HumanMinutes {
     pub p90_minutes: Option<f64>,
     /// `not_measured` when no row was resolved in the window.
     pub null_reason: Option<String>,
+}
+
+/// The human minutes of the decisions on one sprint's items.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SprintHumanMinutes {
+    pub sprint_id: String,
+    pub minutes: HumanMinutes,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -139,6 +146,9 @@ pub struct FactoryMetrics {
     /// decisions ÷ attempts.
     pub escalation_rate: Ratio,
     pub human_minutes_per_decision: HumanMinutes,
+    /// The same figure over the decisions on each sprint's items: one row per sprint that has any,
+    /// none for items without a sprint.
+    pub human_minutes_by_sprint: Vec<SprintHumanMinutes>,
     /// Attempts with at least one escalation the agent's policy settled itself, and no
     /// person was asked: a count apart from `decisions`, which only a person's answer makes.
     pub decided_alone: i64,
@@ -286,6 +296,22 @@ fn human_minutes(waits: &[WaitRow]) -> HumanMinutes {
         p90_minutes: p90,
         null_reason: (n == 0).then(|| NOT_MEASURED.into()),
     }
+}
+
+fn human_minutes_by_sprint(waits: &[WaitRow]) -> Vec<SprintHumanMinutes> {
+    let mut by_sprint: BTreeMap<&str, Vec<WaitRow>> = BTreeMap::new();
+    for wait in waits {
+        if let Some(sprint) = wait.sprint_id.as_deref() {
+            by_sprint.entry(sprint).or_default().push(wait.clone());
+        }
+    }
+    by_sprint
+        .into_iter()
+        .map(|(sprint, waits)| SprintHumanMinutes {
+            sprint_id: sprint.to_owned(),
+            minutes: human_minutes(&waits),
+        })
+        .collect()
 }
 
 /// Tokens in + out of a pack's `usage`, or `None` when the pack cannot be read.
@@ -455,6 +481,7 @@ pub async fn factory_metrics(
         decisions: totals.decisions,
         escalation_rate: ratio(totals.decisions, totals.attempts, DENOMINATOR_ZERO),
         human_minutes_per_decision: human_minutes(&decision_waits),
+        human_minutes_by_sprint: human_minutes_by_sprint(&decision_waits),
         decided_alone: totals.decided_alone,
         decided_alone_rate: ratio(totals.decided_alone, totals.attempts, DENOMINATOR_ZERO),
         human_minutes_per_mrp: human_minutes(&mrp_waits),

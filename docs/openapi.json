@@ -13249,6 +13249,7 @@
           "decisions",
           "escalation_rate",
           "human_minutes_per_decision",
+          "human_minutes_by_sprint",
           "decided_alone",
           "decided_alone_rate",
           "human_minutes_per_mrp",
@@ -13305,6 +13306,13 @@
           "escalation_rate": {
             "$ref": "#/components/schemas/Ratio",
             "description": "decisions ÷ attempts."
+          },
+          "human_minutes_by_sprint": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SprintHumanMinutes"
+            },
+            "description": "The same figure over the decisions on each sprint's items: one row per sprint that has any,\nnone for items without a sprint."
           },
           "human_minutes_per_decision": {
             "$ref": "#/components/schemas/HumanMinutes"
@@ -16260,7 +16268,7 @@
         "properties": {
           "by": {
             "type": "string",
-            "description": "`profile`, `harness`, `model`, `team` or `template`."
+            "description": "`profile`, `harness`, `model`, `team`, `template`, `domain` or `level`. The last two are the\nmerge ledger's: an attempt that did not merge is `Not merged`."
           },
           "rows": {
             "type": "array",
@@ -17888,6 +17896,22 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SprintHumanMinutes": {
+        "type": "object",
+        "description": "The human minutes of the decisions on one sprint's items.",
+        "required": [
+          "sprint_id",
+          "minutes"
+        ],
+        "properties": {
+          "minutes": {
+            "$ref": "#/components/schemas/HumanMinutes"
+          },
+          "sprint_id": {
+            "type": "string"
           }
         }
       },

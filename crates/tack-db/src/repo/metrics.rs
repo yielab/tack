@@ -29,9 +29,11 @@ pub struct AttemptTotals {
     pub rework: TokenSplit,
 }
 
-/// The stored RFC 3339 strings of one human wait; the caller subtracts them.
+/// The stored RFC 3339 strings of one human wait, and the sprint of the item it was about; the
+/// caller subtracts the strings.
 #[derive(Debug, Clone)]
 pub struct WaitRow {
+    pub sprint_id: Option<String>,
     pub viewed_at: Option<String>,
     pub created_at: String,
     pub resolved_at: String,
@@ -126,14 +128,14 @@ pub async fn attempt_totals(
     Ok(totals)
 }
 
-/// Resolved decisions created in the window.
+/// Resolved decisions created in the window, each with its item's sprint.
 pub async fn decision_waits(
     repo: &Repository,
     project_id: &str,
     since: Option<&str>,
 ) -> Result<Vec<WaitRow>, StoreError> {
     let rows = sqlx::query(
-        "SELECT d.viewed_at, d.created_at, d.resolved_at FROM execution_decisions d
+        "SELECT i.sprint_id, d.viewed_at, d.created_at, d.resolved_at FROM execution_decisions d
          JOIN execution_attempts a ON a.id = d.attempt_id
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
@@ -148,6 +150,7 @@ pub async fn decision_waits(
     Ok(rows
         .into_iter()
         .map(|r| WaitRow {
+            sprint_id: r.get("sprint_id"),
             viewed_at: r.get("viewed_at"),
             created_at: r.get("created_at"),
             resolved_at: r.get("resolved_at"),
@@ -163,7 +166,7 @@ pub async fn mrp_waits(
     since: Option<&str>,
 ) -> Result<Vec<WaitRow>, StoreError> {
     let rows = sqlx::query(
-        "SELECT x.viewed_at, x.created_at, m.reviewed_at AS resolved_at FROM attempt_reviews m
+        "SELECT i.sprint_id, x.viewed_at, x.created_at, m.reviewed_at AS resolved_at FROM attempt_reviews m
          JOIN execution_artifacts x ON x.attempt_id = m.attempt_id AND x.artifact_id = m.artifact_id
          JOIN execution_attempts a ON a.id = m.attempt_id
          JOIN execution_requests r ON r.id = a.request_id
@@ -179,6 +182,7 @@ pub async fn mrp_waits(
     Ok(rows
         .into_iter()
         .map(|r| WaitRow {
+            sprint_id: r.get("sprint_id"),
             viewed_at: r.get("viewed_at"),
             created_at: r.get("created_at"),
             resolved_at: r.get("resolved_at"),
