@@ -6,7 +6,7 @@ import type { InboxNotification } from '../../shared/api/notifications';
 import { FakeWebSocket, latest } from '../../shared/realtime/fakeWebSocket';
 import { closeInbox, openInbox, useNotifications } from '../../shared/state/notifications';
 import { flush } from '../../test/flush';
-import InboxDrawer, { notificationHref } from './InboxDrawer';
+import InboxDrawer from './InboxDrawer';
 
 const row = (id: string, over: Partial<InboxNotification> = {}): InboxNotification => ({
   id,
@@ -90,7 +90,7 @@ describe('InboxDrawer', () => {
     expect(headings).toEqual(['Open', 'Recent']);
     const hrefs = rows().map((r) => r.querySelector('a')?.getAttribute('href'));
     expect(hrefs[0]).toBe('/projects/p1/items/item-1?tab=execution&run=req-1');
-    expect(hrefs[1]).toBe('/projects/p1/change-sets?open=cs-1');
+    expect(hrefs[1]).toBe('/projects/p1/needs-you?open=cs-1');
   });
 
   it('Read marks one row read; Read all is off, with its reason, when nothing is unread', async () => {
@@ -114,15 +114,5 @@ describe('InboxDrawer', () => {
     openInbox();
     await flush();
     expect(document.querySelector('[data-testid="inbox-open-empty"]')!.textContent).toBe('Nothing needs you.');
-  });
-});
-
-describe('notificationHref', () => {
-  it('goes to the item, on the run when it has one, and nowhere when it names no item', () => {
-    expect(notificationHref(row('a', { kind: 'run_failed', request_id: 'r 1' }))).toBe('/projects/p1/items/item-1?tab=execution&run=r%201');
-    expect(notificationHref(row('a', { kind: 'due_soon', request_id: null }))).toBe('/projects/p1/items/item-1');
-    expect(notificationHref(row('a', { item_id: null }))).toBeNull();
-    expect(notificationHref(row('a', { kind: 'quality_trend', key: 'trend:p1:profile:Coder', item_id: null }))).toBe('/projects/p1/factory');
-    expect(notificationHref(row('a', { kind: 'memory', key: 'memory:11111111-1111-1111-1111-111111111111:saas-dev:mem-1', item_id: null }))).toBe('/agents#team-saas-dev');
   });
 });

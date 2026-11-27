@@ -14,7 +14,7 @@ const Lens: ParentComponent = (props) => {
   );
 };
 
-/** Wrapper for the 6 "same items, different lens" routes.
+/** Wrapper for the five "same items, different lens" routes.
  *  Fetches items once and shares them via context so tab-switching never
  *  triggers a redundant API call. */
 const WorkLayout: ParentComponent = (props) => {

@@ -4,14 +4,13 @@ import { setLastLens, type Lens } from '../state/lastView';
 import { useVocab } from '../vocab/useVocab';
 import { useProjectHasRun } from '../state/projectHasRun';
 
-// `vocab` marks lenses whose label is resolved from the project vocabulary
+// The work tabs. `vocab` marks lenses whose label is resolved from the project vocabulary
 // (e.g. `sprint` → "Phase" for a construction project). Orchestration is the same, and is the one
 // tab that waits for something to show: it is off until an agent has worked in the project.
 const TABS: { lens: Lens; label: string; vocab?: string }[] = [
   { lens: 'board',    label: 'Board' },
   { lens: 'orchestration', label: 'Orchestration', vocab: 'orchestration' },
   { lens: 'list',     label: 'List' },
-  { lens: 'calendar', label: 'Calendar' },
   { lens: 'timeline', label: 'Timeline' },
   { lens: 'sprint',   label: 'Sprint', vocab: 'sprint' },
 ];
@@ -32,7 +31,6 @@ export default function WorkTabs() {
     const p = location.pathname;
     if (p.includes('/orchestration')) return 'orchestration';
     if (p.includes('/list'))     return 'list';
-    if (p.includes('/calendar')) return 'calendar';
     if (p.includes('/timeline')) return 'timeline';
     if (p.includes('/sprint'))   return 'sprint';
     return 'board';
@@ -40,7 +38,7 @@ export default function WorkTabs() {
 
   return (
     <div
-      class="inline-flex items-center gap-[3px] p-[3px] rounded-lg"
+      class="inline-flex items-center gap-1 p-1 rounded-lg"
       style={{ background: 'var(--color-bg-panel)' }}
     >
       <For each={TABS}>
@@ -52,8 +50,8 @@ export default function WorkTabs() {
                 data-testid={`tab-${tab.lens}-off`}
                 aria-disabled="true"
                 title={offReason(tab.lens) ?? undefined}
-                class="flex items-center px-3.5 rounded-md text-small"
-                style={{ 'padding-block': '5px', color: 'var(--color-text-tertiary)', 'font-weight': 500, cursor: 'not-allowed' }}
+                class="flex items-center px-3.5 py-1.5 rounded-md text-small"
+                style={{ color: 'var(--color-text-tertiary)', 'font-weight': 500, cursor: 'not-allowed' }}
               >
                 {tab.vocab ? t(tab.vocab) : tab.label}
                 <span class="sr-only">{`. ${offReason(tab.lens)}`}</span>
@@ -63,7 +61,7 @@ export default function WorkTabs() {
           <A
             href={`/projects/${projectId()}/${tab.lens}`}
             onClick={() => setLastLens(tab.lens)}
-            class="flex items-center px-3.5 py-[5px] rounded-md text-small transition-all"
+            class="flex items-center px-3.5 py-1.5 rounded-md text-small transition-all"
             style={activeLens() === tab.lens
               ? {
                   background: 'var(--color-bg-app)',

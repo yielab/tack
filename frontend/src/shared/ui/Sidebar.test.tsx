@@ -91,23 +91,14 @@ describe('Sidebar: Waiting for you', () => {
   });
 });
 
-/** The sidebar inside project p1, whose rung is `level`, with `waiting` change sets waiting in it. */
-function mountInProject(level: string, waiting: number) {
+/** The sidebar inside project p1. */
+function mountInProject() {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
     if (url.includes('/executions')) return json({ protocol_version: 1, data: [] });
-    if (url.includes('/change-sets')) {
-      return json(
-        Array.from({ length: waiting }, (_, i) => ({
-          id: `cs${i}`, project: 'p1', created_at: '2026-10-31T10:00:00Z', origin: 'mcp', principal: 'agent:c1', reason: 'r', status: 'waiting',
-          ops: [{ operation: { op: 'priority', item: 'x', priority: 'high' }, state: 'waiting' }],
-        })),
-      );
-    }
-    if (url.endsWith('/projects')) {
-      return json([{ id: 'p1', name: 'My SaaS', agents_on_board: { level, creates_per_change_set: 0, creates_per_day: 0 } }]);
-    }
+    if (url.includes('/change-sets')) return json([]);
+    if (url.endsWith('/projects')) return json([{ id: 'p1', name: 'My SaaS' }, { id: 'p2', name: 'Other' }]);
     return json({});
   }) as typeof fetch);
   const history = createMemoryHistory();
@@ -131,30 +122,69 @@ function mountInProject(level: string, waiting: number) {
   return container;
 }
 
-describe('Sidebar: Change sets', () => {
-  it('links to the page when the project lets agents propose', async () => {
-    const c = mountInProject('propose', 0);
-    await settle();
-    const link = [...c.querySelectorAll('a')].find((a) => a.textContent === 'Change sets')!;
-    expect(link.getAttribute('href')).toBe('/projects/p1/change-sets');
-    expect(c.querySelector('[data-testid="nav-change-sets-off"]')).toBeNull();
+const wait = (id: string, project: string, open: number, kind: 'decision' | 'run_failed' = 'decision') =>
+  applyNotificationMessage({
+    type: 'opened',
+    id,
+    project_id: project,
+    kind,
+    level: 'needs_you',
+    key: `${kind}:${id}`,
+    item_id: 'item-1',
+    request_id: 'req-1',
+    title: 'A run is asking a question',
+    cause: 'agent',
+    created_at: '2026-11-03T10:00:00Z',
+    open,
   });
 
-  it('shows the entry off, with its reason, when agents may only read and nothing waits', async () => {
-    const c = mountInProject('read', 0);
-    await settle();
-    const off = c.querySelector('[data-testid="nav-change-sets-off"]')!;
-    expect(off.getAttribute('aria-disabled')).toBe('true');
-    expect(off.textContent).toContain('Change sets');
-    expect(off.getAttribute('title')).toContain('Agents may only read in this project');
-    expect([...c.querySelectorAll('a')].some((a) => a.textContent === 'Change sets')).toBe(false);
+describe('Sidebar: project destinations', () => {
+  afterEach(() => {
+    for (const id of ['w1', 'w2', 'w3']) applyNotificationMessage({ type: 'closed', id, key: `decision:${id}`, open: 0 });
   });
 
-  it('turns the entry on at Read when a change set waits', async () => {
-    const c = mountInProject('read', 1);
+  const projectLinks = (c: HTMLElement) => {
+    const nav = c.querySelector('nav')!;
+    return [...nav.querySelectorAll('a')].filter((a) => a.getAttribute('href')?.startsWith('/projects/p1/'));
+  };
+
+  it('lists the nine destinations in order, Needs you first, at their own addresses', async () => {
+    const c = mountInProject();
     await settle();
-    expect([...c.querySelectorAll('a')].some((a) => a.textContent === 'Change sets')).toBe(true);
-    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('1');
+    expect(projectLinks(c).map((a) => [a.textContent?.replace(/\d+ waiting$/, ''), a.getAttribute('href')])).toEqual([
+      ['Needs you', '/projects/p1/needs-you'],
+      ['Board', '/projects/p1/board'],
+      ['List', '/projects/p1/list'],
+      ['Timeline', '/projects/p1/timeline'],
+      ['Sprint', '/projects/p1/sprint'],
+      ['Orchestration', '/projects/p1/orchestration'],
+      ['Threads', '/projects/p1/threads'],
+      ['Overview', '/projects/p1/overview'],
+      ['Project settings', '/projects/p1/settings'],
+    ]);
+  });
+
+  it('has no Change sets, Calendar or Factory metrics entry, and no disabled one', async () => {
+    const c = mountInProject();
+    await settle();
+    for (const gone of ['Change sets', 'Calendar', 'Factory metrics']) {
+      expect(c.textContent).not.toContain(gone);
+    }
+    expect(c.querySelector('[aria-disabled="true"]')).toBeNull();
+  });
+
+  it('counts on the Needs you entry what waits in this project, and not what waits in another', async () => {
+    const c = mountInProject();
+    await settle();
+    expect(c.querySelector('[data-testid="nav-count"]')).toBeNull();
+    wait('w1', 'p1', 1);
+    wait('w2', 'p1', 2, 'run_failed');
+    wait('w3', 'p2', 3);
+    await flush();
+    const entry = projectLinks(c)[0];
+    expect(entry.querySelector('[data-testid="nav-count"]')!.textContent).toBe('2');
+    expect(entry.textContent).toContain('2 waiting');
+    expect(projectLinks(c).slice(1).every((a) => a.querySelector('[data-testid="nav-count"]') === null)).toBe(true);
   });
 });
 
@@ -176,7 +206,7 @@ describe('Sidebar: Inbox bell', () => {
     });
 
   afterEach(() => {
-    applyNotificationMessage({ type: 'read', id: 'none', open: 0 });
+    applyNotificationMessage({ type: 'closed', id: 'n1', key: 'decision:n1', open: 0 });
     closeInbox();
   });
 

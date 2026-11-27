@@ -54,15 +54,25 @@ const MEANING =
 const countStyle = (count: number) => ({
   'min-width': '1.25rem',
   padding: '0 6px',
-  'border-radius': 'var(--radius-pill)',
+  'border-radius': 'var(--radius-sm)',
   'text-align': 'center' as const,
-  'font-size': '0.75rem',
+  'font-size': 'var(--text-caption)',
   'font-weight': 700,
   // The same amber as "Needs you" on the board: one thing that waits on a person has one colour.
   background: count > 0 ? 'var(--run-needs-soft)' : 'var(--color-bg-app)',
   color: count > 0 ? 'var(--run-needs-ink)' : 'var(--color-text-secondary)',
   'box-shadow': count > 0 ? 'inset 0 0 0 1px var(--run-needs-line)' : 'none',
 });
+
+const headingStyle = {
+  padding: '6px 6px 2px',
+  'font-size': 'var(--text-micro)',
+  'font-weight': 700,
+  'letter-spacing': '.12em',
+  'text-transform': 'uppercase' as const,
+  color: 'var(--color-text-tertiary)',
+  'border-top': '1px solid var(--color-border-light)',
+};
 
 const Row: Component<{ row: WaitingRow; project: string | undefined; action: string; state: RunStateName; onNavigate: () => void }> = (p) => {
   const location = useLocation();
@@ -83,11 +93,11 @@ const Row: Component<{ row: WaitingRow; project: string | undefined; action: str
       <div style={{ flex: 1, 'min-width': 0 }}>
         <p
           title={title()}
-          style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
+          style={{ 'font-size': 'var(--text-small)', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
         >
           {title()}
         </p>
-        <p style={{ 'font-size': '0.75rem', color: 'var(--color-text-tertiary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+        <p style={{ 'font-size': 'var(--text-caption)', color: 'var(--color-text-tertiary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
           {p.project ? `${p.project} · ` : ''}
           {relativeTimeFromIso(p.row.at)}
         </p>
@@ -99,8 +109,8 @@ const Row: Component<{ row: WaitingRow; project: string | undefined; action: str
             display: 'inline-block',
             'margin-top': '4px',
             padding: '2px 10px',
-            'border-radius': 'var(--radius-pill)',
-            'font-size': '0.75rem',
+            'border-radius': 'var(--radius-md)',
+            'font-size': 'var(--text-caption)',
             'font-weight': 600,
             background: 'var(--color-accent-soft)',
             color: 'var(--color-accent-ink)',
@@ -124,24 +134,24 @@ const ChangeSetItem: Component<{ row: ChangeSetRow; project: string | undefined;
       <div style={{ flex: 1, 'min-width': 0 }}>
         <p
           title={p.row.reason}
-          style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
+          style={{ 'font-size': 'var(--text-small)', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
         >
           {what()}
         </p>
-        <p style={{ 'font-size': '0.75rem', color: 'var(--color-text-tertiary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+        <p style={{ 'font-size': 'var(--text-caption)', color: 'var(--color-text-tertiary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
           {p.project ? `${p.project} · ` : ''}
           {relativeTimeFromIso(p.row.at)}
         </p>
         <A
-          href={`/projects/${p.row.projectId}/change-sets?open=${p.row.id}`}
+          href={`/projects/${p.row.projectId}/needs-you?open=${p.row.id}`}
           onClick={p.onNavigate}
           aria-label={`Review the changes: ${what()}`}
           style={{
             display: 'inline-block',
             'margin-top': '4px',
             padding: '2px 10px',
-            'border-radius': 'var(--radius-pill)',
-            'font-size': '0.75rem',
+            'border-radius': 'var(--radius-md)',
+            'font-size': 'var(--text-caption)',
             'font-weight': 600,
             background: 'var(--color-accent-soft)',
             color: 'var(--color-accent-ink)',
@@ -164,6 +174,13 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
   const nameOf = (id: string | null) => (id ? p.projects?.find((x) => x.id === id)?.name : undefined);
   const hasQuestions = () => rows().some((r) => r.group === 'ask');
   const toggle = () => (waitingOpen() ? closeWaiting() : openWaiting());
+  // The projects that have something waiting, each with the link to its Needs you.
+  const withWaits = () => {
+    const counts = new Map<string, number>();
+    for (const r of rows()) if (r.projectId) counts.set(r.projectId, (counts.get(r.projectId) ?? 0) + 1);
+    for (const c of waitingChangeSets()) counts.set(c.projectId, (counts.get(c.projectId) ?? 0) + 1);
+    return [...counts].map(([id, count]) => ({ id, count, name: nameOf(id) ?? 'Project' }));
+  };
 
   return (
     <div data-testid="waiting-for-you" style={{ 'margin-bottom': '2px' }}>
@@ -180,11 +197,11 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
           'align-items': 'center',
           gap: '10px',
           padding: '7px 12px',
-          'border-radius': 'var(--radius-pill)',
+          'border-radius': 'var(--radius-md)',
           border: 'none',
           cursor: 'pointer',
           'font-family': 'inherit',
-          'font-size': '0.875rem',
+          'font-size': 'var(--text-lead)',
           'font-weight': 500,
           background: 'transparent',
           color: 'var(--color-text-primary)',
@@ -196,7 +213,7 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
           <Show when={scopeLine()}>
             <span
               data-testid="waiting-scope"
-              style={{ display: 'block', 'font-size': '0.6875rem', 'font-weight': 400, 'line-height': 1.3, color: 'var(--color-text-secondary)' }}
+              style={{ display: 'block', 'font-size': 'var(--text-micro)', 'font-weight': 400, 'line-height': 1.3, color: 'var(--color-text-secondary)' }}
             >
               {scopeLine()}
             </span>
@@ -214,7 +231,7 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
       <Show when={waitingOpen()}>
         <div id="waiting-panel" role="region" aria-label="Waiting for you" style={{ padding: '2px 6px 8px', 'min-width': 0 }}>
           <Show when={waitingCount() === 0}>
-            <p data-testid="waiting-empty" style={{ padding: '4px 6px', 'font-size': '0.75rem', color: 'var(--color-text-secondary)' }}>
+            <p data-testid="waiting-empty" style={{ padding: '4px 6px', 'font-size': 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>
               {waitingSentence(0)}.
             </p>
           </Show>
@@ -227,17 +244,7 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
             {(group) => (
               <Show when={rows().some((r) => r.group === group.id)}>
                 <section aria-label={group.label} data-testid={`waiting-group-${group.id}`}>
-                  <h3
-                    style={{
-                      padding: '6px 6px 2px',
-                      'font-size': '0.625rem',
-                      'font-weight': 700,
-                      'letter-spacing': '.12em',
-                      'text-transform': 'uppercase',
-                      color: 'var(--color-text-tertiary)',
-                      'border-top': '1px solid var(--color-border-light)',
-                    }}
-                  >
+                  <h3 style={headingStyle}>
                     {group.label}
                   </h3>
                   <ul>
@@ -259,22 +266,33 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
           </For>
           <Show when={waitingChangeSets().length > 0}>
             <section aria-label="Changes to apply" data-testid="waiting-group-changes">
-              <h3
-                style={{
-                  padding: '6px 6px 2px',
-                  'font-size': '0.625rem',
-                  'font-weight': 700,
-                  'letter-spacing': '.12em',
-                  'text-transform': 'uppercase',
-                  color: 'var(--color-text-tertiary)',
-                  'border-top': '1px solid var(--color-border-light)',
-                }}
-              >
+              <h3 style={headingStyle}>
                 Changes to apply
               </h3>
               <ul>
                 <For each={waitingChangeSets()}>
                   {(row) => <ChangeSetItem row={row} project={nameOf(row.projectId)} onNavigate={p.onNavigate} />}
+                </For>
+              </ul>
+            </section>
+          </Show>
+          <Show when={withWaits().length > 0}>
+            <section aria-label="Needs you, by project" data-testid="waiting-projects">
+              <h3 style={headingStyle}>Where it waits</h3>
+              <ul>
+                <For each={withWaits()}>
+                  {(w) => (
+                    <li>
+                      <A
+                        href={`/projects/${w.id}/needs-you`}
+                        onClick={p.onNavigate}
+                        style={{ display: 'flex', gap: '8px', padding: '4px 4px', 'font-size': 'var(--text-small)', color: 'var(--color-accent-ink)' }}
+                      >
+                        <span style={{ flex: 1, 'min-width': 0, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{w.name}</span>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>{w.count}</span>
+                      </A>
+                    </li>
+                  )}
                 </For>
               </ul>
             </section>
@@ -308,7 +326,7 @@ export const WaitingBadge: Component = () => {
       class="inline-flex items-center gap-1.5"
       style={{
         padding: '5px 10px',
-        'border-radius': 'var(--radius-pill)',
+        'border-radius': 'var(--radius-md)',
         cursor: 'pointer',
         border: '1px solid var(--color-border-light)',
         background: 'transparent',

@@ -32,15 +32,19 @@ describe('getLastLens', () => {
   });
 
   it('returns each valid lens correctly', () => {
-    for (const lens of ['board', 'orchestration', 'list', 'calendar', 'timeline', 'sprint'] as const) {
+    for (const lens of ['board', 'orchestration', 'list', 'timeline', 'sprint'] as const) {
       setLastLens(lens);
       expect(getLastLens()).toBe(lens);
     }
   });
 
-
   it('returns "board" when the stored value is not a valid lens', () => {
     localStorage.setItem('tack_last_lens', 'invalid_lens');
+    expect(getLastLens()).toBe('board');
+  });
+
+  it.each(['calendar', 'table', 'factory', 'change-sets', 'needs-you'])('opens the Board for a view remembered as "%s"', (name) => {
+    localStorage.setItem('tack_last_lens', name);
     expect(getLastLens()).toBe('board');
   });
 });

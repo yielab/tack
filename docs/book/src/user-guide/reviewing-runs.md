@@ -167,10 +167,16 @@ that part. A change set that applied only in part says **Partly applied**, and t
 #### Where they wait for you
 
 Change sets that wait appear in **Waiting for you** in the sidebar, under **Changes to apply**, and in its
-count. **Review the changes** opens the project's **Change sets** page, which lists them by status:
-waiting for you, applied, turned down, or all. A decided change set folds into one line. When agents may
-only read in a project, and nothing is waiting, the **Change sets** entry in the sidebar is greyed out and
-says why.
+count. Under the groups, the sidebar links each project that has something waiting to that project's
+**Needs you**. **Needs you** lists every wait of the project, oldest first: a question to answer, a run ready
+for review, a run that failed, and changes to apply. Each line names its task (a link), what kind of wait it
+is, how long it has waited and its one action. **Review the changes** opens the change set's panel on that
+line, where you apply, edit or turn it down; the oldest wait has the solid button.
+
+The **Decided** view beside **Waiting** lists the change sets that were applied or turned down, each folded
+into one line that opens its panel. When agents may only read in a project, **Decided** says why nothing is
+proposed, with a link to **Settings → Automation**. A project that limits how many things may wait for a
+person shows the count against its limit ("4 of 5 waiting for you") and says when auto-start is paused.
 
 #### A run that proposes items
 

@@ -2,6 +2,8 @@ import { createSignal, getOwner, onCleanup } from 'solid-js';
 import { request } from '../api/client';
 import { changeSets } from '../api/changeSets';
 import type { Project } from '../types';
+import type { InboxNotification } from '../api/notifications';
+import { openRows } from './notifications';
 import { attemptsApi, executionsApi, type ExecutionSummary } from '../execution';
 import type { ItemDetail } from '../types';
 import type { RunStateName } from '../ui/RunState';
@@ -141,6 +143,35 @@ export interface ChangeSetRow {
 
 /** The change sets waiting, oldest first: what an agent proposed that nobody has applied or turned down. */
 export const waitingChangeSets = (): ChangeSetRow[] => changeSetRows();
+
+/** What waits for a person in one project, oldest first: the open needs-you notices that name it. */
+export const projectWaits = (projectId: string): InboxNotification[] =>
+  openRows()
+    .filter((n) => n.level === 'needs_you' && n.project_id === projectId)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+/** How many things wait for a person in one project: the count on its Needs you. */
+export const needsYouCountOf = (projectId: string): number => projectWaits(projectId).length;
+
+/** The id of the change set a `change_set` notice is about. */
+export const changeSetIdOf = (n: InboxNotification): string => n.key.slice('change_set:'.length);
+
+/**
+ * Where a notification leads: a change set to its project's Needs you, a team's memory to the team's
+ * sheet, a fall in quality to the project's Overview, anything else to its item (on the run, when it is about one).
+ */
+export function notificationHref(n: InboxNotification): string | null {
+  if (n.kind === 'memory') {
+    // memory:<project>:<team>:<entry>
+    const team = n.key.split(':').slice(2, -1).join(':');
+    return `/agents#team-${encodeURIComponent(team)}`;
+  }
+  if (n.kind === 'quality_trend') return `/projects/${n.project_id}/overview`;
+  if (n.kind === 'change_set') return `/projects/${n.project_id}/needs-you?open=${encodeURIComponent(changeSetIdOf(n))}`;
+  if (!n.item_id) return null;
+  const query = n.request_id ? `?tab=execution&run=${encodeURIComponent(n.request_id)}` : '';
+  return `/projects/${n.project_id}/items/${n.item_id}${query}`;
+}
 
 /** How many change sets wait in one project. */
 export const waitingChangeSetsOf = (projectId: string): number => changeSetRows().filter((r) => r.projectId === projectId).length;

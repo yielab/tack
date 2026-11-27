@@ -2,13 +2,16 @@
 
 This page is for anyone who looks at a project's work. After reading it you will know what each screen shows, how to move work on each, and how to tell where a task stands and where its agent run stands.
 
-Tack has six **work tabs** — Board, Orchestration, List, Calendar, Timeline and Sprint (the last
-takes your project's word for a sprint) — all showing the same items. An item created in one appears at once
-in the others. Four more screens are in the project's sidebar: **Overview** and **Factory metrics** show
-statistics, **Change sets** lists what agents proposed and **Threads** holds your conversations with them (see
-[Managers and Threads](talking-with-a-manager.md)).
+A project's sidebar lists nine places, in this order: **Needs you**, **Board**, **List**, **Timeline**,
+**Sprint** (the word your project uses for a sprint), **Orchestration**, **Threads**, **Overview** and
+**Project settings**. Board, Orchestration, List, Timeline and Sprint are the **work tabs**: they all show the
+same items, and an item created in one appears at once in the others. **Needs you** is the page that holds
+only what waits for a person in this project, oldest first, and the sidebar shows how many next to its name.
+**Overview** shows how the project is going, and **Threads** holds your conversations with agents (see
+[Managers and Threads](talking-with-a-manager.md)). An address that is not one of these shows **Page not found**,
+and a view this browser remembered that is no longer a place opens the Board.
 
-Every view shares the same shell: a sidebar to switch project and view (on a short window its list scrolls, so scroll down to reach **Agents** and **Settings**), a top bar with item
+Every view shares the same shell: a sidebar to switch project and place (on a short window its list scrolls, so scroll down to reach **Agents** and **Settings**), a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
 on `Ctrl+K`. Theme, palette, text size and zoom are set in **Settings → Display & accessibility**; see
 [Appearance](appearance.md).

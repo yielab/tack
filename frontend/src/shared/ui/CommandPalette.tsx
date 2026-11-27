@@ -139,7 +139,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
           >
             {/* search header */}
             <div style={{ padding: '14px 14px 6px' }}>
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '10px', padding: '9px 10px 9px 16px', 'border-radius': 'var(--radius-pill)', background: 'var(--color-bg-app)' }}>
+            <div style={{ display: 'flex', 'align-items': 'center', gap: '10px', padding: '9px 10px 9px 16px', 'border-radius': 'var(--radius-md)', background: 'var(--color-bg-app)' }}>
               <span aria-hidden="true" style={{ color: 'var(--color-text-tertiary)', display: 'flex' }}><IconSearch size={17} /></span>
               <input
                 ref={inputRef}
@@ -155,7 +155,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                 placeholder="Search items, jump to a view, or run a command…"
                 style={{
                   flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                  'font-family': 'inherit', 'font-size': '0.90625rem', color: 'var(--color-text-primary)',
+                  'font-family': 'inherit', 'font-size': 'var(--text-lead)', color: 'var(--color-text-primary)',
                 }}
               />
               <KbdHint>esc</KbdHint>
@@ -173,13 +173,13 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
             >
               <Show
                 when={filtered().length > 0}
-                fallback={<div role="status" style={{ padding: '28px', 'text-align': 'center', 'font-size': '0.8125rem', color: 'var(--color-text-tertiary)' }}>{found.loading() ? 'Searching items…' : <>No matches for “{search()}”</>}</div>}
+                fallback={<div role="status" style={{ padding: '28px', 'text-align': 'center', 'font-size': 'var(--text-small)', color: 'var(--color-text-tertiary)' }}>{found.loading() ? 'Searching items…' : <>No matches for “{search()}”</>}</div>}
               >
                 <For each={groups()}>
                   {(g, gi) => (
                     <div role="group" aria-labelledby={`cmdk-group-${gi()}`}>
                       <div style={{ padding: '8px 8px 4px' }}>
-                        <span id={`cmdk-group-${gi()}`} style={{ 'font-size': '0.65625rem', 'font-weight': 700, 'letter-spacing': '.1em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)' }}>{g.title}</span>
+                        <span id={`cmdk-group-${gi()}`} style={{ 'font-size': 'var(--text-micro)', 'font-weight': 700, 'letter-spacing': '.1em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)' }}>{g.title}</span>
                       </div>
                       <For each={g.items}>
                         {({ cmd, index }) => {
@@ -194,7 +194,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                               onMouseEnter={() => setSelectedIndex(index)}
                               style={{
                                 width: '100%', display: 'flex', 'align-items': 'center', gap: '10px',
-                                padding: '7px 12px 7px 7px', 'border-radius': 'var(--radius-pill)', border: 'none', cursor: 'pointer',
+                                padding: '7px 12px 7px 7px', 'border-radius': 'var(--radius-md)', border: 'none', cursor: 'pointer',
                                 'text-align': 'left', 'font-family': 'inherit',
                                 background: active() ? 'var(--color-accent-soft)' : 'transparent',
                               }}
@@ -204,13 +204,13 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                                 fallback={
                                   <>
                               <span aria-hidden="true" style={{
-                                width: '26px', height: '26px', 'border-radius': 'var(--radius-pill)', 'flex-shrink': 0,
-                                display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-size': '0.75rem',
+                                width: '26px', height: '26px', 'border-radius': 'var(--radius-md)', 'flex-shrink': 0,
+                                display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-size': 'var(--text-caption)',
                                 background: active() ? 'var(--color-bg-base)' : 'var(--color-chip)',
                               }}>{cmd.icon ? <Dynamic component={cmd.icon} size={15} /> : '•'}</span>
-                              <span style={{ flex: 1, 'font-size': '0.84375rem', 'font-weight': active() ? 600 : 500, color: active() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>{cmd.label}</span>
+                              <span style={{ flex: 1, 'font-size': 'var(--text-small)', 'font-weight': active() ? 600 : 500, color: active() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>{cmd.label}</span>
                               <Show when={cmd.shortcut}>
-                                <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>{cmd.shortcut}</span>
+                                <span style={{ 'font-family': 'var(--font-mono)', 'font-size': 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>{cmd.shortcut}</span>
                               </Show>
                                   </>
                                 }
@@ -232,7 +232,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
             </div>
 
             {/* footer legend */}
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '14px', padding: '10px 20px', 'border-top': '1px solid var(--color-border-light)', background: 'var(--color-bg-panel)', 'font-size': '0.6875rem', color: 'var(--color-text-tertiary)' }}>
+            <div style={{ display: 'flex', 'align-items': 'center', gap: '14px', padding: '10px 20px', 'border-top': '1px solid var(--color-border-light)', background: 'var(--color-bg-panel)', 'font-size': 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>
               <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}>
                 <KbdHint>↑↓</KbdHint>navigate
               </span>
