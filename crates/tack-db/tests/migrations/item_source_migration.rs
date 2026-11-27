@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 fn minimal_create_item(title: &str) -> CreateItem {
     CreateItem {
+        key: None,
         recurrence: None,
         recurrence_of: None,
         title: title.to_string(),

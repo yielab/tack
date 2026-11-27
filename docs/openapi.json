@@ -9555,6 +9555,7 @@
         "type": "object",
         "required": [
           "agent_profile_id",
+          "key",
           "name",
           "instructions",
           "tool_policy",
@@ -9609,6 +9610,9 @@
             ]
           },
           "instructions": {
+            "type": "string"
+          },
+          "key": {
             "type": "string"
           },
           "kind": {
@@ -10607,6 +10611,13 @@
             ],
             "description": "One line telling a person what the field is for."
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the board and the file use for this entry; `key_of` the name when omitted."
+          },
           "name": {
             "type": "string"
           },
@@ -10662,6 +10673,13 @@
             "type": "string",
             "description": "What the agent is told before the task."
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the board and the file use for this entry; `key_of` the name when omitted."
+          },
           "kind": {
             "type": [
               "string",
@@ -10707,6 +10725,13 @@
               "null"
             ]
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the board and the file use for this entry; `key_of` the name when omitted."
+          },
           "name": {
             "type": "string"
           },
@@ -10738,6 +10763,13 @@
               "string",
               "null"
             ]
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the board and the file use for this entry; `key_of` the name when omitted."
           },
           "name": {
             "type": "string"
@@ -11324,6 +11356,13 @@
           "field_type": {
             "$ref": "#/components/schemas/CustomFieldType"
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The key the new row gets; `key_of` its name when omitted. A taken key is a conflict."
+          },
           "name": {
             "type": "string"
           },
@@ -11586,6 +11625,13 @@
               "string",
               "null"
             ]
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The key the new row gets; `key_of` its title when omitted. A taken key is a conflict."
           },
           "parent_id": {
             "type": [
@@ -11856,6 +11902,13 @@
           "instructions": {
             "type": "string"
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The key the profile gets; `key_of` its name, made unique, when absent."
+          },
           "kind": {
             "type": [
               "string",
@@ -12085,6 +12138,13 @@
               "null"
             ]
           },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The key the new row gets; `key_of` its name when omitted. A taken key is a conflict."
+          },
           "name": {
             "type": "string"
           }
@@ -12108,6 +12168,13 @@
               "string",
               "null"
             ]
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The key the new row gets; `key_of` its name when omitted. A taken key is a conflict."
           },
           "name": {
             "type": "string"
@@ -12396,6 +12463,10 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "description": "Empty on a template-level field, which a project folder never names."
           },
           "name": {
             "type": "string"
@@ -13850,6 +13921,10 @@
           "item_type": {
             "type": "string",
             "description": "A key of the project's type catalog (`Project::item_types`)."
+          },
+          "key": {
+            "type": "string",
+            "description": "The name a project folder and the board use for this item; empty for a hidden one and for\nJSON written before items had one."
           },
           "parent_id": {
             "type": [
@@ -16644,6 +16719,7 @@
         "required": [
           "id",
           "project_id",
+          "key",
           "name",
           "color",
           "created_at"
@@ -16672,6 +16748,9 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "key": {
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -17849,6 +17928,7 @@
         "required": [
           "id",
           "project_id",
+          "key",
           "name",
           "status",
           "created_at",
@@ -17875,6 +17955,9 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "key": {
+            "type": "string"
           },
           "name": {
             "type": "string"

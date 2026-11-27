@@ -28,6 +28,7 @@ async fn add_role(board: &support::Board, name: &str, profile: &str) {
         .create_role(
             board.project_id,
             CreateRole {
+                key: None,
                 name: name.into(),
                 color: None,
                 icon: None,

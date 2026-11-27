@@ -192,6 +192,7 @@ async fn a_new_group_cannot_be_made_under_work_or_in_a_sprint() {
         .create_sprint(
             project.id,
             CreateSprint {
+                key: None,
                 name: "S1".into(),
                 goal: None,
                 start_date: None,

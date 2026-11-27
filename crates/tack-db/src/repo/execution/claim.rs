@@ -30,6 +30,8 @@ pub struct NewRunner<'a> {
 #[derive(Debug, Clone)]
 pub struct NewAgentProfile<'a> {
     pub id: &'a str,
+    /// The key it gets; `key_of` its name, made unique, when `None`.
+    pub key: Option<&'a str>,
     pub name: &'a str,
     pub instructions: &'a str,
     pub tool_policy: &'a str,
@@ -1009,7 +1011,7 @@ impl Repository {
     ) -> Result<Vec<tack_core::outline::bundle::ProfileRow>, StoreError> {
         use sqlx::Row;
         let rows = sqlx::query(
-            "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id, delivers, egress_mode \
+            "SELECT id, key, name, kind, instructions, tool_policy, limits, builtin, fleet_id, delivers, egress_mode \
              FROM agent_profiles ORDER BY name",
         )
         .fetch_all(self.pool())
@@ -1020,6 +1022,7 @@ impl Repository {
             .iter()
             .map(|r| tack_core::outline::bundle::ProfileRow {
                 id: r.get("id"),
+                key: r.get("key"),
                 name: r.get("name"),
                 kind: r.get("kind"),
                 instructions: r.get("instructions"),
@@ -1054,7 +1057,8 @@ impl Repository {
     }
 }
 
-/// The profile write of [`Repository::write_agent_profile`], on the caller's connection.
+/// The profile write of [`Repository::write_agent_profile`], on the caller's connection. A new
+/// profile is made with `row.key`; a profile that exists keeps the key it has.
 pub(crate) async fn write_agent_profile_in(
     conn: &mut sqlx::SqliteConnection,
     row: &tack_core::outline::bundle::ProfileRow,
@@ -1063,8 +1067,8 @@ pub(crate) async fn write_agent_profile_in(
     let now = now.to_rfc3339();
     sqlx::query(
         "INSERT INTO agent_profiles \
-         (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, egress_mode, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         (id, key, name, instructions, tool_policy, limits, kind, fleet_id, delivers, egress_mode, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
          instructions = excluded.instructions, tool_policy = excluded.tool_policy, \
          limits = excluded.limits, kind = excluded.kind, fleet_id = excluded.fleet_id, \
@@ -1072,6 +1076,7 @@ pub(crate) async fn write_agent_profile_in(
          updated_at = excluded.updated_at",
     )
     .bind(&row.id)
+    .bind(&row.key)
     .bind(&row.name)
     .bind(&row.instructions)
     .bind(row.tool_policy.to_string())

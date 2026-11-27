@@ -33,6 +33,7 @@ async fn role(repo: &Repository, project: &Project, name: &str, profile: &str) -
         .create_role(
             project.id,
             CreateRole {
+                key: None,
                 name: name.into(),
                 color: None,
                 icon: None,

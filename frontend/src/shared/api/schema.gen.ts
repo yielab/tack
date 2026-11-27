@@ -3936,6 +3936,7 @@ export interface components {
             egress_mode: string;
             fleet_id?: string | null;
             instructions: string;
+            key: string;
             kind: string;
             limits: unknown;
             name: string;
@@ -4310,6 +4311,8 @@ export interface components {
             default?: unknown;
             /** @description One line telling a person what the field is for. */
             description?: string | null;
+            /** @description The name the board and the file use for this entry; `key_of` the name when omitted. */
+            key?: string | null;
             name: string;
             /** @description The choices of a select or multi_select field. */
             options?: string[];
@@ -4333,6 +4336,8 @@ export interface components {
             fleet?: string | null;
             /** @description What the agent is told before the task. */
             instructions?: string;
+            /** @description The name the board and the file use for this entry; `key_of` the name when omitted. */
+            key?: string | null;
             /** @description implementer, reviewer, researcher, planner or custom (the default). */
             kind?: string | null;
             /** @description Budgets and the time the agent may take. */
@@ -4347,6 +4352,8 @@ export interface components {
             /** @description A CSS color such as `#3b82f6`. */
             color?: string | null;
             icon?: string | null;
+            /** @description The name the board and the file use for this entry; `key_of` the name when omitted. */
+            key?: string | null;
             name: string;
             /** @description The profile a card with this role runs with: a name from the file, then the board. */
             profile?: string | null;
@@ -4355,6 +4362,8 @@ export interface components {
             /** @description `YYYY-MM-DD`. */
             end?: string | null;
             goal?: string | null;
+            /** @description The name the board and the file use for this entry; `key_of` the name when omitted. */
+            key?: string | null;
             name: string;
             /** @description `YYYY-MM-DD`. */
             start?: string | null;
@@ -4557,6 +4566,8 @@ export interface components {
             default_value?: unknown;
             description?: string | null;
             field_type: components["schemas"]["CustomFieldType"];
+            /** @description The key the new row gets; `key_of` its name when omitted. A taken key is a conflict. */
+            key?: string | null;
             name: string;
             options?: string[] | null;
             required?: boolean | null;
@@ -4700,6 +4711,8 @@ export interface components {
             estimate?: number | null;
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
             item_type?: string | null;
+            /** @description The key the new row gets; `key_of` its title when omitted. A taken key is a conflict. */
+            key?: string | null;
             /** Format: uuid */
             parent_id?: string | null;
             priority?: null | components["schemas"]["Priority"];
@@ -4782,6 +4795,8 @@ export interface components {
             /** @description The fleet a run with this profile goes to when it names no selector. */
             fleet_id?: string | null;
             instructions: string;
+            /** @description The key the profile gets; `key_of` its name, made unique, when absent. */
+            key?: string | null;
             /**
              * @description What the profile does: `implementer`, `reviewer`, `researcher`, `planner` or `custom`
              *     (the default). It decides whether a run needs a repository.
@@ -4834,12 +4849,16 @@ export interface components {
         CreateRole: {
             color?: string | null;
             icon?: string | null;
+            /** @description The key the new row gets; `key_of` its name when omitted. A taken key is a conflict. */
+            key?: string | null;
             name: string;
         };
         CreateSprint: {
             /** Format: date-time */
             end_date?: string | null;
             goal?: string | null;
+            /** @description The key the new row gets; `key_of` its name when omitted. A taken key is a conflict. */
+            key?: string | null;
             name: string;
             /** Format: date-time */
             start_date?: string | null;
@@ -4960,6 +4979,8 @@ export interface components {
             field_type: components["schemas"]["CustomFieldType"];
             /** Format: uuid */
             id: string;
+            /** @description Empty on a template-level field, which a project folder never names. */
+            key?: string;
             name: string;
             options?: string[] | null;
             /** Format: uuid */
@@ -5517,6 +5538,11 @@ export interface components {
             id: string;
             /** @description A key of the project's type catalog (`Project::item_types`). */
             item_type: string;
+            /**
+             * @description The name a project folder and the board use for this item; empty for a hidden one and for
+             *     JSON written before items had one.
+             */
+            key?: string;
             /** Format: uuid */
             parent_id?: string | null;
             priority: components["schemas"]["Priority"];
@@ -6563,6 +6589,7 @@ export interface components {
             icon?: string | null;
             /** Format: uuid */
             id: string;
+            key: string;
             name: string;
             /** Format: uuid */
             project_id: string;
@@ -7019,6 +7046,7 @@ export interface components {
             goal?: string | null;
             /** Format: uuid */
             id: string;
+            key: string;
             name: string;
             /** Format: uuid */
             project_id: string;

@@ -11,6 +11,7 @@ use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::key::{is_key, key_of};
 use super::{
     BundleAutoStart, BundleAutomation, BundleAutonomy, BundleField, BundleProfile, BundleRole,
     BundleSprint, BundleStatus, BundleTeam, BundleType, BundleWorkflow, Outline, OutlineError,
@@ -36,6 +37,7 @@ pub const PROFILE_KINDS: [&str; 5] = ["implementer", "reviewer", "researcher", "
 #[derive(Debug, Clone)]
 pub struct ProfileRow {
     pub id: String,
+    pub key: String,
     pub name: String,
     pub kind: String,
     pub instructions: String,
@@ -47,14 +49,22 @@ pub struct ProfileRow {
     pub builtin: bool,
 }
 
+/// A row the board has, as a file entry is matched to it.
+#[derive(Debug, Clone)]
+pub struct Named {
+    pub id: String,
+    pub key: String,
+    pub name: String,
+}
+
 /// What a file is checked against: the project's own settings and everything
 /// the board already has. A new project passes empty slices.
 pub struct Board<'a> {
     pub workflow: &'a WorkflowConfig,
     pub fields: &'a [CustomFieldDefinition],
     pub profiles: &'a [ProfileRow],
-    pub roles: &'a [(Uuid, String)],
-    pub sprints: &'a [(Uuid, String)],
+    pub roles: &'a [Named],
+    pub sprints: &'a [Named],
     /// `(id, name)`
     pub fleets: &'a [(String, String)],
     pub harness_kinds: &'a [&'a str],
@@ -67,10 +77,11 @@ pub struct Board<'a> {
     pub new_project: bool,
 }
 
-/// A section's row: made new, or matched by name to one the board has.
+/// A section's row: made new with the key shown, or matched by key, else by name, to one the
+/// board has.
 #[derive(Debug, Clone)]
 pub enum Upsert<T> {
-    Create(T),
+    Create { key: String, value: T },
     Update { id: String, value: T },
 }
 
@@ -215,16 +226,21 @@ fn name_of(text: &str) -> &str {
     text.trim()
 }
 
-/// Match one section's rows to the board's by name. A repeated or empty name
-/// is a problem. Returns the rows and how many board names the file leaves out.
-fn match_names<T: Clone>(
+/// Match one section's rows to the board's. An entry with a key is the board row with that key,
+/// whatever its name; one without is the row with that name. A repeated or empty name is a
+/// problem, and so is a key the entry cannot be created with. Returns the rows and how many
+/// board rows the file leaves out.
+fn match_rows<T: Clone>(
     section: &str,
     rows: &[T],
+    key: impl Fn(&T) -> Option<&str>,
     name: impl Fn(&T) -> &str,
-    existing: &[(String, String)],
+    existing: &[Named],
     problems: &mut Vec<String>,
 ) -> (Vec<Upsert<T>>, usize) {
     let mut seen = HashSet::new();
+    let mut keys = HashSet::new();
+    let mut matched = HashSet::new();
     let mut out = Vec::with_capacity(rows.len());
     for (i, row) in rows.iter().enumerate() {
         let wanted = name_of(name(row));
@@ -236,18 +252,62 @@ fn match_names<T: Clone>(
             problems.push(format!("{section}: \"{wanted}\" is named twice"));
             continue;
         }
-        out.push(match existing.iter().find(|(_, n)| n.trim() == wanted) {
-            Some((id, _)) => Upsert::Update {
-                id: id.clone(),
+        let by_name = || existing.iter().find(|r| r.name.trim() == wanted);
+        let found = match key(row) {
+            Some(given) => existing.iter().find(|r| r.key == given),
+            None => by_name(),
+        };
+        if let Some(board_row) = found {
+            if !matched.insert(board_row.id.clone()) {
+                problems.push(format!(
+                    "{section}: \"{wanted}\" is the same row as an entry before it"
+                ));
+                continue;
+            }
+            out.push(Upsert::Update {
+                id: board_row.id.clone(),
                 value: row.clone(),
-            },
-            None => Upsert::Create(row.clone()),
+            });
+            continue;
+        }
+        let made = match key(row) {
+            Some(given) if !is_key(given) => {
+                problems.push(format!(
+                    "{section}: \"{wanted}\" has key \"{given}\", which is not a key (1-64 \
+                     lowercase letters, digits or dashes, none at either end)"
+                ));
+                continue;
+            }
+            Some(given) => {
+                if let Some(other) = by_name() {
+                    problems.push(format!(
+                        "{section}: \"{wanted}\" is \"{}\" on the board; write that key or drop \
+                         the name",
+                        other.key
+                    ));
+                    continue;
+                }
+                given.to_owned()
+            }
+            None => key_of(wanted),
+        };
+        if let Some(holder) = existing.iter().find(|r| r.key == made) {
+            problems.push(format!(
+                "{section}: key \"{made}\" is already the key of \"{}\"",
+                holder.name.trim()
+            ));
+            continue;
+        }
+        if !keys.insert(made.clone()) {
+            problems.push(format!("{section}: key \"{made}\" is used twice"));
+            continue;
+        }
+        out.push(Upsert::Create {
+            key: made,
+            value: row.clone(),
         });
     }
-    let not_mentioned = existing
-        .iter()
-        .filter(|(_, n)| !seen.contains(n.trim()))
-        .count();
+    let not_mentioned = existing.iter().filter(|r| !matched.contains(&r.id)).count();
     (out, not_mentioned)
 }
 
@@ -267,6 +327,7 @@ fn field_definition(field: &BundleField, field_type: CustomFieldType) -> CustomF
     CustomFieldDefinition {
         id: Uuid::nil(),
         project_id: None,
+        key: field.key.clone().unwrap_or_default(),
         name: field.name.trim().to_string(),
         field_type,
         description: field.description.clone(),
@@ -589,14 +650,19 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
         }
         field_defs.insert(name.to_string(), field_definition(field, field_type));
     }
-    let existing_fields: Vec<(String, String)> = board
+    let existing_fields: Vec<Named> = board
         .fields
         .iter()
-        .map(|f| (f.id.to_string(), f.name.clone()))
+        .map(|f| Named {
+            id: f.id.to_string(),
+            key: f.key.clone(),
+            name: f.name.clone(),
+        })
         .collect();
-    let (fields, fields_left) = match_names(
+    let (fields, fields_left) = match_rows(
         "fields",
         &outline.fields,
+        |f| f.key.as_deref(),
         |f| &f.name,
         &existing_fields,
         &mut problems,
@@ -691,15 +757,20 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
         }
         own_profiles.push(profile);
     }
-    let existing_profiles: Vec<(String, String)> = board
+    let existing_profiles: Vec<Named> = board
         .profiles
         .iter()
         .filter(|p| !p.builtin)
-        .map(|p| (p.id.clone(), p.name.clone()))
+        .map(|p| Named {
+            id: p.id.clone(),
+            key: p.key.clone(),
+            name: p.name.clone(),
+        })
         .collect();
-    let (profiles, profiles_left) = match_names(
+    let (profiles, profiles_left) = match_rows(
         "profiles",
         &own_profiles,
+        |p| p.key.as_deref(),
         |p| &p.name,
         &existing_profiles,
         &mut problems,
@@ -736,16 +807,12 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
             ));
         }
     }
-    let existing_roles: Vec<(String, String)> = board
-        .roles
-        .iter()
-        .map(|(id, n)| (id.to_string(), n.clone()))
-        .collect();
-    let (roles, roles_left) = match_names(
+    let (roles, roles_left) = match_rows(
         "roles",
         &outline.roles,
+        |r| r.key.as_deref(),
         |r| &r.name,
-        &existing_roles,
+        board.roles,
         &mut problems,
     );
     if !outline.roles.is_empty() {
@@ -779,16 +846,12 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
             }
         }
     }
-    let existing_sprints: Vec<(String, String)> = board
-        .sprints
-        .iter()
-        .map(|(id, n)| (id.to_string(), n.clone()))
-        .collect();
-    let (sprints, sprints_left) = match_names(
+    let (sprints, sprints_left) = match_rows(
         "sprints",
         &outline.sprints,
+        |s| s.key.as_deref(),
         |s| &s.name,
-        &existing_sprints,
+        board.sprints,
         &mut problems,
     );
     if !outline.sprints.is_empty() {
@@ -826,9 +889,9 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
 
     // items
     let mut role_names: HashSet<&str> = outline.roles.iter().map(|r| r.name.trim()).collect();
-    role_names.extend(board.roles.iter().map(|(_, n)| n.trim()));
+    role_names.extend(board.roles.iter().map(|r| r.name.trim()));
     let mut sprint_names: HashSet<&str> = outline.sprints.iter().map(|s| s.name.trim()).collect();
-    sprint_names.extend(board.sprints.iter().map(|(_, n)| n.trim()));
+    sprint_names.extend(board.sprints.iter().map(|r| r.name.trim()));
     let mut item_warnings = Vec::new();
     let mut resolved: Option<ResolvedOutline> = None;
     match resolve(&outline.items, board.workflow) {
@@ -1106,10 +1169,13 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         }),
     };
 
+    // A row the board has not given a key writes none.
+    let written = |key: &String| (!key.is_empty()).then(|| key.clone());
     let mut fields: Vec<BundleField> = parts
         .fields
         .iter()
         .map(|f| BundleField {
+            key: written(&f.key),
             name: f.name.clone(),
             field_type: serde_json::to_value(&f.field_type)
                 .ok()
@@ -1143,6 +1209,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
     let profiles: Vec<BundleProfile> = referenced
         .into_iter()
         .map(|p| BundleProfile {
+            key: written(&p.key),
             name: p.name.clone(),
             kind: Some(p.kind.clone()),
             instructions: p.instructions.clone(),
@@ -1165,6 +1232,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         .roles
         .iter()
         .map(|r| BundleRole {
+            key: written(&r.key),
             name: r.name.clone(),
             color: Some(r.color.clone()),
             icon: r.icon.clone(),
@@ -1180,6 +1248,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         .sprints
         .iter()
         .map(|s| BundleSprint {
+            key: written(&s.key),
             name: s.name.clone(),
             goal: s.goal.clone(),
             start: s.start_date.map(|d| d.format("%Y-%m-%d").to_string()),

@@ -44,6 +44,7 @@ pub fn next_due(from: NaiveDate, r: Recurrence) -> NaiveDate {
 /// status, since `CreateItem` carries none.
 pub fn clone_for_next(item: &Item, due: NaiveDate) -> CreateItem {
     CreateItem {
+        key: None,
         title: item.title.clone(),
         description: item.description.clone(),
         item_type: Some(item.item_type.clone()),
@@ -96,6 +97,7 @@ mod tests {
         let item = Item {
             id: Uuid::new_v4(),
             project_id: Uuid::new_v4(),
+            key: "pay-rent".into(),
             parent_id: Some(Uuid::new_v4()),
             title: "Pay rent".into(),
             description: Some("transfer".into()),

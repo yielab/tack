@@ -19,6 +19,7 @@ use tack_core::workflow::{StatusCategory, StatusGate};
 use super::Repository;
 use super::agent_credentials::writer_name;
 use super::dependencies::insert_dependency;
+use super::project_file::{key_conflict, key_for};
 
 /// What stops an item from being written.
 #[derive(Debug, thiserror::Error)]
@@ -88,9 +89,10 @@ const HAS_CHILDREN_SQL: &str =
 
 /// The columns of an `items` row that make up an [`Item`], in one place: every item read selects
 /// exactly these and `ItemRow` is exactly these.
-const ITEM_COLUMNS: [&str; 24] = [
+const ITEM_COLUMNS: [&str; 25] = [
     "id",
     "project_id",
+    "key",
     "parent_id",
     "title",
     "description",
@@ -469,6 +471,7 @@ impl Repository {
 struct ItemRow {
     id: String,
     project_id: String,
+    key: String,
     parent_id: Option<String>,
     title: String,
     description: Option<String>,
@@ -499,6 +502,7 @@ impl ItemRow {
         Ok(Item {
             id: decode::uuid(TABLE, "id", &self.id)?,
             project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
+            key: self.key,
             parent_id: decode::optional_uuid(TABLE, "parent_id", self.parent_id.as_deref())?,
             title: self.title,
             description: self.description,
@@ -755,13 +759,22 @@ pub(crate) async fn insert_item(
     let sort_order = max_sort.unwrap_or(0) + 1;
 
     let source_str = source.to_string();
+    let key = key_for(
+        conn,
+        "items",
+        Some(&project_id.to_string()),
+        input.key.as_deref(),
+        &input.title,
+    )
+    .await?;
 
     sqlx::query(
-            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO items (id, project_id, key, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(project_id.to_string())
+        .bind(&key)
         .bind(input.parent_id.map(|p| p.to_string()))
         .bind(&input.title)
         .bind(&input.description)
@@ -782,13 +795,15 @@ pub(crate) async fn insert_item(
         .bind(&now_str)
         .bind(&now_str)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .map_err(key_conflict)?;
 
     debug!(item_id = %id, title = %input.title, source = %source_str, "Item created");
 
     Ok(Item {
         id,
         project_id,
+        key,
         parent_id: input.parent_id,
         title: input.title,
         description: input.description,
@@ -1071,6 +1086,7 @@ mod tests {
 
     fn row(run_settings: Option<&str>) -> ItemRow {
         ItemRow {
+            key: String::new(),
             id: Uuid::new_v4().to_string(),
             project_id: Uuid::new_v4().to_string(),
             parent_id: None,

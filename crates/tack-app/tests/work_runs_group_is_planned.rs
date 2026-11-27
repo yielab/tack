@@ -48,6 +48,7 @@ async fn give_role(board: &Board, item: Uuid, name: &str, profile: &str) {
         .create_role(
             board.project_id,
             CreateRole {
+                key: None,
                 name: name.into(),
                 color: None,
                 icon: None,

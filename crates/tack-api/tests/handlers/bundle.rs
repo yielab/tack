@@ -393,6 +393,40 @@ async fn the_export_is_the_import() {
     )
     .await;
     assert_eq!(first, second);
+    let file: Value = serde_saphyr::from_str(&first).expect("the export is YAML");
+    for section in ["fields", "profiles", "roles", "sprints"] {
+        let entries = file[section].as_array().expect("the section is a list");
+        assert!(!entries.is_empty(), "{section} in the export");
+        for entry in entries {
+            assert!(entry["key"].is_string(), "{section}: {entry}");
+        }
+    }
+
+    // A second import of the file that renames Contenido under its key updates the same row.
+    let roles_uri = format!("/api/projects/{pid}/roles");
+    let before = get(&app, &roles_uri).await;
+    let contenido = before
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["key"] == "contenido")
+        .expect("the role Contenido has its key");
+    let renamed = first.replace("Contenido", "Content");
+    let (status, answer) = import(&app, &format!("/api/projects/{pid}/outline"), &renamed).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let after = get(&app, &roles_uri).await;
+    assert_eq!(
+        after.as_array().unwrap().len(),
+        before.as_array().unwrap().len()
+    );
+    let content = after
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["key"] == "contenido")
+        .expect("the role keeps its key");
+    assert_eq!(content["name"], "Content");
+    assert_eq!(content["id"], contenido["id"]);
 
     let (_, json_text) = call(
         &app,

@@ -8,6 +8,7 @@ use tack_protocol::execution::ExecutionState;
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct AgentProfileRow {
     pub id: String,
+    pub key: String,
     pub name: String,
     pub instructions: String,
     pub tool_policy: String,
@@ -24,7 +25,7 @@ pub struct AgentProfileRow {
 /// Every agent profile, by name.
 pub async fn profiles_by_name(repo: &Repository) -> Result<Vec<AgentProfileRow>, StoreError> {
     Ok(sqlx::query_as::<_, AgentProfileRow>(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers,egress_mode FROM agent_profiles",
+        "SELECT id,key,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers,egress_mode FROM agent_profiles",
         " ORDER BY name"
     ))
     .fetch_all(repo.pool())
@@ -37,7 +38,7 @@ pub async fn profile_by_id(
     profile_id: &str,
 ) -> Result<Option<AgentProfileRow>, StoreError> {
     Ok(sqlx::query_as::<_, AgentProfileRow>(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers,egress_mode FROM agent_profiles",
+        "SELECT id,key,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers,egress_mode FROM agent_profiles",
         " WHERE id = ?"
     ))
     .bind(profile_id)

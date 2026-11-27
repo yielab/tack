@@ -41,6 +41,7 @@ fn role(name: &str, profile: Option<&str>, existing: Option<uuid::Uuid>) -> Role
     RoleWrite {
         existing,
         role: CreateRole {
+            key: None,
             name: name.into(),
             color: None,
             icon: None,
@@ -58,6 +59,7 @@ async fn a_write_whose_last_role_fails_leaves_the_project_as_it_was() {
         .create_role(
             project.id,
             CreateRole {
+                key: None,
                 name: "Dev".into(),
                 color: None,
                 icon: None,
@@ -72,6 +74,7 @@ async fn a_write_whose_last_role_fails_leaves_the_project_as_it_was() {
         ..Default::default()
     });
     write.fields = vec![FieldWrite::Create(CreateCustomField {
+        key: None,
         name: "Plan".into(),
         field_type: CustomFieldType::Text,
         description: None,
@@ -88,6 +91,7 @@ async fn a_write_whose_last_role_fails_leaves_the_project_as_it_was() {
     write.sprints = vec![SprintWrite {
         existing: None,
         sprint: CreateSprint {
+            key: None,
             name: "Week 1".into(),
             goal: None,
             start_date: None,
@@ -146,6 +150,7 @@ async fn deleting_a_sprint_clears_the_sprint_of_its_items() {
         .create_sprint(
             project.id,
             CreateSprint {
+                key: None,
                 name: "Week 1".into(),
                 goal: None,
                 start_date: None,

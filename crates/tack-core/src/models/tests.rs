@@ -5,6 +5,7 @@ fn make_field(field_type: CustomFieldType, options: Option<Vec<String>>) -> Cust
     CustomFieldDefinition {
         id: Uuid::new_v4(),
         project_id: None,
+        key: "test-field".to_string(),
         name: "test_field".to_string(),
         field_type,
         description: None,

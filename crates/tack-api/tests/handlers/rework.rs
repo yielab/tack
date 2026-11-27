@@ -79,6 +79,7 @@ async fn board(storage: &std::path::Path, loop_cap: i64) -> Board {
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Add sub".into(),

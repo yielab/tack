@@ -191,6 +191,10 @@ pub struct RunSettings {
 pub struct Item {
     pub id: Uuid,
     pub project_id: Uuid,
+    /// The name a project folder and the board use for this item; empty for a hidden one and for
+    /// JSON written before items had one.
+    #[serde(default)]
+    pub key: String,
     pub parent_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
@@ -517,6 +521,7 @@ impl std::fmt::Display for DependencyType {
 pub struct Role {
     pub id: Uuid,
     pub project_id: Uuid,
+    pub key: String,
     pub name: String,
     pub color: String,
     pub icon: Option<String>,
@@ -581,6 +586,7 @@ pub struct Attachment {
 pub struct Sprint {
     pub id: Uuid,
     pub project_id: Uuid,
+    pub key: String,
     pub name: String,
     pub goal: Option<String>,
     pub start_date: Option<DateTime<Utc>>,
@@ -689,6 +695,10 @@ pub struct UpdateProject {
 #[derive(Debug, Default, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateItem {
+    /// The key the new row gets; `key_of` its title when omitted. A taken key is a conflict.
+    #[serde(default)]
+    #[validate(custom(function = "valid_key"))]
+    pub key: Option<String>,
     #[validate(length(min = 1, max = 500, message = "title must be 1–500 characters"))]
     pub title: String,
     #[validate(length(max = 50_000, message = "description too long (max 50 000 chars)"))]
@@ -805,6 +815,10 @@ impl UpdateItem {
 #[derive(Debug, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateSprint {
+    /// The key the new row gets; `key_of` its name when omitted. A taken key is a conflict.
+    #[serde(default)]
+    #[validate(custom(function = "valid_key"))]
+    pub key: Option<String>,
     #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
     #[validate(length(max = 2_000, message = "goal too long (max 2 000 chars)"))]
@@ -832,6 +846,10 @@ pub struct UpdateSprint {
 #[derive(Debug, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateRole {
+    /// The key the new row gets; `key_of` its name when omitted. A taken key is a conflict.
+    #[serde(default)]
+    #[validate(custom(function = "valid_key"))]
+    pub key: Option<String>,
     #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: String,
     pub color: Option<String>,
@@ -964,6 +982,9 @@ pub struct CreateProjectTemplate {
 pub struct CustomFieldDefinition {
     pub id: Uuid,
     pub project_id: Option<Uuid>, // None for template-level fields
+    /// Empty on a template-level field, which a project folder never names.
+    #[serde(default)]
+    pub key: String,
     pub name: String,
     pub field_type: CustomFieldType,
     pub description: Option<String>,
@@ -1004,6 +1025,10 @@ pub struct CustomFieldValue {
 #[derive(Debug, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateCustomField {
+    /// The key the new row gets; `key_of` its name when omitted. A taken key is a conflict.
+    #[serde(default)]
+    #[validate(custom(function = "valid_key"))]
+    pub key: Option<String>,
     #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: String,
     pub field_type: CustomFieldType,
@@ -1329,6 +1354,17 @@ pub struct UpsertItemBrief {
     pub constraints: Vec<Constraint>,
     pub definition_of_done: Option<String>,
     pub risk: Option<Risk>,
+}
+
+/// A key a request names must be one a project folder can hold.
+fn valid_key(key: &str) -> Result<(), validator::ValidationError> {
+    if crate::outline::key::is_key(key) {
+        return Ok(());
+    }
+    Err(validator::ValidationError::new("key").with_message(
+        format!("key \"{key}\" must be 1-64 lowercase letters, digits or dashes, with no dash at either end")
+            .into(),
+    ))
 }
 
 #[cfg(test)]

@@ -416,6 +416,7 @@ async fn run_import(
             .create_sprint(
                 new_project_id,
                 CreateSprint {
+                    key: None,
                     name: sprint.name.clone(),
                     goal: sprint.goal.clone(),
                     start_date: sprint.start_date,
@@ -451,6 +452,7 @@ async fn run_import(
                 new_project_id,
                 &item.status,
                 CreateItem {
+                    key: None,
                     title: item.title.clone(),
                     description: item.description.clone(),
                     item_type: Some(item.item_type.clone()),

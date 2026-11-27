@@ -8,6 +8,7 @@ use uuid::Uuid;
 use tack_core::models::{CreateRole, Role, UpdateRole};
 
 use super::Repository;
+use super::project_file::{key_conflict, key_for};
 
 impl Repository {
     #[instrument(skip(self))]
@@ -51,7 +52,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_roles(&self, project_id: Uuid) -> Result<Vec<Role>, StoreError> {
         let rows = sqlx::query_as::<_, RoleRow>(
-            "SELECT id, project_id, name, color, icon, agent_profile_id, created_at
+            "SELECT id, project_id, key, name, color, icon, agent_profile_id, created_at
              FROM roles WHERE project_id = ? ORDER BY name",
         )
         .bind(project_id.to_string())
@@ -110,7 +111,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_roles_for_item(&self, item_id: Uuid) -> Result<Vec<Role>, StoreError> {
         let rows = sqlx::query_as::<_, RoleRow>(
-            "SELECT r.id, r.project_id, r.name, r.color, r.icon, r.agent_profile_id, r.created_at
+            "SELECT r.id, r.project_id, r.key, r.name, r.color, r.icon, r.agent_profile_id, r.created_at
              FROM roles r
              JOIN item_roles ir ON r.id = ir.role_id
              WHERE ir.item_id = ?
@@ -140,25 +141,36 @@ pub(crate) async fn create_role_in(
     let id = Uuid::new_v4();
     let now = Utc::now();
     let color = input.color.unwrap_or_else(|| "#6366f1".into());
+    let key = key_for(
+        conn,
+        "roles",
+        Some(&project_id.to_string()),
+        input.key.as_deref(),
+        &input.name,
+    )
+    .await?;
 
     sqlx::query(
-        "INSERT INTO roles (id, project_id, name, color, icon, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO roles (id, project_id, key, name, color, icon, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(project_id.to_string())
+    .bind(&key)
     .bind(&input.name)
     .bind(&color)
     .bind(&input.icon)
     .bind(now.to_rfc3339())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .map_err(key_conflict)?;
 
     debug!(role_id = %id, name = %input.name, "Role created");
 
     Ok(Role {
         id,
         project_id,
+        key,
         name: input.name,
         color,
         icon: input.icon,
@@ -195,7 +207,7 @@ pub(crate) async fn update_role_in(
         return Ok(None);
     }
     let row = sqlx::query_as::<_, RoleRow>(
-        "SELECT id, project_id, name, color, icon, agent_profile_id, created_at
+        "SELECT id, project_id, key, name, color, icon, agent_profile_id, created_at
          FROM roles WHERE id = ?",
     )
     .bind(id.to_string())
@@ -249,6 +261,7 @@ pub(crate) async fn delete_role_in(
 struct RoleRow {
     id: String,
     project_id: String,
+    key: String,
     name: String,
     color: String,
     icon: Option<String>,
@@ -262,6 +275,7 @@ impl RoleRow {
         Ok(Role {
             id: decode::uuid(TABLE, "id", &self.id)?,
             project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
+            key: self.key,
             name: self.name,
             color: self.color,
             icon: self.icon,

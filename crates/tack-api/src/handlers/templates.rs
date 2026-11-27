@@ -211,6 +211,7 @@ pub(crate) async fn build_project_from_template(
             .custom_fields
             .iter()
             .map(|f| BundleField {
+                key: None,
                 name: f.name.clone(),
                 field_type: serde_json::to_value(&f.field_type)
                     .ok()
@@ -357,6 +358,7 @@ pub async fn save_project_as_template(
         .map(|f| CustomFieldDefinition {
             id: Uuid::new_v4(),
             project_id: None,
+            key: f.key,
             name: f.name,
             field_type: f.field_type,
             description: f.description,

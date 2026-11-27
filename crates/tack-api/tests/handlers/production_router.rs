@@ -80,6 +80,7 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, Uuid, String) {
             project.id,
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Prove the mounted router".into(),
