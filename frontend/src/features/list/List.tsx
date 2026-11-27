@@ -36,7 +36,7 @@ import {
   ACTIONS_REM, COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, emptyColumns, matchesQuery, pruneTree, visibleRows,
   type ColDef, type EditableKey, type ItemNode, type SortDir, type SortKey,
 } from './listRows';
-import { NotReadyLine, RiskChip, listsBriefs, notReadyOf } from '../board/briefSummary';
+import { NotReadyLine, RiskChip, listsBriefs, notReadyOf } from '../../shared/ui/briefSummary';
 import { hasColumnChoice, loadDensity, loadHiddenColumns, saveDensity, saveHiddenColumns, type Density } from './listPrefs';
 
 

@@ -9,7 +9,7 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useExecutionStore } from '../../shared/state/executionContext';
 import { cardRun, newestRunByItem, type CardRun } from '../../shared/runWithAgent/cardRun';
-import { NotReadyLine, RiskChip, notReadyOf } from '../board/briefSummary';
+import { NotReadyLine, RiskChip, notReadyOf } from '../../shared/ui/briefSummary';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';

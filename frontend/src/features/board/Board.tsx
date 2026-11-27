@@ -32,7 +32,7 @@ import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import { ForById } from '../../shared/ui/ForById';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
-import { NotReadyLine, RiskChip, notReadyOf } from './briefSummary';
+import { NotReadyLine, RiskChip, notReadyOf } from '../../shared/ui/briefSummary';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
   cardRun, countRuns, getAlwaysPriority, orderByWork, passesFilters, showsPriority,
