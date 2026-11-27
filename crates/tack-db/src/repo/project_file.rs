@@ -3,10 +3,10 @@
 //! caller (`tack-api`'s outline handler) checked the file and mapped it to a [`ProjectWrite`]; this
 //! writes it, section by section, through the repositories' own connection-level functions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 use tack_core::CoreError;
 use tack_core::hierarchy::Hierarchy;
 use tack_core::item_types::ItemTypeDef;
@@ -16,6 +16,7 @@ use tack_core::models::{
 };
 use tack_core::outline::ResolvedOutline;
 use tack_core::outline::bundle::ProfileRow;
+use tack_core::outline::key::key_of;
 use uuid::Uuid;
 
 use super::Repository;
@@ -28,6 +29,105 @@ use super::projects::{create_project_in, update_project_in};
 use super::roles::{assign_role_to_item_in, create_role_in, update_role_in};
 use super::sprints::{create_sprint_in, get_sprint_in, update_sprint_in, update_sprint_status_in};
 use crate::StoreError;
+
+/// The tables that carry a key, and the column its default comes from.
+const KEYED: [(&str, &str); 5] = [
+    ("roles", "name"),
+    ("custom_field_definitions", "name"),
+    ("sprints", "name"),
+    ("agent_profiles", "name"),
+    ("items", "title"),
+];
+
+/// The most characters a key has; a suffix that would pass it cuts the name's part.
+const MAX_KEY_CHARS: usize = 64;
+
+/// Gives every row without a key one: `key_of` of its name or title, made unique within its
+/// project (within the board, for a profile) with `-2`, `-3`, ..., in creation order. A hidden item
+/// keeps none. One transaction, and a second call finds nothing to do.
+pub async fn fill_missing_keys(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    for (table, column) in KEYED {
+        let scope = scope_of(table);
+        let visible = if table == "items" {
+            "AND hidden = 0"
+        } else {
+            ""
+        };
+        let rows: Vec<(String, Option<String>, String)> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "SELECT id, {scope}, {column} FROM {table} WHERE key = '' {visible} \
+                 ORDER BY created_at, rowid"
+            )))
+            .fetch_all(&mut *tx)
+            .await?;
+        for (id, project, text) in rows {
+            let key = key_for(&mut tx, table, project.as_deref(), None, &text).await?;
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE {table} SET key = ? WHERE id = ?"
+            )))
+            .bind(key)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+    tx.commit().await
+}
+
+/// The column a key is unique within: the project, except for a profile, which is the board's.
+fn scope_of(table: &str) -> &'static str {
+    if table == "agent_profiles" {
+        "NULL"
+    } else {
+        "project_id"
+    }
+}
+
+/// The key a new row of `table` gets: the one it was given, else `key_of(text)` made unique
+/// among the keys of its project. A given key that is taken fails at the insert, which
+/// [`key_conflict`] turns into a conflict.
+pub(crate) async fn key_for(
+    conn: &mut SqliteConnection,
+    table: &'static str,
+    project: Option<&str>,
+    given: Option<&str>,
+    text: &str,
+) -> Result<String, sqlx::Error> {
+    if let Some(given) = given {
+        return Ok(given.to_owned());
+    }
+    let scope = scope_of(table);
+    let taken: HashSet<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT key FROM {table} WHERE {scope} IS ? AND key <> ''"
+    )))
+    .bind(project)
+    .fetch_all(&mut *conn)
+    .await?
+    .into_iter()
+    .collect();
+    let base = key_of(text);
+    let mut candidate = base.clone();
+    let mut number = 2;
+    while taken.contains(&candidate) {
+        let suffix = format!("-{number}");
+        let room = MAX_KEY_CHARS - suffix.len();
+        let cut: String = base.chars().take(room).collect();
+        candidate = format!("{}{suffix}", cut.trim_end_matches('-'));
+        number += 1;
+    }
+    Ok(candidate)
+}
+
+/// A failed insert of a keyed row: a key another row holds is the store's `Conflict`.
+pub(crate) fn key_conflict(error: sqlx::Error) -> StoreError {
+    match &error {
+        sqlx::Error::Database(db) if db.is_unique_violation() => {
+            StoreError::Conflict("that key is already taken".into())
+        }
+        _ => StoreError::Sql(error),
+    }
+}
 
 /// The project a write lands in.
 pub enum Target {
@@ -207,7 +307,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
         let id = match row.existing {
             Some(id) => {
                 let change = UpdateRole {
-                    name: None,
+                    name: Some(name.clone()),
                     color: row.role.color,
                     icon: row.role.icon,
                     agent_profile_id: row.profile.map(Some),
@@ -222,6 +322,7 @@ async fn write_in(conn: &mut SqliteConnection, write: ProjectWrite) -> Result<Wr
                     conn,
                     project_id,
                     CreateRole {
+                        key: row.role.key,
                         name: name.clone(),
                         color: row.role.color,
                         icon: row.role.icon,

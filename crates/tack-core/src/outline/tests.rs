@@ -339,6 +339,7 @@ fn csv_export_reimports_with_hierarchy() {
         recurrence_of: None,
         id: Uuid::new_v4(),
         project_id: Uuid::nil(),
+        key: String::new(),
         parent_id: parent,
         title: title.into(),
         description: Some("has, a comma\nand a line".into()),

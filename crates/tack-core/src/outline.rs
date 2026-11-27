@@ -157,6 +157,9 @@ pub struct BundleStatus {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BundleField {
+    /// The name the board and the file use for this entry; `key_of` the name when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub name: String,
     /// text, number, date, boolean, select, multi_select, url, email or long_text.
     #[serde(rename = "type")]
@@ -182,6 +185,9 @@ pub struct BundleField {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BundleProfile {
+    /// The name the board and the file use for this entry; `key_of` the name when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub name: String,
     /// implementer, reviewer, researcher, planner or custom (the default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -215,6 +221,9 @@ pub struct BundleProfile {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BundleRole {
+    /// The name the board and the file use for this entry; `key_of` the name when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub name: String,
     /// A CSS color such as `#3b82f6`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -230,6 +239,9 @@ pub struct BundleRole {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BundleSprint {
+    /// The name the board and the file use for this entry; `key_of` the name when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
@@ -903,6 +915,7 @@ fn item_input(
         .map(str::to_string)
         .collect();
     let input = CreateItem {
+        key: None,
         title: title.to_string(),
         description: trimmed(item.description.as_deref()).map(str::to_string),
         item_type: trimmed(item.item_type.as_deref()).map(str::to_string),

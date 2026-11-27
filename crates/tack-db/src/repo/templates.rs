@@ -215,6 +215,7 @@ fn builtin_field(
     CustomFieldDefinition {
         id: Uuid::new_v4(),
         project_id: None,
+        key: String::new(),
         name: name.to_string(),
         field_type,
         description: None,
@@ -229,6 +230,7 @@ fn builtin_field(
 
 fn builtin_role(name: &str, color: &str, profile: &str) -> BundleRole {
     BundleRole {
+        key: None,
         name: name.to_string(),
         color: Some(color.to_string()),
         icon: None,
@@ -239,6 +241,7 @@ fn builtin_role(name: &str, color: &str, profile: &str) -> BundleRole {
 /// A profile run by the docket agent.
 fn builtin_profile(name: &str, kind: &str, instructions: &str) -> BundleProfile {
     BundleProfile {
+        key: None,
         name: name.to_string(),
         kind: Some(kind.to_string()),
         instructions: instructions.to_string(),

@@ -123,6 +123,7 @@ pub async fn make_item(
         project.id,
         &status,
         CreateItem {
+            key: None,
             recurrence: None,
             recurrence_of: None,
             title: "Test Item".into(),

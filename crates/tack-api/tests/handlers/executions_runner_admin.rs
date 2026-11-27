@@ -68,6 +68,7 @@ async fn setup() -> (axum::Router, Repository, String) {
             project.id,
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "I".into(),
@@ -106,6 +107,7 @@ async fn setup() -> (axum::Router, Repository, String) {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-c1",
             name: "C1",
             instructions: "work safely",
@@ -707,6 +709,7 @@ async fn list_executions_scoped_to_item_id_excludes_other_items_rows() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Other".into(),
@@ -810,6 +813,7 @@ async fn list_executions_item_ids_finds_item_predating_every_row() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Noise".into(),
@@ -880,6 +884,7 @@ async fn list_executions_item_ids_returns_latest_row_per_item() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "B".into(),
@@ -960,6 +965,7 @@ async fn list_executions_item_ids_take_precedence_over_id_and_limit() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "B".into(),
@@ -1431,6 +1437,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-b",
             name: "B",
             instructions: "profile B instructions",
@@ -1551,6 +1558,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-b",
             name: "B",
             instructions: "profile B instructions",
@@ -1946,6 +1954,7 @@ async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_o
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-open",
             name: "Open",
             instructions: "x",
@@ -1995,6 +2004,7 @@ async fn add_profile(repo: &Repository, id: &str) {
     tack_test_support::seed::create_agent_profile(
         repo,
         NewAgentProfile {
+            key: None,
             id,
             name: id,
             instructions: "x",
@@ -2017,6 +2027,7 @@ async fn add_role(repo: &Repository, item_id: &str, name: &str, profile: Option<
         .create_role(
             item.project_id,
             tack_core::models::CreateRole {
+                key: None,
                 name: name.into(),
                 color: None,
                 icon: None,
@@ -2112,6 +2123,7 @@ async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_s
         tack_test_support::seed::create_agent_profile(
             &repo,
             NewAgentProfile {
+                key: None,
                 id: &id,
                 name: &id,
                 instructions: "x",
@@ -2265,6 +2277,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         tack_test_support::seed::create_agent_profile(
             &repo,
             NewAgentProfile {
+                key: None,
                 id: &id,
                 name: &id,
                 instructions: "x",
@@ -2373,6 +2386,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         tack_test_support::seed::create_agent_profile(
             &repo,
             NewAgentProfile {
+                key: None,
                 id: "profile-stored-bad",
                 name: "stored bad",
                 instructions: "x",
@@ -2523,6 +2537,7 @@ async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Valu
     tack_test_support::seed::create_agent_profile(
         repo,
         NewAgentProfile {
+            key: None,
             id,
             name: id,
             instructions: "x",

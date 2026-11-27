@@ -8,6 +8,7 @@ use uuid::Uuid;
 use tack_core::models::{CreateSprint, Sprint, SprintStatus, UpdateSprint};
 
 use super::Repository;
+use super::project_file::{key_conflict, key_for};
 
 impl Repository {
     #[instrument(skip(self))]
@@ -29,7 +30,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_sprints(&self, project_id: Uuid) -> Result<Vec<Sprint>, StoreError> {
         let rows = sqlx::query_as::<_, SprintRow>(
-            "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+            "SELECT id, project_id, key, name, goal, start_date, end_date, status, created_at, updated_at
              FROM sprints WHERE project_id = ? ORDER BY created_at DESC"
         )
         .bind(project_id.to_string())
@@ -80,12 +81,22 @@ pub(crate) async fn create_sprint_in(
     let now = Utc::now();
     let now_str = now.to_rfc3339();
 
+    let key = key_for(
+        conn,
+        "sprints",
+        Some(&project_id.to_string()),
+        input.key.as_deref(),
+        &input.name,
+    )
+    .await?;
+
     sqlx::query(
-        "INSERT INTO sprints (id, project_id, name, goal, start_date, end_date, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?)"
+        "INSERT INTO sprints (id, project_id, key, name, goal, start_date, end_date, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)"
     )
     .bind(id.to_string())
     .bind(project_id.to_string())
+    .bind(&key)
     .bind(&input.name)
     .bind(&input.goal)
     .bind(input.start_date.map(|d| d.to_rfc3339()))
@@ -93,13 +104,15 @@ pub(crate) async fn create_sprint_in(
     .bind(&now_str)
     .bind(&now_str)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .map_err(key_conflict)?;
 
     debug!(sprint_id = %id, name = %input.name, "Sprint created");
 
     Ok(Sprint {
         id,
         project_id,
+        key,
         name: input.name,
         goal: input.goal,
         start_date: input.start_date,
@@ -116,7 +129,7 @@ pub(crate) async fn get_sprint_in(
     id: Uuid,
 ) -> Result<Option<Sprint>, StoreError> {
     let row = sqlx::query_as::<_, SprintRow>(
-        "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+        "SELECT id, project_id, key, name, goal, start_date, end_date, status, created_at, updated_at
          FROM sprints WHERE id = ?",
     )
     .bind(id.to_string())
@@ -187,6 +200,7 @@ pub(crate) async fn delete_sprint_in(
 struct SprintRow {
     id: String,
     project_id: String,
+    key: String,
     name: String,
     goal: Option<String>,
     start_date: Option<String>,
@@ -202,6 +216,7 @@ impl SprintRow {
         Ok(Sprint {
             id: decode::uuid(TABLE, "id", &self.id)?,
             project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
+            key: self.key,
             name: self.name,
             goal: self.goal,
             start_date: decode::optional_instant(TABLE, "start_date", self.start_date.as_deref())?,

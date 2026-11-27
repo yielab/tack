@@ -50,6 +50,7 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: PROFILE_ID,
             name: "Viewed profile",
             instructions: "work",

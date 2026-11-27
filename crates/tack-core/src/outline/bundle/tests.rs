@@ -9,6 +9,7 @@ const HARNESSES: [&str; 4] = ["claude-code", "codex", "opencode", "docket"];
 fn profile_row(name: &str, builtin: bool) -> ProfileRow {
     ProfileRow {
         id: format!("ap_{name}"),
+        key: key_of(name),
         name: name.into(),
         kind: if builtin { "planner" } else { "custom" }.into(),
         instructions: "x".into(),
@@ -26,8 +27,8 @@ struct Owned {
     workflow: WorkflowConfig,
     fields: Vec<CustomFieldDefinition>,
     profiles: Vec<ProfileRow>,
-    roles: Vec<(Uuid, String)>,
-    sprints: Vec<(Uuid, String)>,
+    roles: Vec<Named>,
+    sprints: Vec<Named>,
     fleets: Vec<(String, String)>,
     level: Level,
     auto_start: bool,
@@ -79,11 +80,13 @@ fn yaml(text: &str) -> Outline {
 enum Expect {
     Problem(&'static str),
     Warning(&'static str),
+    /// The file checks clean and its one role is the board's, under its new name.
+    RenamesTheRole,
 }
 
 #[test]
 fn every_rule_of_the_check_speaks_in_its_own_section() {
-    use Expect::{Problem, Warning};
+    use Expect::{Problem, RenamesTheRole, Warning};
     let rows: Vec<(&str, Expect)> = vec![
         (
             "project: { vocabulary: { nonsense: x } }",
@@ -182,6 +185,19 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("roles: \"R\" names profile \"Ghost\""),
         ),
         (
+            "roles: [{ key: Dev, name: Dev }]",
+            Problem("roles: \"Dev\" has key \"Dev\", which is not a key"),
+        ),
+        (
+            "roles: [{ name: Dev }]",
+            Problem("roles: key \"dev\" is already the key of \"Dev Team\""),
+        ),
+        (
+            "roles: [{ key: crew, name: Dev Team }]",
+            Problem("roles: \"Dev Team\" is \"dev\" on the board; write that key or drop the name"),
+        ),
+        ("roles: [{ key: dev, name: Developers }]", RenamesTheRole),
+        (
             "sprints: [{ name: S, status: active }]",
             Problem("sprints: \"S\" has status \"active\""),
         ),
@@ -264,10 +280,23 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Warning("item 1 (\"A\"): required field \"Segmento\" has no value"),
         ),
     ];
-    let board = Owned::empty();
+    let mut board = Owned::empty();
+    board.roles.push(Named {
+        id: Uuid::new_v4().to_string(),
+        key: "dev".into(),
+        name: "Dev Team".into(),
+    });
     for (text, expect) in rows {
         let result = board.check(&yaml(text));
         match (expect, result) {
+            (RenamesTheRole, Ok(plan)) => assert!(
+                matches!(&plan.roles[..], [Upsert::Update { id, .. }] if *id == board.roles[0].id),
+                "{text}: wanted the board's role updated, got {:?}",
+                plan.roles
+            ),
+            (RenamesTheRole, Err(e)) => {
+                panic!("{text}: wanted a rename, got problems {:?}", e.problems)
+            }
             (Problem(wanted), Err(e)) => assert!(
                 e.problems.iter().any(|p| p.contains(wanted)),
                 "{text}: wanted a problem with \"{wanted}\", got {:?}",
@@ -502,6 +531,7 @@ fn synthetic_item(project: &Project, title: &str, parent: Option<Uuid>) -> Item 
     Item {
         id: Uuid::new_v4(),
         project_id: project.id,
+        key: key_of(title),
         parent_id: parent,
         title: title.into(),
         description: None,
@@ -540,6 +570,7 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
     let role = Role {
         id: Uuid::new_v4(),
         project_id: project.id,
+        key: "contenido".into(),
         name: "Contenido".into(),
         color: "#f59e0b".into(),
         icon: None,
@@ -549,6 +580,7 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
     let field = CustomFieldDefinition {
         id: Uuid::new_v4(),
         project_id: Some(project.id),
+        key: "plan".into(),
         name: "Plan".into(),
         field_type: CustomFieldType::Text,
         description: None,
@@ -620,6 +652,68 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
     let mut board = Owned::empty();
     board.workflow = project.workflow.clone();
     board.check(&outline).expect("the export checks clean");
+}
+
+#[test]
+fn the_export_writes_every_key() {
+    let project = synthetic_project();
+    let now = Utc::now();
+    let profile = profile_row("Writer", false);
+    let role = Role {
+        id: Uuid::new_v4(),
+        project_id: project.id,
+        key: "contenido".into(),
+        name: "Contenido".into(),
+        color: "#f59e0b".into(),
+        icon: None,
+        agent_profile_id: Some(profile.id.clone()),
+        created_at: now,
+    };
+    let field = CustomFieldDefinition {
+        id: Uuid::new_v4(),
+        project_id: Some(project.id),
+        key: "plan".into(),
+        name: "Plan".into(),
+        field_type: CustomFieldType::Text,
+        description: None,
+        required: false,
+        default_value: None,
+        options: None,
+        validation: None,
+        created_at: now,
+        updated_at: now,
+    };
+    let sprint = Sprint {
+        id: Uuid::new_v4(),
+        project_id: project.id,
+        key: "semana-42".into(),
+        name: "Semana 42".into(),
+        goal: None,
+        start_date: None,
+        end_date: None,
+        status: SprintStatus::Planning,
+        created_at: now,
+        updated_at: now,
+    };
+    let outline = to_bundle(&Parts {
+        project: &project,
+        fields: &[field],
+        profiles: &[profile],
+        roles: &[role],
+        sprints: &[sprint],
+        autonomy: None,
+        auto_start: BundleAutoStart::default(),
+        items: &[],
+        item_roles: &[],
+        item_fields: &[],
+        dependencies: &[],
+        fleets: &[],
+        reported_teams: &[],
+    });
+    assert_eq!(outline.fields[0].key.as_deref(), Some("plan"));
+    assert_eq!(outline.profiles[0].key.as_deref(), Some("writer"));
+    assert_eq!(outline.roles[0].key.as_deref(), Some("contenido"));
+    assert_eq!(outline.sprints[0].key.as_deref(), Some("semana-42"));
 }
 
 #[test]
@@ -712,6 +806,7 @@ fn the_export_writes_the_teams_its_profiles_name_with_what_the_computers_report(
         .map(|profile| Role {
             id: Uuid::new_v4(),
             project_id: project.id,
+            key: key_of(&profile.name),
             name: profile.name.clone(),
             color: "#f59e0b".into(),
             icon: None,

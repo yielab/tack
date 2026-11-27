@@ -40,6 +40,7 @@ async fn item_due(
         project.id,
         &status,
         CreateItem {
+            key: None,
             recurrence: None,
             recurrence_of: None,
             title: title.into(),

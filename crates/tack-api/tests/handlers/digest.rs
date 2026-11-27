@@ -379,6 +379,7 @@ async fn a_task_nobody_will_pick_up_says_why() {
         .create_role(
             project,
             CreateRole {
+                key: None,
                 name: "Writer".into(),
                 color: None,
                 icon: None,

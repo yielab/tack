@@ -75,6 +75,7 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-f2",
             name: "Profile F2",
             instructions: "test",

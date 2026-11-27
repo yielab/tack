@@ -113,6 +113,7 @@ impl Fixture {
         tack_test_support::seed::create_agent_profile(
             &repo,
             NewAgentProfile {
+                key: None,
                 id: "profile-a",
                 name: "Profile A",
                 instructions: "test",

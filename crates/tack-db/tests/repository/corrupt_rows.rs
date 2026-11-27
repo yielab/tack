@@ -128,6 +128,7 @@ async fn a_corrupt_custom_field_value_is_an_error_not_a_panic() {
         &repo,
         project.id,
         tack_core::models::CreateCustomField {
+            key: None,
             name: "Customer".into(),
             field_type: CustomFieldType::Text,
             description: None,
@@ -169,6 +170,7 @@ async fn a_row_that_is_not_there_is_not_found_and_names_its_kind() {
         .create_role(
             project.id,
             CreateRole {
+                key: None,
                 name: "Reviewer".into(),
                 color: None,
                 icon: None,

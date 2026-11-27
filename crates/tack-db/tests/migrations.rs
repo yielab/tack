@@ -29,6 +29,8 @@ mod item_recurrence;
 mod item_source_migration;
 #[path = "migrations/item_types.rs"]
 mod item_types;
+#[path = "migrations/keys.rs"]
+mod keys;
 #[path = "migrations/one_model_string.rs"]
 mod one_model_string;
 #[path = "migrations/one_review.rs"]

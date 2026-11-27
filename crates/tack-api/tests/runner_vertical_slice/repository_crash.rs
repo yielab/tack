@@ -77,6 +77,7 @@ async fn fixture() -> Fixture {
             project.id,
             &status,
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Crash-boundary work".into(),
@@ -115,6 +116,7 @@ async fn fixture() -> Fixture {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-crash",
             name: "Crash Matrix Profile",
             instructions: "exercise failure boundaries",

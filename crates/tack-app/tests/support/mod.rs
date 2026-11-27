@@ -44,6 +44,7 @@ pub async fn board() -> Board {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: "profile-c1",
             name: "C1",
             instructions: "work safely",
@@ -84,6 +85,7 @@ pub async fn add_profile(repo: &Repository, id: &str, tool_policy: &str, limits:
     tack_test_support::seed::create_agent_profile(
         repo,
         NewAgentProfile {
+            key: None,
             id,
             name: id,
             instructions: "x",

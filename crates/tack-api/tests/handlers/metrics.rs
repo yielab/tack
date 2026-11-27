@@ -75,6 +75,7 @@ async fn project_with_item(repo: &Repository, workspace_id: Uuid, name: &str) ->
             project.id,
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "work".into(),
@@ -675,6 +676,7 @@ async fn human_minutes_are_cut_by_the_items_sprint() {
             .create_sprint(
                 project_id,
                 tack_core::models::CreateSprint {
+                    key: None,
                     name: name.into(),
                     goal: None,
                     start_date: None,
@@ -1065,6 +1067,7 @@ async fn another_item(repo: &Repository, project: Uuid) -> String {
         project,
         "To Do",
         CreateItem {
+            key: None,
             recurrence: None,
             recurrence_of: None,
             title: "work".into(),

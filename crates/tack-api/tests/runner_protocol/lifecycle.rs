@@ -108,6 +108,7 @@ impl Fixture {
                 project.id,
                 "To Do",
                 CreateItem {
+                    key: None,
                     recurrence: None,
                     recurrence_of: None,
                     title: "I".into(),
@@ -154,6 +155,7 @@ impl Fixture {
         tack_test_support::seed::create_agent_profile(
             &repo,
             NewAgentProfile {
+                key: None,
                 id: "profile-c2",
                 name: "C2 Profile",
                 instructions: "work safely",

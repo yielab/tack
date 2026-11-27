@@ -481,6 +481,7 @@ pub async fn runner_with_profile(
     create_agent_profile(
         repo,
         NewAgentProfile {
+            key: None,
             id: profile_id,
             name: "Seeded profile",
             instructions: "work",

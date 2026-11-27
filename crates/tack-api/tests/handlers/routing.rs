@@ -93,6 +93,7 @@ impl Board {
         tack_test_support::seed::create_agent_profile(
             &self.state.repo,
             NewAgentProfile {
+                key: None,
                 id,
                 name: id,
                 instructions: "work safely",
@@ -147,6 +148,7 @@ impl Board {
             .create_role(
                 self.project,
                 CreateRole {
+                    key: None,
                     name: name.into(),
                     color: None,
                     icon: None,

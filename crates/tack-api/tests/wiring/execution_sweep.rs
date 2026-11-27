@@ -50,6 +50,7 @@ async fn setup() -> (Repository, String) {
             project.id,
             "To Do",
             CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "I".into(),
@@ -87,6 +88,7 @@ async fn setup() -> (Repository, String) {
     tack_test_support::seed::create_agent_profile(
         &repo,
         NewAgentProfile {
+            key: None,
             id: PROFILE_ID,
             name: "Wiring Profile",
             instructions: "work",

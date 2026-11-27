@@ -595,6 +595,7 @@ async fn team_profile(world: &World, id: &str, team: &str) {
     tack_test_support::seed::create_agent_profile(
         &world.repo,
         tack_db::repo::execution::NewAgentProfile {
+            key: None,
             id,
             name: id,
             instructions: "work",
@@ -614,6 +615,7 @@ async fn role_using(world: &World, project: Uuid, name: &str, profile: &str) -> 
         .create_role(
             project,
             CreateRole {
+                key: None,
                 name: name.into(),
                 color: None,
                 icon: None,

@@ -72,6 +72,7 @@ async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, Str
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                key: None,
                 recurrence: None,
                 recurrence_of: None,
                 title: "Prove the attempt-scoping routes stay execution-scoped".into(),

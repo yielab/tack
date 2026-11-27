@@ -7,6 +7,7 @@ use sqlx::Row;
 use tracing::instrument;
 
 use super::claim::NewAgentProfile;
+use crate::repo::project_file::key_for;
 use crate::{Repository, StoreError};
 
 /// Raises a unique-constraint violation as `Conflict(reason)`; every other
@@ -94,8 +95,9 @@ impl Repository {
     /// Adds an agent profile, placed in `fleet_id`, given a `delivers` line,
     /// the `kind` it does (the column's default, `custom`, when absent) and the
     /// `egress_mode` it starts with (the column's default, `listed`, when absent)
-    /// when any is named, in one transaction. A taken name is
-    /// `Conflict("profile_name_taken")`.
+    /// when any is named, in one transaction. The profile gets `key`, or `key_of` its name made
+    /// unique. A taken name is `Conflict("profile_name_taken")`, a taken key
+    /// `Conflict("profile_key_taken")`.
     #[instrument(skip(self, input))]
     pub async fn create_agent_profile_placed(
         &self,
@@ -108,15 +110,24 @@ impl Repository {
     ) -> Result<(), StoreError> {
         let now = now.to_rfc3339();
         let mut tx = self.pool().begin().await?;
+        let key = key_for(&mut tx, "agent_profiles", None, input.key, input.name).await?;
         sqlx::query(
-            "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO agent_profiles (id, key, name, instructions, tool_policy, limits, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(input.id).bind(input.name).bind(input.instructions)
+        .bind(input.id).bind(&key).bind(input.name).bind(input.instructions)
         .bind(input.tool_policy).bind(input.limits).bind(&now).bind(&now)
         .execute(&mut *tx)
         .await
-        .map_err(|err| conflict_on_unique(err, "profile_name_taken"))?;
+        .map_err(|err| {
+            let key_is_taken = err
+                .as_database_error()
+                .is_some_and(|db| db.is_unique_violation() && db.message().ends_with("agent_profiles.key"));
+            conflict_on_unique(
+                err,
+                if key_is_taken { "profile_key_taken" } else { "profile_name_taken" },
+            )
+        })?;
         if fleet_id.is_some() || delivers.is_some() || kind.is_some() || egress_mode.is_some() {
             sqlx::query(
                 "UPDATE agent_profiles SET fleet_id = ?, delivers = ?, kind = COALESCE(?, kind), \
