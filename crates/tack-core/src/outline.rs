@@ -27,6 +27,7 @@ use crate::workflow::{Transition, WorkflowConfig};
 
 pub mod bundle;
 mod csv;
+pub mod key;
 pub mod missing;
 pub use self::csv::{CsvOutline, items_from_csv, items_to_csv};
 

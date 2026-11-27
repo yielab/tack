@@ -1332,5 +1332,7 @@ fn items_of(parts: &Parts<'_>) -> Vec<OutlineItem> {
         .collect()
 }
 
+pub mod sync;
+
 #[cfg(test)]
 mod tests;
