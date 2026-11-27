@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use tack_core::models::{ItemSource, Project, UpdateProject};
 use tack_core::outline::bundle::sync::{
-    Change, Conflict, Merged, Prefer, Three, Verb, diff, merge,
+    Change, Conflict, Merged, Prefer, Three, Verb, diff, merge, without_board_keys,
 };
 use tack_core::outline::bundle::{Plan, check};
 use tack_core::outline::folder;
@@ -413,7 +413,7 @@ async fn planned(
                     .iter()
                     .find(|i| i.key.as_deref() == Some(change.key.as_str()))
                 {
-                    merged.items.push(item.clone());
+                    merged.items.push(without_board_keys(item));
                 }
                 shown.push(Change {
                     verb: Verb::Keep,

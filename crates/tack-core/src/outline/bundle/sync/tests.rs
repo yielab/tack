@@ -460,10 +460,10 @@ fn an_item_is_compared_by_its_plan_and_never_by_the_boards_keys() {
             .as_deref(),
         Some("Escrito en el tablero.")
     );
-    // The board's own keys stay out of a merged item: the board keeps them by not being asked.
-    assert_eq!(
-        find("Selector de plan en el onboarding").status.as_deref(),
-        None
+    // The board's own keys stay out of every merged item: the board keeps them by not being asked.
+    assert!(
+        out.iter()
+            .all(|i| i.status.is_none() && i.priority.is_none())
     );
     assert_eq!(
         find("Vista previa de la factura en PDF").fields["Plan"],
