@@ -389,6 +389,11 @@ fn both(
         _ => Map::new(),
     };
     for left_out in board_keys(section).iter().chain(&["key", "ref"]) {
+        // An item on both sides is updated in its plan only: its key goes back, the board's own
+        // keys stay out, or the check would read them as the file asking to change them.
+        if section == "items" && *left_out != "key" {
+            continue;
+        }
         if let Some(value) = b.full.get(*left_out) {
             merged.insert((*left_out).to_owned(), value.clone());
         }
