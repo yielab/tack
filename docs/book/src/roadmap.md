@@ -137,7 +137,10 @@ measurement asks for it.
 
 **[Phase 76](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md) — the project
 file is kept in sync.** ADR 0025 is proposed. Nothing is built, and the plan was written before
-Phases 79 to 81 moved the code: re-read it against the tree before opening it.
+Phases 79 to 81 moved the code. ADR 0025's amendment of 2026-11-26, also proposed, keeps the items and
+their briefs beside the code too: a `.tack/` folder with one file per item. Status, runs and
+decisions stay on the board. The amendment lists what the re-read of the plan found, and the plan is
+rewritten from the ADR when the phase is opened.
 
 The project file of Phase 73 is a one-way door: it creates and updates by name and never
 deletes, so a role renamed in the file becomes a second role, a role removed from it stays for

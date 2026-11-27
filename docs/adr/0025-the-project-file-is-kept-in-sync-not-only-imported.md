@@ -5,6 +5,13 @@ decision 2 (an import never deletes), decision 6 (the export carries no ids) and
 "a bundle that deletes what it does not mention". Keeps ADR 0022 decision 4 (a file cannot raise
 autonomy or switch auto-start on) and ADR 0017 (items are always added, never matched).
 
+**Amended 2026-11-26 (proposed): the plan lives in the repository.** The section of that name at
+the end widens what is kept from the configuration to the items and their briefs, in a `.tack/`
+folder beside the code with one file per item. Where each item is, who answers for it and
+everything a run leaves stay on the board. The amendment replaces decision 1, extends decisions 2,
+3, 4, 5, 7 and 8, withdraws ADR 0022's alternative "Briefs in the bundle", and records what a
+re-read of Phase 76's plan against the tree found.
+
 **Decide:** that a project's configuration — its name, description and vocabulary, its fields,
 the profiles its roles use, its roles, its sprints and its automation — can be **kept** in a file
 the way Drupal keeps configuration in a sync directory: an export writes the board's configuration
@@ -83,3 +90,107 @@ Blocking: none.
 2. Where the file lives: the documentation recommends `.tack/project.yaml` in the project's folder; Tack reads and writes only the path it is given.
 3. An export records a revision although it is a `GET`: it is how the board learns what the file last knew. Built so, deduplicated by hash.
 4. Revisions are kept for ever; My SaaS's whole configuration is about six kilobytes.
+
+---
+
+## Amendment of 2026-11-26: the plan lives in the repository (proposed)
+
+**Decide:** that the file kept beside the code holds the whole plan, not only the configuration.
+A project folder, `.tack/`, holds the configuration (`project.yaml`) and one file per item
+(`items/<key>.md`). The item's file says what the item is and what makes it done: its title,
+description, type, parent, blockers, roles and brief. The board keeps where the item is (its
+status), who answers for it and when (assignee, priority, sprint, due date), and everything that
+happens to it (runs, evidence, decisions, comments, change sets). The keys, the three-way
+comparison, the revisions and the one plan of this ADR apply to the items as they do to the roles.
+
+**Why now:** several boards built for agents closed as products in 2026, while the task formats
+that live in the repository kept growing (Spec Kit, OpenSpec, Beads, Backlog.md, AGENTS.md). None of
+those formats carries a check a machine runs, a limit or an autonomy level. Tack's brief does. As
+written, this ADR keeps the configuration beside the code and leaves the brief in the board's
+database. An assistant working in the repository then cannot read what makes an item done, a
+branch cannot carry a change to the plan, and the plan does not outlive the board.
+
+**If you do nothing:** Phase 76 keeps how the project is set up beside its code, and what the
+project is doing only on this board. The file in the repository can make a second board look like
+the first, but it cannot say what any item is for or when it is done.
+
+| # | Decision | What a person sees |
+|---|---|---|
+| 9 | **The repository says what the work is; the board says where it is.** The kept half grows from the configuration to the plan. The plan is the configuration plus, for each item, its title, description, type, parent, blockers, roles, tags, estimate and unit, recurrence, field values and brief (definition of done, acceptance criteria, constraints, risk). Status, assignee, priority, sprint and due date are the board's. A file may give them for a new item, as an outline does, and they are not read for an item that exists. An item's run settings (harness, model, network, tools, approvals) never enter the file: like the autonomy level, they widen what an agent reaches, and a file is text anyone can edit. Runs, evidence, decisions, comments, attachments, change sets and links never enter the folder either | The plan lists an item's changes field by field. When a file changes one of the board's keys, the plan says "status, assignee, priority, sprint and due date are the board's: kept". Moving a card never changes a file |
+| 10 | **Every item has a key, and the key is its file name.** Items gain a `key` by decision 2's rule. An item created on the board gets it from its title, and it never changes. An item written in the folder takes its file name as its key. A new title under the same key is a rename. In the single-file project file an item without a key is added, as today | `items/login-con-github.md`; the key in grey under the title on the item's page. Renaming the item in its file renames the card |
+| 11 | **The folder is the project file split into files.** `.tack/project.yaml` holds every section but `items`. `.tack/items/<key>.md` holds one item: its keys and its brief (brief-v1's shape, without `item_id`) as YAML between two `---` lines, and its description as Markdown below them. `parent` and `depends_on` name keys. Reading the folder gives the same outline the single file gives, checked by the same rules. An export writes the whole folder again, so the file of an item the board no longer has goes away | Two branches that change two items do not touch the same file. A diff names the item. An assistant reads or writes one item |
+| 12 | **A brief the folder changes is a new brief version.** It goes through the brief's own write, with its version and its hash, as the Brief tab does. A run already started keeps the brief its request carried. The single-file project file carries the brief too, so `tack import` gives a new item its brief. This withdraws ADR 0022's alternative "Briefs in the bundle" | The Brief tab shows a new version, as after an edit made there |
+| 13 | **An item the folder no longer has is removed only when nothing happened to it.** Decision 3's rule for removals applies. On top of it, a file never removes an item that has a run, a comment, an attachment, a change set, a link or children on the board: removing it would delete that history with it, and Tack has no archive. Such an item is kept, with the reason. What a removal costs is shown first: the blockers that go with it | "Kept: 'Login con GitHub' has 2 runs and 3 comments; close it on the board." "Removes 'Borrador' and 1 blocker" |
+| 14 | **A run never changes its own contract.** The board reads the folder only from what a person applies, never from a run's work tree. A change whose paths include `.tack/` is governed at L3, whatever its domains and the project's level say, so a person merges it | Merge readiness: "Changes the project folder: a person merges this" |
+| 15 | **A person applies; an agent previews.** `tack config` is already the command for the CLI's own settings. The verbs are therefore `tack folder status \| export \| import \| history \| revert`. They read and write `.tack/` in the repository where the CLI runs; the board never reads a repository. The API takes the folder as one object of paths and texts, under `/api/projects/{id}/folder/*`. The MCP tool `plan_folder` previews for any credential. Applying needs a person's token, and an agent's credential is refused, because a change set cannot carry configuration or a brief. Settings → Data → **Project folder** holds the card, the plan dialog and the history | "An agent may preview the project folder; a person applies it" |
+| 16 | **The sections added after this ADR was written.** `types` is compared like the keyed sections: a type already has a key, and the catalogue already refuses to remove a type in use. `teams` is not compared, because it is what the harness reports (ADR 0036). It is written on export and listed as missing on import, as today | — |
+
+If you accept this table, you have accepted the amendment. What follows is evidence.
+
+### What the re-read of Phase 76's plan found (`develop` at `6e05b93a`)
+
+The plan's decisions hold. These facts have moved, so the plan is rewritten from this ADR when the
+phase is opened:
+
+| The plan says | The tree says |
+|---|---|
+| The migrations are `095_config_keys` and `096_config_revisions` | The last migration is `114_reviewer_verdicts` (`crates/tack-db/src/migrations.rs` line 178); the next free numbers are 115 and 116 |
+| Roles, sprints, fields, projects and settings get `*_in(conn, …)` twins | None exist. Since Phase 79 the repository's methods take `&self` and answer `StoreError`. The one-connection precedents are `insert_item(conn, …)` (`crates/tack-db/src/repo/items.rs` line 678) and the repository's own `BEGIN IMMEDIATE` (`crates/tack-db/src/repo/change_sets.rs` line 377). The one-transaction task stays, in that shape |
+| `runner_admin::delete_profile` deletes with inline SQL | It calls `repo.delete_agent_profile` (`crates/tack-api/src/handlers/runner_admin.rs` line 1503). That part is done |
+| There is no `delete_sprint` | Still none (`crates/tack-db/src/repo/sprints.rs`) |
+| The sections are written one by one, with a compensating `delete_project` and `SectionFailed { kept }` | Unchanged (`crates/tack-api/src/handlers/outline.rs` lines 419 and 562, `crates/tack-api/src/error.rs` line 64) |
+| The `BundleAutonomy` mapping exists twice | Unchanged (`crates/tack-api/src/handlers/export.rs` line 200, `crates/tack-api/src/handlers/templates.rs` line 399) |
+| Nothing sends `BoardConfigUpdated` | Unchanged (`crates/tack-api/src/handlers/websocket.rs` line 39) |
+| `match_names` is at line 203 | Line 220; `check` line 552; `to_bundle` line 1079 (`crates/tack-core/src/outline/bundle.rs`) |
+| The file has six optional sections | Eight: `teams` and `types` came later (`crates/tack-core/src/outline.rs` lines 66 and 70) |
+| The CLI verbs are `tack config export \| import \| …` | `tack config` sets the CLI's URL and token (`crates/tack-cli/src/main.rs` line 458) |
+| The MCP tool goes beside `create_outline` in `crates/tack-cli/src/mcp.rs` | The tools live in `crates/tack-cli/src/mcp/` (`projects.rs`, `items.rs`, `changes.rs`, `tools_list.json`) |
+| The profile list is in `RunnerFleetSection.tsx` | `AgentProfilesPanel.tsx`, in the same folder |
+
+### Evidence for the amendment
+
+| Fact | Where |
+|---|---|
+| An item in the project file carries no brief and no key | `crates/tack-core/src/outline.rs` `OutlineItem` (line 423) |
+| An item has no key and no number, only its id; the screen shows the id's first six characters | `frontend/src/shared/shortItemId.ts` |
+| A brief write records a version and its hash in the same transaction | `crates/tack-db/src/repo/briefs.rs` `upsert_item_brief` (line 93) |
+| A run's request carries the brief as it was when the request was created | `crates/tack-protocol/src/execution/types.rs` line 508 |
+| The brief's wire shape is brief-v1 | `docs/contracts/brief-v1/` |
+| Deleting an item cascades over every table that references it; its children lose their parent | `crates/tack-db/src/repo/items.rs` `delete_item` (line 424); `ON DELETE CASCADE` and `parent_id … ON DELETE SET NULL` in `crates/tack-db/src/migrations.rs` |
+| Only projects can be archived | `crates/tack-db/src/migrations.rs` line 565 |
+| A change set has no operation that edits a title, a description or a brief | `crates/tack-core/src/change_set.rs` `Operation` (line 147) |
+| A domain matches only when every path of the change matches it, and no match gives L3 unless the project is L5. A change that mixes `.tack/` and code in an L5 project is governed at L5 today | `crates/tack-core/src/autonomy.rs` `level_for` (line 75) |
+| The catalogue refuses to remove an item type in use | `crates/tack-db/src/repo/item_types.rs` `set_item_types` |
+| The board now has a channel to the runner, so the alternative "watch the file" below no longer rests on its absence | `crates/tack-protocol/src/execution/operations.rs` `TeamOperation` (line 24) |
+
+### Alternatives the amendment did not take
+
+- **Everything in the repository, status included.** Some repository formats keep the status in
+  the file. Here the status moves many times a day, by runs and by people. Every move would be a
+  commit, two branches would disagree about where an item is, and nothing could say which branch
+  is the board. The board is the state machine; the folder is the contract.
+- **One file for the whole plan.** That file stays for moving or copying a project
+  (`scope=bundle`). Kept beside the code, it would make every change to any item touch the same
+  file, and two branches would conflict on it.
+- **The board reads the folder from the repository by itself**, through the runner's channel. It
+  is possible now, and it is not taken. Decision 8's rule that a person applies stays, and the CLI
+  or an assistant already runs beside the repository. A line saying "the repository and the board
+  differ", read by the runner, can come later as a card.
+- **An agent applies the folder through a change set.** A change set holds operations on items.
+  Making it carry configuration and briefs would turn its panel into a second Settings. An agent
+  previews and proposes the change as a commit; a person applies it.
+- **Archiving what the folder removes.** Tack has no archive for items, and adding one is a
+  decision of its own. Until then an item with history is kept, and the plan says why.
+
+### The amendment's questions for the maintainer, with the default built
+
+Blocking: none.
+
+1. The names: "project folder", `.tack/`, `tack folder …`, the MCP tool `plan_folder` and the
+   routes `/folder/*`. Built so.
+2. Which keys are the board's: status, assignee, priority, sprint and due date, while the
+   estimate and the field values travel in the file. A team that plans its sprints in git would
+   want the sprint in the file. Built without it.
+3. The key of an item with a long title: decision 2's rule, cut at 64 characters. Built so.
+4. Items created on the board reach the folder at the next export, and the status line counts them
+   ("4 items created on the board since revision #7"). Built so.

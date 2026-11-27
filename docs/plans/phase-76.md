@@ -1,7 +1,10 @@
 # Plan: Phase 76 — the project file is kept in sync
 
 **Status: future, not planned (postponed 2026-10-27); proposed 2026-10-18.** Written before Phases 79 to 81
-moved the code; re-read against the tree before opening it. Serves ADR 0025
+moved the code. **Re-read 2026-11-26 against `6e05b93a`:** its decisions hold, but its paths, its
+migration numbers, the `*_in` twins and the `tack config` verb do not. ADR 0025's amendment of the
+same date widens the phase to the items and their briefs, in a `.tack/` folder. When the phase is
+opened, this plan is rewritten from the ADR, whose amendment lists what moved. Serves ADR 0025
 (`docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md`). Written against `develop`
 at `cebaef77`. Every path and line below was read that day; re-run `rg -n` before trusting a line
 number. Re-checked the same day against Phase 75's task D (`d72be6ce`): migration 092 is
