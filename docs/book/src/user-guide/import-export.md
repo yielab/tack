@@ -343,7 +343,7 @@ Every export and every import leaves a **revision**: a number, where it came fro
 
 ### A person applies
 
-An assistant can preview a folder: the MCP tool `plan_folder` returns the plan and never applies it. Applying needs a person's token, and an agent's credential is refused with "An agent may preview the project folder; a person applies it."
+An assistant can preview a folder: the MCP tool `plan_folder` returns the plan and never applies it. Applying needs a person's token: an agent's credential is refused with "This route is not available to an agent credential; it needs the operator's token."
 
 A change to `.tack/` in a run's work is a change to the plan, so a person merges it, whatever the project's level. Its files are listed under "The agent changed how it is checked", and the **Merge** button asks for a reason; see [Merging from Tack](merging.md#a-change-to-the-project-folder). The board reads the folder only when a person applies it, never from a run's work.
 

@@ -315,7 +315,7 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-77.md).
 - **Phase 76 — the plan lives in the repository.** ADR 0025 and its amendment, and the amendment of
   2026-11-26 to ADR 0033.
-  [Plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md). A project's plan is kept in a
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-76.md). A project's plan is kept in a
   `.tack/` folder beside its code: `project.yaml` and one `items/<key>.md` per item, with the brief that
   says what makes it done. Every role, field, sprint, profile and item has a key that survives a
   rename. `tack folder status | export | import | history | revert` and Settings → Data → Project folder

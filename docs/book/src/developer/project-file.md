@@ -352,7 +352,7 @@ Migration `117_plan_revisions` adds `project_plan_revisions (project_id, number,
 
 ### Who may call them
 
-Reading routes and `plan` are open to any principal that may read the project. `apply` is for `PrincipalKind::Operator` only: an agent's credential answers `403` with "An agent may preview the project folder; a person applies it". The handlers read `Extension<Principal>` as `handlers/change_sets.rs` does, and `agent_access.rs` classifies the plan as a read and the apply as a person's.
+Reading routes and `plan` are open to any principal that may read the project. `apply` is for `PrincipalKind::Operator` only: an agent's credential is answered `403` by the agent-credential middleware, before the handler, with "This route is not available to an agent credential; it needs the operator's token." (`agent_access.rs` classifies the plan as a read and leaves the apply to its default, a person's). The handler checks the principal again and answers any other principal that is not the operator with "An agent may preview the project folder; a person applies it".
 
 ### The apply
 

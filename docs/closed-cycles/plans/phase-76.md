@@ -1,6 +1,6 @@
 # Plan: Phase 76 — the plan lives in the repository
 
-**Status: open 2026-11-26** (the maintainer: "abre la fase 76"). Serves ADR 0025 and its amendment
+**Status: delivered 2026-11-27, in develop (unpushed); opened 2026-11-26** (the maintainer: "abre la fase 76"). Serves ADR 0025 and its amendment
 of 2026-11-26 (`docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md`), decisions 1
 to 16 with the amendment's four defaults, and ADR 0033's amendment of the same day (decisions 6 to
 12), which the screens' asks below serve. The maintainer accepted both and put the whole phase in
@@ -724,4 +724,29 @@ Owned by the frontend session; this session does not edit it. Two parts:
 - **Q** (`1dc6efb0`): an attempt merged by hand has no merge-ledger row, so the quality cuts by
   domain and level put it under "Not merged"; `human_minutes_by_sprint` is ordered by sprint id.
 
-(The rest is written by task Z.)
+- **S** (`f0288ef7`): an agent's apply is refused by the agent-credential middleware before the
+  handler, with its own text; the handler's decided sentence reaches only another principal that
+  is not the operator. An item kept for its children goes in the next apply when the children leave
+  in the same plan. A role renamed only in `project.yaml` leaves the item files naming the old one,
+  because items name their roles by name: a rename is written in both. Every export (bundle,
+  snapshot, CSV) reads every visible item; the old reads stopped at 100.
+- **Z** (`689f1587`): the docs half was written by an agent while S ran; the integrator added the
+  waiting limit by its name on screen and corrected the agent's refusal text.
+- **The live run** (2026-11-27, on a `.backup` copy of the maintainer's database, served on
+  127.0.0.1:3299 with an empty environment and no runner; never the real database or :3210). The
+  copy went from migration 114 to 117 on start and every visible row got a key. On Fabulada:
+  export (19 item files and `project.yaml`), rename a role under its key in both places, change an
+  item's title and add `risk: high` to its brief, remove an item with no history and one with a
+  run. It found three bugs, each fixed and merged before going on:
+  1. The board refused its own export: a type the board held had the key `investigación`, and the
+     type catalog accepted ASCII only. Type keys take any script now, as every other key does
+     (`6e436623`).
+  2. The plan warned "status is the board's: kept" for every item: a merged item carried the board's
+     keys back. A merged item keeps its key and leaves them out, in `both` and in the board-only and
+     kept paths (`8c493a5d`, `0752dcf6`).
+  3. `tack folder status` said the board matched a revision there was none of (`8c493a5d`).
+  Then: the plan named every change, kept the item with a run ("it has 1 run") and costed the
+  removal; the apply without `--yes` refused; with it, revision #2 (8 changes, 1 removed) and a new
+  brief version; `status` matched; `revert 1` made revision #3, restoring the role, the title and
+  the risk and creating the removed item again under its key. The frontend session ran its card
+  against the same copy afterwards, headless.

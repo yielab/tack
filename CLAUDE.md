@@ -29,7 +29,7 @@ every closed plan, board, handoff and audit in `docs/closed-cycles/` (frozen). A
   where the team works; a decision lists what its approval changes, asked of docket).
   Codex's eval baseline and `agents-flow.gif` are postponed by the maintainer.
 - **Phase 76 is delivered (2026-11-27), in `develop`:** the plan lives in the repository, a `.tack/`
-  folder (ADR 0025 and its amendment, ADR 0033's amendment). `docs/plans/phase-76.md` holds its
+  folder (ADR 0025 and its amendment, ADR 0033's amendment). `docs/closed-cycles/plans/phase-76.md` holds its
   cards and how it went. `tack import` still only adds and updates; `tack folder import` removes
   what the folder removed, when nothing happened to it, and a person applies it.
 - **Future, not planned:** status rules, and what Phase 94 left out.

@@ -102,7 +102,7 @@ reads them) or `revision` (a number, to plan going back to it); passing both is 
 field, the rows kept with their reason, the conflicts with their three values, the removals with
 what each costs, the warnings and whether the plan `applies`. It never applies it. Applying needs a
 person's token, and an agent credential's call to `POST /api/projects/{id}/folder/apply` is refused
-with "An agent may preview the project folder; a person applies it". An assistant that edits `.tack/`
+with "This route is not available to an agent credential; it needs the operator's token." An assistant that edits `.tack/`
 in the repository calls `plan_folder` to read what its edit would do, commits it, and a person
 applies it with `tack folder import`. The user guide's [Keeping the plan in the
 repository](https://yielab.github.io/tack/user-guide/import-export.html#keeping-the-plan-in-the-repository)
