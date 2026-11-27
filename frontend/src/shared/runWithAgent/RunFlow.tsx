@@ -211,7 +211,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
     <>
       <Show when={props.silentTarget()}>
         {(text) => (
-          <div data-testid="run-target-silent" role="alert" class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+          <div data-testid="run-target-silent" role="alert" class="rounded-lg px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
             <p class="font-semibold">Agents offline</p>
             <p>{text()}</p>
             <A href="/agents" class="font-semibold underline">Turn on agent execution →</A>
@@ -238,7 +238,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
 
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
-        <p data-testid="no-tools" class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+        <p data-testid="no-tools" class="rounded-lg px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           {profileName()} gives {props.harnessLabel()} no tools, so it can only answer in text: it cannot read or change files.{' '}
           <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Advanced.
         </p>
@@ -247,7 +247,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <Show
         when={props.profilesLoading() || props.profiles().length > 0}
         fallback={
-          <div class="flex flex-wrap items-center justify-between gap-3 rounded-item px-4 py-3" style={PILL}>
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3" style={PILL}>
             <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No agent profile exists yet.</p>
             <Button size="sm" variant="secondary" loading={props.creatingProfile()} onClick={props.createDefaultProfile}>
               Create default profile
@@ -280,7 +280,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <Show when={props.checkedCard?.() === false}>
         <Prerequisite state="notice" label="This card has no acceptance check: nothing tests what the agent delivers, so a person reviews it" />
       </Show>
-      <section data-testid="run-will-happen" class="space-y-2 rounded-item px-4 py-3" style={PILL}>
+      <section data-testid="run-will-happen" class="space-y-2 rounded-lg px-4 py-3" style={PILL}>
         <h3 class="font-heading text-lg">What will happen</h3>
         <ul data-testid="run-summary" class="space-y-1.5 text-sm">
           <SummaryLine icon={<IconWho />} label="Runs">
@@ -382,7 +382,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <details>
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
-        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
+        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
       </details>
 
       <details open={advanced() || modelBlocked()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
@@ -478,7 +478,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <Show when={props.errors().length > 0}>
         <ul
-          class="space-y-1 rounded-item px-4 py-3 text-xs font-medium"
+          class="space-y-1 rounded-lg px-4 py-3 text-xs font-medium"
           style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
         >
           <For each={props.errors()}>{(msg) => <li>{msg}</li>}</For>
@@ -494,7 +494,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         style={{
           'background-color': 'var(--color-bg-elevated)',
           'border-top': '1px solid var(--color-border-light)',
-          'border-radius': '0 0 32px 32px',
+          'border-radius': '0 0 var(--radius-lg) var(--radius-lg)',
           'z-index': 1,
         }}
       >
@@ -516,7 +516,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               id="run-misfit"
               data-testid="run-misfit"
               role="alert"
-              class="min-w-0 basis-full rounded-item px-3 py-2 text-small"
+              class="min-w-0 basis-full rounded-md px-3 py-2 text-small"
               style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}
             >
               {text()}
@@ -527,7 +527,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           {(text) => (
             <p
               data-testid="run-degraded"
-              class="min-w-0 basis-full rounded-item px-3 py-2 text-small"
+              class="min-w-0 basis-full rounded-md px-3 py-2 text-small"
               style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}
             >
               {text()}

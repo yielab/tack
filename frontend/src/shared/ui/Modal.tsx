@@ -78,14 +78,14 @@ const Modal: Component<ModalProps> = (props) => {
             aria-label={props.title}
             tabindex={-1}
             class={clsx(
-              'flex max-h-[90vh] w-full flex-col rounded-[32px] focus:outline-none',
+              'flex max-h-[90vh] w-full flex-col rounded-lg focus:outline-none',
               SIZE[props.size ?? 'md']
             )}
             style={{ 'background-color': 'var(--color-bg-elevated)', 'box-shadow': 'var(--shadow-lg)' }}
           >
             <div class="flex items-center justify-between px-6 pt-6 pb-3">
               <h2
-                class="text-xl"
+                class="text-step"
                 style={{ color: 'var(--color-text-primary)' }}
               >
                 {props.title}
@@ -106,7 +106,7 @@ const Modal: Component<ModalProps> = (props) => {
               <button
                 onClick={props.onClose}
                 aria-label="Close"
-                class="rounded-full p-1.5 transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
+                class="rounded-md p-1.5 transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
                 style={{
                   color: 'var(--color-text-tertiary)',
                   '--tw-ring-color': 'var(--color-focus-ring)',

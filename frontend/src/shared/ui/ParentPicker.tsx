@@ -103,7 +103,7 @@ const ParentPicker: Component<ParentPickerProps> = (props) => {
         value={query()}
         onInput={(e) => setQuery(e.currentTarget.value)}
         onKeyDown={onKeyDown}
-        class="min-h-9 w-full rounded-full border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
+        class="min-h-9 w-full rounded-md border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
         style={{
           'background-color': 'var(--color-bg-base)',
           color: 'var(--color-text-primary)',
@@ -117,7 +117,7 @@ const ParentPicker: Component<ParentPickerProps> = (props) => {
           fallback={
             <p role="alert" class="m-0 flex items-center gap-2 text-xs" style={{ color: 'var(--color-danger-600)' }}>
               The places this can go did not load.
-              <button type="button" onClick={() => void refetch()} class="rounded-full border px-2 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2" style={{ 'border-color': 'var(--color-border-strong)', color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}>
+              <button type="button" onClick={() => void refetch()} class="rounded-md border px-2 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2" style={{ 'border-color': 'var(--color-border-strong)', color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}>
                 Try again
               </button>
             </p>
@@ -138,7 +138,7 @@ const ParentPicker: Component<ParentPickerProps> = (props) => {
                   aria-disabled={choice.current ? 'true' : undefined}
                   onClick={() => pick(choice)}
                   onMouseMove={() => { if (!choice.current) setActive(i()); }}
-                  class="flex min-h-9 items-center gap-2 rounded-item px-3 py-1.5 text-sm"
+                  class="flex min-h-9 items-center gap-2 rounded-md px-3 py-1.5 text-sm"
                   style={{
                     cursor: choice.current ? 'not-allowed' : 'pointer',
                     opacity: choice.current ? 0.55 : 1,

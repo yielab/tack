@@ -58,7 +58,7 @@ const PriorityDot: Component<PriorityDotProps> = (props) => (
       style={{
         width: '8px',
         height: '8px',
-        'border-radius': '3px',
+        'border-radius': 'var(--radius-sm)',
         background: priorityColor(props.priority),
         'flex-shrink': 0,
       }}

@@ -50,7 +50,7 @@ export const AgentConcluded: Component<{
         <h4 class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent concluded</h4>
         <div
           data-testid="agent-result"
-          class="relative rounded-item px-4 py-3"
+          class="relative rounded-lg px-4 py-3"
           classList={{ 'max-h-60 overflow-hidden': clamped() }}
           style={{ 'background-color': 'var(--color-bg-panel)' }}
         >
@@ -181,7 +181,7 @@ export const AgentDid: Component<{
   return (
     <section data-testid="agent-did" class="space-y-2">
       <Show when={noTools()}>
-        <p class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+        <p class="rounded-lg px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           The agent had no tools in this run, so it could not read or change files.
         </p>
       </Show>
@@ -338,7 +338,7 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
     </Show>
   );
   return (
-    <li data-testid="run-step" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <li data-testid="run-step" class="space-y-2 rounded-lg px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           {roleWords(step().role, props.group.n)}
@@ -409,7 +409,7 @@ export const TeamRecords: Component<{ sets: RunRecordSet[] }> = (props) => (
         return (
           <div data-testid="record-set" class="space-y-1.5">
             <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{set.set}</h5>
-            <div class="max-w-full overflow-x-auto rounded-item" tabindex="0" role="region" aria-label={`Rows of ${set.set}`} style={{ 'background-color': 'var(--color-bg-panel)' }}>
+            <div class="max-w-full overflow-x-auto rounded-md" tabindex="0" role="region" aria-label={`Rows of ${set.set}`} style={{ 'background-color': 'var(--color-bg-panel)' }}>
               {/* Columns keep a width a word fits in and the table scrolls sideways, rather than cutting words mid-way. */}
               <table class="text-left text-xs" style={{ 'min-width': '100%', width: 'max-content', 'max-width': 'none' }}>
                 <thead>

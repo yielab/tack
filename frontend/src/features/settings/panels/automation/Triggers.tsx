@@ -157,7 +157,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
           <ul class="m-0 flex list-none flex-col gap-3 p-0" data-testid="trigger-list">
             <For each={rows()}>
               {(t) => (
-                <li class="flex min-w-0 flex-col gap-2 rounded-item p-3" data-testid="trigger" style={{ border: '1px solid var(--color-border-light)' }}>
+                <li class="flex min-w-0 flex-col gap-2 rounded-lg p-3" data-testid="trigger" style={{ border: '1px solid var(--color-border-light)' }}>
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{t.name}</span>
                     <span class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>wakes {profileName(t.profile)}</span>
@@ -273,7 +273,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
       >
         <form
           data-testid="trigger-form"
-          class="flex min-w-0 flex-col gap-3 rounded-item p-3"
+          class="flex min-w-0 flex-col gap-3 rounded-lg p-3"
           style={{ border: '1px solid var(--color-border-light)' }}
           onSubmit={(e) => {
             e.preventDefault();

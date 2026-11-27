@@ -151,7 +151,7 @@ export const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
             {(policy) => (
               <details class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 <summary class="cursor-pointer">The rules it was merged under</summary>
-                <pre class="overflow-x-auto rounded-[12px] p-2" style={{ ...mono, 'background-color': 'var(--color-bg-panel)' }}>
+                <pre class="overflow-x-auto rounded-lg p-2" style={{ ...mono, 'background-color': 'var(--color-bg-panel)' }}>
                   {JSON.stringify(policy(), null, 2)}
                 </pre>
               </details>
@@ -403,7 +403,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                       <span style={mono}>{v().command}</span> · exit code <span style={mono}>{v().exit_code}</span>
                     </summary>
                     <Show when={v().output_tail}>
-                      <pre class="mt-1 overflow-x-auto rounded-item p-2" style={{ ...mono, 'background-color': 'var(--color-bg-panel)' }}>
+                      <pre class="mt-1 overflow-x-auto rounded-md p-2" style={{ ...mono, 'background-color': 'var(--color-bg-panel)' }}>
                         {v().output_tail}
                       </pre>
                     </Show>

@@ -102,7 +102,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
             e.currentTarget.blur();
           }
         }}
-        class="font-heading -mx-2 w-[calc(100%+1rem)] resize-none wrap-anywhere overflow-y-auto rounded-item border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
+        class="font-heading -mx-2 w-[calc(100%+1rem)] resize-none wrap-anywhere overflow-y-auto rounded-md border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
         style={{
           'background-color': 'transparent',
           color: 'var(--color-text-primary)',

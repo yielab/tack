@@ -244,7 +244,7 @@ export default function Sprints() {
       <div class="flex-1 min-h-0 flex gap-3.5 overflow-hidden">
         {/* ── Left: Backlog ─────────────────────────────────────────── */}
         <div
-          class={`${hasGroups() ? 'w-96' : 'w-72'} shrink-0 flex flex-col gap-2 p-3.5 rounded-card overflow-hidden transition-colors`}
+          class={`${hasGroups() ? 'w-96' : 'w-72'} shrink-0 flex flex-col gap-2 p-3.5 rounded-lg overflow-hidden transition-colors`}
           style={{
             'background-color': 'var(--color-accent2-soft)',
             outline: dragOverZone() === 'backlog'
@@ -398,7 +398,7 @@ export default function Sprints() {
                             Edit
                           </Button>
                           <Show when={sprint.status === 'planning'}>
-                            <Button variant="success" size="sm" onClick={() => updateStatus(sprint.id, 'active')}>
+                            <Button variant="primary" size="sm" onClick={() => updateStatus(sprint.id, 'active')}>
                               Start
                             </Button>
                           </Show>
@@ -429,7 +429,7 @@ export default function Sprints() {
                         <Show
                           when={itemsForSprint(sprint.id).length > 0}
                           fallback={
-                            <div class="flex items-center justify-center p-3.5 rounded-[18px] border-2 border-dashed border-line text-center text-xs text-content-muted">
+                            <div class="flex items-center justify-center p-3.5 rounded-lg border-2 border-dashed border-line text-center text-xs text-content-muted">
                               {canAccept ? 'Drop items here' : `${t('sprint')} is closed`}
                             </div>
                           }
@@ -472,7 +472,7 @@ export default function Sprints() {
               placeholder="What will be accomplished?"
               rows={2}
               disabled={saving()}
-              class="w-full resize-none rounded-[var(--radius-item)] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+              class="w-full resize-none rounded-md border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
@@ -511,11 +511,11 @@ function ItemCard(props: {
       draggable={true}
       onDragStart={(e) => props.onDragStart(e, props.item)}
       onClick={() => props.onOpen({ item: props.item.id })}
-      class="shrink-0 flex flex-col gap-1 rounded-[18px] px-3 py-2.5 bg-app border-2 border-transparent hover:border-[var(--color-primary-600)] cursor-grab active:cursor-grabbing transition-[box-shadow,border-color] select-none shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
+      class="shrink-0 flex flex-col gap-1 rounded-lg px-3 py-2.5 bg-app border-2 border-transparent hover:border-[var(--color-primary-600)] cursor-grab active:cursor-grabbing transition-[box-shadow,border-color] select-none shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
     >
       <div class="flex items-center gap-[7px]">
         <div
-          class="w-2 h-2 rounded-[3px] shrink-0"
+          class="w-2 h-2 rounded-sm shrink-0"
           style={{ 'background-color': priorityColor(props.item.priority) }}
           title={props.item.priority}
         />

@@ -31,7 +31,7 @@ function toneStyle(tone: BadgeTone): JSX.CSSProperties {
 const Badge: Component<BadgeProps> = (props) => (
   <span
     class={clsx(
-      'inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-[3px] text-micro font-bold',
+      'inline-flex items-center whitespace-nowrap rounded-sm px-2 py-0.5 text-caption font-semibold',
       props.class
     )}
     style={toneStyle(props.tone ?? 'neutral')}

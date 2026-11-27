@@ -67,7 +67,7 @@ export const ArtifactView: Component<{
               <DiffView patch={shown()} />
             </Show>
             <Show when={!isMarkdownArtifact(props.artifact) && !isPatch()}>
-              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-item px-4 py-3 text-xs"
+              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-lg px-4 py-3 text-xs"
                 style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>{shown()}</pre>
             </Show>
           </Show>

@@ -44,7 +44,7 @@ const NewThread: Component<{
   return (
     <form
       data-testid="new-thread"
-      class="flex min-w-0 flex-col gap-3 rounded-item p-3"
+      class="flex min-w-0 flex-col gap-3 rounded-lg p-3"
       style={{ border: '1px solid var(--color-border-light)' }}
       onSubmit={(e) => {
         e.preventDefault();

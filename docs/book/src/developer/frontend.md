@@ -72,8 +72,9 @@ palette means adding one primitives block — nothing else changes.
 A Tailwind `@theme inline` block re-exposes the runtime tokens under utility names
 (`bg-surface`, `text-content`, `border-line`, `bg-brand-*`, …) for the places that
 use classes instead of inline styles. A `@theme static` block holds the radius and
-text-size tokens (`rounded-card`, `rounded-item`, `text-micro`, `text-caption`,
-`text-small`, `text-lead`); `npm run lint:tokens` counts bracketed values such as
+text-size tokens (`rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-pill`, `text-micro`,
+`text-caption`, `text-small`, `text-lead`, `text-body`, `text-reading`, `text-section`,
+`text-step`, `text-title`); `npm run lint:tokens` counts bracketed values such as
 `rounded-[28px]` against a ratchet, so use a token when one exists.
 
 ### Accessibility constraint
@@ -104,13 +105,29 @@ lint:tokens` fails on a new px font size.
 
 ### Shape
 
-The shape language is over-rounded. Controls — buttons, inputs, tags, tab
-pills, banners — are pills (`--radius-pill`). Containers such as board columns
-and settings cards take `--radius-card` (28px) on the `--color-bg-panel` fill,
-and the items inside them take `--radius-item` (20px) back on the page ground.
-A panel is a `<Card>`, which carries that radius and fill; an on/off setting is a
-`<Switch>`; a question before something is removed is `createConfirm()` with its
-`<ConfirmHost />`, not `window.confirm`.
+There are four corners. `rounded-sm` (4px) is a tag or a chip, `rounded-md` (6px) a button, a
+field or a small control, `rounded-lg` (8px) a panel, a card, a dialog or a popover, and
+`rounded-pill` only what is round: an avatar, a dot, a switch, a progress track. A status, a
+button, a field and a tag each have their own shape, and a panel is never nested in a panel.
+
+Content is white on a tinted page: `bg-app` is the page, `bg-surface` the panel, with a 1px
+`border-line` around it. A panel is a `<Card>`, which carries that radius, fill and border (the
+caller sets its padding, 20 to 24px); an on/off setting is a `<Switch>`; a question before
+something is removed is `createConfirm()` with its `<ConfirmHost />`, not `window.confirm`.
+
+A `<Button>` is `primary` (solid, the one action of a place), `secondary` (outlined), `ghost`
+(text) or `destructive` (red text, no fill), at `sm` (32px), `md` (36px) or `lg` (44px). Rare
+actions go in an `<ItemMenu>`.
+
+### Headings
+
+The type scale is `text-title` (34px, the page title, bold), `text-step` (21px, the key step or a
+dialog title), `text-section` (19px), `text-lead` (15px, a subsection), `text-reading` (17px) and
+`text-body` (16px) for running text, and `text-small`, `text-caption` and `text-micro` for meta.
+An `h1`–`h4` with `text-step`, `text-section` or `text-lead` is semibold; with `text-title`, bold.
+A section opens with `<SectionHeading>`: an icon in a 28px tinted square, the `h2`, an optional
+count and an optional slot for actions. Its `tone` says what the section is for: `done` (green),
+`agent` (teal), `people` (blue), `needs` (amber) or `neutral`.
 
 ## Showing a group and its work
 

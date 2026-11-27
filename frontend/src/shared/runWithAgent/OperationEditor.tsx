@@ -30,7 +30,7 @@ const OperationEditor: Component<{
         <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs">
           <select
             aria-label={`Role for ${props.name}`}
-            class="max-w-full rounded px-2 py-1 text-xs"
+            class="max-w-full rounded-sm px-2 py-1 text-xs"
             style={inputStyle}
             disabled={props.disabled}
             onChange={(e) => props.onEdit({ ...o<'who_does_it'>(), role: e.currentTarget.value || null })}
@@ -61,7 +61,7 @@ const OperationEditor: Component<{
       <Show when={props.op.op === 'priority'}>
         <select
           aria-label={`Priority of ${props.name}`}
-          class="max-w-full rounded px-2 py-1 text-xs"
+          class="max-w-full rounded-sm px-2 py-1 text-xs"
           style={inputStyle}
           disabled={props.disabled}
           onChange={(e) => props.onEdit({ ...o<'priority'>(), priority: e.currentTarget.value as (typeof PRIORITIES)[number] })}
@@ -81,7 +81,7 @@ const OperationEditor: Component<{
           fallback={
             <input
               aria-label={`Status of ${props.name}`}
-              class="max-w-full rounded px-2 py-1 text-xs"
+              class="max-w-full rounded-sm px-2 py-1 text-xs"
               style={inputStyle}
               disabled={props.disabled}
               value={o<'move'>().status}
@@ -91,7 +91,7 @@ const OperationEditor: Component<{
         >
           <select
             aria-label={`Status of ${props.name}`}
-            class="max-w-full rounded px-2 py-1 text-xs"
+            class="max-w-full rounded-sm px-2 py-1 text-xs"
             style={inputStyle}
             disabled={props.disabled}
             onChange={(e) => props.onEdit({ ...o<'move'>(), status: e.currentTarget.value })}
@@ -109,7 +109,7 @@ const OperationEditor: Component<{
       <Show when={props.op.op === 'comment'}>
         <textarea
           aria-label={`Text of the comment on ${props.name}`}
-          class="w-full min-w-0 rounded px-2 py-1 text-sm"
+          class="w-full min-w-0 rounded-sm px-2 py-1 text-sm"
           style={inputStyle}
           rows={Math.max(2, o<'comment'>().text.split('\n').length)}
           disabled={props.disabled}
@@ -121,7 +121,7 @@ const OperationEditor: Component<{
         <input
           type="date"
           aria-label={`Due date of ${props.name}`}
-          class="max-w-full rounded px-2 py-1 text-xs"
+          class="max-w-full rounded-sm px-2 py-1 text-xs"
           style={inputStyle}
           disabled={props.disabled}
           value={o<'due'>().due?.slice(0, 10) ?? ''}

@@ -17,9 +17,9 @@ const controlStyle: JSX.CSSProperties = {
   'caret-color': 'var(--color-primary-600)',
 };
 
-// Single-line controls are pills; multi-line ones use the item radius.
+// Every field, single-line or not, has the control radius.
 const controlClass =
-  'w-full min-h-9 rounded-full border px-3.5 py-1.5 text-sm transition-colors ' +
+  'w-full min-h-9 rounded-md border px-3.5 py-1.5 text-sm transition-colors ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -65,7 +65,7 @@ export const HelpHint: Component<{ label?: string; help: FieldHelp }> = (props) 
       <Show when={open()}>
         <span
           role="note"
-          class="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border p-2.5 text-xs"
+          class="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border p-2.5 text-xs"
           style={{
             'background-color': 'var(--color-bg-elevated)',
             'border-color': 'var(--color-border-medium)',

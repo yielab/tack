@@ -70,7 +70,7 @@ export default function FactoryMetrics() {
       {/* Loading */}
       <Show when={metrics.loading && !metrics()}>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5" aria-hidden="true">
-          <For each={[1, 2, 3, 4, 5, 6]}>{() => <Skeleton height="180px" class="rounded-card!" />}</For>
+          <For each={[1, 2, 3, 4, 5, 6]}>{() => <Skeleton height="180px" class="rounded-lg!" />}</For>
         </div>
       </Show>
 

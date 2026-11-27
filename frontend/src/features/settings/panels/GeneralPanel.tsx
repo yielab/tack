@@ -76,7 +76,7 @@ const GeneralPanel: Component = () => {
           rows={3}
           value={description()}
           onInput={(e) => setDescription(e.currentTarget.value)}
-          class="min-h-20 w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+          class="min-h-20 w-full resize-none rounded-lg border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',

@@ -117,7 +117,7 @@ export const ItemCard: Component<{
         position: 'relative',
         background: 'var(--color-bg-app)',
         border: raised() ? '2px solid var(--color-primary-600)' : '2px solid transparent',
-        'border-radius': 'var(--radius-item)',
+        'border-radius': 'var(--radius-lg)',
         padding: '12px 13px',
         display: 'flex',
         'flex-direction': 'column',
@@ -424,7 +424,7 @@ const CardList: Component<{
         'scrollbar-gutter': props.inLane ? undefined : 'stable',
         display: 'flex', 'flex-direction': 'column', gap: '8px',
         padding: '2px 2px 4px',
-        'border-radius': 'var(--radius-item)',
+        'border-radius': 'var(--radius-lg)',
         outline: isDragOver() ? '2px dashed var(--color-primary-600)' : 'none',
         'outline-offset': '-2px',
         background: isDragOver() ? 'var(--color-accent-soft)' : 'transparent',
@@ -457,7 +457,7 @@ const CardList: Component<{
       <Show when={props.total === 0 && !props.inLane}>
         <div style={{
           'min-height': '70px', display: 'grid', 'place-items': 'center',
-          border: '2px dashed var(--color-border-light)', 'border-radius': 'var(--radius-item)',
+          border: '2px dashed var(--color-border-light)', 'border-radius': 'var(--radius-lg)',
           padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
         }}>
           Drop items here
@@ -497,7 +497,7 @@ const BoardColumnView: Component<CardWiring & {
       style={{
         width: '282px', 'flex-shrink': 0, display: 'flex', 'flex-direction': 'column', gap: '6px',
         'max-height': '100%', background: 'var(--color-bg-panel)',
-        'border-radius': '26px', padding: '12px 10px',
+        'border-radius': 'var(--radius-lg)', padding: '12px 10px',
         // The scrolling body below sits on the panel, so its track is the panel.
         '--scrollbar-track': 'var(--color-bg-panel)',
       }}
@@ -541,7 +541,7 @@ const BoardLoadingSkeleton: Component = () => {
       <For each={columns}>
         {(cards) => (
           <div style={{
-            width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': '26px',
+            width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': 'var(--radius-lg)',
             padding: '12px', display: 'flex', 'flex-direction': 'column', gap: '8px',
           }}>
             <Skeleton width="60%" height="14px" rounded />
@@ -549,7 +549,7 @@ const BoardLoadingSkeleton: Component = () => {
               {(h) => (
                 <div
                   class="animate-pulse"
-                  style={{ height: `${h}px`, 'border-radius': '18px', background: 'var(--color-bg-app)', opacity: 0.7 }}
+                  style={{ height: `${h}px`, 'border-radius': 'var(--radius-lg)', background: 'var(--color-bg-app)', opacity: 0.7 }}
                 />
               )}
             </For>
@@ -592,7 +592,7 @@ const EmptyLane: Component<{ group: Item; onDropItem: (itemId: string) => void }
       }}
       style={{
         margin: '0 12px 8px', padding: '14px', 'text-align': 'center', 'font-size': '0.8125rem', color: 'var(--color-text-secondary)',
-        border: `2px dashed ${isDragOver() ? 'var(--color-primary-600)' : 'var(--color-border-light)'}`, 'border-radius': 'var(--radius-item)',
+        border: `2px dashed ${isDragOver() ? 'var(--color-primary-600)' : 'var(--color-border-light)'}`, 'border-radius': 'var(--radius-lg)',
         background: isDragOver() ? 'var(--color-accent-soft)' : 'transparent',
       }}
     >
@@ -908,7 +908,7 @@ const Board: Component = () => {
             {(column) => {
               const cellItems = () => column().items.filter((item) => members().has(item.id));
               return (
-                <div style={{ width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': '26px', padding: '8px 10px' }}>
+                <div style={{ width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': 'var(--radius-lg)', padding: '8px 10px' }}>
                   <CardList
                     {...cardWiring()}
                     shown={shown(cellItems())}
@@ -1051,7 +1051,7 @@ const Board: Component = () => {
                     {(column) => {
                       const headingId = createUniqueId();
                       return (
-                        <div style={{ width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': '26px', padding: '12px 10px 8px' }}>
+                        <div style={{ width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': 'var(--radius-lg)', padding: '12px 10px 8px' }}>
                           <ColumnHead
                             column={column()}
                             headingId={headingId}

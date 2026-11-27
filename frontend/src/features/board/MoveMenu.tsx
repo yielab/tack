@@ -122,7 +122,7 @@ const MoveMenu: Component<{
               bottom: anchor().bottom != null ? `${anchor().bottom}px` : undefined,
               'z-index': 70, 'min-width': '160px', padding: '4px',
               background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)',
-              'border-radius': '14px', 'box-shadow': 'var(--shadow-lg)',
+              'border-radius': 'var(--radius-lg)', 'box-shadow': 'var(--shadow-lg)',
             }}
           >
             <Show when={props.itemRef}>
@@ -147,7 +147,7 @@ const MoveMenu: Component<{
                   class="hover:bg-[var(--color-bg-hover)] focus-visible:bg-[var(--color-bg-hover)]"
                   style={{
                     display: 'block', width: '100%', 'min-height': `${ITEM_HEIGHT}px`, padding: '0 12px',
-                    border: 'none', 'border-radius': '10px', background: 'transparent', cursor: 'pointer',
+                    border: 'none', 'border-radius': 'var(--radius-lg)', background: 'transparent', cursor: 'pointer',
                     'text-align': 'left', 'font-size': '0.8125rem', 'font-weight': 500, color: 'var(--color-text-primary)',
                   }}
                 >
@@ -167,7 +167,7 @@ const MoveMenu: Component<{
                     class="hover:bg-[var(--color-bg-hover)] focus-visible:bg-[var(--color-bg-hover)]"
                     style={{
                       display: 'block', width: '100%', 'min-height': `${ITEM_HEIGHT}px`, padding: '0 12px',
-                      border: 'none', 'border-radius': '10px', background: 'transparent', cursor: 'pointer',
+                      border: 'none', 'border-radius': 'var(--radius-lg)', background: 'transparent', cursor: 'pointer',
                       'text-align': 'left', 'font-size': '0.8125rem', 'font-weight': 500, color: 'var(--color-text-primary)',
                     }}
                   >

@@ -370,7 +370,7 @@ const AgentProfilesPanel: Component = () => {
         <Show
           when={rows().length > 0}
           fallback={
-            <div class="rounded-card border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
+            <div class="rounded-lg border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
               <EmptyState
                 icon={<IconSettings size={26} />}
                 title="No agent profiles yet"
@@ -382,7 +382,7 @@ const AgentProfilesPanel: Component = () => {
           <ul class="space-y-2">
             <For each={rows()}>
               {(profile) => (
-                <li class="flex flex-col gap-1.5 rounded-card bg-panel px-5 py-[18px]">
+                <li class="flex flex-col gap-1.5 rounded-lg bg-panel px-5 py-[18px]">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="flex flex-col">
                       <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
@@ -449,7 +449,7 @@ const AgentProfilesPanel: Component = () => {
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-card bg-panel px-5 py-[18px]">
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg bg-panel px-5 py-[18px]">
           <Field label="Name" required placeholder="reviewer" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <FieldShell label="Instructions" required for={instructionsId}>
             <textarea
@@ -459,7 +459,7 @@ const AgentProfilesPanel: Component = () => {
               placeholder="Review the diff for correctness and style."
               value={instructions()}
               onInput={(e) => setInstructions(e.currentTarget.value)}
-              class="w-full rounded-item border px-3.5 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+              class="w-full rounded-md border px-3.5 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
@@ -575,7 +575,7 @@ const AgentProfilesPanel: Component = () => {
                       e.preventDefault();
                       addHost();
                     }}
-                    class="w-56 rounded-item border px-3 py-1.5 text-sm"
+                    class="w-56 rounded-md border px-3 py-1.5 text-sm"
                     style={FIELD_STYLE}
                   />
                   <Button type="button" variant="ghost" size="sm" disabled={!hostDraft().trim()} onClick={addHost}>
@@ -634,7 +634,7 @@ const AgentProfilesPanel: Component = () => {
                         placeholder="bug"
                         value={row.type}
                         onInput={(e) => setMethodRows((rs) => rs.map((r, j) => (j === i() ? { ...r, type: e.currentTarget.value } : r)))}
-                        class="w-32 rounded-item border px-3 py-1.5 text-sm"
+                        class="w-32 rounded-md border px-3 py-1.5 text-sm"
                         style={FIELD_STYLE}
                       />
                       <Show
@@ -646,7 +646,7 @@ const AgentProfilesPanel: Component = () => {
                             placeholder="tdd"
                             value={row.method}
                             onInput={(e) => setMethodRows((rs) => rs.map((r, j) => (j === i() ? { ...r, method: e.currentTarget.value } : r)))}
-                            class="w-44 rounded-item border px-3 py-1.5 text-sm"
+                            class="w-44 rounded-md border px-3 py-1.5 text-sm"
                             style={FIELD_STYLE}
                           />
                         }
@@ -747,7 +747,7 @@ const AgentProfilesPanel: Component = () => {
                         placeholder="Other tool names, comma separated"
                         value={tools[h].extra}
                         onInput={(e) => setTools(h, 'extra', e.currentTarget.value)}
-                        class="w-full rounded-item border px-3.5 py-1.5 text-sm"
+                        class="w-full rounded-md border px-3.5 py-1.5 text-sm"
                         style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-medium)' }}
                       />
                     </Show>
@@ -764,7 +764,7 @@ const AgentProfilesPanel: Component = () => {
             )}
           </Show>
           <Show when={warnings().length > 0}>
-            <div data-testid="profile-warnings" role="status" class="rounded-item px-3 py-2 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+            <div data-testid="profile-warnings" role="status" class="rounded-md px-3 py-2 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
               <p class="font-semibold">Saved, with a second look to take:</p>
               <ul class="list-disc pl-5">
                 <For each={warnings()}>{(w) => <li>{w}</li>}</For>

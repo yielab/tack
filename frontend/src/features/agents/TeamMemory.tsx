@@ -127,7 +127,7 @@ const Waiting: Component<{ team: string; entry: MemoryEntry; deciding: MemoryDec
             hint="The team keeps your reason with the entry."
           />
           <span class="flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" variant="danger" loading={busy()} disabled={!why().trim() || busy()} aria-label={`Confirm refusing ${props.entry.subject}`}>
+            <Button type="submit" size="sm" variant="destructive" loading={busy()} disabled={!why().trim() || busy()} aria-label={`Confirm refusing ${props.entry.subject}`}>
               Refuse it
             </Button>
             <Button type="button" size="sm" variant="ghost" disabled={busy()} onClick={() => { setAsking(false); setWhy(''); }}>

@@ -70,7 +70,7 @@ const WhoDoesIt: Component<WhoDoesItProps> = (props) => {
       id={props.id}
       aria-label={props.label}
       disabled={props.disabled}
-      class="rounded px-2 py-1 text-sm"
+      class="rounded-sm px-2 py-1 text-sm"
       style={{ border: '1px solid var(--color-border-light)', color: 'var(--color-text-primary)', background: 'transparent' }}
       onChange={(e) => choose(e.currentTarget.value)}
     >

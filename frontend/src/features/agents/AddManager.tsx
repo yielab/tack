@@ -83,7 +83,7 @@ const AddManager: Component = () => {
     AGENT_LEVELS.find((l) => l.value === level) ?? AGENT_LEVELS[1];
 
   return (
-    <section class="flex flex-col gap-3 rounded-card bg-panel px-5 py-5" data-testid="add-manager">
+    <section class="flex flex-col gap-3 rounded-lg bg-panel px-5 py-5" data-testid="add-manager">
       <h2 class="text-xl leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Add a manager
       </h2>
@@ -95,7 +95,7 @@ const AddManager: Component = () => {
       </p>
 
       <form
-        class="flex flex-col gap-3 rounded-xl px-3.5 py-3"
+        class="flex flex-col gap-3 rounded-lg px-3.5 py-3"
         style={{ 'background-color': 'var(--color-bg-app)' }}
         onSubmit={(e) => {
           e.preventDefault();
@@ -185,7 +185,7 @@ const AddManager: Component = () => {
 
             <Show when={result().credential && result().mcpConfig}>
               <div
-                class="flex flex-col gap-2 rounded-xl px-3.5 py-3"
+                class="flex flex-col gap-2 rounded-lg px-3.5 py-3"
                 style={{ 'background-color': 'var(--color-bg-app)' }}
                 role="status"
                 data-testid="manager-mcp"

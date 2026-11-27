@@ -111,7 +111,7 @@ describe('Sprints', () => {
           : normal(input, init)) as typeof fetch);
 
       const card = [...container.querySelectorAll<HTMLElement>('[draggable="true"]')].find((c) => c.textContent?.includes('Cart page'))!;
-      const lane = container.querySelector('[aria-label="Sprint lanes"] .rounded-card, [aria-label="Sprint lanes"] > div > div')!;
+      const lane = container.querySelector('[aria-label="Sprint lanes"] .rounded-lg, [aria-label="Sprint lanes"] > div > div')!;
       const dataTransfer = { getData: () => 'a', setData: () => {}, effectAllowed: '', dropEffect: '' };
       const drop = new Event('drop', { bubbles: true, cancelable: true });
       Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer });

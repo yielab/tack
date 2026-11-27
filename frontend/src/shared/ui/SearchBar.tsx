@@ -107,7 +107,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
         >
           <span
             style={{
-              width: '14px', height: '14px', 'flex-shrink': 0, 'border-radius': '99px',
+              width: '14px', height: '14px', 'flex-shrink': 0, 'border-radius': 'var(--radius-lg)',
               border: '2px solid var(--color-border-light)', 'border-top-color': 'var(--color-primary-600)',
               animation: 'tk-spin .6s linear infinite',
             }}
@@ -150,7 +150,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
           style={{
             position: 'absolute', 'z-index': 50, width: '360px', 'max-width': '78vw', right: 0, 'margin-top': '8px',
             background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)',
-            'border-radius': 'var(--radius-xl)', 'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
+            'border-radius': 'var(--radius-lg)', 'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
             animation: 'tk-pal .16s cubic-bezier(.2,.7,.3,1)',
           }}
         >

@@ -67,7 +67,7 @@ const Message: Component<{ entry: Entry; profileName: string; projectId: string 
       data-testid="thread-message"
       data-writer={mine() ? 'you' : 'agent'}
       data-failed={failed() ? 'true' : undefined}
-      class="flex min-w-0 flex-col gap-2 rounded-item p-3"
+      class="flex min-w-0 flex-col gap-2 rounded-lg p-3"
       style={{
         border: `1px solid ${failed() ? 'var(--color-danger-600)' : 'var(--color-border-light)'}`,
         'background-color': mine() ? 'var(--color-accent-soft)' : 'transparent',

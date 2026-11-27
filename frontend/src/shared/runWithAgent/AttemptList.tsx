@@ -125,7 +125,7 @@ const AgentRead: Component<{ requestId: string }> = (props) => {
       </Show>
       <Show when={!read.error && read()?.instructions}>
         {(text) => (
-          <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs"
+          <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-xs"
             style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
         )}
       </Show>
@@ -504,7 +504,7 @@ const AttemptRow: Component<{
         <Show when={needsVerdict(props.attempt)}>
           <section
             data-testid="review-banner"
-            class="space-y-2 rounded-item px-4 py-3"
+            class="space-y-2 rounded-lg px-4 py-3"
             style={{ 'background-color': review() ? 'var(--color-bg-panel)' : 'var(--color-warning-100)' }}
           >
             <Show when={!review()}>

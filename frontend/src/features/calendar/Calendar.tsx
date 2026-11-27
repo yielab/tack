@@ -178,7 +178,7 @@ export default function Calendar() {
             <For each={PRIORITY_LEGEND}>
               {(p) => (
                 <span class="inline-flex items-center gap-1.5">
-                  <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityFill(p.priority) }} />
+                  <span class="w-2 h-2 rounded-sm" style={{ 'background-color': priorityFill(p.priority) }} />
                   {p.label}
                 </span>
               )}
@@ -201,7 +201,7 @@ export default function Calendar() {
           <For each={calendarDays()}>
             {(day) => (
               <div
-                class="min-w-0 rounded-[18px] p-2 flex flex-col gap-1"
+                class="min-w-0 rounded-lg p-2 flex flex-col gap-1"
                 style={{
                   'min-height': '118px',
                   'background-color': day === null
@@ -233,7 +233,7 @@ export default function Calendar() {
                           type="button"
                           data-testid="milestone"
                           onClick={() => setSearchParams({ item: group.id })}
-                          class="flex items-center gap-1 rounded-item px-1.5 py-[3px] text-left text-micro focus:outline-none focus-visible:ring-2"
+                          class="flex items-center gap-1 rounded-md px-1.5 py-[3px] text-left text-micro focus:outline-none focus-visible:ring-2"
                           style={{
                             border: '1.5px solid var(--color-border-medium)',
                             'background-color': 'var(--color-bg-app)',
@@ -258,7 +258,7 @@ export default function Calendar() {
                           role="button"
                           tabindex={0}
                           onKeyDown={onActivateKey(() => setSearchParams({ item: item.id }))}
-                          class="text-micro px-2 py-[3px] rounded-[10px] cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
+                          class="text-micro px-2 py-[3px] rounded-lg cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
                           style={getPriorityStyle(item.priority)}
                           title={`${item.title} — drag to reschedule`}
                         >
@@ -282,7 +282,7 @@ export default function Calendar() {
 
         {/* Unscheduled tray — drag items here to clear their due date */}
         <div
-          class="rounded-card px-4 py-3 flex flex-col gap-2 transition-colors"
+          class="rounded-lg px-4 py-3 flex flex-col gap-2 transition-colors"
           style={{
             'background-color': dragOverUnscheduled() ? 'var(--color-accent2-soft)' : 'transparent',
             border: dragOverUnscheduled()

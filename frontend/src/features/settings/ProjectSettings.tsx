@@ -141,7 +141,7 @@ const ProjectSettings: Component = () => {
               onInput={(e) => setTemplateDesc(e.currentTarget.value)}
               rows={2}
               placeholder="Optional description"
-              class="w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+              class="w-full resize-none rounded-lg border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',

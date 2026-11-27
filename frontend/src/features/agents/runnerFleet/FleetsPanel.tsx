@@ -135,7 +135,7 @@ const FleetsPanel: Component = () => {
         <Show
           when={rows().length > 0}
           fallback={
-            <div class="rounded-card border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
+            <div class="rounded-lg border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
               <EmptyState
                 icon={<IconAgent size={26} />}
                 title="No fleets yet"
@@ -147,7 +147,7 @@ const FleetsPanel: Component = () => {
           <ul class="space-y-2">
             <For each={rows()}>
               {(fleet) => (
-                <li class="flex flex-col gap-2.5 rounded-card bg-panel px-5 py-[18px]">
+                <li class="flex flex-col gap-2.5 rounded-lg bg-panel px-5 py-[18px]">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {fleet.name}
@@ -264,7 +264,7 @@ const FleetsPanel: Component = () => {
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-card bg-panel px-5 py-[18px]">
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg bg-panel px-5 py-[18px]">
           <Field label="Name" required placeholder="backend-fleet" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <Field
             label="Concurrency limit (optional)"

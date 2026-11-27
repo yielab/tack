@@ -537,7 +537,7 @@ export default function Timeline() {
           ] as const}>
             {(p) => (
               <span class="inline-flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityFill(p.priority) }} />
+                <span class="w-2 h-2 rounded-sm" style={{ 'background-color': priorityFill(p.priority) }} />
                 {p.label}
               </span>
             )}

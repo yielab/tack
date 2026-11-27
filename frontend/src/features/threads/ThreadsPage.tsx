@@ -71,7 +71,7 @@ const ThreadsPage: Component = () => {
                     <li data-testid="thread-item">
                       <A
                         href={`/projects/${projectId()}/threads?open=${t.id}`}
-                        class="flex min-w-0 flex-col gap-0.5 rounded-item p-3"
+                        class="flex min-w-0 flex-col gap-0.5 rounded-lg p-3"
                         aria-current={t.id === opened() ? 'true' : undefined}
                         style={{
                           border: `1px solid ${t.id === opened() ? 'var(--color-primary-600)' : 'var(--color-border-light)'}`,

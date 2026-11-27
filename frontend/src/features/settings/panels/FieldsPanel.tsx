@@ -137,7 +137,7 @@ export default function FieldsPanel() {
             {(field: CustomField) => {
               const typeInfo = getFieldTypeInfo(field.field_type);
               return (
-                <div class="flex flex-col gap-1.5 rounded-[26px] bg-panel px-4 py-3.5">
+                <div class="flex flex-col gap-1.5 rounded-lg bg-panel px-4 py-3.5">
                   <div class="flex flex-wrap items-center gap-2">
                     <span
                       class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm"
@@ -231,7 +231,7 @@ export default function FieldsPanel() {
                 onInput={(e) => setDescription(e.currentTarget.value)}
                 rows={2}
                 placeholder="Optional description"
-                class="w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                class="w-full resize-none rounded-lg border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{
                   'background-color': 'var(--color-bg-base)',
                   color: 'var(--color-text-primary)',
@@ -255,7 +255,7 @@ export default function FieldsPanel() {
                   rows={4}
                   required
                   placeholder="Option 1&#10;Option 2&#10;Option 3"
-                  class="w-full rounded-xl border px-3.5 py-2.5 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                  class="w-full rounded-lg border px-3.5 py-2.5 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                   style={{
                     'background-color': 'var(--color-bg-base)',
                     color: 'var(--color-text-primary)',
@@ -271,7 +271,7 @@ export default function FieldsPanel() {
                 type="checkbox"
                 checked={required()}
                 onChange={(e) => setRequired(e.currentTarget.checked)}
-                class="h-4 w-4 rounded"
+                class="h-4 w-4 rounded-sm"
               />
               Required field (must be filled for all items)
             </label>

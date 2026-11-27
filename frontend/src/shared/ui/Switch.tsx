@@ -15,7 +15,7 @@ export interface SwitchProps {
   style?: JSX.CSSProperties;
 }
 
-/** An on/off switch with its text. A native checkbox with role="switch", so the keyboard and the
+/** An on/off switch with its text: a round track and thumb. A native checkbox with role="switch", so the keyboard and the
  *  screen reader see a switch, and a disabled one stays disabled with its reason shown beside it. */
 const Switch: Component<SwitchProps> = (props) => (
   <label class={clsx('flex min-h-6 items-center gap-2 text-sm', props.class)} style={props.style}>
@@ -24,8 +24,8 @@ const Switch: Component<SwitchProps> = (props) => (
       role="switch"
       name={props.name}
       aria-label={props.ariaLabel}
-      class="h-4 w-4"
-      style={{ 'accent-color': 'var(--color-primary-600)' }}
+      class="relative h-5 w-9 flex-none cursor-pointer appearance-none rounded-pill bg-line-strong transition-colors checked:bg-brand focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-0.5 before:top-0.5 before:h-4 before:w-4 before:rounded-pill before:bg-white before:transition-transform checked:before:translate-x-4"
+      style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
       checked={props.checked}
       disabled={props.disabled}
       onChange={(e) => props.onChange(e.currentTarget.checked)}

@@ -416,7 +416,7 @@ const RequestRow: Component<{
           when={readyAttempts().length > 0}
           fallback={
             <>
-              <p class="rounded-item border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+              <p class="rounded-lg border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
                 No attempts yet.
               </p>
               <div class="flex flex-wrap items-center gap-2">{runAgain('secondary')}</div>
@@ -458,7 +458,7 @@ const RequestRow: Component<{
 
       <Show when={reconcileOpen()}>
         <form
-          class="space-y-3 rounded-card p-5"
+          class="space-y-3 rounded-lg p-5"
           style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}
           onSubmit={reconcile}
         >

@@ -36,12 +36,12 @@ const AgentsOffline: Component<{ onNavigate?: () => void }> = (props) => {
             title={text()}
             style={{
               display: 'flex', 'flex-direction': 'column', gap: '2px',
-              padding: '8px 14px', 'border-radius': '18px',
+              padding: '8px 14px', 'border-radius': 'var(--radius-lg)',
               background: 'var(--color-warning-100)', color: 'var(--color-warning-700)',
             }}
           >
             <span style={{ display: 'flex', 'align-items': 'center', gap: '8px', 'font-size': '0.8125rem', 'font-weight': 700 }}>
-              <span aria-hidden="true" style={{ width: '8px', height: '8px', 'border-radius': '99px', background: 'var(--color-warning-700)', 'flex-shrink': 0 }} />
+              <span aria-hidden="true" style={{ width: '8px', height: '8px', 'border-radius': 'var(--radius-lg)', background: 'var(--color-warning-700)', 'flex-shrink': 0 }} />
               Agents offline
             </span>
             <span style={{ 'font-size': '0.75rem', 'overflow-wrap': 'anywhere' }}>{text()}</span>

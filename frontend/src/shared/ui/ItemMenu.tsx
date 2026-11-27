@@ -92,8 +92,8 @@ const ItemMenu: Component<{
         }}
         class={
           props.label
-            ? 'inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold leading-none focus:outline-none focus-visible:ring-2'
-            : 'grid h-8 w-8 place-items-center rounded-full text-lg leading-none focus:outline-none focus-visible:ring-2'
+            ? 'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold leading-none focus:outline-none focus-visible:ring-2'
+            : 'grid h-8 w-8 place-items-center rounded-md text-lg leading-none focus:outline-none focus-visible:ring-2'
         }
         style={{
           color: props.label ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
@@ -111,7 +111,7 @@ const ItemMenu: Component<{
           role="menu"
           aria-label={props.menuLabel ?? 'Item actions'}
           on:keydown={onMenuKeyDown}
-          class={`absolute top-full z-50 mt-1 min-w-56 max-w-xs rounded-item p-1 ${props.align === 'left' ? 'left-0' : 'right-0'}`}
+          class={`absolute top-full z-50 mt-1 min-w-56 max-w-xs rounded-lg p-1 ${props.align === 'left' ? 'left-0' : 'right-0'}`}
           style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-medium)', 'box-shadow': 'var(--shadow-md)' }}
         >
           <For each={props.entries}>
@@ -127,7 +127,7 @@ const ItemMenu: Component<{
                     close(false);
                     entry.onSelect();
                   }}
-                  class="flex w-full items-center gap-2 rounded-item px-3 py-2 text-left text-sm hover:brightness-95 focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-55"
+                  class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:brightness-95 focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-55"
                   style={{ color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                 >
                   {entry.leading}

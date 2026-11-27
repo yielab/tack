@@ -138,7 +138,7 @@ const MoveMenu: Component<{
               bottom: anchor().bottom != null ? `${anchor().bottom}px` : undefined,
               'z-index': 70, 'min-width': '12rem', 'max-width': '18rem', padding: '4px',
               background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)',
-              'border-radius': '14px', 'box-shadow': 'var(--shadow-lg)',
+              'border-radius': 'var(--radius-lg)', 'box-shadow': 'var(--shadow-lg)',
             }}
           >
             <For each={props.choices}>
@@ -156,7 +156,7 @@ const MoveMenu: Component<{
                   }}
                   style={{
                     display: 'block', width: '100%', 'min-height': `${ITEM_HEIGHT}px`, padding: '4px 12px',
-                    border: 'none', 'border-radius': '10px', background: 'transparent',
+                    border: 'none', 'border-radius': 'var(--radius-lg)', background: 'transparent',
                     cursor: choice.reason ? 'not-allowed' : 'pointer', 'text-align': 'left',
                     'font-size': '0.8125rem', 'font-weight': 500, 'overflow-wrap': 'anywhere',
                     color: choice.reason ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',

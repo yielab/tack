@@ -217,7 +217,7 @@ const EnrollmentPanel: Component = () => {
       {/* Enroll form */}
       <form
         onSubmit={(e) => void submitEnroll(e)}
-        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-card bg-panel px-5 py-[18px] sm:grid-cols-3"
+        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-lg bg-panel px-5 py-[18px] sm:grid-cols-3"
       >
         <h3 class="col-span-full text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Enroll a runner
@@ -292,7 +292,7 @@ const EnrollmentPanel: Component = () => {
                     runner.connectionStatus !== 'unconfigured' ? (
                       <Button
                         size="sm"
-                        variant="danger"
+                        variant="destructive"
                         loading={busyRunnerIds().has(runner.runnerId)}
                         disabled={busyRunnerIds().has(runner.runnerId)}
                         onClick={() => void revokeRunner(runner)}
@@ -311,7 +311,7 @@ const EnrollmentPanel: Component = () => {
       {/* Manual revoke by ID — the fallback for a runner not enrolled this session */}
       <form
         onSubmit={(e) => void submitManualRevoke(e)}
-        class="flex flex-col gap-2.5 rounded-card bg-panel px-5 py-[18px]"
+        class="flex flex-col gap-2.5 rounded-lg bg-panel px-5 py-[18px]"
       >
         <h3 class="text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Revoke a runner by ID
@@ -329,7 +329,7 @@ const EnrollmentPanel: Component = () => {
           />
           <Button
             type="submit"
-            variant="danger"
+            variant="destructive"
             loading={revokingManual()}
             disabled={revokingManual() || !revokeTargetId().trim()}
           >
@@ -362,7 +362,7 @@ const EnrollmentPanel: Component = () => {
                   Enrollment token
                 </p>
                 <p
-                  class="mt-1 break-all rounded-[14px] bg-app px-3 py-2 font-mono text-sm select-all"
+                  class="mt-1 break-all rounded-lg bg-app px-3 py-2 font-mono text-sm select-all"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
                   {token().enrollment_token}

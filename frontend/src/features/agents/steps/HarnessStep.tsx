@@ -54,7 +54,7 @@ const INITIAL_BADGE_STYLES: readonly JSX.CSSProperties[] = [
 
 const HarnessStep: Component<HarnessStepProps> = (props) => {
   return (
-    <section class="flex flex-col gap-2.5 rounded-card bg-panel px-[22px] py-5">
+    <section class="flex flex-col gap-2.5 rounded-lg bg-panel px-[22px] py-5">
       <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Agents on this machine
       </h2>
@@ -73,7 +73,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
               const harness = () => findHarness(harnessesOf(props.thisMachineRunner), kind.value);
               const status = () => statusLabel(harness());
               return (
-                <div class="flex flex-wrap items-center gap-3 rounded-xl bg-app px-3.5 py-3 text-sm">
+                <div class="flex flex-wrap items-center gap-3 rounded-lg bg-app px-3.5 py-3 text-sm">
                   <span
                     class="font-heading grid h-10 w-10 flex-none place-items-center rounded-full text-[1.0625rem]"
                     style={INITIAL_BADGE_STYLES[index() % INITIAL_BADGE_STYLES.length]}

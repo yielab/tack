@@ -219,7 +219,7 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
       data-station={st().key}
       data-accepts={isUpNext() ? (dropped() ? String(accepts()) : undefined) : undefined}
       data-parallel={st().step?.kind === 'parallel' ? 'true' : undefined}
-      class="flex min-w-0 flex-col gap-2 rounded-item px-2 py-2"
+      class="flex min-w-0 flex-col gap-2 rounded-md px-2 py-2"
       style={{
         // Steps that run side by side are drawn as a stack of two.
         ...(st().step?.kind === 'parallel' ? { 'box-shadow': '0.3rem 0.3rem 0 -1px var(--color-border-medium)', border: '1px solid var(--color-border-medium)' } : {}),
@@ -335,7 +335,7 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
       data-testid="flow-lane"
       data-lane={lane().key}
       data-urgency={lane().urgency}
-      class="flex min-w-0 flex-col gap-3 rounded-card px-4 py-3"
+      class="flex min-w-0 flex-col gap-3 rounded-lg px-4 py-3"
       style={{ 'background-color': 'var(--color-bg-panel)' }}
     >
       <div class="flex min-w-0 flex-wrap items-start gap-x-4 gap-y-2">

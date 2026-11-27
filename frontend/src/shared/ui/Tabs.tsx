@@ -65,7 +65,7 @@ const Tabs: Component<TabsProps> = (props) => {
       aria-hidden="true"
       data-testid={dir === 1 ? 'tabs-scroll-end' : 'tabs-scroll-start'}
       onClick={() => scrollBy(dir)}
-      class="absolute bottom-px top-0 flex w-6 items-center justify-center rounded-full"
+      class="absolute bottom-px top-0 flex w-6 items-center justify-center rounded-md"
       style={{
         [dir === 1 ? 'right' : 'left']: '0',
         'background-color': 'var(--color-bg-app)',
@@ -136,7 +136,7 @@ const Tabs: Component<TabsProps> = (props) => {
                 </Show>
                 <Show when={tab.count !== undefined}>
                   <span
-                    class="ml-1.5 rounded-full px-1.5 py-px text-micro font-bold"
+                    class="ml-1.5 rounded-sm px-1.5 py-px text-micro font-bold"
                     style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
                   >
                     {tab.count}

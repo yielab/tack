@@ -17,7 +17,7 @@ import CredentialsSettings from './CredentialsSettings';
 
 // Setting card: a surface-filled container (no border — the fill contrast
 // against the page ground does the work) with a display-face title.
-const CARD = 'flex flex-col gap-3 rounded-card bg-panel px-[22px] py-5';
+const CARD = 'flex flex-col gap-3 rounded-lg bg-panel px-[22px] py-5';
 const CARD_TITLE = 'text-[1.3125rem] leading-tight';
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -366,7 +366,7 @@ const GlobalSettings: Component = () => {
         {/* Existing cloud backups */}
         <Show when={configured()}>
           <div
-            class="flex flex-col rounded-xl px-3.5 py-2.5"
+            class="flex flex-col rounded-lg px-3.5 py-2.5"
             style={{ 'background-color': 'var(--color-bg-app)' }}
           >
             <p
@@ -435,7 +435,7 @@ const GlobalSettings: Component = () => {
 
       {/* System (advanced) */}
       <section
-        class={showSystem() ? 'flex flex-col gap-3 rounded-card px-[22px] py-3.5' : 'rounded-full px-[22px] py-3.5'}
+        class={showSystem() ? 'flex flex-col gap-3 rounded-lg px-[22px] py-3.5' : 'rounded-full px-[22px] py-3.5'}
         style={{ 'background-color': 'var(--color-bg-panel)' }}
       >
         <button
@@ -464,7 +464,7 @@ const GlobalSettings: Component = () => {
             <Show when={dbStats()}>
               {(s) => (
                 <div
-                  class="rounded-xl px-3.5 py-2.5"
+                  class="rounded-lg px-3.5 py-2.5"
                   style={{ 'background-color': 'var(--color-bg-app)' }}
                 >
                   <p

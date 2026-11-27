@@ -1,6 +1,6 @@
 import type { JSX } from 'solid-js';
 
-export const SECTION = 'flex flex-col gap-2.5 rounded-[26px] bg-panel p-[18px]';
+export const SECTION = 'flex flex-col gap-2.5 rounded-lg bg-panel p-[18px]';
 
 /** The levels a project can merge at, with the short form the ladder shows and the sentence that names its radio. */
 export const LEVELS = [

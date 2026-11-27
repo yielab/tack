@@ -80,7 +80,7 @@ const Fold: Component<FoldProps> = (props) => {
         aria-expanded={open()}
         aria-controls={panelId}
         onClick={toggle}
-        class={`flex w-full min-w-0 items-center gap-2 rounded-item py-1 text-left focus:outline-none focus-visible:ring-2 ${sub() ? 'text-xs' : 'text-sm'}`}
+        class={`flex w-full min-w-0 items-center gap-2 rounded-md py-1 text-left focus:outline-none focus-visible:ring-2 ${sub() ? 'text-xs' : 'text-sm'}`}
         style={{ color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
       >
         <span aria-hidden="true" class="inline-flex flex-none" style={{ transform: open() ? 'rotate(0deg)' : 'rotate(-90deg)' }}>

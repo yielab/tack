@@ -24,7 +24,7 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => (
       <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{props.message}</p>
       <div class="flex justify-end gap-2">
         <Button variant="secondary" onClick={props.onCancel}>Cancel</Button>
-        <Button variant={props.danger ? 'danger' : 'primary'} onClick={props.onConfirm}>
+        <Button variant={props.danger ? 'destructive' : 'primary'} onClick={props.onConfirm}>
           {props.confirmLabel ?? 'Continue'}
         </Button>
       </div>

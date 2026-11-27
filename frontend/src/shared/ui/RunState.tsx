@@ -109,7 +109,7 @@ export function runStateView(props: Pick<RunStateProps, 'state' | 'docket'>): { 
 
 /**
  * A run's state as an icon and a label. `dot` is the icon alone, with the label
- * as its `aria-label` and tooltip; `chip` is a pill; `banner` is a full-width
+ * as its `aria-label` and tooltip; `chip` is a glyph and a label on a tinted ground; `banner` is a full-width
  * row that also carries the docket word on a second line.
  */
 const RunState: Component<RunStateProps> = (props) => {
@@ -133,7 +133,7 @@ const RunState: Component<RunStateProps> = (props) => {
       </Match>
       <Match when={props.size === 'banner'}>
         <div
-          class="flex w-full min-w-0 items-start gap-2.5 rounded-item px-3 py-2"
+          class="flex w-full min-w-0 items-start gap-2.5 rounded-lg px-3 py-2"
           style={{
             'background-color': `var(--run-${view().state}-soft)`,
             color: ink(),
@@ -152,7 +152,7 @@ const RunState: Component<RunStateProps> = (props) => {
       <Match when={true}>
         <span
           title={text()}
-          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill px-2.5 py-0.5 text-xs font-semibold"
+          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-0.5 text-xs font-semibold"
           style={{
             'background-color': `var(--run-${view().state}-soft)`,
             color: ink(),

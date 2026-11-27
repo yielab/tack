@@ -116,7 +116,7 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
   };
 
   return (
-    <section class="flex flex-col gap-3 rounded-card bg-panel px-5 py-5" id="teams" data-testid="teams-panel">
+    <section class="flex flex-col gap-3 rounded-lg bg-panel px-5 py-5" id="teams" data-testid="teams-panel">
       <div>
         <div class="flex items-center gap-2">
           <h2 class="text-lead font-bold leading-tight" style={{ color: 'var(--color-text-primary)' }}>
@@ -193,7 +193,7 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
           </h3>
           <For each={noTeam()}>
             {([key, list]) => (
-              <div class="flex flex-col gap-1 rounded-xl bg-app px-4 py-3" data-testid={`no-team-${key}`}>
+              <div class="flex flex-col gap-1 rounded-lg bg-app px-4 py-3" data-testid={`no-team-${key}`}>
                 <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
                   {key === 'any' ? profileAgentText({}) : agentName(key)}
                 </span>

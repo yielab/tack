@@ -46,7 +46,7 @@ function ChoiceGroup<T extends string | number>(p: {
         {p.legend}
       </legend>
       <div
-        class="inline-flex flex-wrap gap-[3px] self-start rounded-xl p-[3px] text-small"
+        class="inline-flex flex-wrap gap-[3px] self-start rounded-lg p-[3px] text-small"
         style={{ 'background-color': 'var(--color-bg-app)', opacity: p.disabled ? 0.6 : 1 }}
       >
         <For each={p.options}>
@@ -99,7 +99,7 @@ const Toggle: Component<{
     <input
       id={p.id}
       type="checkbox"
-      class="mt-0.5 h-5 w-5 flex-none cursor-pointer rounded"
+      class="mt-0.5 h-5 w-5 flex-none cursor-pointer rounded-sm"
       style={{ 'accent-color': 'var(--color-primary-600)' }}
       checked={p.checked}
       aria-describedby={`${p.id}-hint`}

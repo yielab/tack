@@ -74,7 +74,7 @@ const ProjectFolderCard: Component<{ projectId: string }> = (props) => {
   };
 
   return (
-    <section aria-labelledby="project-folder-title" data-testid="project-folder" class="flex flex-col gap-4 rounded-card bg-panel p-6">
+    <section aria-labelledby="project-folder-title" data-testid="project-folder" class="flex flex-col gap-4 rounded-lg bg-panel p-6">
       <div class="flex flex-col gap-1">
         <h3 id="project-folder-title" class="text-xl font-semibold leading-tight" style={PRIMARY}>
           Project folder

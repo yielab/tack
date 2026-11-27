@@ -15,7 +15,7 @@ export function wipChipStyle(count: number, limit: number): JSX.CSSProperties {
     'font-size': '0.65625rem',
     'font-weight': exceeded ? 700 : 500,
     padding: '1px 7px',
-    'border-radius': '999px',
+    'border-radius': 'var(--radius-lg)',
     'background-color': exceeded ? 'var(--color-danger-100)' : 'var(--color-chip)',
     color: exceeded ? 'var(--color-danger-600)' : 'var(--color-text-secondary)',
   };

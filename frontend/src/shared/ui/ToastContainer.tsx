@@ -18,13 +18,13 @@ const ToastItem: Component<{ toast: Toast }> = (props) => (
     role={props.toast.type === 'error' ? 'alert' : undefined}
     style={{
       display: 'flex', 'align-items': 'center', gap: '9px',
-      padding: '10px 18px', 'border-radius': '999px',
+      padding: '10px 18px', 'border-radius': 'var(--radius-lg)',
       background: 'var(--color-text-primary)', color: 'var(--color-bg-app)',
       'font-size': '0.8125rem', 'font-weight': 600, 'box-shadow': 'var(--shadow-lg)',
       animation: 'tk-toast .2s ease', 'pointer-events': 'auto',
     }}
   >
-    <span aria-hidden="true" style={{ width: '8px', height: '8px', 'border-radius': '99px', background: dotColor(props.toast.type), 'flex-shrink': 0 }} />
+    <span aria-hidden="true" style={{ width: '8px', height: '8px', 'border-radius': 'var(--radius-lg)', background: dotColor(props.toast.type), 'flex-shrink': 0 }} />
     <span style={{ flex: 1, 'min-width': 0 }}>{props.toast.message}</span>
     <button
       onClick={() => removeToast(props.toast.id)}

@@ -17,7 +17,7 @@ const Skeleton: Component<SkeletonProps> = (props) => {
   };
   return (
     <div
-      class={clsx('animate-pulse', props.rounded ? 'rounded-full' : 'rounded-[18px]', props.class)}
+      class={clsx('animate-pulse', props.rounded ? 'rounded-full' : 'rounded-lg', props.class)}
       style={style}
       aria-hidden="true"
     />

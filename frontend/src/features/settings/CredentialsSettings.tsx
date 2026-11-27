@@ -35,7 +35,7 @@ export function credentialState(c: AgentCredential, now = Date.now()): 'active' 
   return new Date(c.expires_at).getTime() <= now ? 'expired' : 'active';
 }
 
-const CARD = 'flex flex-col gap-3 rounded-card bg-panel px-5 py-5';
+const CARD = 'flex flex-col gap-3 rounded-lg bg-panel px-5 py-5';
 const CARD_TITLE = 'text-xl leading-tight';
 const MUTED = { color: 'var(--color-text-secondary)' };
 
@@ -151,7 +151,7 @@ const CredentialsSettings: Component = () => {
       <Show when={shown()}>
         {(issued) => (
           <div
-            class="flex flex-col gap-2 rounded-xl px-3.5 py-3"
+            class="flex flex-col gap-2 rounded-lg px-3.5 py-3"
             style={{ 'background-color': 'var(--color-bg-app)' }}
             role="status"
             data-testid="credential-secret"
@@ -238,7 +238,7 @@ const CredentialsSettings: Component = () => {
       </Show>
 
       <form
-        class="flex flex-col gap-3 rounded-xl px-3.5 py-3"
+        class="flex flex-col gap-3 rounded-lg px-3.5 py-3"
         style={{ 'background-color': 'var(--color-bg-app)' }}
         onSubmit={(e) => {
           e.preventDefault();

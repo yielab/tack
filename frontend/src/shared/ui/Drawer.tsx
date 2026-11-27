@@ -71,7 +71,7 @@ const Drawer: Component<DrawerProps> = (props) => {
             aria-label={props.title}
             tabindex={-1}
             class={clsx(
-              'flex h-full w-full min-w-0 flex-col focus:outline-none sm:rounded-l-[28px]',
+              'flex h-full w-full min-w-0 flex-col focus:outline-none sm:rounded-l-lg',
               WIDTH[props.width ?? 'lg']
             )}
             style={{
@@ -86,7 +86,7 @@ const Drawer: Component<DrawerProps> = (props) => {
                 style={{ 'border-color': 'var(--color-border-light)' }}
               >
                 <h2
-                  class="text-xl"
+                  class="text-step"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
                   {props.title}
@@ -96,7 +96,7 @@ const Drawer: Component<DrawerProps> = (props) => {
                 <button
                   onClick={props.onClose}
                   aria-label="Close"
-                  class="rounded-full p-1.5 transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
+                  class="rounded-md p-1.5 transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
                   style={{
                     color: 'var(--color-text-tertiary)',
                     '--tw-ring-color': 'var(--color-focus-ring)',

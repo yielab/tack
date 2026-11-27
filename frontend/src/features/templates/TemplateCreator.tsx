@@ -34,13 +34,13 @@ function Section(props: {
 }) {
   return (
     <div
-      class={`bg-panel transition-[border-radius] ${props.open ? 'rounded-card' : 'rounded-[32px]'}`}
+      class={`bg-panel transition-[border-radius] ${props.open ? 'rounded-lg' : 'rounded-lg'}`}
     >
       <button
         type="button"
         onClick={props.onToggle}
         aria-expanded={props.open}
-        class={`w-full flex items-center gap-2.5 text-left transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2 ${props.open ? 'rounded-t-[28px] px-[22px] pt-[18px] pb-1' : 'rounded-[32px] px-[22px] py-3'}`}
+        class={`w-full flex items-center gap-2.5 text-left transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2 ${props.open ? 'rounded-t-lg px-[22px] pt-[18px] pb-1' : 'rounded-lg px-[22px] py-3'}`}
         style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
       >
         <Show when={props.open} fallback={<FiChevronRight size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />}>
@@ -321,7 +321,7 @@ export default function TemplateCreator() {
                 onInput={(e) => setDescription(e.currentTarget.value)}
                 rows={2}
                 placeholder="Describe what this template is for..."
-                class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                class="w-full resize-none rounded-md border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
                 style={textareaStyle}
               />
             </FieldShell>
@@ -417,7 +417,7 @@ export default function TemplateCreator() {
               Leave fields blank to keep the default label.
             </p>
 
-            <div class="overflow-hidden rounded-item" style={itemStyle}>
+            <div class="overflow-hidden rounded-lg" style={itemStyle}>
               <table class="w-full text-sm">
                 <thead>
                   <tr>
@@ -489,7 +489,7 @@ export default function TemplateCreator() {
               <div class="space-y-2">
                 <For each={customFields()}>
                   {(field, i) => (
-                    <div class="flex items-center gap-3 rounded-item px-4 py-3" style={itemStyle}>
+                    <div class="flex items-center gap-3 rounded-lg px-4 py-3" style={itemStyle}>
                       <span class="text-lg">{fieldTypeIcon(field.field_type)}</span>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
@@ -588,7 +588,7 @@ export default function TemplateCreator() {
               onInput={(e) => setFieldDescription(e.currentTarget.value)}
               rows={2}
               placeholder="Optional description"
-              class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+              class="w-full resize-none rounded-md border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
               style={textareaStyle}
             />
           </FieldShell>
@@ -607,7 +607,7 @@ export default function TemplateCreator() {
                 rows={4}
                 required
                 placeholder={'Option 1\nOption 2\nOption 3'}
-                class="w-full rounded-item border px-3.5 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                class="w-full rounded-md border px-3.5 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2"
                 style={textareaStyle}
               />
             </FieldShell>
@@ -621,7 +621,7 @@ export default function TemplateCreator() {
               type="checkbox"
               checked={fieldRequired()}
               onChange={(e) => setFieldRequired(e.currentTarget.checked)}
-              class="h-4 w-4 rounded"
+              class="h-4 w-4 rounded-sm"
               style={{ 'accent-color': 'var(--color-primary-600)' }}
             />
             Required field (must be filled for all items)

@@ -506,12 +506,12 @@ export default function List() {
               <div
                 role="group"
                 aria-label="Columns"
-                class="absolute right-0 mt-2 z-20 w-64 flex flex-col gap-0.5 p-2.5 rounded-xl bg-surface"
+                class="absolute right-0 mt-2 z-20 w-64 flex flex-col gap-0.5 p-2.5 rounded-lg bg-surface"
                 style={{ 'box-shadow': 'var(--shadow-lg)' }}
               >
                 <For each={COLUMNS}>
                   {(c) => (
-                    <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-item text-small text-content cursor-pointer hover:bg-sunken">
+                    <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-small text-content cursor-pointer hover:bg-sunken">
                       <input
                         type="checkbox"
                         class="w-4 h-4 flex-none"
@@ -546,7 +546,7 @@ export default function List() {
               <p
                 role="alert"
                 data-testid="list-refusal"
-                class="mb-2 flex items-center gap-2 rounded-item px-3.5 py-2 text-small font-semibold"
+                class="mb-2 flex items-center gap-2 rounded-md px-3.5 py-2 text-small font-semibold"
                 style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
               >
                 <span class="min-w-0 flex-1">{why()}</span>
