@@ -28,7 +28,7 @@ function lineKind(line: string): 'add' | 'del' | 'hunk' | 'ctx' {
 const STYLE = {
   add: { color: 'var(--color-success-600)', 'background-color': 'var(--color-success-100)' },
   del: { color: 'var(--color-danger-600)', 'background-color': 'var(--color-danger-100)' },
-  hunk: { color: 'var(--color-text-tertiary)' },
+  hunk: { color: 'var(--color-text-secondary)' },
   ctx: { color: 'var(--color-text-primary)' },
 } as const;
 
@@ -41,7 +41,7 @@ const DiffView: Component<{ patch: string }> = (props) => (
           <h5 data-testid="diff-file" class="mb-1 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
             {file.path}
           </h5>
-          <pre class="overflow-x-auto text-xs" style={{ 'font-family': 'var(--font-mono)', 'white-space': 'pre' }}>
+          <pre class="overflow-x-auto text-small" style={{ 'font-family': 'var(--font-mono)', 'white-space': 'pre' }}>
             <For each={file.lines}>
               {(line) => (
                 <div data-diff={lineKind(line)} style={STYLE[lineKind(line)]}>

@@ -24,7 +24,7 @@ const DecisionTokenField: Component = () => {
     <Show
       when={!given() || changing()}
       fallback={
-        <p data-testid="decision-token-given" class="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p data-testid="decision-token-given" class="flex flex-wrap items-center gap-2 text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Decision token given for this browser session.
           <Button size="sm" variant="ghost" onClick={() => setChanging(true)}>
             Change

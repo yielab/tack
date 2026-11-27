@@ -51,12 +51,12 @@ export const ArtifactView: Component<{
   const isPatch = () => props.artifact?.kind === 'patch';
   return (
     <Modal isOpen={!!props.artifact} onClose={props.onClose} title={props.artifact?.name ?? ''} size="xl">
-      <Show when={!text.loading} fallback={<p class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>Loading…</p>}>
+      <Show when={!text.loading} fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading…</p>}>
         <Show when={!text.error} fallback={<p class="text-sm" style={{ color: 'var(--color-danger-600)' }}>Couldn't read this artifact.</p>}>
           <Show when={shown() !== ''} fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>This file is empty.</p>}>
             <Show when={isMarkdownArtifact(props.artifact)}>
               <div class="mb-3 flex justify-end">
-                <button type="button" data-testid="artifact-save" class="text-xs font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}
+                <button type="button" data-testid="artifact-save" class="text-small font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}
                   onClick={() => saveTextAs(props.artifact?.name || 'report.md', shown())}>
                   Download {props.artifact?.name || 'report.md'}
                 </button>
@@ -67,7 +67,7 @@ export const ArtifactView: Component<{
               <DiffView patch={shown()} />
             </Show>
             <Show when={!isMarkdownArtifact(props.artifact) && !isPatch()}>
-              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-lg px-4 py-3 text-xs"
+              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-lg px-4 py-3 text-small"
                 style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>{shown()}</pre>
             </Show>
           </Show>
@@ -155,7 +155,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
       title={label}
       disabled={busy()}
       onClick={onClick}
-      class="inline-flex h-7 w-7 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 disabled:cursor-wait disabled:opacity-60"
+      class="inline-flex h-7 w-7 items-center justify-center rounded-md focus:outline-none focus-visible:ring-2 disabled:cursor-wait disabled:opacity-60"
       style={{ color: 'var(--color-accent-ink)', border: '1px solid var(--color-border-light)' }}
     >
       {icon}
@@ -180,7 +180,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
           </Show>
         </th>
         <td class="px-3 py-2"><Badge tone="neutral">{props.artifact.kind}</Badge></td>
-        <td class="whitespace-nowrap px-3 py-2 text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <td class="whitespace-nowrap px-3 py-2 text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
           {formatSize(props.artifact.size_bytes)}
         </td>
         <td class="px-3 py-2">
@@ -198,23 +198,23 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
         <tr>
           <td colspan="4" class="px-3 pb-2">
             <Show when={status() === 'done'}>
-              <p class="text-xs" style={{ color: 'var(--color-success-700)' }}>
+              <p class="text-small" style={{ color: 'var(--color-success-700)' }}>
                 {inDesktop() ? `Saved to your Downloads folder as ${fileName()}.` : `Sent to your browser's downloads as ${fileName()}.`}
               </p>
             </Show>
             <Show when={status() === 'not_found'}>
-              <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+              <p class="text-small" style={{ color: 'var(--color-danger-600)' }}>
                 No artifact with that id exists for this attempt.
               </p>
             </Show>
             <Show when={status() === 'not_verified'}>
-              <p class="text-xs" style={{ color: 'var(--color-warning-700)' }}>
+              <p class="text-small" style={{ color: 'var(--color-warning-700)' }}>
                 This artifact's manifest exists, but its content hasn't been verified yet — try again
                 shortly.
               </p>
             </Show>
             <Show when={status() === 'error'}>
-              <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+              <p class="text-small" style={{ color: 'var(--color-danger-600)' }}>
                 {errorMessage() ?? 'Download failed.'}
               </p>
             </Show>
@@ -232,7 +232,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
  * typed by an operator.
  */
 const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => (
-  <Show when={props.artifacts.length > 0} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No artifacts yet</p>}>
+  <Show when={props.artifacts.length > 0} fallback={<p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>No artifacts yet</p>}>
     <div class="max-w-full overflow-x-auto">
       <table data-testid="artifact-table" class="w-full text-left" style={{ 'table-layout': 'auto' }}>
         <thead class="sr-only">

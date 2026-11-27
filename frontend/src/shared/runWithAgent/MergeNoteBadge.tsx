@@ -42,7 +42,7 @@ const MergeNoteBadge: Component<{ note?: string | null }> = (props) => {
             <Show when={open()}>
               <span
                 data-testid="merge-note-detail"
-                class="block rounded-lg px-2 py-1.5 text-xs"
+                class="block rounded-lg px-2 py-1.5 text-small"
                 style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }}
                 onClick={(e) => e.stopPropagation()}
               >

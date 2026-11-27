@@ -28,14 +28,14 @@ const RunLimitNote: Component<RunLimitNoteProps> = (props) => {
   const near = () => isNearLimit(used(), tokens());
   return (
     <>
-      <p data-testid={props.testId} class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <p data-testid={props.testId} class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         {props.limit.sentence}
       </p>
       <Show when={props.running && tokens() !== null && used() !== null}>
         <p
           data-testid="run-limit-used"
           data-near-limit={near()}
-          class="text-xs"
+          class="text-small"
           style={{ color: near() ? 'var(--color-warning-600)' : 'var(--color-text-secondary)' }}
         >
           Used {spaced(used()!)} of {spaced(tokens()!)} tokens

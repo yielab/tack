@@ -29,7 +29,7 @@ const RunSection: Component<RunSectionProps> = (props) => {
   const rule = { 'border-color': 'var(--color-border-light)' };
   const summary = () => (
     <Show when={props.summary}>
-      <span class="text-xs font-normal" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+      <span class="text-small font-normal" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
     </Show>
   );
   return (
@@ -53,7 +53,7 @@ const RunSection: Component<RunSectionProps> = (props) => {
     >
       <section data-testid="run-section" data-section={props.id} aria-labelledby={headingId} class="min-w-0 space-y-3 border-t pt-4" style={rule}>
         <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h4 id={headingId} ref={props.headingRef} tabIndex={-1} class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          <h4 id={headingId} ref={props.headingRef} tabIndex={-1} class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
             {props.title}
           </h4>
           {summary()}

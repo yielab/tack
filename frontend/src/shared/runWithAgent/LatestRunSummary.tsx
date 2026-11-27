@@ -366,7 +366,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       class="min-w-0 space-y-3 rounded-lg p-4"
       style={{ 'background-color': 'var(--color-bg-panel)', 'box-shadow': 'var(--shadow-sm)' }}
     >
-      <h2 id={headingId} class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Work</h2>
+      <h2 id={headingId} class="text-small font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Work</h2>
 
       <Show when={!latest()}>
         <div data-testid="now-idle" class="space-y-1.5">
@@ -392,7 +392,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             <div role="status" aria-live="polite">
               <RunState size="banner" {...runState()} />
             </div>
-            <p data-testid="latest-run-status" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <p data-testid="latest-run-status" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
               {statusLine()}
             </p>
 
@@ -433,7 +433,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                   </For>
                 </Show>
                 <Show when={waitingReason() && latest()?.waiting_since}>
-                  {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
+                  {(since) => <span style={{ color: 'var(--color-text-secondary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
                 </Show>
               </p>
             </Show>
@@ -497,7 +497,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 {(text) => (
                   <>
                     <Show when={noChange()}>
-                      <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
+                      <p class="text-small font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
                     </Show>
                     <Show
                       when={plainLine(text()).raw}
@@ -512,18 +512,18 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
             <Show when={metaLine()}>
               {(line) => (
-                <p data-testid="latest-run-meta" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>
+                <p data-testid="latest-run-meta" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>
               )}
             </Show>
             <Show when={usageLine()}>
               {(line) => (
-                <p data-testid="latest-run-usage" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <p data-testid="latest-run-usage" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                   {line()}
                 </p>
               )}
             </Show>
             <Show when={questionCount() > 0}>
-              <p data-testid="latest-run-questions" class="text-xs">
+              <p data-testid="latest-run-questions" class="text-small">
                 <button type="button" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => props.onOpen()}>
                   The agent asked {questionCount()} {questionCount() === 1 ? 'question' : 'questions'}
                 </button>

@@ -27,10 +27,10 @@ const OperationEditor: Component<{
   return (
     <>
       <Show when={props.op.op === 'who_does_it'}>
-        <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+        <div class="flex min-w-0 flex-wrap items-center gap-2 text-small">
           <select
             aria-label={`Role for ${props.name}`}
-            class="max-w-full rounded-sm px-2 py-1 text-xs"
+            class="max-w-full rounded-md px-2 py-1 text-small"
             style={inputStyle}
             disabled={props.disabled}
             onChange={(e) => props.onEdit({ ...o<'who_does_it'>(), role: e.currentTarget.value || null })}
@@ -46,7 +46,7 @@ const OperationEditor: Component<{
               )}
             </For>
           </select>
-          <span class="inline-flex max-w-full items-center rounded-full px-1" style={{ ...inputStyle, 'background-color': 'var(--color-bg-subtle)' }}>
+          <span class="inline-flex max-w-full items-center rounded-md px-1" style={{ ...inputStyle, 'background-color': 'var(--color-bg-subtle)' }}>
             <WhoDoesIt
               label={`Who does it for ${props.name}`}
               value={doer()}
@@ -61,7 +61,7 @@ const OperationEditor: Component<{
       <Show when={props.op.op === 'priority'}>
         <select
           aria-label={`Priority of ${props.name}`}
-          class="max-w-full rounded-sm px-2 py-1 text-xs"
+          class="max-w-full rounded-md px-2 py-1 text-small"
           style={inputStyle}
           disabled={props.disabled}
           onChange={(e) => props.onEdit({ ...o<'priority'>(), priority: e.currentTarget.value as (typeof PRIORITIES)[number] })}
@@ -81,7 +81,7 @@ const OperationEditor: Component<{
           fallback={
             <input
               aria-label={`Status of ${props.name}`}
-              class="max-w-full rounded-sm px-2 py-1 text-xs"
+              class="max-w-full rounded-md px-2 py-1 text-small"
               style={inputStyle}
               disabled={props.disabled}
               value={o<'move'>().status}
@@ -91,7 +91,7 @@ const OperationEditor: Component<{
         >
           <select
             aria-label={`Status of ${props.name}`}
-            class="max-w-full rounded-sm px-2 py-1 text-xs"
+            class="max-w-full rounded-md px-2 py-1 text-small"
             style={inputStyle}
             disabled={props.disabled}
             onChange={(e) => props.onEdit({ ...o<'move'>(), status: e.currentTarget.value })}
@@ -109,7 +109,7 @@ const OperationEditor: Component<{
       <Show when={props.op.op === 'comment'}>
         <textarea
           aria-label={`Text of the comment on ${props.name}`}
-          class="w-full min-w-0 rounded-sm px-2 py-1 text-sm"
+          class="w-full min-w-0 rounded-md px-2 py-1 text-sm"
           style={inputStyle}
           rows={Math.max(2, o<'comment'>().text.split('\n').length)}
           disabled={props.disabled}
@@ -121,7 +121,7 @@ const OperationEditor: Component<{
         <input
           type="date"
           aria-label={`Due date of ${props.name}`}
-          class="max-w-full rounded-sm px-2 py-1 text-xs"
+          class="max-w-full rounded-md px-2 py-1 text-small"
           style={inputStyle}
           disabled={props.disabled}
           value={o<'due'>().due?.slice(0, 10) ?? ''}
@@ -129,7 +129,7 @@ const OperationEditor: Component<{
         />
       </Show>
       <Show when={props.op.op === 'depend'}>
-        <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Nothing to change here: leave it out by unticking it.
         </p>
       </Show>

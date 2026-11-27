@@ -121,7 +121,7 @@ const Capabilities: Component<{ kind: string; reports: readonly HarnessCapabilit
             title={words(line)}
             data-capability={line.id}
             data-state={line.state}
-            style={{ color: line.state === 'can' ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)' }}
+            style={{ color: line.state === 'can' ? 'var(--color-text-secondary)' : 'var(--color-text-secondary)' }}
           >
             <CapabilityGlyph id={line.id} struck={line.state !== 'can'} />
           </span>
@@ -136,7 +136,7 @@ const Muted: Component<{ children: JSX.Element; disabled?: boolean }> = (props) 
   <span
     aria-disabled={props.disabled ? 'true' : undefined}
     class="text-small"
-    style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}
+    style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
   >
     {props.children}
   </span>
@@ -240,9 +240,9 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
           onClick={() => props.onChange(o.profile)}
         />
         <div class="min-w-0">
-          <label for={id} class="text-sm font-semibold" style={{ color: refusal() ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{o.profile.name}</label>
+          <label for={id} class="text-sm font-semibold" style={{ color: refusal() ? 'var(--color-text-secondary)' : 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{o.profile.name}</label>
           <Show when={refusal()}>
-            {(reason) => <p id={`${id}-refused`} data-testid="profile-refused" class="text-small" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{reason()}</p>}
+            {(reason) => <p id={`${id}-refused`} data-testid="profile-refused" class="text-small" style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}>{reason()}</p>}
           </Show>
           <Show when={chosen() && props.choiceNote}>
             {(text) => <p data-testid="profile-source" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>}
@@ -278,10 +278,10 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
                 disabled={a.disabled || props.disabled}
                 title={a.reason}
                 onClick={() => chooseAgent(a.value)}
-                class="rounded-full px-3.5 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed"
+                class="rounded-md px-3.5 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed"
                 style={{
                   'background-color': on() ? 'var(--color-accent-soft)' : 'var(--color-bg-app)',
-                  color: a.disabled ? 'var(--color-text-tertiary)' : on() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)',
+                  color: a.disabled ? 'var(--color-text-secondary)' : on() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)',
                   border: `1px solid ${on() ? 'var(--color-accent-ink)' : 'var(--color-border-light)'}`,
                   '--tw-ring-color': 'var(--color-focus-ring)',
                 }}
@@ -326,13 +326,13 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
                 testid={`who-team-${name}`}
                 head={
                   <>
-                    <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{`Team ${name}`}</h4>
+                    <h4 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{`Team ${name}`}</h4>
                     <Show when={roles(name).length > 0}>
                       <ul aria-label="Made of" class="flex min-w-0 flex-wrap gap-1" data-testid="who-members">
                         <For each={roles(name)}>
                           {(role) => (
                             <li
-                              class="rounded-full px-2 text-small"
+                              class="rounded-sm px-2 text-small"
                               style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
                             >
                               {role}
@@ -373,11 +373,11 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
           >
             <input type="radio" disabled class="mt-1" aria-label={`${noProfileText(bareTeams().length)}: ${MAKE_A_PROFILE}`} />
             <div class="min-w-0">
-              <span class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
+              <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 {noProfileText(bareTeams().length)}{' '}
                 <A href="/agents" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>→ Agents</A>
               </span>
-              <p class="text-small" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{bareTeams().join(', ')}</p>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}>{bareTeams().join(', ')}</p>
             </div>
           </div>
         </Show>
@@ -385,21 +385,21 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
         <Show when={alone().length > 0}>
           <section class="flex min-w-0 flex-col gap-1.5" data-testid={`who-alone-${agent() || 'any'}`}>
             <Show when={withTeam().length > 0}>
-              <p class="pt-2.5 text-small" style={{ color: 'var(--color-text-tertiary)', 'border-top': '1px solid var(--color-border-light)' }}>{SINGLE_AGENT_TEXT}</p>
+              <p class="pt-2.5 text-small" style={{ color: 'var(--color-text-secondary)', 'border-top': '1px solid var(--color-border-light)' }}>{SINGLE_AGENT_TEXT}</p>
             </Show>
             <For each={alone()}>{(p) => <Option profile={p} />}</For>
           </section>
         </Show>
 
         <Show when={listed().length === 0 && bareTeams().length === 0}>
-          <p data-testid="who-agent-empty" class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
+          <p data-testid="who-agent-empty" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             {`No profile runs on ${agentName(agent())} yet `}
             <A href="/agents" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>→ Agents</A>
           </p>
         </Show>
       </div>
 
-      <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>{PER_TASK_CHOICE_TEXT}</p>
+      <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{PER_TASK_CHOICE_TEXT}</p>
     </div>
   );
 };

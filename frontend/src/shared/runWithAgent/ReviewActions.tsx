@@ -43,7 +43,7 @@ const ReviewActions: Component<ReviewActionsProps> = (props) => {
     <Show
       when={!props.review}
       fallback={
-        <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           {props.review!.verdict === 'accepted' ? 'Accepted' : 'Rejected'} {relativeTimeFromIso(props.review!.reviewed_at)}
           {props.review!.reason ? ` — ${props.review!.reason}` : ''}
         </p>
@@ -70,7 +70,7 @@ const ReviewActions: Component<ReviewActionsProps> = (props) => {
             placeholder="Why (required)"
             value={reason()}
             onInput={(e) => setReason(e.currentTarget.value)}
-            class="min-w-[10rem] flex-1 rounded-full px-3 py-1.5 text-sm"
+            class="min-w-[10rem] flex-1 rounded-md px-3 py-1.5 text-sm"
             style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)', border: 'none' }}
           />
           <Button size="sm" variant="secondary" data-testid="review-reject" disabled={busy() || !reason().trim()} onClick={() => void submit('rejected')}>
@@ -81,7 +81,7 @@ const ReviewActions: Component<ReviewActionsProps> = (props) => {
           </Button>
         </Show>
         <Show when={error()}>
-          <span class="text-xs" style={{ color: 'var(--color-danger-700)' }}>{error()}</span>
+          <span class="text-small" style={{ color: 'var(--color-danger-700)' }}>{error()}</span>
         </Show>
       </div>
     </Show>

@@ -56,7 +56,7 @@ const RunChips: Component<{
             title={`${chip.label}: ${chip.state}`}
             data-testid="run-chip"
             onClick={() => props.onPick(chip.id)}
-            class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold focus:outline-none focus-visible:ring-2"
+            class="inline-flex items-center gap-1.5 rounded-sm px-3 py-1 text-small font-semibold focus:outline-none focus-visible:ring-2"
             style={{
               'background-color': on() ? 'var(--color-accent-soft)' : 'var(--color-bg-subtle)',
               color: on() ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',

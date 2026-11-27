@@ -22,7 +22,7 @@ const CHECK_MARK: Record<MrpCriterionStatus, { glyph: string; label: string; col
   passed: { glyph: '✓', label: 'Passed', color: 'var(--color-success-600)' },
   failed: { glyph: '✗', label: 'Failed', color: 'var(--color-danger-600)' },
   manual: { glyph: '◐', label: 'Needs a person', color: 'var(--color-warning-600)' },
-  skipped: { glyph: '–', label: 'Skipped', color: 'var(--color-text-tertiary)' },
+  skipped: { glyph: '–', label: 'Skipped', color: 'var(--color-text-secondary)' },
 };
 
 /** One line of the checklist: where it comes from decides how it is read. */
@@ -105,14 +105,14 @@ const RISK_TONE = { low: 'success', medium: 'warning', high: 'danger' } as const
 
 /** A section the verifier did not run. Plain text, never a tick. */
 const NotRun: Component = () => (
-  <p class="text-xs italic" style={{ color: 'var(--color-text-secondary)' }}>
+  <p class="text-small italic" style={{ color: 'var(--color-text-secondary)' }}>
     Not run
   </p>
 );
 
 const Section: Component<{ title: string; children: JSX.Element }> = (props) => (
   <section class="space-y-2">
-    <h5 class="text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
+    <h5 class="text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-secondary)' }}>
       {props.title}
     </h5>
     {props.children}
@@ -144,12 +144,12 @@ export const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
           </p>
           <Show when={levelSentence()}>
             {(sentence) => (
-              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{sentence()}</p>
+              <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{sentence()}</p>
             )}
           </Show>
           <Show when={props.merge.merged?.policy_snapshot}>
             {(policy) => (
-              <details class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <details class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 <summary class="cursor-pointer">The rules it was merged under</summary>
                 <pre class="overflow-x-auto rounded-lg p-2" style={{ ...mono, 'background-color': 'var(--color-bg-panel)' }}>
                   {JSON.stringify(policy(), null, 2)}
@@ -167,7 +167,7 @@ const mono = { 'font-family': 'var(--font-mono)' } as const;
 
 /** Whether the verifier signed the pack, in plain words; the pack names no key, only what was signed. */
 export const SignatureState: Component<{ signature: MrpPack['signature'] | undefined }> = (props) => (
-  <p data-testid="mrp-signature" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+  <p data-testid="mrp-signature" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
     <Show
       when={props.signature?.kind === 'in-toto' ? props.signature : null}
       fallback={<>Not signed: the verifier put no signature on this pack.</>}
@@ -311,18 +311,18 @@ const CheckRow: Component<{ item: CheckItem }> = (props) => {
       </Show>
       <div class="min-w-0 flex-1 text-sm" style={{ 'overflow-wrap': 'anywhere' }}>
         <p style={{ color: 'var(--color-text-primary)' }}>{props.item.title}</p>
-        <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           {KIND_WORDS[props.item.kind] ?? props.item.kind} · {SOURCE_WORDS[props.item.source]}
           <Show when={note()}>{(text) => <> · {text()}</>}</Show>
         </p>
-        <details class="text-xs">
-          <summary class="cursor-pointer" style={{ color: 'var(--color-text-tertiary)' }}>How we know</summary>
-          <p style={{ ...mono, color: 'var(--color-text-tertiary)' }}>
+        <details class="text-small">
+          <summary class="cursor-pointer" style={{ color: 'var(--color-text-secondary)' }}>How we know</summary>
+          <p style={{ ...mono, color: 'var(--color-text-secondary)' }}>
             {props.item.kind} · {props.item.source}
             <Show when={props.item.note}>{(raw) => <> · {raw()}</>}</Show>
           </p>
           <Show when={props.item.evidence}>
-            {(ref) => <p style={{ ...mono, color: 'var(--color-text-tertiary)' }}>Evidence: {ref()}</p>}
+            {(ref) => <p style={{ ...mono, color: 'var(--color-text-secondary)' }}>Evidence: {ref()}</p>}
           </Show>
         </details>
       </div>
@@ -342,12 +342,12 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
   return (
     <div class="space-y-4">
       <Show when={mrp().data.loading}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Loading the pack…
         </p>
       </Show>
       <Show when={mrp().data.error}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+        <p class="text-small" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load the pack: {mrp().data.error instanceof Error ? (mrp().data.error as Error).message : 'unknown error'}
         </p>
       </Show>
@@ -361,7 +361,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
           <>
             <Show when={pack().risk.reasons.length > 0}>
               <Section title="Why this risk">
-                <ul class="list-disc pl-5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <ul class="list-disc pl-5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
                   <For each={pack().risk.reasons}>{(r) => <li title={plainLine(r).raw}>{plainLine(r).text}</li>}</For>
                 </ul>
               </Section>
@@ -369,7 +369,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
 
             <Show when={(pack().next_steps ?? []).length > 0}>
               <Section title="Next steps">
-                <ul class="space-y-1 text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                <ul class="space-y-1 text-small" style={{ color: 'var(--color-text-primary)' }}>
                   <For each={pack().next_steps}>
                     {(s) => (
                       <li data-testid="mrp-next-step" title={`${s.severity}: ${s.code}${s.message ? ` — ${s.message}` : ''}${s.path ? ` — ${s.path}` : ''}`}>
@@ -398,7 +398,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
             <Section title="Verify">
               <Show when={pack().verify} fallback={<NotRun />}>
                 {(v) => (
-                  <details data-testid="mrp-verify" class="space-y-1 text-xs">
+                  <details data-testid="mrp-verify" class="space-y-1 text-small">
                     <summary class="cursor-pointer" style={{ color: 'var(--color-accent-ink)' }}>
                       <span style={mono}>{v().command}</span> · exit code <span style={mono}>{v().exit_code}</span>
                     </summary>
@@ -413,14 +413,14 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
             </Section>
 
             <details data-testid="mrp-more" class="space-y-3">
-              <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>
+              <summary class="cursor-pointer text-small font-semibold" style={{ color: 'var(--color-accent-ink)' }}>
                 What else the verifier ran
               </summary>
               <div class="mt-2 space-y-3">
                 <Section title="Mutation">
                   <Show when={pack().mutation} fallback={<NotRun />}>
                     {(m) => (
-                      <p class="text-xs">
+                      <p class="text-small">
                         {m().score}% on {m().scope}: {m().killed} killed, {m().survived} survived
                       </p>
                     )}
@@ -430,7 +430,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                 <Section title="Static analysis">
                   <Show when={pack().static_analysis} fallback={<NotRun />}>
                     {(s) => (
-                      <p class="text-xs">
+                      <p class="text-small">
                         {s().counts.error} errors, {s().counts.warning} warnings, {s().counts.note} notes
                       </p>
                     )}
@@ -440,7 +440,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                 <Section title="Judge">
                   <Show when={pack().judge} fallback={<NotRun />}>
                     {(j) => (
-                      <div class="space-y-1 text-xs">
+                      <div class="space-y-1 text-small">
                         <p style={{ color: 'var(--color-text-secondary)' }}>
                           {j().model_family}
                           {j().blind ? ' (blind)' : ''}
@@ -495,7 +495,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                         Reject
                       </Button>
                       <Show when={!mrp().reason().trim()}>
-                        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
                           Write a reason to enable Reject.
                         </span>
                       </Show>

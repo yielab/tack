@@ -183,6 +183,28 @@ describe('PlanPanel', () => {
     expect(description.tagName).toBe('TEXTAREA');
   });
 
+  it('shows_each_entry_as_one_row_with_a_summary_and_opens_its_fields_with_Edit', async () => {
+    routeFetch({ v: '1', subtasks: [
+      { title: 'Search the notes', description: '', acceptance: ['Finds a note by its text'], depends_on: [] },
+      { title: 'Document the search', description: '', acceptance: ['  '], depends_on: [], parent: 0 },
+    ] }, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    const [first, second] = [...container.querySelectorAll<HTMLElement>('[data-testid="plan-row"]')];
+    expect(first.querySelector('[data-testid="plan-row-meta"]')!.textContent).toContain('1 Done when');
+    // A missing Done when is a red line, and never stops the entry being ticked.
+    expect(second.querySelector('[data-testid="plan-row-meta"]')!.textContent).toBe('No Done when yet');
+    expect(second.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(false);
+    const edit = first.querySelector<HTMLButtonElement>('button[aria-controls]')!;
+    const fields = document.getElementById(edit.getAttribute('aria-controls')!)!;
+    expect(edit.textContent).toBe('Edit');
+    expect(fields.hidden).toBe(true);
+    edit.click();
+    await settle();
+    expect(fields.hidden).toBe(false);
+    expect(edit.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('sends_the_done_when_lines_of_an_entry_that_has_sub_items_as_well_as_theirs', async () => {
     const posts: Array<{ url: string; body: any }> = [];
     const nested = {

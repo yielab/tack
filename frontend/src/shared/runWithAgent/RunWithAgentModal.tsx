@@ -132,6 +132,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       (error) => (error instanceof ApiError && error.status === 404 ? { doneWhen: 0, agent: 0 } : undefined),
     ),
   );
+  // The reason the API gives when the task cannot be verified yet; shown as given, never worked out here.
+  const notReady = (): string | null =>
+    item.error === undefined ? ((item() as { brief_summary?: { not_ready?: string | null } | null } | undefined)?.brief_summary?.not_ready ?? null) : null;
   const checkedCard = (): boolean | undefined => {
     if (acceptanceCount.loading) return undefined;
     const n = acceptanceCount();
@@ -538,17 +541,17 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
 
   return (
-    <Modal isOpen={props.isOpen} onClose={props.onClose} title={`${planning() ? 'Plan with agent' : 'Run with agent'}: ${props.itemTitle}`} size="lg" help={BOOK.runDialog}>
+    <Modal isOpen={props.isOpen} onClose={props.onClose} title={planning() ? 'Plan with agent' : 'Run with agent'} size="lg" help={BOOK.runDialog}>
       <Show
         when={!executionOff()}
         fallback={
           <div class="flex flex-col items-center gap-4 py-8 text-center">
-            <p class="font-heading text-xl" style={{ color: 'var(--color-text-primary)' }}>
+            <p class="text-step" style={{ color: 'var(--color-text-primary)' }}>
               Agent execution is off.
             </p>
             <A
               href="/agents"
-              class="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-semibold focus:outline-none focus-visible:ring-2"
+              class="inline-flex items-center gap-1 rounded-md px-4 py-2 text-sm font-semibold focus:outline-none focus-visible:ring-2"
               style={{
                 'background-color': 'var(--color-accent-soft)',
                 color: 'var(--color-accent-ink)',
@@ -560,7 +563,10 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           </div>
         }
       >
-        <form class="space-y-6" onSubmit={submit}>
+        <form class="space-y-8" onSubmit={submit}>
+          <p data-testid="run-task-title" class="-mt-2 truncate text-body" style={{ color: 'var(--color-text-secondary)' }} title={props.itemTitle}>
+            {props.itemTitle}
+          </p>
           <Show when={props.autonomy}>
             <p data-testid="run-autonomy-note" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               This run is attended ({props.autonomy}): where docket would have settled a question by itself, it asks you.{' '}
@@ -591,6 +597,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             rows={rows}
             checkedCard={checkedCard}
             acceptanceCount={() => (acceptanceCount.loading ? undefined : acceptanceCount())}
+            notReady={notReady}
             profilesLoading={() => agentProfiles.loading}
             profiles={agentProfilesData}
             agentReports={agentReports}

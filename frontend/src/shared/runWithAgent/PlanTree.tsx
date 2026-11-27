@@ -1,4 +1,5 @@
-import { type Accessor, type Component, type JSX, For, Show, createUniqueId } from 'solid-js';
+import { type Accessor, type Component, type JSX, For, Show, createSignal, createUniqueId } from 'solid-js';
+import { Button } from '../ui';
 import { agentProfilesApi } from '../execution';
 import type { AgentProfileSummary } from '../execution/api';
 import { api } from '../api';
@@ -135,7 +136,7 @@ export function withCurrent(options: Array<{ value: string; label: string }>, cu
 /** A control under the words that name it, so no field of an entry is left to its placeholder or its position. */
 const Field: Component<{ id: string; label: string; class?: string; children: JSX.Element }> = (props) => (
   <div class={`flex min-w-0 flex-col gap-0.5 ${props.class ?? ''}`}>
-    <label for={props.id} data-field-label class="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+    <label for={props.id} data-field-label class="text-small font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
       {props.label}
     </label>
     {props.children}
@@ -170,24 +171,60 @@ const PlanTree: Component<{
     const frozen = () => !!r().locked;
     const uid = createUniqueId();
     const fid = (name: string) => `plan-${uid}-${name}`;
+    const [editing, setEditing] = createSignal(false);
+    const missingDoneWhen = () => r().acceptance.every((a) => a.trim() === '');
+    /** The row in one line: what it is, who does it, how many Done when. */
+    const meta = () => {
+      const done = r().acceptance.filter((a) => a.trim() !== '').length;
+      const typeLabel = ctx().types.find((t) => t.value === typeValue())?.label ?? r().type;
+      return [
+        parentOf(rows(), i) !== null ? 'Sub-item' : null,
+        typeLabel,
+        r().role,
+        r().team,
+        `${done} Done when`,
+        waitsOn(rows(), i).length > 0 ? `waits on ${waitsOn(rows(), i).map(titleOf).join(', ')}` : null,
+      ].filter(Boolean).join(' · ');
+    };
     const typeValue = () => typeIn(ctx().types, r().type) ?? r().type;
     const typeMissing = () => !!r().type && ctx().ready === true && !typeIn(ctx().types, r().type);
     const others = () => rows().map((_, j) => j).filter((j) => j !== i && !waitsOn(rows(), i).includes(j));
     return (
-      <div data-testid="plan-row" class="min-w-0 space-y-2 rounded-lg p-2" style={{ border: '1px solid var(--color-border-light)' }}>
-        <div class="flex min-w-0 items-end gap-2 text-sm">
+      <div data-testid="plan-row" class="min-w-0 py-3" style={{ 'border-bottom': '1px solid var(--color-border-light)' }}>
+        <div class="flex min-w-0 items-start gap-3">
           <input
             type="checkbox"
-            class="mb-2"
+            class="mt-1 h-4 w-4"
             checked={r().selected}
             disabled={frozen() || !ancestorsTicked(rows(), i)}
             aria-label={`Create ${r().title}`}
             onChange={(e) => props.setTicked(i, e.currentTarget.checked)}
           />
-          <Field id={fid('title')} label="Title" class="flex-1">
+          <div class="min-w-0 flex-1">
+            <p class="text-body font-semibold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{titleOf(i)}</p>
+            <Show
+              when={missingDoneWhen()}
+              fallback={<p data-testid="plan-row-meta" class="text-small" style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}>{meta()}</p>}
+            >
+              <p data-testid="plan-row-meta" class="text-small" style={{ color: 'var(--color-danger-700)' }}>No Done when yet</p>
+            </Show>
+          </div>
+          <Show when={r().locked}>
+            {(why) => (
+              <span data-testid="plan-row-state" class="shrink-0 text-small" style={{ color: 'var(--color-text-secondary)' }}>
+                {why()}
+              </span>
+            )}
+          </Show>
+          <Button type="button" size="sm" variant="ghost" aria-expanded={editing()} aria-controls={fid('editor')} onClick={() => setEditing(!editing())}>
+            Edit
+          </Button>
+        </div>
+        <div id={fid('editor')} hidden={!editing()} class="mt-3 min-w-0 space-y-3 pl-8">
+          <Field id={fid('title')} label="Title">
             <input
               id={fid('title')}
-              class="min-w-0 rounded-sm px-2 py-1"
+              class="min-w-0 rounded-md px-2 py-1"
               style={inputStyle}
               aria-label="Title"
               disabled={frozen()}
@@ -195,18 +232,10 @@ const PlanTree: Component<{
               onInput={(e) => patch(i, { title: e.currentTarget.value })}
             />
           </Field>
-          <Show when={r().locked}>
-            {(why) => (
-              <span data-testid="plan-row-state" class="mb-2 shrink-0 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                {why()}
-              </span>
-            )}
-          </Show>
-        </div>
         <Field id={fid('description')} label="Description">
           <textarea
             id={fid('description')}
-            class="w-full min-w-0 rounded-sm px-2 py-1 text-sm"
+            class="w-full min-w-0 rounded-md px-2 py-1 text-small"
             style={{ ...inputStyle, ...grow }}
             aria-label="Description"
             disabled={frozen()}
@@ -218,7 +247,7 @@ const PlanTree: Component<{
         <Field id={fid('done-when')} label="Done when (one line each)">
           <textarea
             id={fid('done-when')}
-            class="w-full min-w-0 rounded-sm px-2 py-1 text-sm"
+            class="w-full min-w-0 rounded-md px-2 py-1 text-small"
             style={{ ...inputStyle, ...grow }}
             aria-label="Done when (one line each)"
             disabled={frozen()}
@@ -227,12 +256,12 @@ const PlanTree: Component<{
             onInput={(e) => patch(i, { acceptance: e.currentTarget.value.split('\n') })}
           />
         </Field>
-        <div class="flex min-w-0 flex-wrap items-end gap-2 text-xs">
+        <div class="flex min-w-0 flex-wrap items-end gap-2 text-small">
           <Field id={fid('type')} label="Type">
             <select
               id={fid('type')}
               aria-label="Type"
-              class="max-w-full rounded-sm px-2 py-1 text-xs"
+              class="max-w-full rounded-md px-2 py-1 text-small"
               style={inputStyle}
               disabled={frozen()}
               onChange={(e) => patch(i, { type: e.currentTarget.value || null })}
@@ -253,7 +282,7 @@ const PlanTree: Component<{
             <select
               id={fid('role')}
               aria-label="Role"
-              class="max-w-full rounded-sm px-2 py-1 text-xs"
+              class="max-w-full rounded-md px-2 py-1 text-small"
               style={inputStyle}
               disabled={frozen()}
               onChange={(e) => patch(i, { role: e.currentTarget.value || null })}
@@ -272,7 +301,7 @@ const PlanTree: Component<{
           </Field>
           <Field id={fid('who')} label="Who does it" class="max-w-full">
             {/* The profile reads as a chip: the picker keeps its own border inside the pill. */}
-            <span class="inline-flex max-w-full items-center rounded-full px-1" style={chipStyle}>
+            <span class="inline-flex max-w-full items-center rounded-md px-1" style={chipStyle}>
               <WhoDoesIt
                 id={fid('who')}
                 label="Who does it"
@@ -286,24 +315,24 @@ const PlanTree: Component<{
           </Field>
           <Show when={r().estimate}>
             {(estimate) => (
-              <span class="pb-1.5" style={{ color: 'var(--color-text-tertiary)' }}>{estimate()}</span>
+              <span class="pb-1.5" style={{ color: 'var(--color-text-secondary)' }}>{estimate()}</span>
             )}
           </Show>
         </div>
         <Show when={typeMissing()}>
-          <p data-testid="plan-type-note" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <p data-testid="plan-type-note" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             {`This project has no type "${r().type}": the item will be created with its parent's type, or the default work type when the parent holds work.`}
           </p>
         </Show>
         <fieldset class="min-w-0 space-y-1">
-          <legend class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <legend class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             Waits on
           </legend>
-          <ul class="flex min-w-0 flex-wrap items-center gap-1 text-xs">
+          <ul class="flex min-w-0 flex-wrap items-center gap-1 text-small">
             <For each={waitsOn(rows(), i)}>
               {(j) => (
                 <li
-                  class="flex max-w-full items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1"
+                  class="flex max-w-full items-center gap-1 rounded-sm py-0.5 pl-2.5 pr-1"
                   style={chipStyle}
                 >
                   <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>
@@ -313,7 +342,7 @@ const PlanTree: Component<{
                     type="button"
                     aria-label={`Stop waiting on ${titleOf(j)}`}
                     disabled={frozen()}
-                    class="grid h-4 w-4 shrink-0 place-items-center rounded-full leading-none focus-visible:ring-2"
+                    class="grid h-4 w-4 shrink-0 place-items-center rounded-sm leading-none focus-visible:ring-2"
                     style={{ color: 'var(--color-text-secondary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                     onClick={() => toggleWait(i, j, false)}
                   >
@@ -326,7 +355,7 @@ const PlanTree: Component<{
               <li>
                 <select
                   aria-label={`Add a wait for ${r().title.trim() || 'this item'}`}
-                  class="max-w-full rounded-sm px-2 py-0.5 text-xs"
+                  class="max-w-full rounded-md px-2 py-0.5 text-small"
                   style={inputStyle}
                   onChange={(e) => {
                     // The menu is a way to add one more wait, so it goes back to its first line after each pick.
@@ -342,6 +371,7 @@ const PlanTree: Component<{
             </Show>
           </ul>
         </fieldset>
+        </div>
       </div>
     );
   };
@@ -353,8 +383,7 @@ const PlanTree: Component<{
   const branch = (parent: number | null): JSX.Element => (
     <ul
       aria-label={parent === null ? 'Proposed items' : `Sub-items of ${titleOf(parent)}`}
-      class={parent === null ? 'space-y-2' : 'ml-3 mt-2 space-y-2 pl-3'}
-      style={parent === null ? undefined : { 'border-left': '1px solid var(--color-border-medium)' }}
+      class={parent === null ? '' : 'ml-6'}
     >
       {/* Keyed by position: a patch replaces the row's object, and the row's DOM (and focus) stays. */}
       <For each={childrenOf(rows(), parent)}>
