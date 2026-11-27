@@ -51,7 +51,7 @@ const BRIEF = {
   risk: 'medium',
 };
 
-const RUNNER_MODEL = 'claude-sonnet-4-5';
+const RUNNER_MODEL = 'claude-sonnet-5-5';
 
 /** The drawer captures share one height, so they sit side by side. */
 const DRAWER_HEIGHT = 1300;
