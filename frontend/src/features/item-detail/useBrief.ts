@@ -16,9 +16,10 @@ import {
 /**
  * An item's brief as the screen edits it. The brief is one document on the server, so the Done when
  * list (the person's checks) and For the agent (the machine's checks, constraints, risk) are edited
- * apart here and saved together.
+ * apart here and saved together. `onSaved` runs after a save, so the screen reads the readiness the
+ * server works out from the brief again.
  */
-export function useBrief(itemId: () => string) {
+export function useBrief(itemId: () => string, onSaved?: () => void) {
   const [brief] = createResource(itemId, async (id): Promise<ItemBrief | null> => {
     try {
       return await api.briefs.get(id);
@@ -84,6 +85,7 @@ export function useBrief(itemId: () => string) {
         risk: risk() || null,
       });
       load(saved);
+      onSaved?.();
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) setErrors(sortErrors(err.message));
       else toast.error(err instanceof Error ? err.message : 'Failed to save');

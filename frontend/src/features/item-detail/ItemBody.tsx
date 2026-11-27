@@ -1,6 +1,6 @@
 import { type Component, type JSX, createEffect, createSignal, on, Show } from 'solid-js';
 import { Fold, Icons, RunState, SectionHeading, priorityLabel, type DocketRunWord, type RunStateName } from '../../shared/ui';
-import { notReadyOf } from '../../shared/ui/briefSummary';
+import { briefOf, notReadyOf } from '../../shared/ui/briefSummary';
 import type { Item } from '../../shared/types';
 import ItemMenu from '../../shared/ui/ItemMenu';
 import MoveUnderDialog from '../../shared/ui/MoveUnderDialog';
@@ -58,8 +58,11 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
   const page = () => props.layout === 'page';
   const marks = useFolderMarks(() => props.item);
   const { byId } = useProjectItemList(() => props.item);
-  const brief = useBrief(() => props.item.id);
+  // A saved brief changes what the server says of the task's readiness: the item is read again.
+  const brief = useBrief(() => props.item.id, () => void props.editor.refetchItem());
+  // The item's own summary is the freshest; the project's list stands in for an item read without one.
   const notReady = () => {
+    if (briefOf(props.item)) return notReadyOf(props.item);
     const listed = byId().get(props.item.id);
     return listed ? notReadyOf(listed) : null;
   };

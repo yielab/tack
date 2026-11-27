@@ -61,9 +61,14 @@ let oneRunner = false;
 /** What `GET /projects/p1/folder/status` answers; null is a project with no folder (404). */
 let folderStatus: unknown = null;
 let waitingReason: { code: string; text: string } | null = null;
+/** The item's own `brief_summary` as `GET /items/{id}` answers it; null serves the item without one. */
+let itemSummary: unknown = null;
+/** What `GET`/`PUT /items/{id}/brief` answer; null leaves the brief unanswered. */
+let briefDoc: unknown = null;
 
 function jsonOf(url: string): unknown {
-  if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: ITEM, roles: [], dependencies: [] };
+  if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: itemSummary ? { ...ITEM, brief_summary: itemSummary } : ITEM, roles: [], dependencies: [] };
+  if (briefDoc && url.endsWith(`/api/items/${ITEM.id}/brief`)) return briefDoc;
   if (url.includes('/parents?')) return parentOptions;
   if (/\/projects\/p1\/items\?.*under=/.test(url)) return { data: underItems, total: underItems.length, page: 1, per_page: 200 };
   if (/\/projects\/p1\/items\?/.test(url)) return { data: projectItems, total: projectItems.length, page: 1, per_page: 200 };
@@ -86,6 +91,8 @@ function jsonOf(url: string): unknown {
 beforeEach(() => {
   runs = [];
   projectItems = [];
+  itemSummary = null;
+  briefDoc = null;
   folderStatus = null;
   underItems = [];
   parentOptions = [];
@@ -186,6 +193,24 @@ describe('ItemBody', () => {
     expect(panel.textContent).toContain('Preview everything the agent will read');
     expect(page.container.querySelector('[data-fold="for-the-agent"]')).toBeNull();
     page.dispose();
+  });
+
+  it('reads the readiness again once a Done when line is saved: the warning goes when the server says the task is ready', async () => {
+    briefDoc = { acceptance: [{ kind: 'manual', id: 'm1', title: 'Works', text: 'Works' }], constraints: [], definition_of_done: null, risk: null };
+    itemSummary = { done_when: false, checks: 0, risk: null, not_ready: 'No Done when and no check a machine runs' };
+    // The project's list is older than the item, and still says why: the item's own summary wins.
+    projectItems = [{ ...ITEM, brief_summary: itemSummary }];
+    const view = await mount('page');
+    expect(view.container.querySelector('[data-testid="not-ready"]')?.textContent).toBe('No Done when and no check a machine runs');
+
+    itemSummary = { done_when: true, checks: 0, risk: null, not_ready: null };
+    const tick = view.container.querySelector('input[aria-label="Done: Works"]') as HTMLInputElement;
+    tick.click();
+    await flush();
+    await flush();
+    expect(writes.some((w) => w.method === 'PUT' && w.url.endsWith(`/items/${ITEM.id}/brief`))).toBe(true);
+    expect(view.container.querySelector('[data-testid="not-ready"]')).toBeNull();
+    view.dispose();
   });
 
   it('says Not ready in the next step when the project list sends why, as given, and nothing when it does not', async () => {
