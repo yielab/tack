@@ -109,7 +109,8 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         let now = now.to_rfc3339();
-        let mut tx = self.pool().begin().await?;
+        // The key is read and then written: a deferred transaction would lose the upgrade to another writer at once.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let key = key_for(&mut tx, "agent_profiles", None, input.key, input.name).await?;
         sqlx::query(
             "INSERT INTO agent_profiles (id, key, name, instructions, tool_policy, limits, created_at, updated_at) \

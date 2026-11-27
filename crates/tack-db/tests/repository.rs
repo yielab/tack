@@ -48,6 +48,8 @@ mod item_facts;
 mod item_types;
 #[path = "repository/notifications.rs"]
 mod notifications;
+#[path = "repository/profile_write_lock.rs"]
+mod profile_write_lock;
 #[path = "repository/project_file.rs"]
 mod project_file;
 #[path = "repository/quality_rows.rs"]
