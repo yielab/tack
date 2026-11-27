@@ -1,7 +1,7 @@
 # ADR 0033: the screen says what needs you first, and a project shows its teams at work
 
 **Status: ACCEPTED 2026-11-01** (proposed and accepted the same day). Executed by Phase 84
-(`docs/closed-cycles/plans/phase-84.md`). Amended 2026-11-26, proposed: decisions 6 to 12 below. Keeps ADR 0032's rule: nothing on the screen names a harness; a team, its
+(`docs/closed-cycles/plans/phase-84.md`). Amended 2026-11-26, accepted the same day: decisions 6 to 16 below. Keeps ADR 0032's rule: nothing on the screen names a harness; a team, its
 members and its steps are what any agent reported, and what it did not report is shown as not reported.
 
 **The rule behind every decision.** Every control, setting and fact on screen today stays. What changes
@@ -33,9 +33,9 @@ Execution tab at a time.
 them, opens runs one by one to learn where each stands, and cannot see which tasks no team will take
 until auto-start fails to start them.
 
-## Amendment of 2026-11-26: the work surface is cut by what a person must do (proposed)
+## Amendment of 2026-11-26: the work surface is cut by what a person must do (accepted)
 
-**Decide:** the project's destinations are cut by the question each one answers, now that what is
+**Decided:** the project's destinations are cut by the question each one answers, now that what is
 scarce is a person's time to specify, decide and verify, not the hours of writing code. Two
 destinations that answer the same question become one, with no ability lost; what waits for a
 person is counted and can be limited; and a task that cannot be verified says so before anyone
@@ -44,22 +44,26 @@ the factory (Levels 4 and 5); live supervision of an agent's session is not Tack
 
 | # | Decision | What a person sees |
 |---|---|---|
-| 6 | **Needs you comes first and takes in Change sets.** One project destination lists every wait for a person in this project: questions, runs ready for review, failures not yet looked at, change sets to apply and thread turns that wait, oldest first, each with its item and how long it has waited. A filter shows what was decided (applied, turned down, answered), which is today's Change sets page. The sidebar's **Waiting for you** stays as the same list for every project | The day starts on one page that holds only exceptions. `/change-sets` opens Needs you filtered to change sets |
-| 7 | **Calendar becomes a layout of the Timeline.** One destination, **Timeline**, with **Bars** (today's Timeline) and **Month** (today's Calendar, with its tray and its drag to a day). Both are kept | Nine destinations instead of eleven with decision 8. `/calendar` opens the Month layout |
-| 8 | **Factory metrics become part of the Overview.** The Overview has three parts: **Progress** (today's Overview), **Agents' work** (today's Factory metrics) and **Autonomy by domain** (each domain's level, what merged by itself and what was undone, read from the ladder). It is the retrospective: what kinds of task are accepted alone, and where a level should go up or down | `/factory` opens the Overview on Agents' work |
+| 6 | **Needs you comes first and takes in Change sets.** One project destination lists every wait for a person in this project: questions, runs ready for review, failures not yet looked at, change sets to apply and thread turns that wait, oldest first, each with its item and how long it has waited. A filter shows what was decided (applied, turned down, answered), which is what the Change sets page showed. The sidebar's **Waiting for you** stays as the same list for every project | The day starts on one page that holds only exceptions |
+| 7 | **Calendar becomes a layout of the Timeline.** One destination, **Timeline**, with **Bars** (today's Timeline) and **Month** (today's Calendar, with its tray and its drag to a day). Both are kept | Nine destinations instead of eleven with decision 8 |
+| 8 | **Factory metrics become part of the Overview.** The Overview has three parts: **Progress** (today's Overview), **Agents' work** (today's Factory metrics) and **Autonomy by domain** (each domain's level, what merged by itself and what was undone, read from the ladder). It is the retrospective: what kinds of task are accepted alone, and where a level should go up or down | One page to read how the project is going |
 | 9 | **What waits for a person is the work in progress.** The Board's row and Needs you count the waits, and a project may set **At most N waiting for a person**. At the limit, auto-start starts nothing new, and the board says why. A column's WIP limit stays as it is | "4 of 5 waiting for you: auto-start is paused until one is decided" |
 | 10 | **A task says whether it can be verified.** A task with no Done when, or with neither a Done when nor a check a machine runs, reads **Not ready** on its card, its List row and its page, with what is missing. The run dialog shows the same line and still lets the person run it. Its risk shows as a chip when it is medium or high. The List can filter **Not ready**: that filter is refinement | "Not ready: no Done when" on a card. "Risk: high" beside the type |
 | 11 | **A sprint shows the decisions it will ask for.** Each lane says, beside its points, how many of its items wait for a person and the median minutes a decision has taken. Sprints and continuous flow stay side by side; nothing ends a sprint by itself | "12 of 20 points · 3 waiting for you · a decision takes 14 min" |
 | 12 | **The item page says which fields are the plan's.** In a project with a revision, the fields the project folder holds (title, description, type, parent, blockers, roles, fields, the brief) carry a small "In the project folder" mark. Status, assignee, priority, sprint and due date read "The board's". A plan field changed on the board since the last revision says the next export writes it | "Changed on the board since revision #7: the next export writes it" |
 
+| 13 | **The old addresses go.** `/calendar`, `/factory`, `/change-sets` and `/table` are no destinations and are not redirected; a view remembered under an old name opens the Board. Nothing on screen says where a page used to be | A bookmark to an old page answers "Page not found" |
+| 14 | **Four radii and four kinds of button.** Corners are 4 px (a tag, a chip), 6 px (a button, a field), 8 px (a panel, a dialog) and round only for what is round (an avatar, a dot, a switch). A button is primary (solid, one per place), secondary (outlined), ghost (text) or destructive (red text); rare actions go in a "⋯" menu. A status, a button, a field and a tag each have their own shape | Nothing nested in three rounded cards; the one action to take is the one solid button |
+| 15 | **A heading says where to start reading.** The text scale is title 34, key step 21, section 19, subsection 15, reading text 16 to 17 and meta 13 to 14; each level rises by at least 2 px or changes weight. Sections are 48 px apart, a heading is 16 px above its content, a main surface has 40 to 48 px of padding and a panel 20 to 24. Colour says what a thing is for: solid teal for the next action, amber for what needs a person, soft teal for what the agent reads, green for done, and white content on a tinted page | A page reads top down: what it is, what to do now, then the detail |
+| 16 | **A task is written for a person first and for the agent apart.** The item page and its drawer go: title, then the next step (or what needs you, in amber), the description, Done when with its progress, **For the agent** in its own panel (the checks a machine runs, the constraints, the risk and the run's limits, folded in the drawer), and the activity; the properties stand on the right. The run dialog says in a few rows what will happen (agent, where, checked by, ask first, network) and folds the rest into **Options**. An approval asks one question in words, lists what it changes, and keeps the raw call behind a link | The description is the story; nothing the agent needs is mixed into it |
+
 **If you do nothing:** a person still reads three places (the inbox, Change sets, Threads) to learn
 what waits for them, two pages that both lay work out by date and two that both count it, and a
 task without a way to verify it looks like any other until its run fails.
 
-**The maintainer's questions, with the default proposed.** (1) The name **Needs you** for the
-destination, the words the card's work line already uses. (2) Auto-start pauses at the waiting
-limit (decision 9); the other choice is to show the limit and start anyway. (3) **Not ready** stays
-a warning that never blocks a run (decision 10).
+**The maintainer's answers (2026-11-26).** The destination is named **Needs you**. Auto-start
+pauses at the waiting limit (decision 9). **Not ready** is a warning that never blocks a run
+(decision 10). Decisions 13 to 16 come from the mock-ups the maintainer reviewed the same day.
 
 ### What each destination answers, and why the others stay
 
