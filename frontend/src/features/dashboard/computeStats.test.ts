@@ -328,7 +328,7 @@ describe('Dashboard runs row', () => {
     return { container, dispose };
   }
 
-  it('shows each outcome in the bar with its count in words, tokens per team disabled with the reason, and a link to Factory metrics', async () => {
+  it('shows each outcome in the bar with its count in words, tokens per team disabled with the reason, and a link to the agents\' work', async () => {
     const real = new Date();
     const asking = mk({});
     const failed = mk({});
@@ -343,7 +343,31 @@ describe('Dashboard runs row', () => {
     );
     expect(container.textContent).toContain(TOKENS_BY_TEAM_UNAVAILABLE);
     expect(container.querySelector('[aria-disabled="true"]')?.textContent).toContain('Tokens per team');
-    expect(container.querySelector('a[href="/projects/p1/factory"]')?.textContent).toContain('Factory metrics');
+    expect(container.querySelector('a[href="/projects/p1/overview?part=agents"]')?.textContent).toBe("Agents' work");
+    dispose();
+  });
+
+  it('says first, in amber, how many items need the person now and links to Needs you', async () => {
+    const real = new Date();
+    const asking = mk({});
+    const { container, dispose } = renderOverview([asking, mk({})], [run(asking, 'waiting_decision', 0, real)]);
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="overview-needs-you"]')).not.toBeNull());
+    const strip = container.querySelector('[data-testid="overview-needs-you"]')!;
+    expect(strip.textContent).toContain('1 item needs you now');
+    expect(strip.querySelector('a')?.getAttribute('href')).toBe('/projects/p1/needs-you');
+    // It comes before the completion rate, which comes before the other figures.
+    const order = [...container.querySelectorAll('[data-testid="overview-needs-you"], p')].map((el) => el.textContent);
+    expect(order.findIndex((t) => t?.includes('needs you now'))).toBeLessThan(order.indexOf('Completion Rate'));
+    expect(order.indexOf('Completion Rate')).toBeLessThan(order.indexOf('Total Items'));
+    dispose();
+  });
+
+  it('says nothing needs the person when runs exist and none waits', async () => {
+    const real = new Date();
+    const failed = mk({});
+    const { container, dispose } = renderOverview([failed], [run(failed, 'failed', 1, real)]);
+    await vi.waitFor(() => expect(container.textContent).toContain('Nothing needs you now.'));
+    expect(container.querySelector('[data-testid="overview-needs-you"]')).toBeNull();
     dispose();
   });
 
@@ -351,6 +375,7 @@ describe('Dashboard runs row', () => {
     const { container, dispose } = renderOverview([mk({})], []);
     await vi.waitFor(() => expect(container.textContent).toContain('Total Items'));
     expect(container.textContent).not.toContain('Tokens per team');
+    expect(container.textContent).not.toContain('Nothing needs you now.');
     expect(container.querySelector('[role="img"][aria-label^="Runs started"]')).toBeNull();
     dispose();
   });

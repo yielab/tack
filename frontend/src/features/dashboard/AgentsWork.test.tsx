@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
-import FactoryMetrics from './FactoryMetrics';
+import AgentsWork from './AgentsWork';
 import type { components } from '../../shared/api/schema.gen';
 import type { Resource } from 'solid-js';
 import { flush } from '../../test/flush';
@@ -27,13 +27,13 @@ const projectValue: ProjectContextValue = {
   refetch: () => {},
 };
 
-function mount() {
+function mount(since?: string) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const dispose = render(
     () => (
       <ProjectContext.Provider value={projectValue}>
-        <FactoryMetrics />
+        <AgentsWork since={since} />
       </ProjectContext.Provider>
     ),
     container,
@@ -169,15 +169,28 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('FactoryMetrics', () => {
-  it('renders the Factory metrics title and description', async () => {
+describe('AgentsWork', () => {
+  it('reads a person\'s time first, then what the agents deliver, then the tokens', async () => {
     setupFetchMock(FACTORY_METRICS_FIXTURE);
     const { container } = mount();
     await flush();
     await flush();
 
-    expect(container.textContent).toContain('Factory metrics');
-    expect(container.textContent).toContain('Agent work, verification, and outcomes');
+    const sections = [...container.querySelectorAll('h2')].map((h) => h.textContent);
+    expect(sections).toEqual(["A person's time", 'What it delivers', 'Tokens']);
+    // The figure that matters first is the wait for a decision, set larger than the rest.
+    const lead = [...container.querySelectorAll('h3')].find((h) => h.textContent === 'Human minutes per decision')!;
+    expect(lead.closest('section')!.querySelector('h3')).toBe(lead);
+  });
+
+  it('has no page title of its own: it is a part of the Overview', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    expect(container.querySelector('h1')).toBeNull();
+    expect(container.querySelector('select')).toBeNull();
   });
 
   it('renders all metric cards with their titles', async () => {
@@ -229,7 +242,7 @@ describe('FactoryMetrics', () => {
     await flush();
 
     const card = (title: string) =>
-      [...container.querySelectorAll('h2')].find((h) => h.textContent === title)?.parentElement?.textContent ?? '';
+      [...container.querySelectorAll('h3')].find((h) => h.textContent === title)?.parentElement?.textContent ?? '';
     // The person-answered figure keeps its own count: 10 decisions in 100 attempts.
     expect(card('Escalation rate')).toContain('10.0%');
     expect(card('Escalation rate')).toContain('10 decisions / 100 attempts');
@@ -250,7 +263,7 @@ describe('FactoryMetrics', () => {
     await flush();
     await flush();
 
-    const card = [...container.querySelectorAll('h2')].find((h) => h.textContent === 'Decided alone')?.parentElement?.textContent ?? '';
+    const card = [...container.querySelectorAll('h3')].find((h) => h.textContent === 'Decided alone')?.parentElement?.textContent ?? '';
     expect(card).toContain('Not measured');
     expect(card).not.toContain('0.0%');
   });
@@ -314,7 +327,7 @@ describe('FactoryMetrics', () => {
   });
 });
 
-describe('FactoryMetrics sources and tokens', () => {
+describe('AgentsWork sources and tokens', () => {
   const PRILL_QUALITY = {
     source: 'prill',
     prill_version: '0.4.2',
@@ -421,7 +434,7 @@ describe('FactoryMetrics sources and tokens', () => {
   });
 });
 
-describe('FactoryMetrics quality of the work', () => {
+describe('AgentsWork quality of the work', () => {
   const openQuality = (container: HTMLElement) => {
     const header = container.querySelector<HTMLButtonElement>('[data-testid="quality-figures"] button');
     header!.click();
@@ -478,18 +491,45 @@ describe('FactoryMetrics quality of the work', () => {
     expect(text).not.toContain('$');
   });
 
-  it('asks for the period it is read over', async () => {
-    setupFetchMock(FACTORY_METRICS_FIXTURE);
+  it('leaves the cuts by domain and level to the Autonomy by domain part', async () => {
+    const row = FACTORY_METRICS_FIXTURE.work_quality.cuts[0].rows[0];
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      work_quality: {
+        ...FACTORY_METRICS_FIXTURE.work_quality,
+        cuts: [
+          ...FACTORY_METRICS_FIXTURE.work_quality.cuts,
+          { by: 'domain', rows: [{ ...row, name: 'Payments' }] },
+          { by: 'level', rows: [{ ...row, name: 'not merged' }] },
+        ],
+      },
+    });
     const { container } = mount();
     await flush();
     await flush();
-    const select = container.querySelector('select')!;
-    select.value = '7';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    await flush();
+    openQuality(container);
     await flush();
 
+    const text = container.querySelector('[data-testid="quality-figures"]')!.textContent ?? '';
+    expect(text).toContain('claude-code');
+    expect(text).not.toContain('Payments');
+    expect(text).not.toContain('not merged');
+  });
+
+  it('asks for the period it is given, and for all time without one', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const all = mount();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.map((call) => String(call[0])).some((url) => url.includes('/metrics/factory') && !url.includes('since='))).toBe(true);
+    all.dispose();
+
+    fetchMock.mockClear();
+    const week = mount('2026-11-19T00:00:00.000Z');
+    await flush();
+    await flush();
     const urls = fetchMock.mock.calls.map((call) => String(call[0]));
-    expect(urls.some((url) => url.includes('/metrics/factory?since='))).toBe(true);
+    expect(urls.some((url) => url.includes('/metrics/factory?since=2026-11-19'))).toBe(true);
+    week.dispose();
   });
 });

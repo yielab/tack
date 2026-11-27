@@ -13,7 +13,7 @@ const VERIFIER_LABEL: Record<string, string> = {
 };
 
 /** A rate as a percentage with its counts, or "Not measured" when there was nothing to count. */
-function rate(r: Ratio): string {
+export function rate(r: Ratio): string {
   if (r.value === null || r.value === undefined) return 'Not measured';
   return `${(r.value * 100).toFixed(1)}% (${r.numerator} of ${r.denominator})`;
 }
@@ -23,9 +23,9 @@ function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
-function Table(props: { head: string[]; children: JSX.Element }) {
+export function Table(props: { head: string[]; children: JSX.Element }) {
   return (
-    <table class="w-full text-left text-xs text-content-subtle">
+    <table class="w-full text-left text-small text-content-subtle">
       <thead>
         <tr class="text-content-muted">
           <For each={props.head}>{(h) => <th class="font-normal">{h}</th>}</For>
@@ -38,10 +38,10 @@ function Table(props: { head: string[]; children: JSX.Element }) {
 
 function Heading(props: { label: string; help: { text: string; href?: string } }) {
   return (
-    <h3 class="m-0 mt-3 flex items-center gap-1 text-sm text-content">
+    <h4 class="m-0 mt-4 flex items-center gap-1 text-lead text-content">
       {props.label}
       <HelpHint label={props.label} help={props.help} />
-    </h3>
+    </h4>
   );
 }
 
@@ -52,6 +52,9 @@ const CUT_LABEL: Record<string, string> = {
   team: 'Team',
   template: 'Prompt fingerprint',
 };
+
+/** The cuts that say what kind of task it was, not who did it: the Autonomy by domain part reads them. */
+const TASK_CUTS = new Set(['domain', 'level']);
 
 /** The quality of the work in the window, in small tables and folded away until asked for. */
 export default function QualityFigures(props: { quality: WorkQuality }) {
@@ -125,7 +128,7 @@ export default function QualityFigures(props: { quality: WorkQuality }) {
         </Table>
 
         <Heading label="Questions" help={HELP.qualityQuestions} />
-        <Show when={q().questions.length > 0} fallback={<p class="text-xs text-content-muted">Nothing was asked in this window.</p>}>
+        <Show when={q().questions.length > 0} fallback={<p class="text-small text-content-muted">Nothing was asked in this window.</p>}>
           <Table head={['Agent', 'Kind', 'Asked', 'Per 100 steps', 'Allowed']}>
             <For each={q().questions}>
               {(row) => (
@@ -142,7 +145,7 @@ export default function QualityFigures(props: { quality: WorkQuality }) {
         </Show>
 
         <Heading label="Why runs stopped" help={HELP.qualityStops} />
-        <Show when={q().stops.length > 0} fallback={<p class="text-xs text-content-muted">No run stopped in this window.</p>}>
+        <Show when={q().stops.length > 0} fallback={<p class="text-small text-content-muted">No run stopped in this window.</p>}>
           <Table head={['Reason', 'Runs']}>
             <For each={q().stops}>
               {(row) => (
@@ -161,7 +164,7 @@ export default function QualityFigures(props: { quality: WorkQuality }) {
         </Show>
 
         <Heading label="By who did the work" help={HELP.qualityCuts} />
-        <For each={q().cuts.filter((c) => c.rows.length > 0)}>
+        <For each={q().cuts.filter((c) => c.rows.length > 0 && !TASK_CUTS.has(c.by))}>
           {(cut) => (
             <Table head={[CUT_LABEL[cut.by] ?? cut.by, 'Runs', 'Success', 'First pass', 'Reverted']}>
               <For each={cut.rows}>

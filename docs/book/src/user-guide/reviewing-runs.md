@@ -2,7 +2,7 @@
 
 This page is for whoever checks what an agent did. After reading it you can find a finished run, judge its
 changes, accept or reject them, read the merge-readiness pack a verifier leaves, see what the run used,
-and read the project's Factory metrics page.
+and read how the agents' work is going on a project.
 
 ## What happens when a run finishes
 
@@ -269,14 +269,14 @@ If an agent does not report tokens, the panel says **Tokens: Not measured**. The
 run gives the counted tokens, with what the cache served beside them, and the run's token limit with who
 applies it; see [Token limits](running-agents.md#token-limits).
 
-The Factory metrics page, below, adds up the tokens of every run for a whole project.
+The Overview's **Agents' work** part, below, adds up the tokens of every run for a whole project.
 
 ---
 
-## Factory metrics
+## Agents' work
 
-**Factory metrics** is in a project's sidebar. It summarises all the
-runs, questions and verification in a project, as one card per measure. **Period** at the top reads it over all time or the last 7, 28 or 90 days. Each card
+**Agents' work** is a part of the project's **Overview** (the switch under its title, or `?part=agents` in the address). It summarises all the
+runs, questions and verification in a project, as one card per measure, the wait for a decision first. **Period** beside the switch reads it over all time or the last 7, 28 or 90 days. Each card
 shows a figure, or **Not measured** with its reason when there is nothing to measure.
 
 | Card | What it tells you |
@@ -302,7 +302,7 @@ Under the cards, the folded section **Quality of the work** reads the period's r
 - how often each verifier's word agreed with what happened to the work (work you rejected, or whose pull request was reverted, is bad; work you accepted and kept is good);
 - for a task that repeats, how often any three of its runs all succeed;
 - the questions each agent asked you per hundred steps and how often you allowed them, and why runs stopped;
-- the same rates cut by profile, agent, model, team and prompt fingerprint.
+- the same rates cut by profile, agent, model, team and prompt fingerprint. The cuts by domain and by level are in the Overview's **Autonomy by domain** part.
 
 Every figure counts runs or tokens, and a figure with nothing to count says **Not measured**.
 
