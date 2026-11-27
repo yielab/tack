@@ -1,5 +1,6 @@
 import { type Component, type JSX, createEffect, createSignal, on, Show } from 'solid-js';
 import { Fold, Icons, RunState, SectionHeading, priorityLabel, type DocketRunWord, type RunStateName } from '../../shared/ui';
+import { useProject } from '../../shared/state/projectContext';
 import { briefOf, notReadyOf } from '../../shared/ui/briefSummary';
 import type { Item } from '../../shared/types';
 import ItemMenu from '../../shared/ui/ItemMenu';
@@ -59,6 +60,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
   const marks = useFolderMarks(() => props.item);
   const { byId } = useProjectItemList(() => props.item);
   // A saved brief changes what the server says of the task's readiness: the item is read again.
+  const { project } = useProject();
   const brief = useBrief(() => props.item.id, () => void props.editor.refetchItem());
   // The item's own summary is the freshest; the project's list stands in for an item read without one.
   const notReady = () => {
@@ -196,7 +198,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
       </Show>
       {nextStep}
       <DescriptionSection item={props.item} onDescriptionChange={props.editor.onDescriptionChange} marks={marks} />
-      <DoneWhenSection brief={brief} marks={marks} />
+      <DoneWhenSection brief={brief} marks={marks} projectDone={project()?.definition_of_done} />
       <ForTheAgentSection itemId={props.item.id} brief={brief} marks={marks} layout={props.layout} />
       {runs}
       {activity}

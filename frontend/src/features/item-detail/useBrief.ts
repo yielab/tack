@@ -81,7 +81,7 @@ export function useBrief(itemId: () => string, onSaved?: () => void) {
       const saved = await api.briefs.put(itemId(), {
         acceptance: [...manual, ...criteria.map(fromRow)],
         constraints: constraints.map(constraintFromRow),
-        definition_of_done: done(),
+        definition_of_done: done()?.trim() || null,
         risk: risk() || null,
       });
       load(saved);
@@ -106,6 +106,8 @@ export function useBrief(itemId: () => string, onSaved?: () => void) {
     setConstraints,
     risk,
     setRisk,
+    done,
+    setDone,
     errors,
     saving,
     save,

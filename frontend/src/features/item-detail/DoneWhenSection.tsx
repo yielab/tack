@@ -8,9 +8,16 @@ import { IconCheck } from './sectionIcons';
 import type { BriefEditor } from './useBrief';
 import type { FolderMarks } from './useFolderMarks';
 
-/** What a person checks before calling the task done, with how many are ticked. Each tick saves. */
-const DoneWhenSection: Component<{ brief: BriefEditor; marks: FolderMarks }> = (props) => {
+/**
+ * What makes the task done: the task's own sentence, when it has one (written in the project folder,
+ * an import or the API), then what a person checks, with how many are ticked. A task with neither says
+ * when the project's definition of done stands in for it, since the run and the readiness use it then.
+ * Each tick and each edit saves.
+ */
+const DoneWhenSection: Component<{ brief: BriefEditor; marks: FolderMarks; projectDone?: string | null }> = (props) => {
   const b = () => props.brief;
+  const sentence = () => b().done();
+  const fromProject = () => (sentence() === null && b().listed() === 0 ? props.projectDone?.trim() || null : null);
   const share = () => (b().listed() === 0 ? 0 : Math.round((b().ticked() / b().listed()) * 100));
   return (
     <section aria-labelledby="item-done-when" class="space-y-4">
@@ -32,6 +39,25 @@ const DoneWhenSection: Component<{ brief: BriefEditor; marks: FolderMarks }> = (
         Done when
       </SectionHeading>
       <div class="space-y-3">
+        <Show when={sentence() !== null}>
+          <textarea
+            aria-label="Done when, in a sentence"
+            data-testid="done-sentence"
+            rows={2}
+            value={sentence() ?? ''}
+            onInput={(e) => b().setDone(e.currentTarget.value)}
+            onFocusOut={() => void b().save()}
+            class={`${controlClass} resize-none`}
+            style={{ ...controlStyle, 'font-size': 'var(--text-body)' }}
+          />
+        </Show>
+        <Show when={fromProject()}>
+          {(text) => (
+            <p data-testid="done-from-project" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+              The project's definition of done applies: <span style={{ color: 'var(--color-text-primary)' }}>{text()}</span>
+            </p>
+          )}
+        </Show>
         <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           A person ticks these, one line per thing checked before calling this done.{' '}
           <FolderMark marks={props.marks} fields={['brief']} />

@@ -25,6 +25,7 @@ beforeEach(() => {
   putResponse = (body) => json(body);
   localStorage.clear();
   storedBrief = null;
+  projectDone = null;
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     const method = (init as RequestInit)?.method ?? 'GET';
@@ -38,13 +39,16 @@ beforeEach(() => {
   });
 });
 
+/** The project's definition of done the Done when section is given; null is a project with none. */
+let projectDone: string | null = null;
+
 function Screen(props: { layout: 'page' | 'drawer'; item?: Item; marks?: FolderMarks }) {
   const brief = useBrief(() => 'i1');
   const marks = props.marks ?? noFolder;
   return (
     <>
       <DescriptionSection item={props.item ?? ITEM} onDescriptionChange={() => {}} marks={marks} />
-      <DoneWhenSection brief={brief} marks={marks} />
+      <DoneWhenSection brief={brief} marks={marks} projectDone={projectDone} />
       <ForTheAgentSection itemId="i1" brief={brief} marks={marks} layout={props.layout} />
     </>
   );
@@ -121,6 +125,44 @@ describe('Done when', () => {
       { kind: 'manual', id: 'm1', title: one.slice(0, 60), text: one },
       { kind: 'manual', id: 'm2', title: two.slice(0, 60), text: two },
     ]);
+  });
+
+  it('shows the task\'s Done when sentence, saves an edit, and a cleared one is removed', async () => {
+    storedBrief = { acceptance: [], constraints: [], definition_of_done: 'Every public endpoint is documented.', risk: null };
+    const { container } = await mount();
+    const field = container.querySelector<HTMLTextAreaElement>('[aria-label="Done when, in a sentence"]')!;
+    expect(field.value).toBe('Every public endpoint is documented.');
+
+    type(container, 'Done when, in a sentence', 'Every public endpoint is documented, with an example.');
+    blur(container, 'Done when, in a sentence');
+    await flush();
+    expect(lastPut().definition_of_done).toBe('Every public endpoint is documented, with an example.');
+
+    type(container, 'Done when, in a sentence', '   ');
+    blur(container, 'Done when, in a sentence');
+    await flush();
+    expect(lastPut().definition_of_done).toBeNull();
+    expect(container.querySelector('[aria-label="Done when, in a sentence"]')).toBeNull();
+  });
+
+  it('says the project\'s definition of done applies to a task with no sentence and no check, and only then', async () => {
+    projectDone = 'Merged, deployed to staging and announced in the changelog.';
+    const bare = await mount();
+    expect(bare.container.querySelector('[data-testid="done-from-project"]')?.textContent).toBe(
+      "The project's definition of done applies: Merged, deployed to staging and announced in the changelog.",
+    );
+    expect(bare.container.querySelector('[aria-label="Done when, in a sentence"]')).toBeNull();
+    bare.dispose();
+
+    storedBrief = { acceptance: [{ kind: 'manual', id: 'a', title: 'Works', text: 'Works' }], constraints: [], definition_of_done: null, risk: null };
+    const checked = await mount();
+    expect(checked.container.querySelector('[data-testid="done-from-project"]')).toBeNull();
+    checked.dispose();
+
+    storedBrief = { acceptance: [], constraints: [], definition_of_done: 'Its own sentence.', risk: null };
+    const own = await mount();
+    expect(own.container.querySelector('[data-testid="done-from-project"]')).toBeNull();
+    own.dispose();
   });
 
   it('ticking_a_done_when_line_saves_checked_and_moves_the_progress', async () => {

@@ -92,6 +92,11 @@ adds a line; the **⋯** at the end of a line holds **Move up**, **Move down** a
 and a tick saves at once. The tick is for people: the agent is not told which lines are ticked,
 and no automatic check reads it.
 
+A task can also say in one sentence when it is done. That sentence comes from the
+[project folder](import-export.md#the-project-file), an import or a tool, and it shows above the checklist, where you can
+change it; it saves when you leave it, and clearing it removes it. A task with neither a sentence nor a line
+takes the project's definition of done, and the section says so.
+
 **For the agent** is optional. On the page it is a panel that reads as a table: **Checks a machine runs**, the **Constraints**, the **Risk** and the run's **Token limit**, with **Preview everything the agent will read** to see the text the agent is given. In the drawer it is folded to one line that says what it holds (for example *3 checks · 3 limits · risk medium*). **Edit** opens the form, and **Save for the agent** writes all three parts:
 
 - **Checks a machine runs.** Each has a title and one of five kinds:
@@ -106,8 +111,7 @@ and no automatic check reads it.
   maximum number of changed files, or a free-form note.
 - **Risk** is low, medium or high. Leave it *Not set* if you are not sure.
 
-The definition of done in plain sentences is set once per project, in
-[Automation](automation.md#automation) — not on each task.
+The project's definition of done is set in [Automation](automation.md#automation).
 
 An item holds up to 50 criteria and 100 constraints. If a save is refused, the reason
 appears next to the part it concerns.
