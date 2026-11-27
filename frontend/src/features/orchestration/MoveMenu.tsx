@@ -101,8 +101,8 @@ const MoveMenu: Component<{
         aria-controls={open() ? menuId : undefined}
         class="flex-none focus:outline-none focus-visible:ring-2"
         style={{
-          width: '24px', height: '24px', padding: 0, border: 'none', 'border-radius': '50%',
-          background: 'var(--color-bg-panel)', color: props.offReason ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+          width: '24px', height: '24px', padding: 0, border: 'none', 'border-radius': 'var(--radius-md)',
+          background: 'var(--color-bg-subtle)', color: props.offReason ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
           cursor: props.offReason ? 'not-allowed' : 'pointer', display: 'grid', 'place-items': 'center',
         }}
         onClick={(e) => {

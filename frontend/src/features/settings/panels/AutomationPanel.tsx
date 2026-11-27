@@ -72,7 +72,7 @@ const Pill = (props: { active: boolean; title?: string; onClick: () => void; chi
     title={props.title}
     aria-pressed={props.active}
     onClick={props.onClick}
-    class="rounded-full border px-3 py-1 text-sm"
+    class="rounded-md border px-3 py-1 text-sm"
     style={{
       'border-color': props.active ? 'var(--color-primary-600)' : 'var(--color-border-medium)',
       'background-color': props.active ? 'var(--color-accent-soft)' : 'var(--color-bg-base)',
@@ -374,7 +374,7 @@ const AutomationPanel: Component = () => {
   );
 
   return (
-    <div class="flex max-w-3xl flex-col gap-4">
+    <div class="flex max-w-3xl flex-col gap-12">
       <Show when={profileList.error}>
         {(error) => <LoadError what="the agent profiles the roles choose from" error={error()} onRetry={() => void refetchProfiles()} />}
       </Show>

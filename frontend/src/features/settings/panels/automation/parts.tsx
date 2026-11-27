@@ -1,6 +1,8 @@
 import type { JSX } from 'solid-js';
+import { SectionHeading } from '../../../../shared/ui';
 
-export const SECTION = 'flex flex-col gap-2.5 rounded-lg bg-panel p-[18px]';
+/** A panel that holds one group of content on the white surface: the panel radius, a hairline and 20px of padding. */
+export const PANEL = 'flex flex-col gap-2.5 rounded-lg border border-line p-5';
 
 /** The levels a project can merge at, with the short form the ladder shows and the sentence that names its radio. */
 export const LEVELS = [
@@ -29,12 +31,12 @@ export const Block = (props: { id?: string; testid?: string; children: JSX.Eleme
 );
 
 /** One of the four sections of the tab. The index beside them links to `id`. */
-export const Section = (props: { id: string; title: string; lead: string; children: JSX.Element }) => (
-  <section id={props.id} data-testid={props.id} aria-labelledby={`${props.id}-title`} class={`${SECTION} min-w-0 scroll-mt-4`}>
-    <div class="flex flex-col gap-0.5">
-      <h2 id={`${props.id}-title`} class="text-2xl leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+export const Section = (props: { id: string; title: string; lead: string; icon: JSX.Element; children: JSX.Element }) => (
+  <section id={props.id} data-testid={props.id} aria-labelledby={`${props.id}-title`} class="flex min-w-0 scroll-mt-4 flex-col gap-4">
+    <div class="flex flex-col gap-1.5">
+      <SectionHeading id={`${props.id}-title`} icon={props.icon}>
         {props.title}
-      </h2>
+      </SectionHeading>
       <Note>{props.lead}</Note>
     </div>
     {props.children}
@@ -42,7 +44,7 @@ export const Section = (props: { id: string; title: string; lead: string; childr
 );
 
 export const Heading = (props: { children: JSX.Element }) => (
-  <h3 class="text-[1.1875rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+  <h3 class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
     {props.children}
   </h3>
 );
@@ -53,7 +55,7 @@ export const Note = (props: { children: JSX.Element; testid?: string }) => (
   </p>
 );
 
-export const inputClass = 'w-full rounded-full border px-3.5 py-2 text-sm';
+export const inputClass = 'w-full rounded-md border px-3.5 py-2 text-sm';
 export const inputStyle = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',

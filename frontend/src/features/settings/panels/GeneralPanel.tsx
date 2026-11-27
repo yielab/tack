@@ -76,7 +76,7 @@ const GeneralPanel: Component = () => {
           rows={3}
           value={description()}
           onInput={(e) => setDescription(e.currentTarget.value)}
-          class="min-h-20 w-full resize-none rounded-lg border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+          class="min-h-20 w-full resize-none rounded-md border px-3.5 py-2.5 text-body transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',
@@ -88,7 +88,7 @@ const GeneralPanel: Component = () => {
 
       <FieldShell label="Type">
         <div>
-          <Badge tone="primary" class="text-xs!">{project()?.project_type ?? '—'}</Badge>
+          <Badge tone="primary" class="text-caption!">{project()?.project_type ?? '—'}</Badge>
         </div>
       </FieldShell>
 
@@ -102,7 +102,7 @@ const GeneralPanel: Component = () => {
             Notify me when this tab is hidden
             <Show when={notifyUnavailableReason()}>
               {(reason) => (
-                <span class="block text-xs" style={{ color: 'var(--color-text-secondary)' }}>{reason()}</span>
+                <span class="block text-caption" style={{ color: 'var(--color-text-secondary)' }}>{reason()}</span>
               )}
             </Show>
           </span>
@@ -117,9 +117,8 @@ const GeneralPanel: Component = () => {
           when={project()?.archived}
           fallback={
             <Button
-              variant="secondary"
+              variant="destructive"
               class="ml-auto"
-              style={{ color: 'var(--color-danger-600)' }}
               onClick={() => void setArchived(true)}
             >
               Archive project

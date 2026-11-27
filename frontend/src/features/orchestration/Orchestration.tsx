@@ -115,7 +115,7 @@ const Summary: Component<{
 }> = (props) => (
   <div class="flex min-w-0 flex-col gap-2" data-testid="flow-summary">
     <div role="group" aria-label="Work" class="flex min-w-0 flex-wrap items-center gap-2">
-      <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Work</span>
+      <span class="text-caption font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Work</span>
       <For each={COUNTERS}>
         {(c) => {
           const count = () => c.count(props.flow);
@@ -130,7 +130,7 @@ const Summary: Component<{
               data-testid={`flow-counter-${c.filter}`}
               title={unusable() ? `No tasks: ${c.label.toLowerCase()}` : c.note}
               onClick={() => props.onToggle(c.filter)}
-              class="inline-flex min-h-7 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+              class="inline-flex min-h-7 items-center gap-1.5 rounded-md px-3 text-caption font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 'background-color': on() ? 'var(--color-accent-soft)' : warn() ? 'var(--run-needs-soft)' : 'var(--color-bg-subtle)',
                 color: warn() ? 'var(--run-needs-ink)' : on() ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',
@@ -452,7 +452,7 @@ const Orchestration: Component = () => {
     <FlowUiContext.Provider value={ui}>
       <section class="flex min-w-0 flex-col gap-4" data-testid="orchestration">
         <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2" data-testid="orchestration-header">
-          <h2 class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>{t('orchestration')}</h2>
+          <h2 class="text-section" style={{ color: 'var(--color-text-primary)' }}>{t('orchestration')}</h2>
           <div role="group" aria-label="Mode" data-testid="orchestration-mode" class="inline-flex items-center gap-1">
             <For each={['flow', 'map'] as const}>
               {(m) => (
@@ -460,7 +460,7 @@ const Orchestration: Component = () => {
                   type="button"
                   aria-pressed={mode() === m}
                   data-testid={`orchestration-mode-${m}`}
-                  class="rounded-pill px-3 py-0.5 text-small font-bold focus:outline-none focus-visible:ring-2"
+                  class="rounded-md px-3 py-0.5 text-small font-bold focus:outline-none focus-visible:ring-2"
                   style={{
                     'background-color': mode() === m ? 'var(--color-accent-soft)' : 'transparent',
                     color: mode() === m ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',

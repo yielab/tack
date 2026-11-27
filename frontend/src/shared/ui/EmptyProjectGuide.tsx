@@ -12,8 +12,7 @@ const Step: Component<{ n: number; title: string; description: string; action: J
   props,
 ) => (
   <div
-    class="grid items-center gap-3.5 p-3.5 grid-cols-[44px_1fr] sm:grid-cols-[44px_1fr_auto]"
-    style={{ background: 'var(--color-bg-app)', 'border-radius': 'var(--radius-lg)' }}
+    class="grid items-center gap-3.5 rounded-lg border border-line p-3.5 grid-cols-[44px_1fr] sm:grid-cols-[44px_1fr_auto]"
   >
     <div
       class="font-heading w-10 h-10 rounded-full grid place-items-center text-lg"
@@ -47,14 +46,14 @@ const EmptyProjectGuide: Component<Props> = (props) => {
     <div class="w-full max-w-[900px] flex flex-col gap-4 py-4">
       <div class="flex items-center gap-4">
         <div
-          class="flex-shrink-0 w-[84px] h-[84px] rounded-full grid place-items-center"
+          class="flex-shrink-0 w-[84px] h-[84px] rounded-lg grid place-items-center"
           style={{ background: 'var(--color-accent2-soft)', color: 'var(--color-accent2-ink)' }}
           aria-hidden="true"
         >
           <IconBoard size={34} />
         </div>
         <div class="min-w-0">
-          <h2 class="text-2xl" style={{ color: 'var(--color-text-primary)' }}>
+          <h2 class="text-step" style={{ color: 'var(--color-text-primary)' }}>
             Your project is ready
           </h2>
           <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
@@ -64,8 +63,7 @@ const EmptyProjectGuide: Component<Props> = (props) => {
       </div>
 
       <div
-        class="flex flex-col gap-1.5 p-2.5"
-        style={{ background: 'var(--color-bg-panel)', 'border-radius': 'var(--radius-lg)' }}
+        class="flex flex-col gap-3"
       >
         <Step
           n={1}

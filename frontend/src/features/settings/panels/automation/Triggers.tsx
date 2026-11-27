@@ -184,7 +184,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
                           min="0"
                           max={MAX_QUIET_SECONDS}
                           aria-label={`Quiet seconds for ${t.name}`}
-                          class="w-24 rounded-full border px-3.5 py-2 text-sm"
+                          class="w-24 rounded-md border px-3.5 py-2 text-sm"
                           style={inputStyle}
                           disabled={busy() === t.id}
                           value={t.quiet_seconds}
@@ -199,7 +199,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
                         min="1"
                         max={MAX_DAILY_CAP}
                         aria-label={`Daily cap for ${t.name}`}
-                        class="w-20 rounded-full border px-3.5 py-2 text-sm"
+                        class="w-20 rounded-md border px-3.5 py-2 text-sm"
                         style={inputStyle}
                         disabled={busy() === t.id}
                         value={t.daily_cap}
@@ -239,7 +239,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
                           <input
                             type="time"
                             aria-label={`Time for ${t.name}`}
-                            class="rounded-full border px-3.5 py-2 text-sm"
+                            class="rounded-md border px-3.5 py-2 text-sm"
                             style={inputStyle}
                             disabled={busy() === t.id}
                             value={timeText(schedule().minute_of_day)}
@@ -318,7 +318,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
                 type="number"
                 min="1"
                 aria-label="Minutes a change set waits"
-                class="w-24 rounded-full border px-3.5 py-2 text-sm"
+                class="w-24 rounded-md border px-3.5 py-2 text-sm"
                 style={inputStyle}
                 value={afterMinutes()}
                 onInput={(e) => setAfterMinutes(clamp(e.currentTarget.value, 0, 100_000))}
@@ -349,7 +349,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
                 <input
                   type="time"
                   aria-label="Time of day"
-                  class="rounded-full border px-3.5 py-2 text-sm"
+                  class="rounded-md border px-3.5 py-2 text-sm"
                   style={inputStyle}
                   value={time()}
                   onInput={(e) => setTime(e.currentTarget.value)}
@@ -368,7 +368,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
                 min="0"
                 max={MAX_QUIET_SECONDS}
                 aria-label="Quiet seconds"
-                class="w-24 rounded-full border px-3.5 py-2 text-sm"
+                class="w-24 rounded-md border px-3.5 py-2 text-sm"
                 style={inputStyle}
                 value={quiet()}
                 onInput={(e) => setQuiet(clamp(e.currentTarget.value, 0, MAX_QUIET_SECONDS))}
@@ -383,7 +383,7 @@ const Triggers: Component<{ projectId: string; profiles: Accessor<AgentProfileSu
               min="1"
               max={MAX_DAILY_CAP}
               aria-label="Daily cap"
-              class="w-20 rounded-full border px-3.5 py-2 text-sm"
+              class="w-20 rounded-md border px-3.5 py-2 text-sm"
               style={inputStyle}
               value={cap()}
               onInput={(e) => setCap(clamp(e.currentTarget.value, 1, MAX_DAILY_CAP))}

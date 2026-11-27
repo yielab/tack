@@ -1,6 +1,7 @@
 import { type Component, type JSX, For, Show, createSignal } from 'solid-js';
 import { getAlwaysPriority, setAlwaysPriority } from '../../shared/runWithAgent/cardRun';
-import { Button } from '../../shared/ui';
+import { FiMonitor } from 'solid-icons/fi';
+import { Button, SectionHeading } from '../../shared/ui';
 import { currentTheme, setTheme, type Theme } from '../../shared/state/theme';
 import { currentPalette, setPalette, PALETTE_SWATCHES } from '../../shared/state/palette';
 import {
@@ -28,7 +29,7 @@ const systemReducesMotion = () =>
 /**
  * One choice out of several, as native radios in a fieldset: arrow keys move
  * between options and a screen reader announces the group and the position.
- * The radio itself is visually hidden; the label is the pill the user sees.
+ * The radio itself is visually hidden; the label is the option the user sees.
  */
 function ChoiceGroup<T extends string | number>(p: {
   legend: string;
@@ -42,11 +43,11 @@ function ChoiceGroup<T extends string | number>(p: {
   const hintId = `${p.name}-hint`;
   return (
     <fieldset class="flex flex-col gap-2" disabled={p.disabled} aria-describedby={p.hint ? hintId : undefined}>
-      <legend class="mb-2 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <legend class="mb-2 text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
         {p.legend}
       </legend>
       <div
-        class="inline-flex flex-wrap gap-[3px] self-start rounded-lg p-[3px] text-small"
+        class="inline-flex flex-wrap gap-0.5 self-start rounded-lg p-0.5 text-small"
         style={{ 'background-color': 'var(--color-bg-app)', opacity: p.disabled ? 0.6 : 1 }}
       >
         <For each={p.options}>
@@ -54,7 +55,7 @@ function ChoiceGroup<T extends string | number>(p: {
             const checked = () => p.value === o.value;
             return (
               <label
-                class="relative inline-flex items-center gap-2 rounded-full px-4 py-1.5 transition-colors has-[:focus-visible]:ring-2"
+                class="relative inline-flex items-center gap-2 rounded-md px-4 py-1.5 transition-colors has-[:focus-visible]:ring-2"
                 style={{
                   cursor: p.disabled ? 'not-allowed' : 'pointer',
                   'background-color': checked() ? 'var(--color-primary-600)' : 'transparent',
@@ -106,7 +107,7 @@ const Toggle: Component<{
       onChange={(e) => p.onChange(e.currentTarget.checked)}
     />
     <div class="flex flex-col gap-0.5">
-      <label for={p.id} class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <label for={p.id} class="cursor-pointer text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>
         {p.label}
       </label>
       <p id={`${p.id}-hint`} class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
@@ -138,21 +139,24 @@ const AlwaysPriority: Component = () => {
  * this person — theme, palette, text size, zoom, typeface and motion. Saved
  * to this browser, like the theme always was.
  */
-const DisplaySettings: Component<{ cardClass: string; titleClass: string }> = (p) => (
-  <section id="display" class={p.cardClass} aria-labelledby="display-title">
-    <div class="flex flex-wrap items-center gap-3">
-      <h2 id="display-title" class={p.titleClass} style={{ color: 'var(--color-text-primary)' }}>
-        Display &amp; accessibility
-      </h2>
-      <Button size="sm" variant="ghost" class="ml-auto" onClick={() => { resetDisplay(); setTheme('system'); setPalette('harbor'); }}>
-        Reset to defaults
-      </Button>
-    </div>
+const DisplaySettings: Component = () => (
+  <section id="display" class="flex flex-col gap-4" aria-labelledby="display-title">
+    <SectionHeading
+      id="display-title"
+      icon={<FiMonitor size={16} />}
+      actions={
+        <Button size="sm" variant="ghost" onClick={() => { resetDisplay(); setTheme('system'); setPalette('harbor'); }}>
+          Reset to defaults
+        </Button>
+      }
+    >
+      Display &amp; accessibility
+    </SectionHeading>
     <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
       Adapt the interface to how you read it. Saved to this browser.
     </p>
 
-    <div class="flex flex-col gap-5 pt-1">
+    <div class="flex flex-col gap-6">
       <ChoiceGroup
         legend="Theme"
         name="theme"

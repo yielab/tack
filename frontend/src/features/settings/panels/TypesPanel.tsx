@@ -20,7 +20,7 @@ const LEVELS: Array<{ value: TypeLevel; label: string }> = [
   { value: 'work', label: 'Work' },
 ];
 
-const fieldClass = 'min-h-8 rounded-full border px-3 py-1 text-small focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60';
+const fieldClass = 'min-h-8 rounded-md border px-3 py-1 text-small focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60';
 const fieldStyle = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',
@@ -190,8 +190,7 @@ const TypeRow: Component<{
       ref={row}
       data-testid="type-row"
       data-key={u().key}
-      class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md px-3 py-2"
-      style={{ 'background-color': 'var(--color-bg-panel)' }}
+      class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-line px-3 py-2"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();

@@ -42,7 +42,7 @@ const RolesPanel: Component = () => {
   };
 
   return (
-    <div class="flex max-w-[440px] flex-col gap-2.5">
+    <div class="flex max-w-[440px] flex-col gap-6">
       <Show
         when={(roles() ?? []).length > 0}
         fallback={<EmptyState title="No roles yet" description="Add a role below." />}
@@ -51,7 +51,7 @@ const RolesPanel: Component = () => {
           <For each={roles()}>
             {(role) => (
               <li
-                class="flex items-center gap-2.5 rounded-full bg-panel py-2 pl-3.5 pr-2 text-sm"
+                class="flex items-center gap-2.5 rounded-md border border-line py-2 pl-3.5 pr-2 text-body"
                 style={{ color: 'var(--color-text-primary)' }}
               >
                 <span
@@ -76,7 +76,7 @@ const RolesPanel: Component = () => {
         </ul>
       </Show>
 
-      <form class="flex flex-col gap-2.5 rounded-lg bg-panel px-4 py-3.5" onSubmit={add}>
+      <form class="flex flex-col gap-2.5 border-t border-line pt-6" onSubmit={add}>
         <Field
           label="New role"
           value={name()}

@@ -78,10 +78,10 @@ const NobodyLane: Component<{ entries: NobodyEntry[] }> = (props) => (
   <section
     data-testid="flow-nobody"
     aria-labelledby="flow-nobody-title"
-    class="flex min-w-0 flex-col gap-2 rounded-lg px-4 py-3"
+    class="flex min-w-0 flex-col gap-2 rounded-lg p-5"
     style={{ 'background-color': 'var(--run-needs-soft)', 'box-shadow': 'inset 0 0 0 1px var(--run-needs-line)' }}
   >
-    <h3 id="flow-nobody-title" class="text-lead font-bold" style={{ color: 'var(--run-needs-ink)' }}>
+    <h3 id="flow-nobody-title" class="text-lead font-semibold" style={{ color: 'var(--run-needs-ink)' }}>
       Nobody will take it
       <span class="tabular-nums" style={{ 'margin-left': '0.5rem' }}>{props.entries.length}</span>
     </h3>
@@ -96,7 +96,7 @@ const NobodyLane: Component<{ entries: NobodyEntry[] }> = (props) => (
 
 /** Teams no profile of this project names: listed, each with "Make a profile for it" off and the reason. */
 const UnusedRow: Component<{ teams: UnusedTeam[] }> = (props) => (
-  <details data-testid="flow-unused" class="min-w-0 rounded-lg px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+  <details data-testid="flow-unused" class="min-w-0 rounded-lg border border-line bg-surface p-5">
     <summary class="cursor-pointer text-small font-bold" style={{ color: 'var(--color-text-primary)' }}>
       {`Teams not used here (${props.teams.length})`}
     </summary>

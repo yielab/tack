@@ -139,7 +139,7 @@ const PlanDialog: Component<{
               </For>
 
               <Show when={current().conflicts.length > 0 || prefer() !== undefined}>
-                <section aria-labelledby="plan-conflicts" data-testid="plan-conflicts" class="flex flex-col gap-3 rounded-lg p-4" style={{ background: 'var(--color-warning-100)' }}>
+                <section aria-labelledby="plan-conflicts" data-testid="plan-conflicts" class="flex flex-col gap-3 rounded-lg border p-4" style={{ background: 'var(--color-warning-50)', 'border-color': 'var(--color-warning-500)' }}>
                   <h3 id="plan-conflicts" class={H} style={PRIMARY}>
                     Conflicts · {current().conflicts.length}
                   </h3>
@@ -184,7 +184,7 @@ const PlanDialog: Component<{
               </Show>
 
               <Show when={current().removals.length > 0}>
-                <section aria-labelledby="plan-removed" data-testid="plan-removals" class="flex flex-col gap-2 rounded-lg p-4" style={{ background: 'var(--color-danger-100)' }}>
+                <section aria-labelledby="plan-removed" data-testid="plan-removals" class="flex flex-col gap-2 rounded-lg border p-4" style={{ background: 'var(--color-bg-subtle)', 'border-color': 'var(--color-border-medium)' }}>
                   <h3 id="plan-removed" class={H} style={PRIMARY}>Removed · {current().removals.length}</h3>
                   <ul class="flex flex-col gap-2">
                     <For each={current().removals}>

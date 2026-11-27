@@ -93,7 +93,7 @@ const GroupHeader: Component<GroupHeaderProps> = (props) => {
           aria-controls={panelId}
           aria-label={`Work under ${props.group.title}`}
           onClick={toggle}
-          class="grid h-7 w-7 flex-none place-items-center rounded-full focus:outline-none focus-visible:ring-2"
+          class="grid h-7 w-7 flex-none place-items-center rounded-md focus:outline-none focus-visible:ring-2"
           style={{ color: 'var(--color-text-secondary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
         >
           <span aria-hidden="true" class="inline-flex" style={{ transform: open() ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
@@ -107,10 +107,9 @@ const GroupHeader: Component<GroupHeaderProps> = (props) => {
             <A
               href={itemHref(props.group.project_id, props.group.id)}
               title={props.group.title}
-              class="min-w-0 truncate font-bold hover:underline focus:outline-none focus-visible:ring-2"
+              class={`min-w-0 truncate font-semibold hover:underline focus:outline-none focus-visible:ring-2 ${lane() ? 'text-lead' : 'text-step'}`}
               style={{
                 'font-family': 'var(--font-body)',
-                'font-size': lane() ? '0.9375rem' : '1.25rem',
                 color: 'var(--color-text-primary)',
                 '--tw-ring-color': 'var(--color-focus-ring)',
               }}
@@ -124,8 +123,8 @@ const GroupHeader: Component<GroupHeaderProps> = (props) => {
           fallback={
             <span
               data-testid="group-status"
-              class="inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"
-              style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
+              class="inline-flex h-7 items-center gap-1.5 rounded-sm px-3 text-caption font-semibold"
+              style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-primary)' }}
             >
               {chip}
             </span>
@@ -151,7 +150,7 @@ const GroupHeader: Component<GroupHeaderProps> = (props) => {
         </Show>
         <ProgressBar progress={props.group.progress} pointsWord={props.pointsWord} compact={lane()} />
         <Show when={teams().length > 0}>
-          <span data-testid="group-teams" title="Teams" class="min-w-0 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <span data-testid="group-teams" title="Teams" class="min-w-0 truncate text-caption" style={{ color: 'var(--color-text-secondary)' }}>
             {teams().join(', ')}
           </span>
         </Show>
@@ -175,7 +174,7 @@ const GroupHeader: Component<GroupHeaderProps> = (props) => {
             itemId={props.group.id}
             itemTitle={props.group.title}
             projectId={props.group.project_id}
-            variant="secondary"
+            variant="ghost"
             label="Plan with agent"
           />
         </div>

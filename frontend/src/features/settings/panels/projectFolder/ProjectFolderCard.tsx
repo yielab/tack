@@ -2,7 +2,8 @@ import { type Component, For, Show, createResource, createSignal } from 'solid-j
 import { api } from '../../../../shared/api';
 import type { FolderApplied, PlanSource } from '../../../../shared/api/folder';
 import { BOOK } from '../../../../shared/help/routes';
-import { Button } from '../../../../shared/ui';
+import { FiFolder } from 'solid-icons/fi';
+import { Button, SectionHeading } from '../../../../shared/ui';
 import { toast } from '../../../../shared/ui/toast';
 import { directoryPicker, readPickedFolder, writeFolder } from './folderAccess';
 import PlanDialog from './PlanDialog';
@@ -74,11 +75,11 @@ const ProjectFolderCard: Component<{ projectId: string }> = (props) => {
   };
 
   return (
-    <section aria-labelledby="project-folder-title" data-testid="project-folder" class="flex flex-col gap-4 rounded-lg bg-panel p-6">
+    <section aria-labelledby="project-folder-title" data-testid="project-folder" class="flex flex-col gap-4">
       <div class="flex flex-col gap-1">
-        <h3 id="project-folder-title" class="text-xl font-semibold leading-tight" style={PRIMARY}>
+        <SectionHeading id="project-folder-title" icon={<FiFolder size={16} />}>
           Project folder
-        </h3>
+        </SectionHeading>
         <p class="text-sm" style={MUTED}>
           The plan kept beside your code, in <code class="font-mono">.tack/</code>: the project's setup and one file per item
           with what it is and what makes it done. Where each item is, who answers for it and when stay on the board.{' '}

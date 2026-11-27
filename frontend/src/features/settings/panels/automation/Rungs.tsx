@@ -3,7 +3,7 @@ import { HelpHint, LoadError } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import { BOOK, BOOK_BASE } from '../../../../shared/help/routes';
 import type { AutonomySettings } from '../../../../shared/api/autonomy';
-import { Heading, LEVELS, Note, PUBLIC_KEY_ID, SECTION } from './parts';
+import { Heading, LEVELS, Note, PANEL, PUBLIC_KEY_ID } from './parts';
 
 type TeamLine = NonNullable<AutonomySettings['teams']>[number];
 
@@ -106,7 +106,7 @@ const Rungs: Component<{
 
   return (
     <section
-      class={SECTION}
+      class={PANEL}
       id="automation-ceiling"
       data-testid="rung-ceiling"
       aria-labelledby={`${uid}-title`}

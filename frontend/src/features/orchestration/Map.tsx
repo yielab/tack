@@ -91,13 +91,12 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
 
   return (
     <section
-      class="flex min-w-0 flex-col gap-3 rounded-lg px-4 py-3"
+      class="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-5"
       data-testid="map"
       aria-labelledby="map-title"
-      style={{ 'background-color': 'var(--color-bg-panel)' }}
     >
       <div class="flex min-w-0 flex-col gap-1">
-        <h3 id="map-title" class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>Who can do what</h3>
+        <h3 id="map-title" class="text-lead font-semibold" style={{ color: 'var(--color-text-primary)' }}>Who can do what</h3>
         <p class="text-small" data-testid="map-summary" style={MUTED}>
           {`${counts().roles} ${counts().roles === 1 ? 'role' : 'roles'} lead to ${counts().profiles} ${counts().profiles === 1 ? 'profile' : 'profiles'}, which run on ${counts().teams} ${counts().teams === 1 ? 'team or agent' : 'teams and agents'}. A line is as wide as the open tasks routed along it, and a hairline joins boxes with none. Press a box or a column title to see it in Flow.`}
         </p>

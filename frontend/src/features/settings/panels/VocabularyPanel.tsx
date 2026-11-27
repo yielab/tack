@@ -45,11 +45,11 @@ const VocabularyPanel: Component = () => {
     }
   };
 
-  // A customised term reads as an accent pill; a blank one shows its default
-  // as a muted placeholder on the surface fill.
+  // A customised term reads in soft teal; a blank one shows its default
+  // as a muted placeholder.
   const inputStyle = (custom: boolean) => ({
-    'background-color': custom ? 'var(--color-accent-soft)' : 'var(--color-bg-panel)',
-    'border-color': custom ? 'var(--color-accent-line)' : 'transparent',
+    'background-color': custom ? 'var(--color-accent-soft)' : 'var(--color-bg-base)',
+    'border-color': custom ? 'var(--color-accent-line)' : 'var(--color-border-medium)',
     color: custom ? 'var(--color-accent-ink)' : 'var(--color-text-primary)',
     'font-weight': custom ? 600 : 400,
     '--tw-ring-color': 'var(--color-focus-ring)',
@@ -98,7 +98,7 @@ const VocabularyPanel: Component = () => {
                         aria-label={`Your word for “${def}”`}
                         placeholder={def}
                         onInput={(e) => setKey(key, e.currentTarget.value)}
-                        class="min-h-[30px] w-full rounded-full border px-3.5 py-1 text-small focus:outline-none focus-visible:ring-2"
+                        class="min-h-[30px] w-full rounded-md border px-3.5 py-1 text-small focus:outline-none focus-visible:ring-2"
                         style={inputStyle(!!(edits()[key] ?? '').trim())}
                       />
                     </td>

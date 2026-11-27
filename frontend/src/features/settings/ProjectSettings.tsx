@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from '@solidjs/router';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
 import { useProject } from '../../shared/state/projectContext';
 import { Button, Field, FieldShell, Modal } from '../../shared/ui';
+import Card from '../../shared/ui/Card';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
 import GeneralPanel from './panels/GeneralPanel';
@@ -66,14 +67,14 @@ const ProjectSettings: Component = () => {
   };
 
   return (
-    <div class="flex flex-col gap-[18px] px-6 py-7 sm:px-12">
+    <div class="flex flex-col gap-6 px-6 py-8 sm:px-12">
       <div class="flex items-end gap-3">
         <div class="min-w-0">
-          <h1 class="text-[2.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+          <h1 class="text-title" style={{ color: 'var(--color-text-primary)' }}>
             Project Settings
           </h1>
           <Show when={project()}>
-            <p class="truncate text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            <p class="truncate text-body" style={{ color: 'var(--color-text-secondary)' }}>
               {project()!.name}
             </p>
           </Show>
@@ -84,6 +85,7 @@ const ProjectSettings: Component = () => {
       </div>
 
       <Tabs tabs={TABS} active={active()} onChange={(id) => setSearchParams({ tab: id })}>
+        <Card class="mt-4 p-6 sm:p-10">
         <Switch>
           <Match when={active() === 'general'}>
             <GeneralPanel />
@@ -110,6 +112,7 @@ const ProjectSettings: Component = () => {
             <DataPanel />
           </Match>
         </Switch>
+        </Card>
       </Tabs>
 
       {/* Save as Template modal */}
@@ -141,7 +144,7 @@ const ProjectSettings: Component = () => {
               onInput={(e) => setTemplateDesc(e.currentTarget.value)}
               rows={2}
               placeholder="Optional description"
-              class="w-full resize-none rounded-lg border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+              class="w-full resize-none rounded-md border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
