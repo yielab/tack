@@ -129,7 +129,7 @@ export default function Sprints() {
       return state === 'needs' || state === 'review' || state === 'failed';
     }).length;
     const median = factory()?.human_minutes_by_sprint
-      .find((row) => row.sprint_id === sprintId)?.minutes.median_minutes;
+      ?.find((row) => row.sprint_id === sprintId)?.minutes.median_minutes;
     return { waiting, median: median ?? null };
   };
 
