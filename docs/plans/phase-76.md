@@ -74,7 +74,7 @@ Every row of ADR 0025's two tables and the amendment's four defaults, plus:
 | Who may call them | Reading routes and `plan`: any principal that may read the project. `apply`: `PrincipalKind::Operator` only (`tack_core::principal`); an agent's credential answers 403 `{"error": "An agent may preview the project folder; a person applies it"}`. Handlers read `Extension<Principal>` as `handlers/change_sets.rs` line 207 does. |
 | The plan's answer | `FolderPlan { plan_hash, base: Option<RevisionSummary>, changes: Vec<Change>, conflicts: Vec<Conflict>, removals: Vec<Removal { section, key, name, cost: Vec<String> }>, warnings: Vec<String>, applies: bool }`; `applies` is false while a conflict has no `prefer`. Anything `check` refuses is a 400 with every problem, as today. The apply answers `FolderApplied { revision: RevisionSummary, changes, removals }`. |
 | A key on the wire | `Role`, `Sprint`, `CustomFieldDefinition`, the profile response and `Item` gain `key: String`. `CreateRole`, `CreateSprint`, `CreateCustomField`, the profile create body and `CreateItem` gain `key: Option<String>` (checked with `is_key`; default `key_of`, made unique; 409 when a given key is taken). No update route changes a key. |
-| A change under `.tack/` | `level_for`: when any path starts with `.tack/`, the answer is `(L3, Some("project folder"))`, before the domains are read. The name is the constant `PROJECT_FOLDER_DOMAIN`. |
+| A change under `.tack/` | `level_for`: when any path starts with `.tack/`, the answer is `(L3, Some("project folder"))`, before the domains are read. The name is the constant `PROJECT_FOLDER_DOMAIN`. And `.tack` is one of `tack_protocol::checked_files`'s directories, so the files are listed under "The agent changed how it is checked" and the Merge button asks for a reason (built with task A). |
 | The CLI | `tack folder <status \| export \| import \| history \| revert> <project> [dir]`, `dir` defaulting to `.tack` in the current directory. `export` writes the files the route answers and removes `items/*.md` files the answer does not have; `import` and `revert` print the plan and apply unless `--dry-run`; a plan with removals applies only with `--yes` (else exit 1, "add --yes to apply the N removals"); conflicts without `--prefer` exit 1; `--json` everywhere. `tack import` and `tack export --bundle` keep their meaning. `tack config` stays the CLI's own settings. |
 | The MCP tool | `plan_folder { project_id*, files (object) \| revision (number), prefer }` → the plan, never an apply. `create_outline`'s description gains: "It never removes anything; a person keeps the plan in the repository with `tack folder`." |
 | Words on screen and in messages | key, revision, project folder, plan, kept, removed, conflict, "the board's", "prefer the folder / prefer the board". Never sync, merge, base, upsert, prune. |
@@ -340,7 +340,8 @@ of `to_bundle`, `Parts` gains the briefs) and its `tests.rs`; `crates/tack-db/sr
   receives the project's, `executions.rs` line 2062). `checks` counts the criteria that are not
   `manual`. `not_ready` is `None` when there is a Done when or at least one machine check, else
   `"No Done when and no check a machine runs"`. The items the project's list route answers
-  (`GET /api/projects/{project_id}/items`, `router.rs` line 388) carry `brief_summary` (`null` when the
+  (`GET /api/projects/{project_id}/items`, `router.rs` line 388), and the one item `GET /api/items/{id}`
+  answers (the run dialog reads it there), carry `brief_summary` (`null` when the
   item has no brief and the project no Done when), read with
   one `list_item_briefs_for_project` per request, never one call per item.
 
@@ -466,6 +467,9 @@ tests beside each; the generated files.
   A merge at Level 4 or 5 publishes `RunReviewed` too, so the factory's own merges never wait.
 - Read whether a manager's thread turn that waits for a person reaches the inbox as a `decision`.
   If it does, nothing changes; if it does not, stop and report it as a finding.
+- `GET /notifications?project=<uuid>` returns only that project's notifications, and its `open`
+  count is the project's: the shared list keeps the newest 50, so a project's own page asks for
+  its own (the frontend session's finding, 2026-11-26).
 - `waiting_max` (null: no limit) in the project's budgets, on the autonomy settings route and in the
   project file (`automation.autonomy.budgets.waiting_max`). `Limits` gains `waiting_max:
   Option<usize>` and `waiting_now: usize` (the project's open `needs_you` count); at the limit
@@ -574,7 +578,7 @@ built against:
 | Ask | Answer |
 |---|---|
 | A summary of each item's brief on the item list | Task I: `brief_summary { done_when, checks, risk, not_ready } \| null` on `GET /projects/{id}/items`. The rule lives in `tack_core::brief::readiness`: `not_ready` says why when there is neither a Done when (the item's or the project's) nor a check a machine runs; the screens show it and never compute it. Not ready never blocks a run |
-| Every wait for a person in one project | Task N, no new route: the inbox's open `needs_you` notifications carry `project_id`, and a succeeded run becomes a `review` wait until it is accepted, turned down, merged or run again. A question, a failure and a change set already are waits; a thread turn that waits arrives as a question |
+| Every wait for a person in one project | Task N: `GET /notifications?project=<uuid>` (open by default), because the shared list keeps only the newest 50; and a succeeded run becomes a `review` wait until it is accepted, turned down, merged or run again. A question, a failure and a change set already are waits; a thread turn that waits arrives as a question |
 | A limit on what waits | Task N: `waiting_max` in the project's budgets, beside `queue_items_max`, null is no limit; at the limit auto-start starts nothing and each waiting task gives the reason `waiting_max` |
 | A sprint's decision load | Task Q: `human_minutes_by_sprint` on the factory figures |
 | The ladder's error rate per domain and level | Task Q: `work_quality.cuts` gains `domain` and `level` |
@@ -635,6 +639,13 @@ Owned by the frontend session; this session does not edit it. Two parts:
   mapping that gives the semantics this plan states. `BundleAutomation` has no `on_finish_status`;
   the scenario uses `default_branch`. The integrator changed one rule: a conflict `prefer` settles
   stays listed (see "Decided").
+- **A** (`4caa50ee`): besides `level_for`, `.tack` joined the checked files, because with a
+  verifier's pack the hold reads the pack's flags, so the level is the guarantee and the checked
+  files are what a person sees. ADR 0025 decision 14's "What a person sees" says so.
+- **B** (`50889f25`): `write_project_file` takes the `ProjectWrite` by value; `Written` carries
+  the project id; `put_project_budgets_in` joined the twins so the limits land in the same
+  transaction; `upsert_brief_in` keeps its name. The autonomy overlay is read before the
+  transaction opens.
 - **Q** (`1dc6efb0`): an attempt merged by hand has no merge-ledger row, so the quality cuts by
   domain and level put it under "Not merged"; `human_minutes_by_sprint` is ordered by sprint id.
 
