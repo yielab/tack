@@ -93,7 +93,8 @@ pub(crate) fn run_folder(client: &TackClient, action: FolderAction) -> anyhow::R
                 ),
                 None => println!("No revision yet: export once to make the folder authoritative"),
             }
-            if status["changes"].as_array().is_none_or(Vec::is_empty) {
+            let has_revision = !status["last_revision"].is_null();
+            if has_revision && status["changes"].as_array().is_none_or(Vec::is_empty) {
                 println!("The board matches the last revision");
             }
             print_plan(&status);
