@@ -175,7 +175,7 @@ The file is **refused** for:
 
 - an unknown key, or a value of the wrong kind;
 - a section entry with no name, or with a name used twice;
-- a vocabulary word that is not one of the ten keys, or a type key that is not 1 to 40 lowercase letters, digits, `_` or `-`, is used twice, or a new project's types without exactly one default work type;
+- a vocabulary word that is not one of the ten keys, or a type key that is not 1 to 40 lowercase letters or digits of any script, `_` or `-`, is used twice, or a new project's types without exactly one default work type;
 - a workflow that gives both a preset and statuses, neither, an unknown preset, a status category that is not `todo`, `in_progress` or `done`, a duplicate status name, or no status in one of those three categories;
 - a field of an unknown type, a select field without options, or an item value of the wrong type or outside the field's options;
 - a profile with an unknown kind, an unknown agent, or a team name that is not lowercase letters, digits and hyphens;

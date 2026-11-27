@@ -45,7 +45,7 @@ On an existing project the whole `project` block is ignored with a warning: the 
 
 | Key | Type | Notes |
 |---|---|---|
-| `key` | text | 1 to 40 lowercase letters, digits, `_` or `-`; unique in the section. Items name their type by it |
+| `key` | text | 1 to 40 lowercase letters or digits of any script, `_` or `-`; unique in the section. Items name their type by it |
 | `name` | text | What the project calls the type; 1 to 60 characters |
 | `level` | text | `group` (holds work, like an epic) or `work` |
 | `color` | text | `accent`, `accent2`, `danger`, `warning`, `success` or `neutral`: a token name, never a hex value |
