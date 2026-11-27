@@ -385,7 +385,7 @@ fn check_types(
     for (i, entry) in outline.types.iter().enumerate() {
         if !item_types::is_valid_key(&entry.key) {
             problems.push(format!(
-                "types: entry {} has key \"{}\", which is not 1-{} lowercase letters, digits, '_' or '-'",
+                "types: entry {} has key \"{}\", which is not 1-{} lowercase letters or digits of any script, '_' or '-'",
                 i + 1,
                 entry.key,
                 item_types::MAX_KEY_LEN

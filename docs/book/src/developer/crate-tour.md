@@ -133,7 +133,7 @@ A project's item types are a catalog, not an enum.
 
 ```rust
 pub struct ItemTypeDef {
-    pub key: String,       // lowercase [a-z0-9_-]{1,40}; stable, never renamed
+    pub key: String,       // 1 to 40 lowercase letters or digits of any script, `_`, `-`; stable, never renamed
     pub name: String,      // what the project calls it
     pub level: Level,      // Group (holds work) | Work
     pub color: TypeColor,  // a token name, never a hex

@@ -5853,7 +5853,7 @@ export interface components {
             color: components["schemas"]["TypeColor"];
             /** @description Exactly one per project, and it is work: what an item made without a type becomes. */
             default_work: boolean;
-            /** @description Lowercase `[a-z0-9_-]{1,40}`; stable, never renamed. */
+            /** @description 1 to 40 lowercase letters or digits of any script, `_` or `-`; stable, never renamed. */
             key: string;
             level: components["schemas"]["ItemTypeLevel"];
             /** @description What the project calls it ("Epic", "Building", "Course"). */

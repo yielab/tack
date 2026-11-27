@@ -14978,7 +14978,7 @@
           },
           "key": {
             "type": "string",
-            "description": "Lowercase `[a-z0-9_-]{1,40}`; stable, never renamed."
+            "description": "1 to 40 lowercase letters or digits of any script, `_` or `-`; stable, never renamed."
           },
           "level": {
             "$ref": "#/components/schemas/ItemTypeLevel"

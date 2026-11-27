@@ -83,6 +83,14 @@ fn a_word_becomes_a_valid_key() {
     assert_eq!(key_of_word("Spike").as_deref(), Some("spike"));
     assert_eq!(key_of_word("  Work Order ").as_deref(), Some("work-order"));
     assert_eq!(key_of_word("!!!"), None);
+    assert_eq!(
+        key_of_word("Investigación").as_deref(),
+        Some("investigación")
+    );
+    assert!(is_valid_key("investigación"));
+    assert!(!is_valid_key("Investigación"));
+    assert!(is_valid_key(&"ñ".repeat(40)));
+    assert!(!is_valid_key(&"ñ".repeat(41)));
     assert!(is_valid_key(&key_of_word(&"x ".repeat(40)).unwrap()));
 }
 

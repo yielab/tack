@@ -78,7 +78,7 @@ impl TypeColor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemTypeDef {
-    /// Lowercase `[a-z0-9_-]{1,40}`; stable, never renamed.
+    /// 1 to 40 lowercase letters or digits of any script, `_` or `-`; stable, never renamed.
     pub key: String,
     /// What the project calls it ("Epic", "Building", "Course").
     pub name: String,
@@ -93,13 +93,14 @@ pub struct ItemTypeDef {
 pub const MAX_KEY_LEN: usize = 40;
 pub const MAX_NAME_LEN: usize = 60;
 
-/// Whether `key` is a key a type may have: lowercase letters, digits, `_` and `-`, 1 to 40 of them.
+/// Whether `key` is a key a type may have: lowercase letters and digits of any script, `_` and
+/// `-`, 1 to 40 of them, the alphabet of every other key on the board (ADR 0025).
 pub fn is_valid_key(key: &str) -> bool {
     !key.is_empty()
-        && key.len() <= MAX_KEY_LEN
+        && key.chars().count() <= MAX_KEY_LEN
         && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+            .chars()
+            .all(|c| (c.is_alphanumeric() && !c.is_uppercase()) || c == '_' || c == '-')
 }
 
 /// The key a word becomes when an outline or a file names a type the catalog lacks: lowercase,
@@ -107,7 +108,7 @@ pub fn is_valid_key(key: &str) -> bool {
 pub fn key_of_word(word: &str) -> Option<String> {
     let mut key = String::new();
     for c in word.trim().chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() || c == '_' {
+        if c.is_alphanumeric() || c == '_' {
             key.push(c);
         } else if !key.is_empty() && !key.ends_with('-') {
             key.push('-');
@@ -136,7 +137,7 @@ pub fn check_catalog(types: &[ItemTypeDef]) -> Result<(), CoreError> {
     for def in types {
         if !is_valid_key(&def.key) {
             return Err(CoreError::Validation(format!(
-                "'{}' is not a type key: use 1-{MAX_KEY_LEN} lowercase letters, digits, '_' or '-'",
+                "'{}' is not a type key: use 1-{MAX_KEY_LEN} lowercase letters or digits of any script, '_' or '-'",
                 def.key
             )));
         }
