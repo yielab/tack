@@ -6072,6 +6072,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * @description The item's key: its file name in the project folder; absent, the item is matched by
+             *     nothing and always added.
+             */
+            key?: string | null;
+            /**
              * @description Another item's `ref` or exact title; when adding to an existing
              *     project, also the id of an item already in it.
              */
