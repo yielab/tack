@@ -65,7 +65,7 @@ export const artifactsApi = {
   /** Fetches the verified artifact content as a `Blob`, carrying the
    *  operator's bearer token (unlike a plain `<a href download>`, which
    *  cannot attach an `Authorization` header — a fetch+blob download is
-   *  chosen over the simpler anchor-tag pattern `FilesTab.tsx` uses for
+   *  chosen over the simpler anchor-tag pattern `FilesSection.tsx` uses for
    *  attachments precisely because it needs that header). Throws `ApiError` with
    *  the real status on any non-2xx response — callers should check
    *  {@link isArtifactNotFound}/{@link isArtifactContentNotVerified} to

@@ -158,8 +158,8 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
 }
 
 /** A fresh idempotency key for one create attempt — matches the existing
- *  frontend precedent for client-generated ids (`ActivityTab.tsx`,
- *  `CreateItemModal.tsx`'s subtask ids both use `crypto.randomUUID()`), and
+ *  frontend precedent for client-generated ids (`ActivitySection.tsx` uses
+ *  `crypto.randomUUID()` for a comment's temporary id), and
  *  E5's CLI default ("a freshly-generated default" the operator may
  *  override to opt into safe retry). This module never reuses a key across
  *  two different submissions of the same open modal. */

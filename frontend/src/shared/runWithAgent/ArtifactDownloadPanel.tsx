@@ -101,7 +101,7 @@ function formatSize(bytes: number): string {
  * One manifested artifact, with its own real download action. Calls the
  * real, mounted `GET .../artifacts/{artifact_id}/content` via `fetch` +
  * `Blob` rather than a plain `<a href download>` (the pattern
- * `FilesTab.tsx` uses for ordinary attachments) — an anchor tag cannot
+ * `FilesSection.tsx` uses for ordinary attachments) — an anchor tag cannot
  * attach the `Authorization` bearer header this operator route requires,
  * and more importantly cannot report *why* a download failed: artifact
  * failure must stay visible.
