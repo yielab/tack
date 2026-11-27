@@ -679,6 +679,14 @@ Owned by the frontend session; this session does not edit it. Two parts:
   (`import-export.md`, `developer/project-file.md`). The integrator added two refusals: a folder
   without `project.yaml` (it would read as a project with nothing in it, and the plan would
   propose removing everything), and a `key` or `description` line in an item's YAML.
+- **K** (`32b8a687`): `NewAgentProfile` carries the key (clippy refused another argument). A saved
+  template now carries keys, so applying it matches this board's rows by key, which is what a
+  template saved from this board means. Built-in profiles were seeded after the fill and kept an
+  empty key until the next start; the integrator made the seed end with the fill (`446b1f6d`).
+  Merging develop into K met only the migration list (115 then 116); 1541 tests passed on the
+  combined tree.
+- **T** (`02a566fb`): `thread_id` is a scalar subquery in one constant shared by the insert's
+  `RETURNING` and the list queries (SQLite's `RETURNING` cannot join).
 - **N** (`a8a1c441`): `RunStarted` under a new request closes the old `review` through the
   reconcile, within about 30 seconds. The integrator removed the agent's seven-day window on
   waiting reviews: a run waits however old it is. `waiting_max: 0` pauses auto-start for good. The
