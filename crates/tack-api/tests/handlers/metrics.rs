@@ -651,6 +651,115 @@ async fn a_decision_answered_elsewhere_counts_as_answered() {
     );
 }
 
+/// The decisions' minutes are the item's sprint's: each sprint's row carries its own median, and an
+/// item with no sprint counts in none.
+#[tokio::test]
+async fn human_minutes_are_cut_by_the_items_sprint() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
+    let app = app_over(&repo, workspace_id, root.path());
+    let (project_id, first) = project_with_item(&repo, workspace_id, "By sprint").await;
+    let second = another_item(&repo, project_id).await;
+    let loose = another_item(&repo, project_id).await;
+    seed::statement(
+        &repo,
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'bs', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+        &[],
+    )
+    .await;
+    let mut sprints = Vec::new();
+    for name in ["One", "Two"] {
+        let sprint = repo
+            .create_sprint(
+                project_id,
+                tack_core::models::CreateSprint {
+                    name: name.into(),
+                    goal: None,
+                    start_date: None,
+                    end_date: None,
+                },
+            )
+            .await
+            .unwrap();
+        sprints.push(sprint.id.to_string());
+    }
+    for (item, sprint) in [
+        (&first, Some(&sprints[0])),
+        (&second, Some(&sprints[1])),
+        (&loose, None),
+    ] {
+        if let Some(sprint) = sprint {
+            seed::statement(
+                &repo,
+                "UPDATE items SET sprint_id = ? WHERE id = ?",
+                &[sprint, item],
+            )
+            .await;
+        }
+    }
+    // One decision per item, answered after 10, 30 and 50 minutes.
+    for (n, (item, resolved)) in [
+        (&first, "2026-09-10T09:10:00Z"),
+        (&second, "2026-09-10T09:30:00Z"),
+        (&loose, "2026-09-10T09:50:00Z"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (request, attempt) = (format!("R{n}"), format!("A{n}"));
+        seed::statement(
+            &repo,
+            "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+               request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+               repository_snapshot, permission_policy, metadata, created_at, updated_at)
+             VALUES (?1, ?2, 's', ?1, 'f', 'exact_runner', 'run', '{}', '{}', '{}', '{}',
+               '2026-09-10T08:00:00Z', '2026-09-10T08:00:00Z')",
+            &[&request, item],
+        )
+        .await;
+        seed::statement(
+            &repo,
+            "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+               lease_issued_at, lease_expires_at, created_at, updated_at)
+             VALUES (?1, ?2, 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
+               '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z')",
+            &[&attempt, &request],
+        )
+        .await;
+        seed::statement(
+            &repo,
+            "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, state, created_at,
+               updated_at, resolved_at)
+             VALUES (?1, ?2, ?1, 'choice', 'p', 'resolved', '2026-09-10T09:00:00Z',
+               '2026-09-10T09:00:00Z', ?3)",
+            &[&format!("D{n}"), &attempt, resolved],
+        )
+        .await;
+    }
+
+    let headers = [("authorization", "Bearer g1a-metrics-token")];
+    let uri = format!("/api/projects/{project_id}/metrics/factory");
+    let (status, m) = common::send(&app, "GET", &uri, Value::Null, &headers).await;
+    assert_eq!(status, StatusCode::OK, "{m}");
+    let by_sprint = m["human_minutes_by_sprint"].as_array().unwrap();
+    assert_eq!(
+        by_sprint.len(),
+        2,
+        "no row for the item without a sprint: {m}"
+    );
+    for (sprint, minutes) in [(&sprints[0], 10.0), (&sprints[1], 30.0)] {
+        let row = by_sprint
+            .iter()
+            .find(|r| r["sprint_id"] == sprint.as_str())
+            .unwrap_or_else(|| panic!("no row for {sprint}: {m}"));
+        assert_eq!(row["minutes"]["measured"], 1, "{row}");
+        close(&row["minutes"]["median_minutes"], minutes);
+    }
+    close(&m["human_minutes_per_decision"]["median_minutes"], 30.0);
+}
+
 /// A prill that answers `--version` and `metrics` from the captured output,
 /// with `qualified` raised to 2.
 fn fake_prill(dir: &std::path::Path) -> String {
@@ -1163,6 +1272,16 @@ async fn the_quality_figures_give_the_rates_the_rows_make() {
         )
         .await;
     }
+    // The merge ledger: v1 and v2 merged at L4 in docs, v3 held (never merged).
+    seed::statement(
+        &repo,
+        "INSERT INTO tack_merges (attempt_id, project_id, trigger, domain, level, held_reason, checked_at, merged_at) VALUES
+           ('v1', ?1, 'auto', 'docs', 'L4', NULL, '2026-09-10T13:00:00Z', '2026-09-10T13:00:00Z'),
+           ('v2', ?1, 'auto', 'docs', 'L4', NULL, '2026-09-10T13:00:00Z', '2026-09-10T13:00:00Z'),
+           ('v3', ?1, 'auto', 'docs', 'L4', 'ci', '2026-09-10T13:00:00Z', NULL)",
+        &[&project_id.to_string()],
+    )
+    .await;
     // The verifier's packs: merge on v1 (good) and v2 (bad); reject on v3 (bad) and v4 (good).
     let dir = root.path().join("execution-artifacts");
     std::fs::create_dir_all(&dir).unwrap();
@@ -1349,6 +1468,20 @@ async fn the_quality_figures_give_the_rates_the_rows_make() {
         counts(&cut("model", "Not recorded")["revert_after_merge"]),
         (Some(1), Some(3))
     );
+
+    // The ladder: v1 and v2 merged at L4 in docs and one was reverted, so that level got it wrong
+    // in that domain half the time; every other attempt did not merge through the ledger.
+    for (by, name) in [("domain", "docs"), ("level", "L4")] {
+        let row = cut(by, name);
+        assert_eq!(row["attempts"], 2, "{by}");
+        assert_eq!(
+            counts(&row["revert_after_merge"]),
+            (Some(1), Some(2)),
+            "{by}"
+        );
+    }
+    assert_eq!(cut("domain", "Not merged")["attempts"], 9);
+    assert_eq!(cut("level", "Not merged")["attempts"], 9);
 
     assert!(!q.to_string().contains("usd"), "{q}");
 }

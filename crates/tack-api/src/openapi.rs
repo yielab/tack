@@ -1147,6 +1147,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::metrics::FactoryMetrics,
         handlers::metrics::Ratio,
         handlers::metrics::HumanMinutes,
+        handlers::metrics::SprintHumanMinutes,
         handlers::metrics::VerificationTax,
         handlers::metrics::Outcomes,
         handlers::metrics::Quality,

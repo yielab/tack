@@ -38,6 +38,11 @@ pub struct QualityAttempt {
     pub pack_reference: Option<String>,
     /// What a Reviewer run said about the attempt: `merge`, `review` or `reject`.
     pub reviewer_decision: Option<String>,
+    /// Tack merged the attempt's pull request (the merge ledger has a `merged_at`).
+    pub merged: bool,
+    /// The domain and the level the merge ledger recorded for that merge.
+    pub merge_domain: Option<String>,
+    pub merge_level: Option<String>,
 }
 
 /// Every attempt of the project created in the window, oldest first.
@@ -70,7 +75,10 @@ pub async fn quality_attempts(
                 (SELECT x.content_reference FROM execution_artifacts x
                   WHERE x.attempt_id = a.id AND x.media_type = ?2
                   ORDER BY x.created_at DESC, x.id DESC LIMIT 1) AS pack_reference,
-                rv.decision AS reviewer_decision
+                rv.decision AS reviewer_decision,
+                m.merged_at IS NOT NULL AS merged,
+                CASE WHEN m.merged_at IS NOT NULL THEN m.domain END AS merge_domain,
+                CASE WHEN m.merged_at IS NOT NULL THEN m.level END AS merge_level
            FROM execution_attempts a
            JOIN execution_requests r ON r.id = a.request_id
            JOIN items i ON i.id = r.item_id
@@ -78,6 +86,7 @@ pub async fn quality_attempts(
            LEFT JOIN attempt_reviews v ON v.attempt_id = a.id
            LEFT JOIN pull_requests p ON p.attempt_id = a.id
            LEFT JOIN reviewer_verdicts rv ON rv.attempt_id = a.id
+           LEFT JOIN tack_merges m ON m.attempt_id = a.id
           WHERE i.project_id = ?1 AND (?3 IS NULL OR julianday(a.created_at) >= julianday(?3))
           ORDER BY a.created_at, a.id"
     )))

@@ -20,6 +20,7 @@ const PASS_K: i64 = 3;
 
 const NOT_RECORDED: &str = "Not recorded";
 const NO_TEAM: &str = "No team";
+const NOT_MERGED: &str = "Not merged";
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WorkQuality {
@@ -105,7 +106,8 @@ pub struct StopCount {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct QualityCut {
-    /// `profile`, `harness`, `model`, `team` or `template`.
+    /// `profile`, `harness`, `model`, `team`, `template`, `domain` or `level`. The last two are the
+    /// merge ledger's: an attempt that did not merge is `Not merged`.
     pub by: String,
     pub rows: Vec<CutRow>,
 }
@@ -379,6 +381,15 @@ fn or_not_recorded(value: &Option<String>) -> String {
     value.clone().unwrap_or_else(|| NOT_RECORDED.into())
 }
 
+/// What the merge ledger recorded for an attempt that merged; `Not merged` for one that did not.
+fn of_the_merge(attempt: &QualityAttempt, recorded: &Option<String>) -> String {
+    if attempt.merged {
+        or_not_recorded(recorded)
+    } else {
+        NOT_MERGED.into()
+    }
+}
+
 /// What the Reviewer profile said about each attempt it reviewed.
 fn reviewer_words(attempts: &[&QualityAttempt]) -> HashMap<String, MergeDecision> {
     attempts
@@ -424,6 +435,8 @@ pub(super) fn work_quality(
                 a.team.clone().unwrap_or_else(|| NO_TEAM.into())
             }),
             cut(&all, "template", |a| or_not_recorded(&a.template)),
+            cut(&all, "domain", |a| of_the_merge(a, &a.merge_domain)),
+            cut(&all, "level", |a| of_the_merge(a, &a.merge_level)),
         ],
     }
 }
@@ -450,6 +463,9 @@ mod tests {
             pull_request: None,
             pack_reference: None,
             reviewer_decision: None,
+            merged: false,
+            merge_domain: None,
+            merge_level: None,
         }
     }
 
