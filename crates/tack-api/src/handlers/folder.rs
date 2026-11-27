@@ -578,11 +578,7 @@ pub async fn apply_folder(
     });
     let gone = removed.items.clone();
     write.removals = removed;
-    write.revisions = Some(RevisionWrite {
-        board: board_text,
-        origin: if revert { "revert" } else { "file" },
-        plan: body_text(&merged),
-    });
+    write.revisions = Some(RevisionWrite { board: board_text });
     let written = state.repo.write_project_file(write).await.map_err(failed)?;
 
     websocket::broadcast_event(&state, BoardEvent::BoardConfigUpdated { project_id });
@@ -619,7 +615,16 @@ pub async fn apply_folder(
         );
     }
 
-    let revision = match written.revision {
+    // What the apply wrote is kept as the board stored it, read back as an export reads it: the
+    // folder's own text (a description's last newline, a type left to its default) would differ
+    // from the board at once, and every later plan would see a change nobody made.
+    let after = bundle_of(&state, &project, &visible_items(&state, project_id).await?).await?;
+    let origin = if revert { "revert" } else { "file" };
+    let revision = match state
+        .repo
+        .record_revision(project_id, origin, &body_text(&after))
+        .await?
+    {
         Some(row) => row,
         None => state
             .repo
