@@ -1,0 +1,52 @@
+import { describe, it, expect, afterEach } from 'vitest';
+import TimelineMonth from './TimelineMonth';
+import { makeItem, mountProjectView, unmountProjectViews } from '../../test/mountProjectView';
+
+afterEach(unmountProjectViews);
+
+/** Noon on the 15th of this month, local time, so no timezone moves it to another day. */
+const middleOfThisMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 15, 12).toISOString();
+
+describe('TimelineMonth', () => {
+  it('shows_an_item_on_its_due_day_and_the_others_in_the_unscheduled_tray', async () => {
+    const container = await mountProjectView(() => <TimelineMonth />, 'timeline', {
+      items: [
+        makeItem({ id: 'due', title: 'Ship the release', due_date: middleOfThisMonth }),
+        makeItem({ id: 'open', title: 'Someday task' }),
+      ],
+    });
+
+    const monthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    expect(container.querySelector('h2')?.textContent).toBe(monthName);
+
+    const scheduled = container.querySelector<HTMLElement>('[title^="Ship the release"]')!;
+    expect(scheduled.textContent).toContain('To Do');
+    // The day cell that holds it is the 15th.
+    expect(scheduled.parentElement?.parentElement?.firstElementChild?.textContent).toBe('15');
+    expect(container.querySelector('[title^="Someday task"]')).not.toBeNull();
+    expect(container.textContent).toContain('Unscheduled (1)');
+  });
+
+  it('shows_a_groups_due_date_as_a_milestone_that_cannot_be_dragged_and_never_lists_it_as_unscheduled', async () => {
+    const container = await mountProjectView(() => <TimelineMonth />, 'timeline', {
+      items: [
+        makeItem({ id: 'epic', title: 'Checkout', item_type: 'epic', node: 'group', due_date: middleOfThisMonth }),
+        makeItem({ id: 'plan', title: 'Plan the rollout', item_type: 'epic', node: 'group' }),
+        makeItem({ id: 'due', title: 'Ship the release', parent_id: 'epic', due_date: middleOfThisMonth }),
+      ],
+    });
+
+    const milestone = container.querySelector<HTMLElement>('[data-testid="milestone"]')!;
+    expect(milestone.textContent).toContain('Checkout');
+    expect(milestone.querySelector('[data-testid="type-tile"]')?.textContent).toBe('Epic');
+    expect(milestone.getAttribute('draggable')).toBeNull();
+    // It sits on its due day, ahead of the work due that day.
+    const cell = milestone.parentElement!;
+    expect(cell.parentElement?.firstElementChild?.textContent).toBe('15');
+    expect(cell.firstElementChild).toBe(milestone);
+    expect(cell.querySelector('[title^="Ship the release"]')).not.toBeNull();
+    // A group with no due date is not "unscheduled work": the tray holds work only.
+    expect(container.textContent).toContain('Unscheduled (0)');
+    expect(container.textContent).not.toContain('Plan the rollout');
+  });
+});
